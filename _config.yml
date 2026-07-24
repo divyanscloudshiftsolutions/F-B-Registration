@@ -1,0 +1,9 @@
+exclude:
+  - backend
+  - frontend
+  - face-mark-presence-system-dev1
+  - node_modules
+  - .agents
+  - .idea
+  - package-lock.json
+  - package.json
