@@ -17,12 +17,53 @@ export class FaceMarkError extends Error {
 // FaceEmbedding table is deprecated and direct local queries are disabled.
 
 export class FaceService {
+  private static adminToken: string | null = null;
+  private static adminTokenExpiry: number = 0;
+
   private static getApiBase(): string {
     return (process.env.FACEMARK_API_BASE || 'https://api.facemark.app.cloudshiftsolutions.in').replace(/\/$/, '');
   }
 
   private static getBearerToken(): string {
     return process.env.FACEMARK_BEARER_TOKEN || process.env.KIOSK_API_TOKEN || process.env.FACEMARK_KIOSK_TOKEN || process.env.VITE_KIOSK_TOKEN || '';
+  }
+
+  private static async getAdminToken(): Promise<string> {
+    const now = Date.now();
+    if (this.adminToken && now < this.adminTokenExpiry) {
+      return this.adminToken;
+    }
+
+    const apiBase = this.getApiBase();
+    const email = process.env.FACEMARK_ADMIN_EMAIL || 'admin@presentsir.com';
+    const password = process.env.FACEMARK_ADMIN_PASSWORD || 'Admin@123';
+
+    const url = `${apiBase}/api/auth/admin/login`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    if (!res.ok) {
+      console.error(`[FaceMark Admin Login Failure] Status: ${res.status}`);
+      throw new FaceMarkError(
+        'AUTHENTICATION_ERROR',
+        'Face verification service authentication failed. Please check administrator credentials.'
+      );
+    }
+
+    const data: any = await res.json();
+    if (!data.access_token) {
+      throw new FaceMarkError(
+        'AUTHENTICATION_ERROR',
+        'Face verification service authentication returned an invalid session token.'
+      );
+    }
+
+    this.adminToken = data.access_token;
+    this.adminTokenExpiry = now + 25 * 60 * 1000;
+    return data.access_token;
   }
 
   private static handleFetchError(err: any): never {
@@ -50,6 +91,13 @@ export class FaceService {
     console.error(`[FaceMark API Error] Status: ${status}, Body: ${errText}`);
 
     if (status === 401 || status === 403) {
+      const errLower = errText.toLowerCase();
+      if (errLower.includes('does not match')) {
+        throw new FaceMarkError(
+          'FACE_MISMATCH',
+          'The captured face does not match the entered Employee ID.'
+        );
+      }
       throw new FaceMarkError(
         'ACCESS_DENIED',
         'Face verification service access failed. Please contact the administrator.'
@@ -79,10 +127,31 @@ export class FaceService {
       );
     }
 
+    if (errLower.includes('multiple faces')) {
+      throw new FaceMarkError(
+        'MULTIPLE_FACES_DETECTED',
+        'Multiple faces detected. Please make sure only one person is in front of the camera.'
+      );
+    }
+
     if (errLower.includes('blurry') || errLower.includes('quality') || errLower.includes('poor image')) {
       throw new FaceMarkError(
         'POOR_IMAGE_QUALITY',
         "The photo isn't clear enough. Please keep your face steady and try again."
+      );
+    }
+
+    if (errLower.includes('invalid image format')) {
+      throw new FaceMarkError(
+        'INVALID_IMAGE_FORMAT',
+        'The captured photo could not be processed. Please capture your face again.'
+      );
+    }
+
+    if (status === 404) {
+      throw new FaceMarkError(
+        'FACE_NOT_RECOGNIZED',
+        'Face not recognized. Please complete face registration first.'
       );
     }
 
@@ -100,8 +169,7 @@ export class FaceService {
   }
 
   /**
-   * Registers user face on the FaceMark staging server using attendance/quick endpoint.
-   * Uses employee_code to associate the face.
+   * Registers user face on the FaceMark staging server using register-multiple endpoint.
    */
   public static async enrollUserFaces(userId: string, images: Buffer[]): Promise<void> {
     if (images.length === 0) {
@@ -112,18 +180,24 @@ export class FaceService {
     }
 
     const apiBase = this.getApiBase();
-    const token = this.getBearerToken();
+    let adminToken: string;
+    try {
+      adminToken = await this.getAdminToken();
+    } catch (err: any) {
+      if (err instanceof FaceMarkError) throw err;
+      return this.handleFetchError(err);
+    }
 
     const formData = new globalThis.FormData();
-    const blob = new globalThis.Blob([images[0]], { type: 'image/jpeg' });
-    formData.append('file', blob, 'enroll.jpg');
-    formData.append('employee_code', userId);
-
-    const url = `${apiBase}/api/attendance/quick`;
-    const headers: Record<string, string> = {};
-    if (token && token.trim().length > 0) {
-      headers['X-Kiosk-Token'] = token;
+    for (let i = 0; i < images.length; i++) {
+      const file = new globalThis.File([images[i]], `enroll_${i}.jpg`, { type: 'image/jpeg' });
+      formData.append('files', file);
     }
+
+    const url = `${apiBase}/api/face/register-multiple/${userId}`;
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${adminToken}`
+    };
 
     let response: Response;
     try {
@@ -149,8 +223,8 @@ export class FaceService {
     const apiBase = this.getApiBase();
     const token = this.getBearerToken();
     const formData = new globalThis.FormData();
-    const blob = new globalThis.Blob([imageBuffer], { type: 'image/jpeg' });
-    formData.append('file', blob, 'capture.jpg');
+    const file = new globalThis.File([imageBuffer], 'capture.jpg', { type: 'image/jpeg' });
+    formData.append('file', file);
 
     const url = `${apiBase}/api/attendance/quick`;
     const headers: Record<string, string> = {};
