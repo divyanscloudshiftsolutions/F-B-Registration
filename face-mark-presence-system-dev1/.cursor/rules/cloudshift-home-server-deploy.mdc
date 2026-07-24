@@ -1,0 +1,42 @@
+---
+description: CloudShift home server deployment for Present Sir on 192.168.1.150
+alwaysApply: true
+---
+
+# Present Sir — CloudShift Deployment
+
+Server: `192.168.1.150` | Path: `/data/apps/face-mark-presence-system`
+
+## Ports
+
+| Service | Port |
+|---------|------|
+| Backend (FastAPI) | 8001 |
+| Frontend (Vite) | 8080 |
+| PostgreSQL | 5432 / `presentsir` |
+
+## Env files (server)
+
+- Backend: `/data/apps/face-mark-presence-system/backend/.env`
+- Frontend: `/data/apps/face-mark-presence-system/.env.local` → `VITE_API_URL=` (empty), `VITE_PROXY_TARGET=http://127.0.0.1:8001`
+- Backend CORS must include `https://facemark.app.cloudshiftsolutions.in`
+
+## Start on server
+
+```bash
+/data/scripts/start_presence_system.sh
+# or all services:
+/data/scripts/start_all_services.sh
+```
+
+Scripts are installed from `home-server-dashboard` repo: `bash deploy/scripts/install-server.sh`
+
+## Logs
+
+- `/data/logs/face-backend.log`
+- `/data/logs/face-frontend.log`
+- `/data/logs/face-tunnel.log`
+
+## New project standard
+
+When creating a new CloudShift app repo, follow the same pattern documented in `home-server-dashboard/docs/DEPLOYMENT.md` and register in `home-server-dashboard/deploy/projects.json`.

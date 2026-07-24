@@ -1,0 +1,33 @@
+{
+  "id": "present-sir",
+  "name": "Present Sir (Face Mark)",
+  "repo": "https://github.com/Sabariramamoorthy/face-mark-presence-system.git",
+  "server": {
+    "host": "192.168.1.150",
+    "app_dir": "/data/apps/face-mark-presence-system",
+    "logs_dir": "/data/logs"
+  },
+  "stack": {
+    "frontend": "React + Vite + TypeScript",
+    "backend": "FastAPI + SQLAlchemy + Alembic",
+    "database": "PostgreSQL (presentsir)"
+  },
+  "ports": {
+    "backend": 8001,
+    "frontend": 8080
+  },
+  "env": {
+    "backend": "/data/apps/face-mark-presence-system/backend/.env",
+    "frontend": "/data/apps/face-mark-presence-system/.env.local"
+  },
+  "start": {
+    "backend": "cd backend && source venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8001",
+    "frontend": "npm run dev -- --host 0.0.0.0 --port 8080",
+    "script": "/data/scripts/start_presence_system.sh"
+  },
+  "logs": {
+    "backend": "face-backend.log",
+    "frontend": "face-frontend.log",
+    "tunnel": "face-tunnel.log"
+  }
+}
