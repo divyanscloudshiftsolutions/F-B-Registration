@@ -4369,13 +4369,18 @@ router.post('/attendance/quick', upload.single('file'), async (req: Request, res
     const match = await FaceService.callQuickAttendanceApi(imageBuffer);
     console.log('[Quick Attendance Match]:', match);
 
-    // Look up the recognized user ID locally by ID, username, or email
+    // Look up the recognized user locally by ID, username, fullName, or email
+    const matchName = (match.userName || '').trim();
+    const matchFirstName = matchName.split(' ')[0];
+
     let matchedUser = await prisma.user.findFirst({
       where: {
         OR: [
           { id: match.userId },
           { username: match.userId },
-          { username: match.userName || '' }
+          { username: { equals: matchName, mode: 'insensitive' } },
+          { fullName: { equals: matchName, mode: 'insensitive' } },
+          ...(matchFirstName.length > 0 ? [{ fullName: { contains: matchFirstName, mode: 'insensitive' as const } }] : [])
         ]
       },
       include: { role: true }
@@ -4385,14 +4390,39 @@ router.post('/attendance/quick', upload.single('file'), async (req: Request, res
       const emailPrefix = match.userEmail.split('@')[0];
       matchedUser = await prisma.user.findFirst({
         where: {
-          username: emailPrefix
+          OR: [
+            { username: { equals: emailPrefix, mode: 'insensitive' } },
+            { fullName: { contains: emailPrefix, mode: 'insensitive' } }
+          ]
         },
         include: { role: true }
       });
     }
 
+    // Auto-provision local user if FaceMark recognized the employee but local DB record is missing
     if (!matchedUser) {
-      console.warn(`[Quick Attendance Warning] FaceMark recognized user as ${match.userId} (${match.userName || match.userEmail}), but local DB user was not found.`);
+      console.log(`[Quick Attendance Auto-Link] Provisioning local user for FaceMark user: ${match.userName || match.userId}`);
+      let role = await prisma.role.findFirst({ where: { name: 'receptionist' } });
+      if (!role) {
+        role = await prisma.role.findFirst();
+      }
+      if (role) {
+        const username = (match.userName || match.userId).toLowerCase().replace(/\s+/g, '_');
+        matchedUser = await prisma.user.create({
+          data: {
+            id: match.userId,
+            username: username,
+            passwordHash: '$2b$10$e791012345678901234567890123456789012345678901234567890',
+            fullName: match.userName || 'Enrolled Employee',
+            roleId: role.id
+          },
+          include: { role: true }
+        });
+      }
+    }
+
+    if (!matchedUser) {
+      console.warn(`[Quick Attendance Warning] FaceMark recognized user as ${match.userId} (${match.userName || match.userEmail}), but local DB user could not be mapped.`);
       return res.status(401).json({ success: false, error: { message: 'Face not recognized. Please register first.' } });
     }
 
