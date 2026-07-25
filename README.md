@@ -1,52 +1,169 @@
-# NFC & Email QR Bar System Management
+# NFC & QR Code Management System
 
-An end-to-end event bar management system featuring dual check-in options: physical **NFC Smart Cards** and cardless **Email QR Tickets**. This application includes offline-first synchronization capabilities, automatic checkout systems, real-time table utilization metrics, and staff role management.
+An end-to-end event bar and staff management system featuring dual check-in options: **NFC Smart Cards**, **Email QR Tickets**, and biometric **Face Recognition (Quick Attendance)** via external FaceMark integration.
 
-## Project Structure
+---
+
+## 📁 Repository Structure
 
 ```
-├── backend/            # Express, Node.js, Prisma, PostgreSQL, Redis, MinIO S3
-├── frontend/           # React Native, Expo, NativeWind/Tailwind, Safe Area Context
+├── backend/            # Express, Node.js, Prisma, PostgreSQL, Redis, FaceMark Service
+├── frontend/           # React Native, Expo, NativeWind/Tailwind, Quick Attendance Screen
 ├── openapi.yaml        # API Specifications & Endpoint Contracts
-├── workflow.md         # Full E2E System Workflow Diagrams & Sequence Rules
-└── README.md           # Getting Started & Deployment Guide
+├── README.md           # Getting Started, Environment & Deployment Guide
+└── _config.yml         # GitHub Pages Jekyll Bypass Configuration
 ```
 
 ---
 
-## Technical Stack
+## 🛠️ Tech Stack
 
 ### Backend
 * **Core**: Node.js, Express, TypeScript
-* **Database**: PostgreSQL (Prisma ORM)
-* **Caching & Sequences**: Redis
-* **Audit Trails Storage**: MinIO / S3 Object Storage
-* **Testing**: E2E Integration Test Suites (`ts-node`)
+* **Database & ORM**: PostgreSQL with Prisma ORM
+* **Biometrics Integration**: FaceMark Quick Attendance API (`POST /api/attendance/quick`)
+* **Caching & Queueing**: Redis
+* **Object Storage**: MinIO / S3
 
 ### Frontend
-* **Core**: React Native, TypeScript, Expo
-* **Layouts & Styling**: NativeWind (Tailwind CSS), React Native Safe Area Context
-* **Auto-IP Resolution**: Dynamic Metro source modules mapping local endpoints automatically for physical debugging
+* **Core**: React Native (Expo SDK 52), TypeScript
+* **Styling**: NativeWind (Tailwind CSS)
+* **Camera**: Expo Camera (`CameraView`)
+* **Deployment**: Expo Application Services (EAS Update)
 
 ---
 
-## Production Deployment on Railway
+## 🔑 Environment Variables Configuration
 
-### 1. Environment Setup
-Configure the following environment variables in your Railway dashboard:
-* `DATABASE_URL`: PostgreSQL connection string.
-* `REDIS_URL`: Redis connection string.
-* `JWT_SECRET`: Secret key for signature validations.
-* `NODE_ENV`: `"production"`
-* `FRONTEND_URL`: URL of the deployed client interface.
-* **SMTP Config** (for QR delivery): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
+### Backend (`backend/.env`)
 
-### 2. Deployment Sequence
-Railway builds and launches the container automatically using the following steps:
-1. `npm install` (Installs both standard and development dependencies)
-2. `npm run build` (Generates Prisma Client binaries and compiles TypeScript into `dist/`)
-3. `npm run start` (Deploys pending PostgreSQL migrations using `prisma migrate deploy` and boots the Express server)
+| Variable | Description | Example / Production Value |
+| :--- | :--- | :--- |
+| `PORT` | HTTP Server Port | `4000` |
+| `NODE_ENV` | Environment Mode | `production` |
+| `DATABASE_URL` | PostgreSQL Connection String | `postgresql://user:pass@host:5432/dbname` |
+| `JWT_SECRET` | JWT Sign Secret | `super-secret-key` |
+| `FACEMARK_API_BASE` | FaceMark Service API URL | `https://api.facemark.app.cloudshiftsolutions.in` |
+| `FACEMARK_BEARER_TOKEN` | Shared Kiosk API Token | `<kiosk_token>` |
+| `FACEMARK_ADMIN_EMAIL` | FaceMark Admin Email | `admin@presentsir.com` |
+| `FACEMARK_ADMIN_PASSWORD` | FaceMark Admin Password | `Admin@123` |
 
-> [!IMPORTANT]
-> **Existing Production Databases & Neon Baselining**:
-> If you are deploying to a database that already has tables, the initial deploy will fail with a `P3005` error. Please follow the baselining guide in [DEPLOYMENT.md](file:///d:/Cloud%20Shift%20Solutions%20Intern/NFC/NFC%20QR%20code/DEPLOYMENT.md) to initialize the migrations table.
+### Frontend (`frontend/.env` or Expo Config)
+
+| Variable | Description | Example Value |
+| :--- | :--- | :--- |
+| `EXPO_PUBLIC_BACKEND_URL` | Backend Express Base URL | `https://your-backend.up.railway.app` |
+
+---
+
+## 🚀 Quick Start & Local Commands
+
+### 1. Backend Setup & Run
+
+```bash
+# Navigate to backend directory
+cd backend
+
+# Install dependencies
+npm install
+
+# Generate Prisma client & run database migrations
+npx prisma generate
+npx prisma migrate dev
+
+# Run development server with ts-node
+npm run dev
+
+# Check TypeScript compilation
+npx tsc --noEmit
+
+# Build production bundle
+npm run build
+
+# Start production server
+npm run start
+```
+
+### 2. Frontend Setup & Run
+
+```bash
+# Navigate to frontend directory
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start Expo development server
+npx expo start
+
+# Check TypeScript compilation
+npx tsc --noEmit
+```
+
+### 3. EAS Update & Deployment Commands
+
+```bash
+# Install EAS CLI globally (or run via npx)
+npx eas-cli login
+
+# Publish OTA update to production channel
+npx eas-cli update --channel production --message "Strict Quick Attendance biometrics release" --environment production
+
+# Publish OTA update to preview channel
+npx eas-cli update --channel preview --message "Strict Quick Attendance biometrics release" --environment production
+```
+
+---
+
+## 🧪 Quick Attendance API Testing Commands
+
+### Testing `POST /api/attendance/quick` via `curl`
+
+To test direct FaceMark Quick Attendance verification:
+
+```bash
+curl -X POST "https://api.facemark.app.cloudshiftsolutions.in/api/attendance/quick" \
+  -H "X-Kiosk-Token: YOUR_FACEMARK_KIOSK_TOKEN" \
+  -F "file=@/path/to/face_photo.jpg"
+```
+
+#### Expected JSON Response (Success):
+```json
+{
+  "action": "check-in",
+  "userId": "usr_9482910a",
+  "userName": "John Doe",
+  "userEmail": "john@example.com",
+  "confidence": 0.94
+}
+```
+
+### Testing NFC Backend Proxy Endpoint
+
+```bash
+curl -X POST "https://your-backend.up.railway.app/attendance/quick" \
+  -H "Content-Type: application/json" \
+  -d '{"photoBase64": "YOUR_BASE64_IMAGE_STRING"}'
+```
+
+#### Expected JSON Response:
+```json
+{
+  "success": true,
+  "userName": "John Doe",
+  "action": "check-in",
+  "confidence": 0.94
+}
+```
+
+---
+
+## 🔍 Troubleshooting Guide
+
+| Issue | Cause | Solution |
+| :--- | :--- | :--- |
+| `Unable to recognize your face...` | Face not found in database or low match score (HTTP 404). | Ensure employee face photo has been registered in FaceMark and lighting is bright. |
+| `Multiple faces detected...` | More than 1 face in photo frame. | Ensure only a single employee stands in front of the camera. |
+| `Image quality is too low...` | Photo is blurry, low resolution, or poorly lit (HTTP 422). | Keep device steady and move to better lighting. |
+| `Unable to process attendance right now...` | Connection timeout, DNS failure, or FaceMark HTTP 50x. | Verify internet connection and FaceMark server status. |
+| `Face verification service access failed...` | Invalid or missing `X-Kiosk-Token` header. | Verify `FACEMARK_BEARER_TOKEN` in `backend/.env`. |
