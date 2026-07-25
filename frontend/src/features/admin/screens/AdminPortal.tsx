@@ -50,13 +50,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
   const [manualCheckOut, setManualCheckOut] = useState('');
   const [allUsersList, setAllUsersList] = useState<any[]>([]);
 
-  // Face Enrollment States
-  const [enrollingUser, setEnrollingUser] = useState<any>(null);
-  const [capturedImages, setCapturedImages] = useState<string[]>([]);
-  const [showEnrollCamera, setShowEnrollCamera] = useState(false);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const enrollCameraRef = useRef<any>(null);
-  const [isEnrollingFace, setIsEnrollingFace] = useState(false);
+
 
   // Settings States
   const [settings, setSettings] = useState<any>({
@@ -281,66 +275,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
     }
   };
 
-  // Face enrollment photo capture inside Admin Dashboard
-  const handleEnrollFaceCapture = async () => {
-    if (isEnrollingFace || !enrollCameraRef.current) return;
-    setIsEnrollingFace(true);
 
-    try {
-      const photo = await enrollCameraRef.current.takePictureAsync({
-        quality: 0.85,
-        base64: true,
-        skipProcessing: Platform.OS === 'web'
-      });
-
-      if (photo && photo.base64) {
-        const nextImages = [...capturedImages, photo.base64];
-        setCapturedImages(nextImages);
-
-        if (nextImages.length >= 3) {
-          const activeToken = await AsyncStorage.getItem('nfc_bar_user_token');
-          const res = await fetch(`${BACKEND_URL}/attendance/admin/enroll-face/${enrollingUser.id}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${activeToken}`
-            },
-            body: JSON.stringify({ imagesBase64: nextImages })
-          });
-
-          const data = await res.json();
-          if (res.ok && data.success) {
-            showToast(`Face registered successfully for ${enrollingUser.fullName}!`, 'success');
-          } else {
-            showToast(data.error?.message || 'Something went wrong while registering your face. Please try again or contact the administrator if the problem continues.', 'danger', 5000);
-          }
-
-          setShowEnrollCamera(false);
-          setEnrollingUser(null);
-          setCapturedImages([]);
-        } else {
-          showToast(`Sample ${nextImages.length}/3 captured. Take another.`, 'warning');
-        }
-      }
-    } catch (err: any) {
-      showToast('Unable to connect to the face verification service. Please check your internet connection and try again.', 'danger', 5000);
-    } finally {
-      setIsEnrollingFace(false);
-    }
-  };
-
-  const triggerFaceEnrollment = async (staffMember: any) => {
-    if (!cameraPermission || !cameraPermission.granted) {
-      const res = await requestCameraPermission();
-      if (!res.granted) {
-        showToast('Camera access required for face enrollment.', 'danger');
-        return;
-      }
-    }
-    setEnrollingUser(staffMember);
-    setCapturedImages([]);
-    setShowEnrollCamera(true);
-  };
 
   const handleExportAttendanceCSV = async () => {
     try {
@@ -2201,15 +2136,6 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
                             <Text style={{ color: colors.text, fontWeight: 'bold', fontSize: 13 }}>{log.user?.fullName}</Text>
                             <Text style={{ color: colors.muted, fontSize: 10, textTransform: 'capitalize', marginTop: 2 }}>{log.role} | ID: {log.user?.id.substring(0, 8)}...</Text>
                           </View>
-
-                          {/* Enroll Face Trigger */}
-                          <TouchableOpacity
-                            onPress={() => triggerFaceEnrollment(log.user)}
-                            className="px-2.5 py-1.5 border border-dashed rounded-lg"
-                            style={{ borderColor: colors.gold }}
-                          >
-                            <Text style={{ fontSize: 9, fontWeight: 'bold', color: colors.gold, textTransform: 'uppercase' }}>Enroll Face</Text>
-                          </TouchableOpacity>
                         </View>
 
                         <View className="flex-row justify-between items-center border-t border-white/5 pt-2 mt-1">
@@ -2264,14 +2190,6 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
                       <Text style={{ color: colors.muted, fontSize: 10, textTransform: 'capitalize', marginTop: 2 }}>{staff.role?.name} | Username: {staff.username}</Text>
                       <Text style={{ color: colors.muted, fontSize: 9, marginTop: 1 }}>ID: {staff.id}</Text>
                     </View>
-
-                    <TouchableOpacity
-                      onPress={() => triggerFaceEnrollment(staff)}
-                      className="px-3 py-2 rounded-lg"
-                      style={{ backgroundColor: colors.gold }}
-                    >
-                      <Text style={{ fontSize: 10, fontWeight: 'bold', color: colors.goldButtonText, textTransform: 'uppercase' }}>Enroll Face</Text>
-                    </TouchableOpacity>
                   </View>
                 ))
               )}
@@ -3632,74 +3550,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
         })()}
       </AlertModal>
 
-      {/* Attendance Face Enrollment Camera View */}
-      {showEnrollCamera && (
-        <Modal visible={showEnrollCamera} animationType="slide">
-          <View style={{ flex: 1, backgroundColor: 'black', justifyContent: 'space-between', paddingTop: 40 }}>
-            <View style={{ paddingHorizontal: 20, paddingVertical: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
-              <View className="flex-row items-center gap-2">
-                <Text style={{ fontSize: 16 }}>👤</Text>
-                <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold' }}>Enroll Face: {enrollingUser?.fullName}</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => { setShowEnrollCamera(false); setEnrollingUser(null); setCapturedImages([]); }}
-                style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)' }}
-              >
-                <Text style={{ color: 'white', fontSize: 12, fontWeight: '600' }}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
 
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-              <CameraView
-                ref={enrollCameraRef}
-                facing="front"
-                style={{ width: '100%', height: '100%', position: 'absolute' }}
-              />
-              {/* Oval Guide Overlay */}
-              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)' }}>
-                <View
-                  style={{
-                    width: 240,
-                    height: 300,
-                    borderRadius: 150,
-                    borderWidth: 2.5,
-                    borderColor: '#D4AF37',
-                    borderStyle: 'dashed',
-                    backgroundColor: 'transparent',
-                    shadowColor: '#D4AF37',
-                    shadowOffset: { width: 0, height: 0 },
-                    shadowOpacity: 0.4,
-                    shadowRadius: 12,
-                  }}
-                />
-                <View className="mt-6 px-4 py-2 rounded-full bg-black/80 border border-white/10 shadow-lg">
-                  <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: 'bold', textAlign: 'center' }}>
-                    Capture 3 photos from different angles ({capturedImages.length}/3)
-                  </Text>
-                </View>
-              </View>
-
-              {isEnrollingFace && (
-                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.75)', alignItems: 'center', justifyContent: 'center' }}>
-                  <ActivityIndicator size="large" color="#D4AF37" />
-                  <Text style={{ color: 'white', fontSize: 12, fontWeight: '600', marginTop: 16 }}>Processing image sample...</Text>
-                </View>
-              )}
-            </View>
-
-            <View style={{ padding: 24, backgroundColor: 'black', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }}>
-              <TouchableOpacity
-                disabled={isEnrollingFace}
-                onPress={handleEnrollFaceCapture}
-                style={{ width: 68, height: 68, borderRadius: 34, borderWidth: 4, borderColor: 'white', backgroundColor: '#D4AF37', alignItems: 'center', justifyContent: 'center', opacity: isEnrollingFace ? 0.6 : 1 }}
-                activeOpacity={0.8}
-              >
-                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.35)' }} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-      )}
 
       {/* Attendance Log Editor Modal */}
       {editingLog && (

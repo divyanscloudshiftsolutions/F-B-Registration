@@ -4298,35 +4298,7 @@ router.put('/attendance/admin/logs/:id', authenticate, authorize(['admin', 'mana
   }
 });
 
-// 8. Enroll Face Templates (Admin/Manager)
-router.post('/attendance/admin/enroll-face/:id', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
-  const { id } = req.params; // User ID
-  const { imagesBase64, s3Urls } = req.body; // Array of base64 images
 
-  if (!imagesBase64 || !Array.isArray(imagesBase64) || imagesBase64.length === 0) {
-    return res.status(400).json({ success: false, error: { message: 'Image base64 array is required' } });
-  }
-
-  try {
-    const targetUser = await prisma.user.findUnique({
-      where: { id }
-    });
-
-    if (!targetUser) {
-      return res.status(404).json({ success: false, error: { message: 'User not found' } });
-    }
-
-    const buffers = imagesBase64.map(base64 => Buffer.from(base64, 'base64'));
-    const urls = s3Urls || imagesBase64.map(() => '');
-
-    await FaceService.enrollUserFaces(id, buffers);
-
-    return res.json({ success: true, message: 'Face templates enrolled successfully' });
-  } catch (err: any) {
-    const status = (err.name === 'FaceMarkError' || err instanceof FaceMarkError) ? 400 : 500;
-    return res.status(status).json({ success: false, error: { message: err.message } });
-  }
-});
 
 // 9. Get Attendance Configuration Settings
 router.get('/config/attendance-settings', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
