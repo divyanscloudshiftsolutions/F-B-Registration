@@ -1,7 +1,3 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
-
 export class FaceMarkError extends Error {
   public code: string;
   constructor(code: string, message: string) {
@@ -12,76 +8,32 @@ export class FaceMarkError extends Error {
 }
 
 /**
- * @deprecated The FaceEmbedding database table is deprecated. Biometrics are now managed on the FaceMark staging server.
+ * Service for communicating exclusively with the FaceMark Quick Attendance API (POST /api/attendance/quick).
  */
-// FaceEmbedding table is deprecated and direct local queries are disabled.
-
 export class FaceService {
-  private static adminToken: string | null = null;
-  private static adminTokenExpiry: number = 0;
-
   private static getApiBase(): string {
     return (process.env.FACEMARK_API_BASE || 'https://api.facemark.app.cloudshiftsolutions.in').replace(/\/$/, '');
   }
 
   private static getBearerToken(): string {
-    return process.env.FACEMARK_BEARER_TOKEN || process.env.KIOSK_API_TOKEN || process.env.FACEMARK_KIOSK_TOKEN || process.env.VITE_KIOSK_TOKEN || '';
-  }
-
-  private static async getAdminToken(): Promise<string> {
-    const now = Date.now();
-    if (this.adminToken && now < this.adminTokenExpiry) {
-      return this.adminToken;
-    }
-
-    const apiBase = this.getApiBase();
-    const email = process.env.FACEMARK_ADMIN_EMAIL || 'admin@presentsir.com';
-    const password = process.env.FACEMARK_ADMIN_PASSWORD || 'Admin@123';
-
-    const url = `${apiBase}/api/auth/admin/login`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-
-    if (!res.ok) {
-      console.error(`[FaceMark Admin Login Failure] Status: ${res.status}`);
-      throw new FaceMarkError(
-        'AUTHENTICATION_ERROR',
-        'Face verification service authentication failed. Please check administrator credentials.'
-      );
-    }
-
-    const data: any = await res.json();
-    if (!data.access_token) {
-      throw new FaceMarkError(
-        'AUTHENTICATION_ERROR',
-        'Face verification service authentication returned an invalid session token.'
-      );
-    }
-
-    this.adminToken = data.access_token;
-    this.adminTokenExpiry = now + 25 * 60 * 1000;
-    return data.access_token;
+    return (
+      process.env.FACEMARK_BEARER_TOKEN ||
+      process.env.KIOSK_API_TOKEN ||
+      process.env.FACEMARK_KIOSK_TOKEN ||
+      process.env.VITE_KIOSK_TOKEN ||
+      ''
+    );
   }
 
   private static handleFetchError(err: any): never {
     console.error('[FaceMark Fetch Error]:', err);
-    const msg = err.message || '';
-    if (msg.includes('ENOTFOUND') || msg.includes('ECONNREFUSED') || msg.includes('fetch failed')) {
-      throw new FaceMarkError(
-        'NETWORK_ISSUE',
-        'Unable to connect to the face verification service. Please check your internet connection and try again.'
-      );
-    }
     throw new FaceMarkError(
-      'UNKNOWN_ERROR',
-      'Something went wrong while registering your face. Please try again or contact the administrator if the problem continues.'
+      'SERVER_ERROR',
+      'Unable to process attendance right now. Please try again later.'
     );
   }
 
-  private static async handleResponseError(response: Response, isEnroll: boolean): Promise<never> {
+  private static async handleResponseError(response: Response): Promise<never> {
     const status = response.status;
     let errText = '';
     try {
@@ -90,129 +42,46 @@ export class FaceService {
     
     console.error(`[FaceMark API Error] Status: ${status}, Body: ${errText}`);
 
-    if (status === 401 || status === 403) {
-      const errLower = errText.toLowerCase();
-      if (errLower.includes('does not match')) {
-        throw new FaceMarkError(
-          'FACE_MISMATCH',
-          'The captured face does not match the entered Employee ID.'
-        );
-      }
-      throw new FaceMarkError(
-        'ACCESS_DENIED',
-        'Face verification service access failed. Please contact the administrator.'
-      );
-    }
-
-    if (status === 502 || status === 503 || status === 504) {
-      throw new FaceMarkError(
-        'SERVICE_UNAVAILABLE',
-        'The face verification service is temporarily unavailable. Please try again after a few minutes.'
-      );
-    }
-
-    if (status === 422) {
-      throw new FaceMarkError(
-        'INVALID_IMAGE',
-        'The captured photo could not be processed. Please capture your face again.'
-      );
-    }
-
-    // Inspect body text for specific issues
     const errLower = errText.toLowerCase();
-    if (errLower.includes('no face') || errLower.includes('not detect') || errLower.includes('face not found')) {
-      throw new FaceMarkError(
-        'FACE_NOT_DETECTED',
-        "Your face couldn't be detected. Please look directly at the camera and try again."
-      );
-    }
 
     if (errLower.includes('multiple faces')) {
       throw new FaceMarkError(
-        'MULTIPLE_FACES_DETECTED',
-        'Multiple faces detected. Please make sure only one person is in front of the camera.'
+        'MULTIPLE_FACES',
+        'Multiple faces detected. Ensure only one face is visible.'
       );
     }
 
-    if (errLower.includes('blurry') || errLower.includes('quality') || errLower.includes('poor image')) {
+    if (
+      errLower.includes('blurry') ||
+      errLower.includes('quality') ||
+      errLower.includes('poor image') ||
+      errLower.includes('invalid image format') ||
+      status === 422
+    ) {
       throw new FaceMarkError(
-        'POOR_IMAGE_QUALITY',
-        "The photo isn't clear enough. Please keep your face steady and try again."
+        'POOR_IMAGE',
+        'Image quality is too low. Move to better lighting and try again.'
       );
     }
 
-    if (errLower.includes('invalid image format')) {
-      throw new FaceMarkError(
-        'INVALID_IMAGE_FORMAT',
-        'The captured photo could not be processed. Please capture your face again.'
-      );
-    }
-
-    if (status === 404) {
+    if (
+      status === 404 ||
+      errLower.includes('not recognized') ||
+      errLower.includes('not detect') ||
+      errLower.includes('no face') ||
+      errLower.includes('face not found') ||
+      errLower.includes('employee not found')
+    ) {
       throw new FaceMarkError(
         'FACE_NOT_RECOGNIZED',
-        'Face not recognized. Please complete face registration first.'
+        'Unable to recognize your face. Please look at the camera clearly and try again.'
       );
     }
 
-    if (isEnroll) {
-      throw new FaceMarkError(
-        'UNKNOWN_ERROR',
-        'Something went wrong while registering your face. Please try again or contact the administrator if the problem continues.'
-      );
-    } else {
-      throw new FaceMarkError(
-        'PROCESSING_ERROR',
-        "We couldn't process your request at the moment. Please try again."
-      );
-    }
-  }
-
-  /**
-   * Registers user face on the FaceMark staging server using register-multiple endpoint.
-   */
-  public static async enrollUserFaces(userId: string, images: Buffer[]): Promise<void> {
-    if (images.length === 0) {
-      throw new FaceMarkError(
-        'INVALID_IMAGE',
-        'The captured photo could not be processed. Please capture your face again.'
-      );
-    }
-
-    const apiBase = this.getApiBase();
-    let adminToken: string;
-    try {
-      adminToken = await this.getAdminToken();
-    } catch (err: any) {
-      if (err instanceof FaceMarkError) throw err;
-      return this.handleFetchError(err);
-    }
-
-    const formData = new globalThis.FormData();
-    for (let i = 0; i < images.length; i++) {
-      const file = new globalThis.File([images[i]], `enroll_${i}.jpg`, { type: 'image/jpeg' });
-      formData.append('files', file);
-    }
-
-    const url = `${apiBase}/api/face/register-multiple/${userId}`;
-    const headers: Record<string, string> = {
-      'Authorization': `Bearer ${adminToken}`
-    };
-
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        body: formData,
-        headers
-      });
-    } catch (err: any) {
-      return this.handleFetchError(err);
-    }
-
-    if (!response.ok) {
-      return this.handleResponseError(response, true);
-    }
+    throw new FaceMarkError(
+      'SERVER_ERROR',
+      'Unable to process attendance right now. Please try again later.'
+    );
   }
 
   /**
@@ -244,7 +113,7 @@ export class FaceService {
     }
 
     if (!response.ok) {
-      return this.handleResponseError(response, false);
+      return this.handleResponseError(response);
     }
 
     let data: any;
@@ -252,8 +121,8 @@ export class FaceService {
       data = await response.json();
     } catch (err) {
       throw new FaceMarkError(
-        'PROCESSING_ERROR',
-        "We couldn't process your request at the moment. Please try again."
+        'SERVER_ERROR',
+        'Unable to process attendance right now. Please try again later.'
       );
     }
 
@@ -263,8 +132,8 @@ export class FaceService {
 
     if (!recognizedId) {
       throw new FaceMarkError(
-        'USER_NOT_REGISTERED',
-        'Your face has not been registered yet. Please contact the administrator to complete face registration.'
+        'FACE_NOT_RECOGNIZED',
+        'Unable to recognize your face. Please look at the camera clearly and try again.'
       );
     }
 
@@ -283,8 +152,8 @@ export class FaceService {
     const isMatch = match.userId.toLowerCase() === userId.toLowerCase();
     if (!isMatch) {
       throw new FaceMarkError(
-        'USER_ID_MISMATCH',
-        'The captured face does not match the selected employee. Please verify and try again.'
+        'FACE_NOT_RECOGNIZED',
+        'Unable to recognize your face. Please look at the camera clearly and try again.'
       );
     }
     return {
@@ -293,4 +162,3 @@ export class FaceService {
     };
   }
 }
-
