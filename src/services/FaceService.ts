@@ -96,6 +96,20 @@ export class FaceService {
 
     const errLower = errText.toLowerCase();
 
+    if (errLower.includes('already completed attendance') || errLower.includes('check-out was already recorded')) {
+      // Parse employee name if present, or extract detail
+      let msg = 'Attendance has already been completed for today.';
+      try {
+        const parsed = JSON.parse(errText);
+        if (parsed.detail) msg = parsed.detail;
+      } catch (_) {}
+      throw new FaceMarkError('ATTENDANCE_COMPLETED', msg);
+    }
+
+    if (errLower.includes('already checked in')) {
+      throw new FaceMarkError('ALREADY_CHECKED_IN', 'Already checked in. Please check out.');
+    }
+
     if (errLower.includes('multiple faces')) {
       throw new FaceMarkError(
         'MULTIPLE_FACES',
