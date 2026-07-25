@@ -40,6 +40,8 @@ export class FaceService {
     const password = process.env.FACEMARK_ADMIN_PASSWORD || 'Admin@123';
 
     const url = `${apiBase}/api/auth/admin/login`;
+    console.log(`[FaceMark Admin Login Attempt] URL: ${url}`);
+
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -47,7 +49,8 @@ export class FaceService {
     });
 
     if (!res.ok) {
-      console.error(`[FaceMark Admin Login Failure] Status: ${res.status}`);
+      const errBody = await res.text().catch(() => '');
+      console.error(`[FaceMark Admin Login Failure] Status: ${res.status}, Body: ${errBody}`);
       throw new FaceMarkError(
         'AUTHENTICATION_ERROR',
         'Face verification service authentication failed. Please check administrator credentials.'
@@ -130,7 +133,7 @@ export class FaceService {
     if (isEnroll) {
       throw new FaceMarkError(
         'UNKNOWN_ERROR',
-        'Something went wrong while registering your face. Please try again or contact the administrator if the problem continues.'
+        `Something went wrong while registering your face (${errText || status}). Please try again.`
       );
     }
 
@@ -145,6 +148,7 @@ export class FaceService {
    * Preserved for Admin Portal enrollment features.
    */
   public static async enrollUserFaces(userId: string, images: Buffer[]): Promise<void> {
+    console.log(`[FaceMark Enroll] Requested for User ID: ${userId}, Samples: ${images.length}`);
     if (images.length === 0) {
       throw new FaceMarkError(
         'INVALID_IMAGE',
@@ -168,6 +172,7 @@ export class FaceService {
     }
 
     const url = `${apiBase}/api/face/register-multiple/${userId}`;
+    console.log(`[FaceMark Enroll Post] URL: ${url}`);
     const headers: Record<string, string> = {
       'Authorization': `Bearer ${adminToken}`
     };
@@ -186,13 +191,15 @@ export class FaceService {
     if (!response.ok) {
       return this.handleResponseError(response, true);
     }
+    console.log(`[FaceMark Enroll Success] User ID: ${userId}`);
   }
 
   /**
    * Performs facial recognition using external FaceMark Quick Attendance API.
    * Path: POST /api/attendance/quick
    */
-  public static async callQuickAttendanceApi(imageBuffer: Buffer): Promise<{ userId: string; confidence: number; action?: string }> {
+  public static async callQuickAttendanceApi(imageBuffer: Buffer): Promise<{ userId: string; confidence: number; action?: string; userEmail?: string; userName?: string }> {
+    console.log(`[FaceMark Quick Attendance] Uploading Image Buffer Size: ${imageBuffer.length} bytes`);
     const apiBase = this.getApiBase();
     const token = this.getBearerToken();
     const formData = new globalThis.FormData();
@@ -223,6 +230,7 @@ export class FaceService {
     let data: any;
     try {
       data = await response.json();
+      console.log('[FaceMark Quick Attendance Success Response]:', JSON.stringify(data));
     } catch (err) {
       throw new FaceMarkError(
         'SERVER_ERROR',
@@ -233,6 +241,8 @@ export class FaceService {
     const recognizedId = data.userId || data.user_id || data.id || (data.user && (data.user.id || data.user.userId));
     const confidence = typeof data.confidence === 'number' ? data.confidence : (typeof data.similarity === 'number' ? data.similarity : 1.0);
     const action = data.action || data.status;
+    const userName = data.userName || data.user_name || (data.user && data.user.userName);
+    const userEmail = data.userEmail || data.user_email || data.email || (data.user && data.user.email);
 
     if (!recognizedId) {
       throw new FaceMarkError(
@@ -244,7 +254,9 @@ export class FaceService {
     return {
       userId: recognizedId,
       confidence,
-      action
+      action,
+      userName,
+      userEmail
     };
   }
 
@@ -252,8 +264,25 @@ export class FaceService {
    * Verifies if a captured face matches a target user ID using attendance/quick endpoint
    */
   public static async verifyUserFace(userId: string, imageBuffer: Buffer): Promise<{ isMatch: boolean; confidence: number }> {
+    const targetUser = await prisma.user.findUnique({ where: { id: userId } });
+    console.log(`[FaceService.verifyUserFace] Verifying face for Target User ID: ${userId} (${targetUser?.fullName || 'Unknown'})`);
+
     const match = await this.callQuickAttendanceApi(imageBuffer);
-    const isMatch = match.userId.toLowerCase() === userId.toLowerCase();
+    
+    const matchIdLower = (match.userId || '').toLowerCase();
+    const targetIdLower = userId.toLowerCase();
+    const usernameLower = (targetUser?.username || '').toLowerCase();
+    const fullNameLower = (targetUser?.fullName || '').toLowerCase();
+    const matchEmailLower = (match.userEmail || '').toLowerCase();
+    const matchNameLower = (match.userName || '').toLowerCase();
+
+    const isMatch = matchIdLower === targetIdLower ||
+                    (usernameLower.length > 0 && matchIdLower === usernameLower) ||
+                    (usernameLower.length > 0 && matchEmailLower.includes(usernameLower)) ||
+                    (fullNameLower.length > 0 && matchNameLower === fullNameLower);
+
+    console.log(`[FaceService.verifyUserFace Result] isMatch: ${isMatch}, FaceMark Match ID: ${match.userId}, Email: ${match.userEmail}, Name: ${match.userName}`);
+
     if (!isMatch) {
       throw new FaceMarkError(
         'FACE_NOT_RECOGNIZED',
