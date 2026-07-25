@@ -4352,20 +4352,47 @@ router.put('/config/attendance-settings', authenticate, authorize(['admin']), as
 
 // 11. Public Quick Attendance Kiosk (Face matching check-in/check-out)
 router.post('/attendance/quick', upload.single('file'), async (req: Request, res: Response) => {
-  if (!req.file) {
+  let imageBuffer: Buffer | null = null;
+  if (req.file) {
+    imageBuffer = req.file.buffer;
+  } else if (req.body && req.body.photoBase64) {
+    const base64Str = req.body.photoBase64.replace(/^data:image\/\w+;base64,/, '');
+    imageBuffer = Buffer.from(base64Str, 'base64');
+  }
+
+  if (!imageBuffer || imageBuffer.length === 0) {
+    console.error('[Quick Attendance Error] Neither req.file nor req.body.photoBase64 was provided');
     return res.status(400).json({ success: false, error: { message: 'Image file is required.' } });
   }
 
   try {
-    const match = await FaceService.callQuickAttendanceApi(req.file.buffer);
+    const match = await FaceService.callQuickAttendanceApi(imageBuffer);
+    console.log('[Quick Attendance Match]:', match);
 
-    // Look up the recognized user ID locally
-    const matchedUser = await prisma.user.findUnique({
-      where: { id: match.userId },
+    // Look up the recognized user ID locally by ID, username, or email
+    let matchedUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: match.userId },
+          { username: match.userId },
+          { username: match.userName || '' }
+        ]
+      },
       include: { role: true }
     });
 
+    if (!matchedUser && match.userEmail) {
+      const emailPrefix = match.userEmail.split('@')[0];
+      matchedUser = await prisma.user.findFirst({
+        where: {
+          username: emailPrefix
+        },
+        include: { role: true }
+      });
+    }
+
     if (!matchedUser) {
+      console.warn(`[Quick Attendance Warning] FaceMark recognized user as ${match.userId} (${match.userName || match.userEmail}), but local DB user was not found.`);
       return res.status(401).json({ success: false, error: { message: 'Face not recognized. Please register first.' } });
     }
 
