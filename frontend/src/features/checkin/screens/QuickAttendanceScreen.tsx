@@ -86,18 +86,18 @@ export const QuickAttendanceScreen: React.FC = () => {
         setResult(data);
         setIsCameraActive(false);
         showToast(
-          `Attendance marked successfully: ${data.userName} (${data.action})`,
+          `✓ Attendance marked successfully for ${data.userName}`,
           'success',
           5000
         );
       } else {
-        const errDesc = data.error?.message || 'Biometric recognition failed. Please try again.';
+        const errDesc = data.error?.message || 'Unable to recognize your face. Please look at the camera clearly and try again.';
         showToast(errDesc, 'danger', 5000);
       }
     } catch (err: any) {
       setIsSubmitting(false);
       showToast(
-        err.message || 'Unable to connect to biometric verification service.',
+        'Unable to process attendance right now. Please try again later.',
         'danger',
         5000
       );
