@@ -179,6 +179,110 @@ router.get('/debug-prisma-enums', (req: Request, res: Response) => {
   }
 });
 
+// Quick Attendance Proxy -> FaceMark POST /api/attendance/quick
+router.post('/attendance/quick', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const facemarkBase = process.env.FACEMARK_API_BASE || 'https://api.facemark.app.cloudshiftsolutions.in';
+    const kioskToken = process.env.FACEMARK_BEARER_TOKEN || '';
+
+    if (!kioskToken) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Quick Attendance service is not configured on backend. Missing FACEMARK_BEARER_TOKEN.' }
+      });
+    }
+
+    let imageBuffer: Buffer | null = null;
+    let employeeCode: string | undefined = req.body?.employee_code || req.body?.employeeCode;
+
+    if (req.file && req.file.buffer) {
+      imageBuffer = req.file.buffer;
+    } else if (req.body?.photoBase64) {
+      const base64Clean = req.body.photoBase64.replace(/^data:image\/\w+;base64,/, '');
+      imageBuffer = Buffer.from(base64Clean, 'base64');
+    }
+
+    if (!imageBuffer || imageBuffer.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Image file is required for attendance verification.' }
+      });
+    }
+
+    const form = new FormData();
+    const fileBlob = new Blob([imageBuffer], { type: 'image/jpeg' });
+    form.append('file', fileBlob, 'attendance_capture.jpg');
+
+    if (employeeCode && typeof employeeCode === 'string' && employeeCode.trim()) {
+      form.append('employee_code', employeeCode.trim());
+    }
+
+    const facemarkRes = await fetch(`${facemarkBase}/api/attendance/quick`, {
+      method: 'POST',
+      headers: {
+        'X-Kiosk-Token': kioskToken,
+      },
+      body: form as any,
+    });
+
+    const statusCode = facemarkRes.status;
+    let data: any = null;
+    try {
+      data = await facemarkRes.json();
+    } catch {
+      data = null;
+    }
+
+    if (facemarkRes.ok) {
+      return res.status(statusCode).json({
+        success: true,
+        action: data?.action || 'check-in',
+        userId: data?.userId,
+        userName: data?.userName,
+        userEmail: data?.userEmail,
+        confidence: data?.confidence,
+        matchType: data?.matchType || 'face',
+        timestamp: data?.timestamp || new Date().toISOString(),
+        message: data?.message || `Attendance recorded successfully as ${data?.action || 'check-in'}.`,
+        record: data?.record || null,
+      });
+    }
+
+    const rawDetail = data?.detail || data?.message || data?.error || 'Attendance verification failed.';
+
+    let userFriendlyMessage = rawDetail;
+    if (typeof rawDetail === 'string') {
+      if (statusCode === 404 && rawDetail.toLowerCase().includes('face not recognized')) {
+        userFriendlyMessage = 'Unable to recognize your face. Please look at the camera clearly and try again.';
+      } else if (statusCode === 404 && rawDetail.toLowerCase().includes('employee not found')) {
+        userFriendlyMessage = 'Employee record not found on attendance server.';
+      } else if (statusCode === 401 || statusCode === 403) {
+        userFriendlyMessage = 'Kiosk authentication token is invalid or unauthorized.';
+      } else if (statusCode === 409) {
+        userFriendlyMessage = 'Attendance registration is currently locked for this payroll period.';
+      } else if (statusCode >= 500) {
+        userFriendlyMessage = 'Face verification service is temporarily unavailable. Please try again.';
+      }
+    }
+
+    return res.status(statusCode).json({
+      success: false,
+      error: {
+        message: userFriendlyMessage,
+        detail: rawDetail,
+        statusCode,
+      }
+    });
+
+  } catch (err: any) {
+    console.error('Quick Attendance Proxy Error:', err);
+    return res.status(500).json({
+      success: false,
+      error: { message: 'Unable to connect to attendance verification service. Please check your network connection.' }
+    });
+  }
+});
+
 // Login
 router.post('/auth/login', async (req: Request, res: Response) => {
   const { username, password, photoBase64 } = req.body;
