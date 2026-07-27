@@ -7,12 +7,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNfcBar } from '../../../context/NfcBarContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { AppIcon } from '../../../components/common/AppIcon';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 
 import { useResponsive } from '../../../utils/responsive';
 
 export const LoginScreen: React.FC = () => {
-  const { login, setScreen, faceAttendanceMandatory } = useNfcBar();
+  const { login, setScreen } = useNfcBar();
   const insets = useSafeAreaInsets();
   const { isSmallPhone, height } = useResponsive();
   const numpadHeight = isSmallPhone || height < 700 ? 44 : 54;
@@ -29,11 +28,6 @@ export const LoginScreen: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
-
-  // Camera states
-  const [showCamera, setShowCamera] = useState(false);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const cameraRef = useRef<any>(null);
 
   // Auto-focus logic: Switch to PIN once ID has 2 digits
   useEffect(() => {
@@ -79,38 +73,6 @@ export const LoginScreen: React.FC = () => {
     setActiveField('id');
   };
 
-  const handleCameraCaptureAndLogin = async () => {
-    if (isSubmitting || !cameraRef.current) return;
-    setIsSubmitting(true);
-    setErrorMsg('');
-
-    try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.85,
-        base64: true,
-        skipProcessing: Platform.OS === 'web'
-      });
-
-      if (!photo || !photo.base64) {
-        throw new Error('Failed to capture image. Please try again.');
-      }
-
-      const employeeId = `${selectedRole}-${idSuffix}`;
-      const success = await login(employeeId, enteredPin, photo.base64);
-      if (success) {
-        setShowCamera(false);
-      } else {
-        setErrorMsg('Face verification failed. Incorrect PIN or face mismatch.');
-        setShowCamera(false);
-      }
-    } catch (err: any) {
-      setErrorMsg(err.message || 'An error occurred during face verification.');
-      setShowCamera(false);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleSignIn = async () => {
     if (idSuffix.length !== 2 || enteredPin.length !== 4) {
       setErrorMsg('Please enter a 2-digit ID suffix and a 4-digit PIN.');
@@ -118,18 +80,6 @@ export const LoginScreen: React.FC = () => {
     }
 
     setErrorMsg('');
-
-    if (faceAttendanceMandatory) {
-      if (!cameraPermission || !cameraPermission.granted) {
-        const res = await requestCameraPermission();
-        if (!res.granted) {
-          setErrorMsg('Camera permission is required for face attendance.');
-          return;
-        }
-      }
-      setShowCamera(true);
-      return;
-    }
 
     setIsSubmitting(true);
     const employeeId = `${selectedRole}-${idSuffix}`;
@@ -171,89 +121,6 @@ export const LoginScreen: React.FC = () => {
   };
 
   const { colors, isDark } = useTheme();
-
-  if (showCamera) {
-    if (!cameraPermission || !cameraPermission.granted) {
-      return (
-        <View className="flex-1 items-center justify-center p-6 bg-black">
-          <ActivityIndicator size="large" color="#D4AF37" />
-          <Text className="text-white text-xs font-bold mt-4">Requesting camera access...</Text>
-          <TouchableOpacity 
-            className="mt-6 px-6 py-3 bg-red-600 rounded-xl"
-            onPress={() => setShowCamera(false)}
-          >
-            <Text className="text-white font-bold text-sm">Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    return (
-      <View className="flex-grow bg-black justify-between" style={{ paddingTop: insets.top }}>
-        <View className="px-5 py-3.5 flex-row justify-between items-center bg-black/80 border-b border-white/10">
-          <View className="flex-row items-center gap-2">
-            <Text style={{ fontSize: 16 }}>👤</Text>
-            <Text className="text-white text-sm font-bold">Face Verification Required</Text>
-          </View>
-          <TouchableOpacity 
-            onPress={() => setShowCamera(false)}
-            className="px-3.5 py-1.5 rounded-full bg-white/15 active:opacity-80"
-          >
-            <Text className="text-white text-xs font-semibold">Cancel</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View className="flex-1 items-center justify-center relative">
-          <CameraView 
-            ref={cameraRef}
-            facing="front"
-            style={{ width: '100%', height: '100%', position: 'absolute' }}
-          />
-          {/* Oval Guide Overlay */}
-          <View className="absolute inset-0 items-center justify-center bg-black/45">
-            <View 
-              style={{
-                width: 240,
-                height: 300,
-                borderRadius: 150,
-                borderWidth: 2.5,
-                borderColor: '#D4AF37',
-                borderStyle: 'dashed',
-                backgroundColor: 'transparent',
-                shadowColor: '#D4AF37',
-                shadowOffset: { width: 0, height: 0 },
-                shadowOpacity: 0.4,
-                shadowRadius: 12,
-              }}
-            />
-            <View className="mt-6 px-4 py-2 rounded-full bg-black/80 border border-white/10 shadow-lg">
-              <Text className="text-white/90 text-xs font-bold text-center">
-                Center your face in the golden oval & tap to log in
-              </Text>
-            </View>
-          </View>
-
-          {isSubmitting && (
-            <View className="absolute inset-0 bg-black/75 items-center justify-center">
-              <ActivityIndicator size="large" color="#D4AF37" />
-              <Text className="text-white text-xs font-semibold mt-4">Verifying identity with FaceMark...</Text>
-            </View>
-          )}
-        </View>
-
-        <View className="p-6 bg-black border-t border-white/10 items-center">
-          <TouchableOpacity
-            disabled={isSubmitting}
-            onPress={handleCameraCaptureAndLogin}
-            className="w-18 h-18 rounded-full border-4 border-white bg-[#D4AF37] items-center justify-center shadow-xl active:opacity-85"
-            style={{ width: 68, height: 68, opacity: isSubmitting ? 0.6 : 1 }}
-          >
-            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.35)' }} />
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
 
   return (
     <KeyboardAvoidingView 
@@ -513,24 +380,6 @@ export const LoginScreen: React.FC = () => {
               </View>
             </View>
           )}
-        </View>
-
-        {/* Quick Attendance Kiosk Button */}
-        <View className="w-full max-w-[420px] align-self-center mt-4 mb-6 px-4">
-          <TouchableOpacity 
-            className="w-full py-3.5 border border-dashed rounded-xl items-center justify-center min-h-[48px] flex-row gap-2"
-            style={{ 
-              borderColor: colors.gold,
-              backgroundColor: isDark ? 'rgba(212,175,55,0.05)' : 'rgba(212,175,55,0.02)'
-            }}
-            onPress={() => setScreen('quick_attendance')}
-            activeOpacity={0.8}
-          >
-            <AppIcon name="camera" color={colors.gold} size={18} />
-            <Text className="font-extrabold text-[12px] uppercase tracking-wider" style={{ color: colors.gold }}>
-              Quick Attendance Kiosk
-            </Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

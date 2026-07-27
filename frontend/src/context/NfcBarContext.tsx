@@ -11,11 +11,10 @@ import { Platform } from 'react-native';
 interface NfcBarContextType {
   // Authentication & Screen States
   user: User | null;
-  currentScreen: 'splash' | 'login' | 'app' | 'quick_attendance' | 'logout_camera';
-  activeTab: 'checkin' | 'bartender' | 'tables' | 'admin' | 'attendance';
+  currentScreen: 'splash' | 'login' | 'app' | 'logout_camera';
+  activeTab: 'checkin' | 'bartender' | 'tables' | 'admin';
   notifications: NotificationItem[];
   toasts: ToastItem[];
-  faceAttendanceMandatory: boolean;
   
   // App Operational States
   tables: Table[];
@@ -47,10 +46,10 @@ interface NfcBarContextType {
   setResumingPendingSession: (session: SessionToken | null) => void;
 
   // Actions
-  setScreen: (screen: 'splash' | 'login' | 'app' | 'quick_attendance' | 'logout_camera') => void;
+  setScreen: (screen: 'splash' | 'login' | 'app' | 'logout_camera') => void;
   login: (id: string, pin: string, photoBase64?: string) => Promise<boolean>;
   logout: (photoBase64?: string) => Promise<boolean>;
-  setTab: (tab: 'checkin' | 'bartender' | 'tables' | 'admin' | 'attendance') => void;
+  setTab: (tab: 'checkin' | 'bartender' | 'tables' | 'admin') => void;
   showToast: (message: string, type?: ToastItem['type'], duration?: number) => void;
   dismissToast: (id: string) => void;
   triggerNotification: (title: string, message: string, type?: NotificationItem['type']) => void;
@@ -236,12 +235,11 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [user, setUser] = useState<User | null>(null);
   const [userToken, setUserToken] = useState<string | null>(null);
   const [offlineQueue, setOfflineQueue] = useState<any[]>([]);
-  const [currentScreen, setCurrentScreen] = useState<'splash' | 'login' | 'app' | 'quick_attendance' | 'logout_camera'>('splash');
-  const setScreen = (screen: 'splash' | 'login' | 'app' | 'quick_attendance' | 'logout_camera') => {
+  const [currentScreen, setCurrentScreen] = useState<'splash' | 'login' | 'app' | 'logout_camera'>('splash');
+  const setScreen = (screen: 'splash' | 'login' | 'app' | 'logout_camera') => {
     setCurrentScreen(screen);
   };
-  const [activeTab, setActiveTab] = useState<'checkin' | 'bartender' | 'tables' | 'admin' | 'attendance'>('checkin');
-  const [faceAttendanceMandatory, setFaceAttendanceMandatory] = useState(false);
+  const [activeTab, setActiveTab] = useState<'checkin' | 'bartender' | 'tables' | 'admin'>('checkin');
   
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -373,22 +371,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   }, [userToken]);
 
-  useEffect(() => {
-    const fetchAttendanceConfig = async () => {
-      try {
-        const res = await fetch(`${BACKEND_URL}/auth/config/attendance`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.success) {
-            setFaceAttendanceMandatory(data.faceAttendanceMandatory);
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to fetch attendance configuration:', err);
-      }
-    };
-    fetchAttendanceConfig();
-  }, [userToken]);
+
 
   const mapBackendToken = (t: any): SessionToken => ({
     id: t.id,
@@ -927,10 +910,10 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return true;
   };
 
-  const setTab = (tab: 'checkin' | 'bartender' | 'tables' | 'admin' | 'attendance') => {
+  const setTab = (tab: 'checkin' | 'bartender' | 'tables' | 'admin') => {
     // Permission checks
     if (!user) return;
-    if (user.role === UserRole.BARTENDER && tab !== 'bartender' && tab !== 'attendance') {
+    if (user.role === UserRole.BARTENDER && tab !== 'bartender') {
       showToast('You do not have permission to perform this action.', 'danger');
       return;
     }
@@ -2252,7 +2235,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   return (
     <NfcBarContext.Provider value={{
-      user, currentScreen, activeTab, notifications, toasts, faceAttendanceMandatory,
+      user, currentScreen, activeTab, notifications, toasts,
       tables, sessions, adminSessions, users, cards, rates, systemMode, pendingSyncCount, lastSyncTime, tokenType,
       nfcEnabled, emailQrEnabled,
       activeReturnCardStep, activeReturnCardUid, isOverlayActive, setOverlayActive,

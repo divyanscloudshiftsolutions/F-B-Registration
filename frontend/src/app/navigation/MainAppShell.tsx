@@ -13,9 +13,7 @@ import { useNfcBar } from '../../context/NfcBarContext';
 import { UserRole } from '../../types/nfc_bar';
 import { SplashScreen } from '../../features/auth/screens/SplashScreen';
 import { LoginScreen } from '../../features/auth/screens/LoginScreen';
-import { QuickAttendanceScreen } from '../../features/checkin/screens/QuickAttendanceScreen';
 import { CheckInWizard } from '../../features/checkin/screens/CheckInWizard';
-import { StaffAttendanceDashboard } from '../../features/checkin/screens/StaffAttendanceDashboard';
 import { BartenderPortal } from '../../features/bartender/screens/BartenderPortal';
 import { TablesPortal } from '../../features/tables/screens/TablesPortal';
 import { AdminPortal } from '../../features/admin/screens/AdminPortal';
@@ -28,7 +26,7 @@ import { useResponsive } from '../../utils/responsive';
 
 export const MainAppShell: React.FC = () => {
   const { colors, isDark } = useTheme();
-  const { currentScreen, activeTab, toasts, notifications, user, logout, setTab, markNotificationsAsRead, isOverlayActive, swipeLocked, fetchLatestState, showToast, dismissToast, faceAttendanceMandatory, setScreen } = useNfcBar();
+  const { currentScreen, activeTab, toasts, notifications, user, logout, setTab, markNotificationsAsRead, isOverlayActive, swipeLocked, fetchLatestState, showToast, dismissToast, setScreen } = useNfcBar();
   const { isTablet, isLargeScreen } = useResponsive();
   const isCentered = isTablet || isLargeScreen;
   const { width } = useWindowDimensions();
@@ -61,12 +59,11 @@ export const MainAppShell: React.FC = () => {
   const isUserBartender = user?.role === UserRole.BARTENDER;
 
   const allowedTabs = React.useMemo(() => {
-    const tabs: ('checkin' | 'bartender' | 'tables' | 'admin' | 'attendance')[] = [];
+    const tabs: ('checkin' | 'bartender' | 'tables' | 'admin')[] = [];
     if (isUserAdmin || isUserRecep) tabs.push('checkin');
     if (isUserAdmin || isUserBartender || isUserRecep) tabs.push('bartender');
     if (isUserAdmin || isUserRecep || isUserManager) tabs.push('tables');
     if (isUserAdmin || isUserManager) tabs.push('admin');
-    if (user) tabs.push('attendance');
     return tabs;
   }, [user]);
 
@@ -217,13 +214,12 @@ export const MainAppShell: React.FC = () => {
     logout();
   };
 
-  const renderTabContent = (tab: 'checkin' | 'bartender' | 'tables' | 'admin' | 'attendance', isSelected: boolean) => {
+  const renderTabContent = (tab: 'checkin' | 'bartender' | 'tables' | 'admin', isSelected: boolean) => {
     switch (tab) {
       case 'checkin': return <CheckInWizard isActive={isSelected} />;
       case 'bartender': return <BartenderPortal isActive={isSelected} />;
       case 'tables': return <TablesPortal isActive={isSelected} />;
       case 'admin': return <AdminPortal isActive={isSelected} />;
-      case 'attendance': return <StaffAttendanceDashboard isActive={isSelected} />;
     }
   };
 
@@ -243,9 +239,7 @@ export const MainAppShell: React.FC = () => {
   return (
     <View className="flex-1 w-full bg-themeBg">
       
-      {currentScreen === 'quick_attendance' ? (
-        <QuickAttendanceScreen />
-      ) : currentScreen === 'login' || !user ? (
+      {currentScreen === 'login' || !user ? (
         <LoginScreen />
       ) : (
         <View className="flex-1 pb-2">
@@ -369,25 +363,6 @@ export const MainAppShell: React.FC = () => {
                   ADMIN
                 </Text>
                 <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'admin' ? '#FF9F1C' : 'transparent' }} />
-              </TouchableOpacity>
-            )}
-
-            {user && (
-              <TouchableOpacity 
-                className="items-center justify-center py-1 px-2 flex-1" 
-                onPress={() => setTab('attendance')}
-                activeOpacity={0.8}
-              >
-                <View className="mb-1">
-                  <AppIcon name="attendance" color={activeTab === 'attendance' ? '#FF9F1C' : '#8E8E93'} size={20} />
-                </View>
-                <Text 
-                  className="text-[10px] font-black uppercase tracking-wider mb-1 text-center" 
-                  style={{ color: activeTab === 'attendance' ? '#FF9F1C' : '#8E8E93' }}
-                >
-                  ATTENDANCE
-                </Text>
-                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'attendance' ? '#FF9F1C' : 'transparent' }} />
               </TouchableOpacity>
             )}
           </View>
