@@ -11,7 +11,7 @@ import { Platform } from 'react-native';
 interface NfcBarContextType {
   // Authentication & Screen States
   user: User | null;
-  currentScreen: 'splash' | 'login' | 'app' | 'logout_camera';
+  currentScreen: 'splash' | 'login' | 'app' | 'logout_camera' | 'quick_attendance';
   activeTab: 'checkin' | 'bartender' | 'tables' | 'admin';
   notifications: NotificationItem[];
   toasts: ToastItem[];
@@ -34,7 +34,7 @@ interface NfcBarContextType {
   // Global overlay visibility tracking to prevent button overlap
   isOverlayActive: boolean;
   setOverlayActive: (active: boolean) => void;
-
+  
   // Swipe gesture lock to prevent horizontal scroll conflicts
   swipeLocked: boolean;
   setSwipeLocked: (locked: boolean) => void;
@@ -46,9 +46,22 @@ interface NfcBarContextType {
   setResumingPendingSession: (session: SessionToken | null) => void;
 
   // Actions
-  setScreen: (screen: 'splash' | 'login' | 'app' | 'logout_camera') => void;
+  setScreen: (screen: 'splash' | 'login' | 'app' | 'logout_camera' | 'quick_attendance') => void;
   login: (id: string, pin: string, photoBase64?: string) => Promise<boolean>;
   logout: (photoBase64?: string) => Promise<boolean>;
+  markQuickAttendance: (photoBase64: string, employeeCode?: string) => Promise<{
+    success: boolean;
+    action?: 'check-in' | 'check-out';
+    userName?: string;
+    userEmail?: string;
+    userId?: string;
+    confidence?: number;
+    timestamp?: string;
+    message?: string;
+    record?: any;
+    error?: string;
+    statusCode?: number;
+  }>;
   setTab: (tab: 'checkin' | 'bartender' | 'tables' | 'admin') => void;
   showToast: (message: string, type?: ToastItem['type'], duration?: number) => void;
   dismissToast: (id: string) => void;
@@ -235,8 +248,8 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [user, setUser] = useState<User | null>(null);
   const [userToken, setUserToken] = useState<string | null>(null);
   const [offlineQueue, setOfflineQueue] = useState<any[]>([]);
-  const [currentScreen, setCurrentScreen] = useState<'splash' | 'login' | 'app' | 'logout_camera'>('splash');
-  const setScreen = (screen: 'splash' | 'login' | 'app' | 'logout_camera') => {
+  const [currentScreen, setCurrentScreen] = useState<'splash' | 'login' | 'app' | 'logout_camera' | 'quick_attendance'>('splash');
+  const setScreen = (screen: 'splash' | 'login' | 'app' | 'logout_camera' | 'quick_attendance') => {
     setCurrentScreen(screen);
   };
   const [activeTab, setActiveTab] = useState<'checkin' | 'bartender' | 'tables' | 'admin'>('checkin');
@@ -908,6 +921,48 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     await AsyncStorage.removeItem('nfc_bar_user');
     await AsyncStorage.removeItem('nfc_bar_user_token');
     return true;
+  };
+
+  const markQuickAttendance = async (photoBase64: string, employeeCode?: string) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/attendance/quick`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          photoBase64,
+          employeeCode,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        return {
+          success: true,
+          action: (data.action || 'check-in') as 'check-in' | 'check-out',
+          userName: data.userName,
+          userEmail: data.userEmail,
+          userId: data.userId,
+          confidence: data.confidence,
+          timestamp: data.timestamp,
+          message: data.message || `Attendance marked successfully (${data.action}).`,
+          record: data.record,
+        };
+      } else {
+        const errorMsg = data?.error?.message || data?.error?.detail || data?.message || 'Attendance verification failed.';
+        return {
+          success: false,
+          error: errorMsg,
+          statusCode: res.status,
+        };
+      }
+    } catch (err: any) {
+      return {
+        success: false,
+        error: 'Unable to connect to attendance verification service. Please check your connection.',
+      };
+    }
   };
 
   const setTab = (tab: 'checkin' | 'bartender' | 'tables' | 'admin') => {
@@ -2243,7 +2298,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       preselectedTableNumber, setPreselectedTableNumber,
       resumingPendingSession, setResumingPendingSession,
       salesSummary, tableUtilization, hourlyBreakdown,
-      login, logout, setScreen, setTab, showToast, dismissToast, triggerNotification, markNotificationsAsRead,
+      login, logout, markQuickAttendance, setScreen, setTab, showToast, dismissToast, triggerNotification, markNotificationsAsRead,
       setMode, updateDeliveryAvailability, simulateSync, fetchLatestState, fetchSystemConfig,
       checkInGuest, createPendingSession, verifyQrCode, activatePendingSession, cancelPendingSession, redeemDrinkForCard, undoDrinkRedemption, extendSessionTime, closeGuestSession,
       addTable, editTable, updateTableStatus, deleteTable,
