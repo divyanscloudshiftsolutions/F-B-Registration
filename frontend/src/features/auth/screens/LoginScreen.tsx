@@ -336,6 +336,28 @@ export const LoginScreen: React.FC = () => {
               </Text>
             )}
           </TouchableOpacity>
+
+          {/* Quick Attendance Kiosk Button */}
+          <TouchableOpacity
+            className="py-3 rounded-xl items-center justify-center min-h-[44px] border mt-3 flex-row gap-2"
+            style={{
+              backgroundColor: 'rgba(212, 175, 55, 0.1)',
+              borderColor: colors.gold,
+              borderWidth: 1
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Quick Attendance Kiosk Mode"
+            onPress={() => setScreen('quick_attendance')}
+            activeOpacity={0.8}
+          >
+            <Text style={{ fontSize: 14 }}>👤</Text>
+            <Text
+              className="font-bold text-[13px]"
+              style={{ color: colors.gold }}
+            >
+              Quick Attendance Kiosk
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Collapsible Presets Chevron Tray */}

@@ -11,7 +11,7 @@ interface SystemHeaderProps {
 }
 
 export const SystemHeader: React.FC<SystemHeaderProps> = ({ onOpenNotifs }) => {
-  const { systemMode, pendingSyncCount, lastSyncTime, notifications, setMode, user, fetchLatestState, showToast } = useNfcBar();
+  const { systemMode, pendingSyncCount, lastSyncTime, notifications, setMode, user, fetchLatestState, showToast, setScreen } = useNfcBar();
   const { colors, isDark, toggleTheme } = useTheme();
   const insets = useSafeAreaInsets();
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -120,6 +120,16 @@ export const SystemHeader: React.FC<SystemHeaderProps> = ({ onOpenNotifs }) => {
 
       {/* Right Action Icons */}
       <View className="flex-row items-center gap-2">
+        {/* Quick Attendance Kiosk Button */}
+        <TouchableOpacity 
+          className="w-10 h-10 rounded-full justify-center items-center border bg-[#171A22] border-[#D4AF37]/40"
+          onPress={() => setScreen('quick_attendance')}
+          activeOpacity={0.8}
+          accessibilityLabel="Open Quick Attendance Kiosk"
+        >
+          <Text style={{ fontSize: 16 }}>👤</Text>
+        </TouchableOpacity>
+
         {/* Theme Toggle Button */}
         <TouchableOpacity 
           className="w-10 h-10 rounded-full justify-center items-center border bg-[#171A22] border-white/10"
