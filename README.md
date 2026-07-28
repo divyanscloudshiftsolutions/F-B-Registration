@@ -50,7 +50,7 @@ An end-to-end event bar and staff management system featuring dual check-in opti
 
 | Variable | Description | Example Value |
 | :--- | :--- | :--- |
-| `EXPO_PUBLIC_BACKEND_URL` | Backend Express Base URL | `https://your-backend.up.railway.app` |
+| `EXPO_PUBLIC_BACKEND_URL` | Backend Express Base URL | `https://api.nfc-qr.app.cloudshiftsolutions.in` |
 
 ---
 

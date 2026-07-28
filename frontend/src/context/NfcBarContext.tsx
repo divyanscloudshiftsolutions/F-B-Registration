@@ -156,7 +156,7 @@ const generateUUID = () => {
 import { NativeModules } from 'react-native';
 
 export const getBackendUrl = () => {
-  const envApiUrl = process.env.EXPO_PUBLIC_API_URL;
+  const envApiUrl = process.env.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_API_URL;
   if (envApiUrl && envApiUrl.trim().length > 0) {
     let cleaned = envApiUrl.trim();
     while ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
@@ -170,7 +170,7 @@ export const getBackendUrl = () => {
     }
     return cleaned;
   }
-  return 'https://nfc-qr-code-production.up.railway.app/api';
+  return 'https://api.nfc-qr.app.cloudshiftsolutions.in/api';
 };
 
 export const BACKEND_URL = getBackendUrl();
