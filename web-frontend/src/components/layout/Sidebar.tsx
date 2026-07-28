@@ -34,7 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'quick_attendance', label: 'FaceMark Attendance', icon: Camera, roles: [UserRole.ADMIN, UserRole.RECEPTIONIST, UserRole.MANAGER] },
     { id: 'bartender', label: 'Bartender Panel', icon: Wine, roles: [UserRole.ADMIN, UserRole.BARTENDER] },
     { id: 'tables', label: 'Seating Tables', icon: Grid3X3, roles: [UserRole.ADMIN, UserRole.RECEPTIONIST, UserRole.BARTENDER, UserRole.MANAGER] },
-    { id: 'admin', label: 'Staff & System Config', icon: ShieldCheck, roles: [UserRole.ADMIN] },
+    { id: 'admin', label: 'System Administration', icon: ShieldCheck, roles: [UserRole.ADMIN] },
   ];
 
   const userRoleLower = user?.role ? user.role.toLowerCase() : '';

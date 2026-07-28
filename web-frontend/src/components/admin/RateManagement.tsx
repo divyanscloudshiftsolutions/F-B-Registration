@@ -19,7 +19,8 @@ export const RateManagement: React.FC = () => {
     setIsLoading(true);
     try {
       const data = await api.getRates();
-      setRates(data);
+      const filtered = data.filter((r: any) => (r.id !== 'vip_lounge' && r.name !== 'VIP Lounge' && r.placeType !== 'VIP_LOUNGE'));
+      setRates(filtered);
     } catch (err: any) {
       showToast(err.message || 'Failed to load rate cards.', 'danger');
     } finally {

@@ -9,6 +9,7 @@ export const TablesPage: React.FC = () => {
   const [tables, setTables] = useState<Table[]>([]);
   const [tokens, setTokens] = useState<Token[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [placeZone, setPlaceZone] = useState<'STANDING_BAR' | 'PREMIUM_LOUNGE'>('STANDING_BAR');
   const [filter, setFilter] = useState<string>('all');
 
   // Assign Modal State
@@ -39,15 +40,17 @@ export const TablesPage: React.FC = () => {
     loadTables();
   }, []);
 
-  const categories = Array.from(new Set(tables.map(t => t.categoryName || 'Standard'))).filter(Boolean);
+  const zoneFilteredTables = tables.filter(tb => {
+    const p = (tb.placeTypeId || tb.categoryName || tb.tableNumber || '').toUpperCase();
+    if (placeZone === 'STANDING_BAR') {
+      return p.includes('STANDING') || p.includes('BAR') || tb.tableNumber.startsWith('S-');
+    }
+    return p.includes('PREMIUM') || p.includes('LOUNGE') || tb.tableNumber.startsWith('L-');
+  });
 
-  const filteredTables = tables.filter(t => {
+  const filteredTables = zoneFilteredTables.filter(t => {
     if (filter === 'available') return t.status === 'available';
     if (filter === 'occupied') return t.status === 'occupied';
-    if (filter !== 'all') {
-      const cat = (t.categoryName || 'Standard').toLowerCase();
-      return cat.includes(filter.toLowerCase());
-    }
     return true;
   });
 
@@ -81,31 +84,56 @@ export const TablesPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Top Floor Plan Filter Action Bar */}
+      {/* Filter and Control Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-white/10">
-        <div className="flex flex-wrap items-center gap-2">
-          {['all', 'available', 'occupied', ...categories].map(f => (
+        {/* 2 Primary Place Zone Tabs */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPlaceZone('STANDING_BAR')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${
+              placeZone === 'STANDING_BAR'
+                ? 'bg-[#D4AF37] text-black border-[#D4AF37] shadow-lg font-black'
+                : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+            }`}
+          >
+            Standard Zone (Standing Bar)
+          </button>
+
+          <button
+            onClick={() => setPlaceZone('PREMIUM_LOUNGE')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${
+              placeZone === 'PREMIUM_LOUNGE'
+                ? 'bg-[#D4AF37] text-black border-[#D4AF37] shadow-lg font-black'
+                : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+            }`}
+          >
+            Premium Zone (Lounge)
+          </button>
+        </div>
+
+        {/* Secondary Status Filters */}
+        <div className="flex items-center gap-2">
+          {['all', 'available', 'occupied'].map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${
                 filter === f
-                  ? 'bg-[#D4AF37] text-black border-[#D4AF37]'
-                  : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+                  ? 'bg-white/20 text-white border-white/40'
+                  : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'
               }`}
             >
               {f}
             </button>
           ))}
-        </div>
 
-        <button
-          onClick={loadTables}
-          className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 border border-white/10 flex items-center gap-2 transition-all"
-        >
-          <RefreshCw size={14} />
-          <span>Refresh Layout</span>
-        </button>
+          <button
+            onClick={loadTables}
+            className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 border border-white/10 flex items-center gap-1.5 transition-all"
+          >
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Seating Floor Plan Visual Layout Grid */}
