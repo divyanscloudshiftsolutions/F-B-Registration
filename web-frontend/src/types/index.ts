@@ -39,7 +39,8 @@ export interface Table {
   id: string;
   tableNumber: string;
   placeTypeId: string;
-  placeType?: PlaceTypeConfig;
+  placeType?: any;
+  categoryName?: string;
   capacity: number;
   status: 'available' | 'occupied' | 'reserved' | 'maintenance';
   currentTokenId?: string;
