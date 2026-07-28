@@ -286,8 +286,8 @@ export const MainAppShell: React.FC = () => {
           <View 
             className="flex-row justify-around items-center py-2 border-t"
             style={{ 
-              paddingBottom: Math.max(8, insets.bottom), 
-              height: 64 + insets.bottom, 
+              paddingBottom: Math.max(12, insets.bottom), 
+              height: 64 + Math.max(12, insets.bottom), 
               backgroundColor: '#08090D', 
               borderTopColor: 'rgba(255,255,255,0.08)', 
               borderTopWidth: 1 
@@ -375,8 +375,11 @@ export const MainAppShell: React.FC = () => {
 
       {/* ACTIVE TOAST POPUPS CONTAINER */}
       <View 
-        className="absolute top-20 z-[9999] gap-2 self-center"
-        style={isCentered ? { width: '90%', maxWidth: 380 } : { left: 16, right: 16 }}
+        className="absolute z-[9999] gap-2 self-center"
+        style={[
+          { top: Platform.OS === 'android' ? Math.max(StatusBar.currentHeight || 24, insets.top) + 64 : Math.max(insets.top, 12) + 60 },
+          isCentered ? { width: '90%', maxWidth: 380 } : { left: 16, right: 16 }
+        ]}
       >
         {toasts.map(toast => (
           <AnimatedToast

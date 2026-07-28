@@ -9,7 +9,9 @@ import {
   SafeAreaView,
   TextInput,
   ScrollView,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useNfcBar } from '../../../context/NfcBarContext';
 import { useTheme } from '../../../context/ThemeContext';
@@ -18,6 +20,7 @@ import { AppIcon } from '../../../components/common/AppIcon';
 export const QuickAttendanceScreen: React.FC = () => {
   const { colors, isDark } = useTheme();
   const { markQuickAttendance, setScreen, currentScreen, user } = useNfcBar();
+  const insets = useSafeAreaInsets();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<'front' | 'back'>('front');
@@ -27,6 +30,12 @@ export const QuickAttendanceScreen: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const cameraRef = useRef<any>(null);
+
+  const statusBarHeight = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 0;
+  const headerTopPadding = Platform.OS === 'android' 
+    ? Math.max(statusBarHeight, insets.top) + 8 
+    : Math.max(insets.top, 12);
+  const bottomControlsPadding = Math.max(insets.bottom + 16, 24);
 
   const handleCaptureAndSubmit = async () => {
     if (isSubmitting) return;
@@ -121,14 +130,15 @@ export const QuickAttendanceScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: 'black' }}>
+    <View style={{ flex: 1, backgroundColor: 'black' }}>
       {/* Header Bar */}
       <View style={{
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingTop: headerTopPadding,
+        paddingBottom: 12,
         backgroundColor: 'rgba(0,0,0,0.85)',
         borderBottomWidth: 1,
         borderBottomColor: 'rgba(255,255,255,0.1)',
@@ -394,7 +404,9 @@ export const QuickAttendanceScreen: React.FC = () => {
       {/* Bottom Controls Bar */}
       {!attendanceResult && !errorMessage && (
         <View style={{
-          padding: 20,
+          paddingHorizontal: 20,
+          paddingTop: 16,
+          paddingBottom: bottomControlsPadding,
           backgroundColor: 'black',
           borderTopWidth: 1,
           borderTopColor: 'rgba(255,255,255,0.1)',
@@ -444,6 +456,8 @@ export const QuickAttendanceScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 };
+
+export default QuickAttendanceScreen;
