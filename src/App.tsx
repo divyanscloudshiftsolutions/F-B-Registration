@@ -45,7 +45,7 @@ const AppContent: React.FC = () => {
       case 'quick_attendance': return 'FaceMark Quick Facial Attendance Kiosk';
       case 'bartender': return 'Bartender Drink Service Station';
       case 'tables': return 'Live Seating Floor Plan & Tables';
-      case 'admin': return 'Staff Administration & System Config';
+      case 'admin': return 'System Administration & Staff Portal';
       default: return 'NFC Bar Management System';
     }
   };

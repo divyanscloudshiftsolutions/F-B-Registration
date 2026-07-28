@@ -9,6 +9,7 @@ export const TableManagement: React.FC = () => {
   const [tables, setTables] = useState<Table[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedPlace, setSelectedPlace] = useState<'STANDING_BAR' | 'PREMIUM_LOUNGE'>('STANDING_BAR');
 
   // Form State
   const [tableNumber, setTableNumber] = useState('S-01');
@@ -31,6 +32,14 @@ export const TableManagement: React.FC = () => {
   useEffect(() => {
     loadTables();
   }, []);
+
+  const filteredTables = tables.filter(tb => {
+    const p = (tb.placeTypeId || tb.categoryName || tb.tableNumber || '').toUpperCase();
+    if (selectedPlace === 'STANDING_BAR') {
+      return p.includes('STANDING') || p.includes('BAR') || tb.tableNumber.startsWith('S-');
+    }
+    return p.includes('PREMIUM') || p.includes('LOUNGE') || tb.tableNumber.startsWith('L-');
+  });
 
   // Real-time validations matching AdminPortal.tsx:L269
   const isTableNumberValid = /^[SL]-\d{2,3}$/.test(tableNumber.trim().toUpperCase());
@@ -71,9 +80,31 @@ export const TableManagement: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Top Bar */}
-      <div className="flex items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-white/10">
-        <h3 className="text-sm font-bold text-white uppercase tracking-wider">Floor Seating Inventory ({tables.length} Tables)</h3>
+      {/* Top Bar with Place Type Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-white/10">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSelectedPlace('STANDING_BAR')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${
+              selectedPlace === 'STANDING_BAR'
+                ? 'bg-[#D4AF37] text-black border-[#D4AF37] shadow-lg font-black'
+                : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+            }`}
+          >
+            Standard Zone (Standing Bar)
+          </button>
+
+          <button
+            onClick={() => setSelectedPlace('PREMIUM_LOUNGE')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${
+              selectedPlace === 'PREMIUM_LOUNGE'
+                ? 'bg-[#D4AF37] text-black border-[#D4AF37] shadow-lg font-black'
+                : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+            }`}
+          >
+            Premium Zone (Lounge)
+          </button>
+        </div>
 
         <div className="flex items-center gap-2">
           <button
@@ -97,7 +128,7 @@ export const TableManagement: React.FC = () => {
         <div className="py-12 text-center text-gray-400 text-sm">Loading floor tables...</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {tables.map(tb => (
+          {filteredTables.map(tb => (
             <div key={tb.id} className="p-5 rounded-2xl glass-panel border border-white/10 flex flex-col justify-between h-44">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[#D4AF37] font-black text-lg">{tb.tableNumber}</span>

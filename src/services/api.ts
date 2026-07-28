@@ -1,50 +1,21 @@
 import type { User, Table, Token } from '../types';
 
-const getBackendUrl = (): string => {
-  const envUrl = import.meta.env.VITE_BACKEND_URL;
-  if (envUrl && envUrl.trim().length > 0) {
-    let cleaned = envUrl.trim();
-    while (cleaned.endsWith('/')) {
-      cleaned = cleaned.slice(0, -1);
-    }
-    if (!cleaned.endsWith('/api')) {
-      cleaned = `${cleaned}/api`;
-    }
-    return cleaned;
-  }
-  return 'https://api.nfc-qr.app.cloudshiftsolutions.in/api';
-};
-
-export const API_BASE_URL = getBackendUrl();
+export const API_BASE_URL = 'https://api.nfc-qr.app.cloudshiftsolutions.in/api';
 
 class ApiService {
-  private token: string | null = null;
-
-  constructor() {
-    this.token = localStorage.getItem('nfc_web_token');
-  }
-
-  public setToken(token: string | null) {
-    this.token = token;
-    if (token) {
-      localStorage.setItem('nfc_web_token', token);
-    } else {
-      localStorage.removeItem('nfc_web_token');
-    }
-  }
-
   public getToken(): string | null {
-    return this.token;
+    return localStorage.getItem('nfc_web_token');
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const token = this.getToken();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
     };
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -52,64 +23,78 @@ class ApiService {
       headers,
     });
 
-    const data = await response.json().catch(() => null);
+    if (response.status === 401) {
+      localStorage.removeItem('nfc_web_token');
+      localStorage.removeItem('nfc_web_user');
+      window.location.reload();
+      throw new Error('Session expired. Please log in again.');
+    }
+
+    const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      const errorMsg = data?.error?.message || data?.error?.detail || data?.message || `HTTP error ${response.status}`;
-      throw new Error(errorMsg);
+      throw new Error(data.message || data.error || `HTTP Error ${response.status}`);
     }
 
     return data;
   }
 
   // Auth APIs
-  async login(username: string, pin: string) {
-    let apiUsername = username.trim();
-    let apiPassword = pin.trim();
+  async login(username: string | { username: string; pin: string }, pin?: string) {
+    const userStr = typeof username === 'string' ? username : username.username;
+    const pinStr = typeof username === 'string' ? (pin || '') : username.pin;
 
-    const lowerId = username.trim().toLowerCase();
-    if (lowerId === 'rec-01') {
-      apiUsername = 'receptionist';
-      apiPassword = 'recep123';
-    } else if (lowerId === 'bar-02') {
-      apiUsername = 'bartender';
-      apiPassword = 'bar123';
-    } else if (lowerId === 'adm-03') {
-      apiUsername = 'admin';
-      apiPassword = 'admin123';
-    } else if (lowerId === 'mgr-04') {
-      apiUsername = 'manager';
-      apiPassword = 'manager123';
-    }
-
-    const data = await this.request<{ success: boolean; token: string; user: User }>('/auth/login', {
+    const res = await this.request<{
+      success: boolean;
+      token: string;
+      user: User;
+      message?: string;
+    }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username: apiUsername, password: apiPassword }),
+      body: JSON.stringify({
+        username: userStr,
+        password: pinStr,
+      }),
     });
 
-    if (data.token) {
-      this.setToken(data.token);
+    if (res.token) {
+      localStorage.setItem('nfc_web_token', res.token);
+      localStorage.setItem('nfc_web_user', JSON.stringify(res.user));
     }
-    return data;
+
+    return res;
   }
 
   async logout() {
     try {
       await this.request('/auth/logout', { method: 'POST' });
     } catch {
-      // Ignore logout network errors
+      // Ignore network errors on logout
     } finally {
-      this.setToken(null);
+      localStorage.removeItem('nfc_web_token');
+      localStorage.removeItem('nfc_web_user');
     }
   }
 
-  // User Administration APIs
+  // User APIs
   async getUsers(): Promise<User[]> {
-    const res = await this.request<{ success: boolean; users: User[] }>('/users');
-    return res.users || [];
+    try {
+      const res = await this.request<any>('/users');
+      const rawList = Array.isArray(res) ? res : (res?.users || res?.data?.users || res?.data || []);
+      return rawList.map((u: any) => ({
+        id: u.id || u.userId || String(Math.random()),
+        username: u.username || u.employeeCode || u.code || 'USER-01',
+        fullName: u.fullName || u.name || 'Staff User',
+        role: (u.role || 'receptionist').toLowerCase() as any,
+        isActive: u.isActive !== false,
+        lastLogin: u.lastLogin || u.updatedAt,
+      }));
+    } catch {
+      return [];
+    }
   }
 
-  async createUser(userData: { username: string; pin: string; fullName: string; role: string }) {
+  async createUser(userData: { username: string; fullName: string; pin: string; role: string }) {
     return this.request<{ success: boolean; user: User }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(userData),
@@ -125,61 +110,39 @@ class ApiService {
 
   // Tables APIs
   async getTables(): Promise<Table[]> {
-    let rawTables: any[] = [];
     try {
       const res = await this.request<any>('/tables');
-      if (Array.isArray(res)) {
-        rawTables = res;
-      } else if (res && Array.isArray(res.tables)) {
-        rawTables = res.tables;
-      } else if (res && res.success && res.data) {
-        if (Array.isArray(res.data)) {
-          rawTables = res.data;
-        } else if (res.data.byPlaceType) {
-          Object.keys(res.data.byPlaceType).forEach(key => {
-            if (Array.isArray(res.data.byPlaceType[key]?.tables)) {
-              rawTables.push(...res.data.byPlaceType[key].tables);
-            }
-          });
-        }
-      }
-    } catch {
-      // Fallback to /tables/occupancy endpoint if /tables returns empty
-      try {
-        const occRes = await this.request<any>('/tables/occupancy');
-        if (occRes && occRes.success && occRes.data && occRes.data.byPlaceType) {
-          Object.keys(occRes.data.byPlaceType).forEach(key => {
-            const group = occRes.data.byPlaceType[key];
-            if (Array.isArray(group?.tables)) {
-              group.tables.forEach((t: any) => {
-                t.placeType = key;
-                rawTables.push(t);
-              });
-            }
-          });
-        }
-      } catch {}
-    }
+      let rawTables: any[] = Array.isArray(res) ? res : (res?.tables || res?.data?.tables || res?.data || []);
 
-    return rawTables.map(t => {
-      let categoryName = 'Standard';
-      if (typeof t.placeType === 'string') {
-        categoryName = t.placeType.replace(/_/g, ' ');
-      } else if (t.placeType && typeof t.placeType === 'object' && t.placeType.name) {
-        categoryName = t.placeType.name;
+      if (rawTables.length === 0) {
+        try {
+          const occRes = await this.request<any>('/tables/occupancy');
+          if (occRes && occRes.success && occRes.data && occRes.data.byPlaceType) {
+            Object.keys(occRes.data.byPlaceType).forEach(key => {
+              const group = occRes.data.byPlaceType[key];
+              if (Array.isArray(group?.tables)) {
+                group.tables.forEach((t: any) => {
+                  t.placeType = key;
+                  rawTables.push(t);
+                });
+              }
+            });
+          }
+        } catch {}
       }
 
-      return {
-        id: t.id,
-        tableNumber: t.tableNumber || t.number || `T-${t.id.slice(0, 4)}`,
-        placeTypeId: t.placeTypeId || '',
-        categoryName: categoryName,
+      return rawTables.map((t: any) => ({
+        id: t.id || t.tableId || String(Math.random()),
+        tableNumber: t.tableNumber || t.number || `T-${t.id}`,
+        placeTypeId: t.placeTypeId || t.placeType || (t.tableNumber?.startsWith('L-') ? 'PREMIUM_LOUNGE' : 'STANDING_BAR'),
         capacity: t.capacity || t.seats || 4,
-        status: (t.status || 'available').toString().toLowerCase() as any,
-        currentTokenId: t.currentTokenId || (t.currentToken ? t.currentToken.id : undefined),
+        status: (t.status || 'available').toLowerCase() as any,
         isActive: t.isActive !== false,
-      };
-    });
+        categoryName: t.categoryName || (t.tableNumber?.startsWith('L-') ? 'Premium Lounge' : 'Standing Bar'),
+      }));
+    } catch {
+      return [];
+    }
   }
 
   async createTable(tableData: { tableNumber: string; placeTypeId: string; capacity: number }) {
@@ -204,8 +167,31 @@ class ApiService {
 
   // Customer & Tokens APIs
   async getActiveTokens(): Promise<Token[]> {
-    const res = await this.request<{ success: boolean; tokens: Token[] }>('/tokens/active');
-    return res.tokens || [];
+    try {
+      const res = await this.request<any>('/tokens/active');
+      const rawList = Array.isArray(res) ? res : (res?.tokens || res?.data?.tokens || res?.data || []);
+      return rawList.map((t: any) => ({
+        id: t.id || t.tokenId || String(Math.random()),
+        tokenNumber: t.tokenNumber || t.number || 'TK-000',
+        personsCount: t.personsCount || t.persons || 1,
+        redemptionsUsed: t.redemptionsUsed || t.redemptionCount || 0,
+        totalRedemptionsAllowed: t.totalRedemptionsAllowed || t.maxDrinks || 2,
+        deliveryMode: t.deliveryMode || 'NFC_CARD',
+        amountPaid: t.amountPaid || t.amount || 0,
+        status: (t.status || 'active').toLowerCase() as any,
+        customer: {
+          id: t.customer?.id || t.customerId || '',
+          name: t.customer?.name || t.customerName || 'Walk-in Guest',
+          phoneNumber: t.customer?.phoneNumber || t.customerPhone || 'N/A',
+          email: t.customer?.email,
+        },
+        tableNumber: t.tableNumber || t.table?.number,
+        createdAt: t.createdAt || new Date().toISOString(),
+        expiresAt: t.expiresAt || new Date().toISOString(),
+      }));
+    } catch {
+      return [];
+    }
   }
 
   async createCustomerCheckIn(payload: {
@@ -223,32 +209,32 @@ class ApiService {
     });
   }
 
-  async extendToken(tokenNumber: string, extraMinutes: number, additionalAmount: number) {
+  async extendToken(tokenNumber: string, extraMinutes: number, amount: number) {
     return this.request<{ success: boolean }>(`/tokens/${tokenNumber}/extend`, {
       method: 'PUT',
-      body: JSON.stringify({ extraMinutes, additionalAmount }),
+      body: JSON.stringify({ extraMinutes, amount }),
     });
   }
 
-  async closeToken(tokenNumber: string, reason = 'CHECKOUT') {
+  async closeToken(tokenNumber: string, reason?: string) {
     return this.request<{ success: boolean }>(`/tokens/${tokenNumber}/close`, {
       method: 'PUT',
-      body: JSON.stringify({ closeReason: reason }),
+      body: JSON.stringify({ reason }),
     });
   }
 
-  // Drink Redemptions APIs
-  async verifyQR(qrCodeData: string) {
-    return this.request<{ success: boolean; token: Token; isVerified: boolean }>('/qr/verify', {
+  // QR Verification & Dispensing APIs
+  async verifyQR(qrPayload: string) {
+    return this.request<{ success: boolean; token: Token; customer: any }>('/qr/verify', {
       method: 'POST',
-      body: JSON.stringify({ qrCodeData }),
+      body: JSON.stringify({ qrPayload }),
     });
   }
 
-  async redeemDrink(payload: { tokenId?: string; cardUid?: string; notes?: string }) {
-    return this.request<{ success: boolean; redemption: any; remainingRedemptions: number }>('/redemptions', {
+  async redeemDrink(tokenId: string, drinkName?: string) {
+    return this.request<{ success: boolean; remainingDrinks: number }>('/redemptions', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ tokenId, drinkName }),
     });
   }
 
@@ -276,7 +262,14 @@ class ApiService {
   async getCards(): Promise<any[]> {
     try {
       const res = await this.request<any>('/cards');
-      return Array.isArray(res) ? res : (res?.cards || []);
+      const rawList = Array.isArray(res) ? res : (res?.cards || res?.data?.cards || res?.data || []);
+      return rawList.map((c: any) => ({
+        id: c.id || c.cardUid || c.uid,
+        cardUid: c.cardUid || c.uid,
+        status: (c.status || 'AVAILABLE').toUpperCase(),
+        assignedTokenNumber: c.assignedTokenNumber || c.tokenNumber || null,
+        updatedAt: c.updatedAt || c.createdAt || new Date().toISOString(),
+      }));
     } catch {
       return [];
     }
@@ -298,7 +291,6 @@ class ApiService {
       return [
         { id: 'standing_bar', name: 'Standing Bar', ratePerPerson: 500, baseTimeMinutes: 120, redemptionsPerPerson: 2 },
         { id: 'premium_lounge', name: 'Premium Lounge', ratePerPerson: 1000, baseTimeMinutes: 180, redemptionsPerPerson: 4 },
-        { id: 'vip_lounge', name: 'VIP Lounge', ratePerPerson: 1500, baseTimeMinutes: 240, redemptionsPerPerson: 6 },
       ];
     }
   }

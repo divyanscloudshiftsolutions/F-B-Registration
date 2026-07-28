@@ -77,7 +77,7 @@ export const BartenderPage: React.FC = () => {
 
     setIsRedeeming(true);
     try {
-      const res = await api.redeemDrink({ tokenId: scannedToken.id });
+      const res = await api.redeemDrink(scannedToken.id);
       if (res.success) {
         showToast('Drink redemption recorded!', 'success');
         setScannedToken(prev => prev ? { ...prev, redemptionsUsed: prev.redemptionsUsed + 1 } : null);
