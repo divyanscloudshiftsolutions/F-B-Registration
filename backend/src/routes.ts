@@ -183,7 +183,7 @@ router.get('/debug-prisma-enums', (req: Request, res: Response) => {
 router.post('/attendance/quick', upload.single('file'), async (req: Request, res: Response) => {
   try {
     const facemarkBase = process.env.FACEMARK_API_BASE || 'https://api.facemark.app.cloudshiftsolutions.in';
-    const kioskToken = process.env.FACEMARK_BEARER_TOKEN || process.env.VITE_KIOSK_TOKEN || 'face-mark-kiosk-token-2026';
+    const kioskToken = process.env.FACEMARK_BEARER_TOKEN || 'face-mark-kiosk-token-2026';
 
     if (!kioskToken) {
       return res.status(503).json({
