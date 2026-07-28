@@ -43,13 +43,12 @@ export const CheckInPage: React.FC = () => {
   const [createdToken, setCreatedToken] = useState<Token | null>(null);
 
   // Rates definition (matches backend place type config)
-  const rateCards = [
+  const placeCategories = [
     { id: 'standing_bar', name: 'Standing Bar', ratePerPerson: 500, drinks: 2, duration: '2 Hours' },
     { id: 'premium_lounge', name: 'Premium Lounge', ratePerPerson: 1000, drinks: 4, duration: '3 Hours' },
-    { id: 'vip_lounge', name: 'VIP Lounge', ratePerPerson: 1500, drinks: 6, duration: '4 Hours' },
   ];
 
-  const currentRate = rateCards.find(r => r.id === selectedPlaceTypeId) || rateCards[0];
+  const currentRate = placeCategories.find(r => r.id === selectedPlaceTypeId) || placeCategories[0];
   const calculatedTotal = personsCount * currentRate.ratePerPerson;
   const totalAllowedDrinks = personsCount * currentRate.drinks;
 
@@ -282,7 +281,7 @@ export const CheckInPage: React.FC = () => {
           <div>
             <label className="block text-xs font-semibold text-gray-300 mb-2">1. Select Rate Category</label>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {rateCards.map(rc => {
+              {placeCategories.map(rc => {
                 const isSel = selectedPlaceTypeId === rc.id;
                 return (
                   <div
