@@ -128,9 +128,9 @@ export const TablesPage: React.FC = () => {
 
                 <div>
                   <p className="text-xs text-gray-400 font-medium">Capacity: {tb.capacity} Guests</p>
-                  {tb.placeType && (
-                    <p className="text-[11px] text-[#D4AF37] mt-0.5">{tb.placeType.name}</p>
-                  )}
+                  <p className="text-[11px] text-[#D4AF37] font-semibold mt-0.5 uppercase tracking-wider">
+                    {tb.categoryName || (typeof tb.placeType === 'string' ? tb.placeType : tb.placeType?.name) || 'Standard Category'}
+                  </p>
                 </div>
 
                 <div className="pt-2 border-t border-white/10 flex items-center gap-2">
