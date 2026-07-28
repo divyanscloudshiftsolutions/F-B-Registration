@@ -272,6 +272,44 @@ class ApiService {
     });
   }
 
+  // Smart Cards Inventory APIs
+  async getCards(): Promise<any[]> {
+    try {
+      const res = await this.request<any>('/cards');
+      return Array.isArray(res) ? res : (res?.cards || []);
+    } catch {
+      return [];
+    }
+  }
+
+  async updateCardStatus(cardUid: string, status: string) {
+    return this.request<{ success: boolean }>(`/cards/${cardUid}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  // Rate Cards Management APIs
+  async getRates(): Promise<any[]> {
+    try {
+      const res = await this.request<any>('/config/rates');
+      return Array.isArray(res) ? res : (res?.rates || res?.data?.placeTypes || []);
+    } catch {
+      return [
+        { id: 'standing_bar', name: 'Standing Bar', ratePerPerson: 500, baseTimeMinutes: 120, redemptionsPerPerson: 2 },
+        { id: 'premium_lounge', name: 'Premium Lounge', ratePerPerson: 1000, baseTimeMinutes: 180, redemptionsPerPerson: 4 },
+        { id: 'vip_lounge', name: 'VIP Lounge', ratePerPerson: 1500, baseTimeMinutes: 240, redemptionsPerPerson: 6 },
+      ];
+    }
+  }
+
+  async updateRateCard(rateId: string, payload: { ratePerPerson: number; baseTimeMinutes: number; redemptionsPerPerson: number }) {
+    return this.request<{ success: boolean }>(`/config/rates/${rateId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
   // FaceMark Quick Attendance API
   async markQuickAttendance(photoBase64: string, employeeCode?: string) {
     return this.request<{
