@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Grid3X3, RefreshCw, X } from 'lucide-react';
+import { Grid3X3, RefreshCw, X, Info } from 'lucide-react';
 import { api } from '../services/api';
 import type { Table, Token } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -9,12 +9,15 @@ export const TablesPage: React.FC = () => {
   const [tables, setTables] = useState<Table[]>([]);
   const [tokens, setTokens] = useState<Token[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'available' | 'occupied'>('all');
+  const [filter, setFilter] = useState<string>('all');
 
-  // Assign Table Modal State
+  // Assign Modal State
   const [assigningTable, setAssigningTable] = useState<Table | null>(null);
   const [selectedTokenId, setSelectedTokenId] = useState('');
   const [isSubmittingAssign, setIsSubmittingAssign] = useState(false);
+
+  // Table Detail View Modal State
+  const [inspectingTable, setInspectingTable] = useState<Table | null>(null);
 
   const loadTables = async () => {
     setIsLoading(true);
@@ -36,9 +39,15 @@ export const TablesPage: React.FC = () => {
     loadTables();
   }, []);
 
+  const categories = Array.from(new Set(tables.map(t => t.categoryName || 'Standard'))).filter(Boolean);
+
   const filteredTables = tables.filter(t => {
     if (filter === 'available') return t.status === 'available';
     if (filter === 'occupied') return t.status === 'occupied';
+    if (filter !== 'all') {
+      const cat = (t.categoryName || 'Standard').toLowerCase();
+      return cat.includes(filter.toLowerCase());
+    }
     return true;
   });
 
@@ -72,20 +81,20 @@ export const TablesPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Top Action Bar */}
+      {/* Top Floor Plan Filter Action Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-white/10">
-        <div className="flex items-center gap-2">
-          {['all', 'available', 'occupied'].map(f => (
+        <div className="flex flex-wrap items-center gap-2">
+          {['all', 'available', 'occupied', ...categories].map(f => (
             <button
               key={f}
-              onClick={() => setFilter(f as any)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border ${
+              onClick={() => setFilter(f)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border ${
                 filter === f
                   ? 'bg-[#D4AF37] text-black border-[#D4AF37]'
                   : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
               }`}
             >
-              {f} Tables
+              {f}
             </button>
           ))}
         </div>
@@ -95,64 +104,146 @@ export const TablesPage: React.FC = () => {
           className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 border border-white/10 flex items-center gap-2 transition-all"
         >
           <RefreshCw size={14} />
-          <span>Refresh Floor Plan</span>
+          <span>Refresh Layout</span>
         </button>
       </div>
 
-      {/* Tables Grid */}
+      {/* Seating Floor Plan Visual Layout Grid */}
       {isLoading ? (
-        <div className="py-20 text-center text-gray-400 text-sm">Loading seating layout...</div>
+        <div className="py-20 text-center text-gray-400 text-sm">Loading floor layout & seat maps...</div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {filteredTables.map(tb => {
             const isOccupied = tb.status === 'occupied';
+            const capacity = tb.capacity || 4;
+            const assignedToken = tokens.find(tk => tk.tableId === tb.id || (tk.table && tk.table.id === tb.id));
+
             return (
               <div
                 key={tb.id}
-                className={`p-5 rounded-2xl border transition-all flex flex-col justify-between h-48 ${
+                className={`p-5 rounded-3xl border transition-all relative overflow-hidden flex flex-col justify-between h-60 ${
                   isOccupied
-                    ? 'bg-emerald-500/10 border-emerald-500/30'
-                    : 'bg-[#141A25] border-white/10 hover:border-[#D4AF37]/50'
+                    ? 'bg-emerald-500/10 border-emerald-500/40 shadow-xl shadow-emerald-500/5'
+                    : 'bg-[#121620] border-white/10 hover:border-[#D4AF37]/50'
                 }`}
               >
+                {/* Header Info */}
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[#D4AF37] font-black text-lg">{tb.tableNumber}</span>
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                      isOccupied ? 'badge-active' : 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
-                    }`}
-                  >
-                    {tb.status}
-                  </span>
+                  <div>
+                    <span className="font-mono text-[#D4AF37] font-black text-xl">{tb.tableNumber}</span>
+                    <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">
+                      {tb.categoryName || 'Standard'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setInspectingTable(tb)}
+                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300"
+                      title="Inspect Table Details"
+                    >
+                      <Info size={14} />
+                    </button>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                        isOccupied ? 'badge-active' : 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+                      }`}
+                    >
+                      {tb.status}
+                    </span>
+                  </div>
                 </div>
 
-                <div>
-                  <p className="text-xs text-gray-400 font-medium">Capacity: {tb.capacity} Guests</p>
-                  <p className="text-[11px] text-[#D4AF37] font-semibold mt-0.5 uppercase tracking-wider">
-                    {tb.categoryName || (typeof tb.placeType === 'string' ? tb.placeType : tb.placeType?.name) || 'Standard Category'}
-                  </p>
+                {/* Visual Seat Representation Map Around Table Container */}
+                <div className="my-2 py-3 px-4 rounded-2xl bg-black/40 border border-white/5 flex flex-col items-center justify-center relative">
+                  <p className="text-[10px] text-gray-400 uppercase font-semibold mb-2">Visual Seat Map ({capacity} Seats)</p>
+
+                  <div className="flex items-center justify-center gap-2">
+                    {Array.from({ length: capacity }).map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all ${
+                          isOccupied
+                            ? 'bg-emerald-500 border-emerald-300 shadow-md shadow-emerald-500/40 animate-pulse'
+                            : 'bg-white/10 border-white/20'
+                        }`}
+                        title={`Seat #${i + 1} (${isOccupied ? 'Occupied' : 'Available'})`}
+                      />
+                    ))}
+                  </div>
+
+                  {assignedToken && (
+                    <p className="text-[11px] font-bold text-emerald-300 mt-2 truncate max-w-[180px]">
+                      👤 {assignedToken.customer?.name || 'Guest'} ({assignedToken.tokenNumber})
+                    </p>
+                  )}
                 </div>
 
+                {/* Action Buttons */}
                 <div className="pt-2 border-t border-white/10 flex items-center gap-2">
                   {isOccupied ? (
                     <button
                       onClick={() => handleRelease(tb.id)}
-                      className="w-full py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold text-xs border border-red-500/30 transition-all"
+                      className="w-full py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold text-xs border border-red-500/30 transition-all"
                     >
-                      Clear & Release
+                      Release Table
                     </button>
                   ) : (
                     <button
                       onClick={() => setAssigningTable(tb)}
-                      className="w-full py-1.5 rounded-lg bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] font-bold text-xs border border-[#D4AF37]/30 transition-all"
+                      className="w-full py-2 rounded-xl bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] font-bold text-xs border border-[#D4AF37]/30 transition-all"
                     >
-                      Assign Guest Token
+                      Assign Guest
                     </button>
                   )}
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* INSPECT TABLE DETAILS MODAL */}
+      {inspectingTable && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#121620] border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+            <button 
+              onClick={() => setInspectingTable(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-2 text-[#D4AF37] font-bold text-sm">
+              <Grid3X3 size={18} /> Detailed Information for Table {inspectingTable.tableNumber}
+            </div>
+
+            <div className="space-y-3 pt-2 text-xs">
+              <div className="flex justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                <span className="text-gray-400">Category Zone:</span>
+                <span className="font-bold text-white uppercase">{inspectingTable.categoryName || 'Standard'}</span>
+              </div>
+
+              <div className="flex justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                <span className="text-gray-400">Seat Capacity:</span>
+                <span className="font-bold text-white">{inspectingTable.capacity} Seats Total</span>
+              </div>
+
+              <div className="flex justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                <span className="text-gray-400">Occupancy Status:</span>
+                <span className={`font-bold uppercase ${inspectingTable.status === 'occupied' ? 'text-emerald-400' : 'text-gray-300'}`}>
+                  {inspectingTable.status}
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setInspectingTable(null)}
+              className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white mt-4"
+            >
+              Close Details
+            </button>
+          </div>
         </div>
       )}
 
@@ -171,15 +262,11 @@ export const TablesPage: React.FC = () => {
               <Grid3X3 size={18} /> Assign Table {assigningTable.tableNumber}
             </div>
 
-            <p className="text-xs text-gray-400">
-              Select an active customer token pass to seat at table <span className="font-bold text-white">{assigningTable.tableNumber}</span>
-            </p>
-
             <form onSubmit={handleAssignSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">Active Customer Token</label>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Active Guest Token Pass</label>
                 {tokens.length === 0 ? (
-                  <p className="text-xs text-gray-500 p-2 bg-white/5 rounded-xl">No unassigned active customer tokens available.</p>
+                  <p className="text-xs text-gray-500 p-2 bg-white/5 rounded-xl">No active tokens available.</p>
                 ) : (
                   <select
                     value={selectedTokenId}
@@ -210,7 +297,7 @@ export const TablesPage: React.FC = () => {
                   disabled={isSubmittingAssign || !selectedTokenId}
                   className="flex-1 py-2.5 rounded-xl gold-gradient-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
                 >
-                  {isSubmittingAssign ? 'Assigning...' : 'Confirm Table Seating'}
+                  {isSubmittingAssign ? 'Assigning...' : 'Confirm Seating'}
                 </button>
               </div>
             </form>
