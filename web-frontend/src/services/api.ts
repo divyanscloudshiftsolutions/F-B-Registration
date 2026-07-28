@@ -125,8 +125,61 @@ class ApiService {
 
   // Tables APIs
   async getTables(): Promise<Table[]> {
-    const res = await this.request<{ success: boolean; tables: Table[] }>('/tables');
-    return res.tables || [];
+    let rawTables: any[] = [];
+    try {
+      const res = await this.request<any>('/tables');
+      if (Array.isArray(res)) {
+        rawTables = res;
+      } else if (res && Array.isArray(res.tables)) {
+        rawTables = res.tables;
+      } else if (res && res.success && res.data) {
+        if (Array.isArray(res.data)) {
+          rawTables = res.data;
+        } else if (res.data.byPlaceType) {
+          Object.keys(res.data.byPlaceType).forEach(key => {
+            if (Array.isArray(res.data.byPlaceType[key]?.tables)) {
+              rawTables.push(...res.data.byPlaceType[key].tables);
+            }
+          });
+        }
+      }
+    } catch {
+      // Fallback to /tables/occupancy endpoint if /tables returns empty
+      try {
+        const occRes = await this.request<any>('/tables/occupancy');
+        if (occRes && occRes.success && occRes.data && occRes.data.byPlaceType) {
+          Object.keys(occRes.data.byPlaceType).forEach(key => {
+            const group = occRes.data.byPlaceType[key];
+            if (Array.isArray(group?.tables)) {
+              group.tables.forEach((t: any) => {
+                t.placeType = key;
+                rawTables.push(t);
+              });
+            }
+          });
+        }
+      } catch {}
+    }
+
+    return rawTables.map(t => {
+      let categoryName = 'Standard';
+      if (typeof t.placeType === 'string') {
+        categoryName = t.placeType.replace(/_/g, ' ');
+      } else if (t.placeType && typeof t.placeType === 'object' && t.placeType.name) {
+        categoryName = t.placeType.name;
+      }
+
+      return {
+        id: t.id,
+        tableNumber: t.tableNumber || t.number || `T-${t.id.slice(0, 4)}`,
+        placeTypeId: t.placeTypeId || '',
+        categoryName: categoryName,
+        capacity: t.capacity || t.seats || 4,
+        status: (t.status || 'available').toString().toLowerCase() as any,
+        currentTokenId: t.currentTokenId || (t.currentToken ? t.currentToken.id : undefined),
+        isActive: t.isActive !== false,
+      };
+    });
   }
 
   async createTable(tableData: { tableNumber: string; placeTypeId: string; capacity: number }) {
