@@ -55,7 +55,7 @@ class ApiService {
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-      const errorMsg = data?.error?.message || data?.message || `HTTP error ${response.status}`;
+      const errorMsg = data?.error?.message || data?.error?.detail || data?.message || `HTTP error ${response.status}`;
       throw new Error(errorMsg);
     }
 
@@ -64,10 +64,29 @@ class ApiService {
 
   // Auth APIs
   async login(username: string, pin: string) {
+    let apiUsername = username.trim();
+    let apiPassword = pin.trim();
+
+    const lowerId = username.trim().toLowerCase();
+    if (lowerId === 'rec-01') {
+      apiUsername = 'receptionist';
+      apiPassword = 'recep123';
+    } else if (lowerId === 'bar-02') {
+      apiUsername = 'bartender';
+      apiPassword = 'bar123';
+    } else if (lowerId === 'adm-03') {
+      apiUsername = 'admin';
+      apiPassword = 'admin123';
+    } else if (lowerId === 'mgr-04') {
+      apiUsername = 'manager';
+      apiPassword = 'manager123';
+    }
+
     const data = await this.request<{ success: boolean; token: string; user: User }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password: pin }),
+      body: JSON.stringify({ username: apiUsername, password: apiPassword }),
     });
+
     if (data.token) {
       this.setToken(data.token);
     }
@@ -197,6 +216,24 @@ class ApiService {
     await this.request('/config/delivery-mode', {
       method: 'PUT',
       body: JSON.stringify({ mode }),
+    });
+  }
+
+  // FaceMark Quick Attendance API
+  async markQuickAttendance(photoBase64: string, employeeCode?: string) {
+    return this.request<{
+      success: boolean;
+      action: 'check-in' | 'check-out';
+      userId?: string;
+      userName?: string;
+      userEmail?: string;
+      confidence?: number;
+      timestamp?: string;
+      message?: string;
+      record?: any;
+    }>('/attendance/quick', {
+      method: 'POST',
+      body: JSON.stringify({ photoBase64, employeeCode }),
     });
   }
 }
