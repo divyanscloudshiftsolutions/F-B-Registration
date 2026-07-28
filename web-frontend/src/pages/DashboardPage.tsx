@@ -4,7 +4,10 @@ import {
   Grid3X3, 
   Wine, 
   DollarSign, 
-  TrendingUp 
+  TrendingUp,
+  Clock,
+  LogOut,
+  X
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Token, Table } from '../types';
@@ -15,6 +18,17 @@ export const DashboardPage: React.FC = () => {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Extend Modal State
+  const [extendingToken, setExtendingToken] = useState<Token | null>(null);
+  const [extraMinutes, setExtraMinutes] = useState(60);
+  const [additionalAmount, setAdditionalAmount] = useState(500);
+  const [isSubmittingExtend, setIsSubmittingExtend] = useState(false);
+
+  // Close Modal State
+  const [closingToken, setClosingToken] = useState<Token | null>(null);
+  const [closeReason, setCloseReason] = useState('CHECKOUT');
+  const [isSubmittingClose, setIsSubmittingClose] = useState(false);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -35,6 +49,40 @@ export const DashboardPage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleExtendSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!extendingToken) return;
+
+    setIsSubmittingExtend(true);
+    try {
+      await api.extendToken(extendingToken.tokenNumber, extraMinutes, additionalAmount);
+      showToast(`Session for ${extendingToken.tokenNumber} extended by ${extraMinutes} mins.`, 'success');
+      setExtendingToken(null);
+      loadData();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to extend session.', 'danger');
+    } finally {
+      setIsSubmittingExtend(false);
+    }
+  };
+
+  const handleCloseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!closingToken) return;
+
+    setIsSubmittingClose(true);
+    try {
+      await api.closeToken(closingToken.tokenNumber, closeReason);
+      showToast(`Session ${closingToken.tokenNumber} closed (${closeReason}).`, 'success');
+      setClosingToken(null);
+      loadData();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to close session.', 'danger');
+    } finally {
+      setIsSubmittingClose(false);
+    }
+  };
 
   const activeTokensCount = tokens.length;
   const occupiedTablesCount = tables.filter(t => t.status === 'occupied').length;
@@ -127,6 +175,7 @@ export const DashboardPage: React.FC = () => {
                   <th className="pb-3 px-3">Redemptions</th>
                   <th className="pb-3 px-3">Mode</th>
                   <th className="pb-3 px-3">Status</th>
+                  <th className="pb-3 px-3">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -149,6 +198,23 @@ export const DashboardPage: React.FC = () => {
                         {tk.status}
                       </span>
                     </td>
+                    <td className="py-3 px-3 flex items-center gap-2">
+                      <button
+                        onClick={() => setExtendingToken(tk)}
+                        className="px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/30 transition-all flex items-center gap-1"
+                        title="Extend Session"
+                      >
+                        <Clock size={12} /> Extend
+                      </button>
+
+                      <button
+                        onClick={() => setClosingToken(tk)}
+                        className="px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold border border-red-500/30 transition-all flex items-center gap-1"
+                        title="Close Session"
+                      >
+                        <LogOut size={12} /> Checkout
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -156,6 +222,126 @@ export const DashboardPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* EXTEND SESSION MODAL */}
+      {extendingToken && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#121620] border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+            <button 
+              onClick={() => setExtendingToken(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+              <Clock size={18} /> Extend Customer Session
+            </div>
+
+            <p className="text-xs text-gray-400">
+              Token Number: <span className="font-mono font-bold text-[#D4AF37]">{extendingToken.tokenNumber}</span> ({extendingToken.customer?.name})
+            </p>
+
+            <form onSubmit={handleExtendSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Additional Minutes</label>
+                <select
+                  value={extraMinutes}
+                  onChange={e => setExtraMinutes(Number(e.target.value))}
+                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#D4AF37]"
+                >
+                  <option value={30}>30 Minutes</option>
+                  <option value={60}>60 Minutes (1 Hour)</option>
+                  <option value={120}>120 Minutes (2 Hours)</option>
+                  <option value={180}>180 Minutes (3 Hours)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Additional Extension Amount (₹)</label>
+                <input
+                  type="number"
+                  value={additionalAmount}
+                  onChange={e => setAdditionalAmount(Number(e.target.value))}
+                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-[#D4AF37]"
+                  required
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setExtendingToken(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingExtend}
+                  className="flex-1 py-2.5 rounded-xl gold-gradient-btn text-xs font-bold uppercase tracking-wider"
+                >
+                  {isSubmittingExtend ? 'Extending...' : 'Confirm Extension'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CLOSE / CHECKOUT SESSION MODAL */}
+      {closingToken && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#121620] border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+            <button 
+              onClick={() => setClosingToken(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-2 text-red-400 font-bold text-sm">
+              <LogOut size={18} /> Checkout / Close Session
+            </div>
+
+            <p className="text-xs text-gray-400">
+              Token Number: <span className="font-mono font-bold text-[#D4AF37]">{closingToken.tokenNumber}</span> ({closingToken.customer?.name})
+            </p>
+
+            <form onSubmit={handleCloseSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">Select Close Reason</label>
+                <select
+                  value={closeReason}
+                  onChange={e => setCloseReason(e.target.value)}
+                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-red-500"
+                >
+                  <option value="CHECKOUT">Standard Guest Checkout</option>
+                  <option value="EXPIRED">Session Time Expired</option>
+                  <option value="CANCELLED">Session Cancelled by Reception</option>
+                </select>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setClosingToken(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingClose}
+                  className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold uppercase tracking-wider"
+                >
+                  {isSubmittingClose ? 'Closing...' : 'Close & Release Table'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
