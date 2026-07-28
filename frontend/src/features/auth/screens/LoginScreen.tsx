@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, Text, TouchableOpacity, ScrollView, 
-  Platform, KeyboardAvoidingView, ActivityIndicator
+  Platform, KeyboardAvoidingView, ActivityIndicator, StatusBar
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNfcBar } from '../../../context/NfcBarContext';
@@ -17,6 +17,10 @@ export const LoginScreen: React.FC = () => {
   const numpadHeight = isSmallPhone || height < 700 ? 44 : 54;
   const cardPadding = isSmallPhone || height < 700 ? 16 : 20;
   const cardMarginY = isSmallPhone || height < 700 ? 12 : 24;
+  
+  const statusBarHeight = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 0;
+  const loginPaddingTop = Platform.OS === 'android' ? Math.max(statusBarHeight, insets.top) + 16 : Math.max(insets.top + 16, 24);
+  const loginPaddingBottom = Math.max(insets.bottom + 16, 24);
   
   // Custom Numpad Input States
   const [selectedRole, setSelectedRole] = useState<'REC' | 'BAR' | 'ADM' | 'MGR'>('REC');
@@ -133,8 +137,8 @@ export const LoginScreen: React.FC = () => {
           flexGrow: 1, 
           justifyContent: 'space-between', 
           padding: 16,
-          paddingTop: insets.top + 20,
-          paddingBottom: insets.bottom + 16,
+          paddingTop: loginPaddingTop,
+          paddingBottom: loginPaddingBottom,
         }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"

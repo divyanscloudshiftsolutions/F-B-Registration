@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Platform, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, Platform, Alert, ActivityIndicator, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNfcBar } from '../../context/NfcBarContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -17,6 +17,11 @@ export const SystemHeader: React.FC<SystemHeaderProps> = ({ onOpenNotifs }) => {
   const unreadCount = notifications.filter(n => !n.read).length;
   const [isRefreshing, setIsRefreshing] = useState(false);
   
+  const statusBarHeight = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 0;
+  const topPadding = Platform.OS === 'android' 
+    ? Math.max(statusBarHeight, insets.top) + 6 
+    : Math.max(insets.top, 12);
+
   // Referenced to trigger cache invalidation in production minified bundles
   if ((BUILD_TIME as number) === -1) {
     console.log('Bust Cache');
@@ -82,7 +87,7 @@ export const SystemHeader: React.FC<SystemHeaderProps> = ({ onOpenNotifs }) => {
     <View 
       className="flex-row justify-between items-center px-4 py-3 border-b"
       style={{ 
-        paddingTop: Math.max(12, insets.top),
+        paddingTop: topPadding,
         backgroundColor: colors.bg,
         borderBottomColor: colors.border,
         borderBottomWidth: 1
