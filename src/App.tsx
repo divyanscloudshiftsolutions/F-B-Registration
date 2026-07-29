@@ -30,7 +30,7 @@ const AppContent: React.FC = () => {
       case 'bartender':
         return <BartenderPage />;
       case 'tables':
-        return <TablesPage />;
+        return <TablesPage onNavigateToCheckIn={() => setActiveTab('checkin')} />;
       case 'admin':
         return <AdminPage />;
       default:

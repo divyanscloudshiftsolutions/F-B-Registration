@@ -1,6 +1,5 @@
 import React from 'react';
 import { 
-  Activity, 
   Grid3X3, 
   Users, 
   BarChart3, 
@@ -11,7 +10,6 @@ import {
 } from 'lucide-react';
 
 export type AdminSubTab = 
-  | 'live' 
   | 'tables' 
   | 'staff' 
   | 'chart' 
@@ -29,7 +27,6 @@ export const AdminNavTabs: React.FC<AdminNavTabsProps> = ({ activeTab, setActive
   const tabs: { id: AdminSubTab; label: string; icon: React.FC<{ size?: number; className?: string }> }[] = [
     { id: 'tables', label: 'Tables Floor Plan', icon: Grid3X3 },
     { id: 'staff', label: 'Staff Directory', icon: Users },
-    { id: 'live', label: 'Live Dashboard', icon: Activity },
     { id: 'chart', label: 'Revenue Analytics', icon: BarChart3 },
     { id: 'cards', label: 'Smart Cards', icon: CreditCard },
     { id: 'rates', label: 'Rate Cards', icon: DollarSign },

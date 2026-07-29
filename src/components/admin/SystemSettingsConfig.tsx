@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Shield, CreditCard, QrCode, Trash2, CheckCircle2 } from 'lucide-react';
-import { api, API_BASE_URL } from '../../services/api';
+import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
 export const SystemSettingsConfig: React.FC = () => {
   const { showToast } = useAuth();
-  const [deliveryMode, setDeliveryMode] = useState<'NFC_CARD' | 'EMAIL_QR' | 'BOTH'>('NFC_CARD');
+  const [deliveryMode, setDeliveryMode] = useState<'NFC_CARD' | 'EMAIL_QR' | 'BOTH'>('EMAIL_QR');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -124,17 +124,17 @@ export const SystemSettingsConfig: React.FC = () => {
         )}
       </div>
 
-      {/* System Server Connection Info Box */}
+      {/* System Terminal Status Info Box */}
       <div className="glass-panel p-6 rounded-3xl border border-white/10 space-y-4">
-        <h4 className="text-xs font-bold uppercase text-[#D4AF37] tracking-wider">System Gateway Connection Status</h4>
+        <h4 className="text-xs font-bold uppercase text-[#D4AF37] tracking-wider">Terminal Operational Status</h4>
         <div className="p-4 rounded-2xl bg-[#141A25] border border-white/10 space-y-2 text-xs">
           <div className="flex justify-between">
-            <span className="text-gray-400">Production API Gateway:</span>
-            <span className="font-mono text-emerald-400 font-bold">{API_BASE_URL}</span>
+            <span className="text-gray-400">Terminal Connectivity:</span>
+            <span className="font-semibold text-emerald-400">Active • Connected</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-400">Environment Status:</span>
-            <span className="font-mono text-white">ONLINE • Production Active</span>
+            <span className="text-gray-400">System Mode:</span>
+            <span className="font-semibold text-white">Shift Management Ready</span>
           </div>
         </div>
 

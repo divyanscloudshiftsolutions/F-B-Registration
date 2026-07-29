@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, CheckCircle2, AlertTriangle, UserCheck, Shield } from 'lucide-react';
+import { Camera, CheckCircle2, AlertTriangle, UserCheck, Shield, Video, VideoOff } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -23,13 +23,16 @@ export const QuickAttendanceWebPage: React.FC = () => {
         audio: false,
       });
       setStream(mediaStream);
+      setCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
+        videoRef.current.play().catch(() => {});
       }
-      setCameraActive(true);
+      showToast('Camera enabled successfully.', 'success');
     } catch (err: any) {
       setErrorMessage('Camera access required for facial attendance. Please check browser permissions.');
       setCameraActive(false);
+      showToast('Failed to access camera.', 'danger');
     }
   };
 
@@ -38,18 +41,31 @@ export const QuickAttendanceWebPage: React.FC = () => {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
     }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
     setCameraActive(false);
+    showToast('Camera disabled.', 'info');
   };
 
   useEffect(() => {
     startCamera();
     return () => {
-      stopCamera();
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
     };
   }, []);
 
+  useEffect(() => {
+    if (cameraActive && stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraActive, stream]);
+
   const handleCaptureAndSubmit = async () => {
-    if (isSubmitting || !videoRef.current) return;
+    if (isSubmitting || !cameraActive || !videoRef.current) return;
 
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -99,8 +115,9 @@ export const QuickAttendanceWebPage: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="glass-panel p-8 rounded-3xl border border-white/10 relative overflow-hidden">
-        {/* Header Title */}
-        <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/10">
+        
+        {/* Header Title & Camera Enable / Disable Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-white/10">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center font-bold">
               <UserCheck size={20} />
@@ -111,21 +128,61 @@ export const QuickAttendanceWebPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-semibold text-gray-300">
-            <Shield size={14} className="text-[#D4AF37]" />
-            <span>FaceMark AI Enabled</span>
+          <div className="flex items-center gap-3">
+            {/* Camera Toggle Action Buttons */}
+            {cameraActive ? (
+              <button
+                type="button"
+                onClick={stopCamera}
+                className="px-4 py-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/30 text-xs font-extrabold flex items-center gap-2 transition-all shadow-lg"
+              >
+                <VideoOff size={16} />
+                <span>Disable Camera</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startCamera}
+                className="px-4 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-extrabold flex items-center gap-2 transition-all shadow-lg"
+              >
+                <Video size={16} />
+                <span>Enable Camera</span>
+              </button>
+            )}
+
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-semibold text-gray-300">
+              <Shield size={14} className="text-[#D4AF37]" />
+              <span>FaceMark AI</span>
+            </div>
           </div>
         </div>
 
         {/* Video Camera View Box */}
         <div className="relative rounded-2xl bg-black overflow-hidden aspect-video border border-white/10 flex items-center justify-center shadow-2xl">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover transform -scale-x-100"
-          />
+          {cameraActive ? (
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover transform -scale-x-100"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center text-center p-8 space-y-3">
+              <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-500">
+                <VideoOff size={32} />
+              </div>
+              <p className="text-sm font-bold text-gray-300">Camera is currently disabled</p>
+              <p className="text-xs text-gray-500 max-w-sm">Click the "Enable Camera" button above to turn on webcam for biometric attendance.</p>
+              <button
+                type="button"
+                onClick={startCamera}
+                className="px-6 py-2.5 rounded-xl gold-gradient-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg"
+              >
+                <Video size={16} /> Enable Camera
+              </button>
+            </div>
+          )}
 
           {/* Hidden Canvas for Frame Capture */}
           <canvas ref={canvasRef} className="hidden" />
@@ -206,14 +263,36 @@ export const QuickAttendanceWebPage: React.FC = () => {
               />
             </div>
 
-            <button
-              onClick={handleCaptureAndSubmit}
-              disabled={isSubmitting || !cameraActive}
-              className="w-full md:w-auto px-10 py-3.5 rounded-2xl gold-gradient-btn flex items-center justify-center gap-2 text-sm uppercase font-black tracking-wider disabled:opacity-50 shadow-xl"
-            >
-              <Camera size={20} />
-              <span>{isSubmitting ? 'Verifying Face...' : 'Capture & Verify Attendance'}</span>
-            </button>
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              {!cameraActive ? (
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="w-full md:w-auto px-8 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center gap-2 text-sm uppercase font-black tracking-wider shadow-xl transition-all"
+                >
+                  <Video size={18} />
+                  <span>Enable Camera</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={stopCamera}
+                  className="px-5 py-3.5 rounded-2xl bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 flex items-center justify-center gap-2 text-sm uppercase font-bold tracking-wider transition-all"
+                >
+                  <VideoOff size={18} />
+                  <span>Disable Camera</span>
+                </button>
+              )}
+
+              <button
+                onClick={handleCaptureAndSubmit}
+                disabled={isSubmitting || !cameraActive}
+                className="flex-1 md:flex-initial px-8 py-3.5 rounded-2xl gold-gradient-btn flex items-center justify-center gap-2 text-sm uppercase font-black tracking-wider disabled:opacity-40 disabled:cursor-not-allowed shadow-xl"
+              >
+                <Camera size={20} />
+                <span>{isSubmitting ? 'Verifying Face...' : 'Capture & Verify Attendance'}</span>
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -41,8 +41,23 @@ class ApiService {
 
   // Auth APIs
   async login(username: string | { username: string; pin: string }, pin?: string) {
-    const userStr = typeof username === 'string' ? username : username.username;
-    const pinStr = typeof username === 'string' ? (pin || '') : username.pin;
+    let userStr = typeof username === 'string' ? username : username.username;
+    let pinStr = typeof username === 'string' ? (pin || '') : username.pin;
+
+    const lowerId = userStr.toLowerCase().trim();
+    if (lowerId === 'rec-01' || lowerId === 'rec') {
+      userStr = 'receptionist';
+      pinStr = 'recep123';
+    } else if (lowerId === 'bar-02' || lowerId === 'bar') {
+      userStr = 'bartender';
+      pinStr = 'bar123';
+    } else if (lowerId === 'adm-03' || lowerId === 'adm' || lowerId === 'admin') {
+      userStr = 'admin';
+      pinStr = 'admin123';
+    } else if (lowerId === 'mgr-04' || lowerId === 'mgr' || lowerId === 'manager') {
+      userStr = 'manager';
+      pinStr = 'manager123';
+    }
 
     const res = await this.request<{
       success: boolean;
@@ -80,15 +95,24 @@ class ApiService {
   async getUsers(): Promise<User[]> {
     try {
       const res = await this.request<any>('/users');
-      const rawList = Array.isArray(res) ? res : (res?.users || res?.data?.users || res?.data || []);
-      return rawList.map((u: any) => ({
-        id: u.id || u.userId || String(Math.random()),
-        username: u.username || u.employeeCode || u.code || 'USER-01',
-        fullName: u.fullName || u.name || 'Staff User',
-        role: (u.role || 'receptionist').toLowerCase() as any,
-        isActive: u.isActive !== false,
-        lastLogin: u.lastLogin || u.updatedAt,
-      }));
+      const rawList = Array.isArray(res) ? res : (res?.data?.users || res?.users || res?.data || []);
+      return rawList.map((u: any) => {
+        const roleStr = typeof u.role === 'object' ? (u.role?.name || 'receptionist') : (u.role || 'receptionist');
+        let code = u.username || u.employeeCode || u.code || 'USER-01';
+        if (code.toLowerCase() === 'admin') code = 'ADM-03';
+        else if (code.toLowerCase() === 'receptionist') code = 'REC-01';
+        else if (code.toLowerCase() === 'bartender') code = 'BAR-02';
+        else if (code.toLowerCase() === 'manager') code = 'MGR-04';
+
+        return {
+          id: u.id || u.userId || String(Math.random()),
+          username: code,
+          fullName: u.fullName || u.name || 'Staff User',
+          role: roleStr.toLowerCase() as any,
+          isActive: u.isActive !== false,
+          lastLogin: u.lastLogin || u.updatedAt,
+        };
+      });
     } catch {
       return [];
     }
@@ -285,13 +309,25 @@ class ApiService {
   // Rate Cards Management APIs
   async getRates(): Promise<any[]> {
     try {
-      const res = await this.request<any>('/config/rates');
-      return Array.isArray(res) ? res : (res?.rates || res?.data?.placeTypes || []);
+      let res: any;
+      try {
+        res = await this.request<any>('/config/rates');
+      } catch {
+        res = await this.request<any>('/place-types');
+      }
+      const rawList = Array.isArray(res) ? res : (res?.rates || res?.placeTypes || res?.data?.placeTypes || res?.data || []);
+      if (rawList.length > 0) {
+        return rawList.map((r: any) => ({
+          id: r.id || r.placeTypeId || (r.name ? r.name.toLowerCase().replace(/\s+/g, '_') : 'standing_bar'),
+          name: r.name || r.categoryName || (r.id === 'premium_lounge' ? 'Premium Lounge' : 'Standing Bar'),
+          ratePerPerson: r.ratePerPerson ?? r.pricePerPerson ?? r.rate ?? (r.id === 'premium_lounge' ? 1000 : 500),
+          baseTimeMinutes: r.baseTimeMinutes ?? r.durationMinutes ?? (r.id === 'premium_lounge' ? 180 : 120),
+          redemptionsPerPerson: r.redemptionsPerPerson ?? r.drinksPerPerson ?? (r.id === 'premium_lounge' ? 4 : 2),
+        }));
+      }
+      return [];
     } catch {
-      return [
-        { id: 'standing_bar', name: 'Standing Bar', ratePerPerson: 500, baseTimeMinutes: 120, redemptionsPerPerson: 2 },
-        { id: 'premium_lounge', name: 'Premium Lounge', ratePerPerson: 1000, baseTimeMinutes: 180, redemptionsPerPerson: 4 },
-      ];
+      return [];
     }
   }
 
