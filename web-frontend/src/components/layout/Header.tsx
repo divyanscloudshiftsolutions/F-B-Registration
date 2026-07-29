@@ -17,15 +17,15 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
       {/* Title & Page Header */}
       <div>
         <h2 className="text-lg font-bold text-white tracking-wide">{title}</h2>
-        <p className="text-xs text-gray-400">Production Backend: api.nfc-qr.app.cloudshiftsolutions.in</p>
+        <p className="text-xs text-gray-400">NFC QR Management System</p>
       </div>
 
       {/* System Status & Actions */}
       <div className="flex items-center gap-3">
-        {/* System Mode Capsule */}
+        {/* System Status Capsule */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>System Online</span>
+          <span>System Active</span>
         </div>
 
         {/* Refresh Action Button */}

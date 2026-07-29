@@ -33,3 +33,6 @@ yarn-error.log*
 .DS_Store
 .gemini/
 *.tmp
+backend/neon_dump.sql
+DB Tables.txt
+

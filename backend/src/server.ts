@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import Redis from 'ioredis';
 import { tokenService } from './services/TokenService';
+import { logger, logException, requestLoggingMiddleware } from './lib/logger';
 
 // Trigger Railway rebuild: verified active tokens index fix
 dotenv.config();
@@ -25,9 +26,12 @@ if (process.env.REDIS_URL) {
       // @ts-expect-error - compatibility mapping for ioredis/rate-limit-redis
       sendCommand: (...args: string[]) => redisClient.call(args[0], ...args.slice(1)),
     });
-    console.log('Rate limiter: Redis store initialized successfully.');
+    logger.info('Rate limiter: Redis store initialized successfully', {
+      component: 'rate_limit',
+      event: 'rate_limit.redis_ready',
+    });
   } catch (err) {
-    console.error('Rate limiter: Failed to initialize Redis store. Falling back to MemoryStore.', err);
+    logException(err, 'rate_limit', 'init_redis_store');
   }
 }
 
@@ -89,6 +93,7 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use(requestLoggingMiddleware);
 app.use(limiter);
 
 // Mount API router
@@ -110,11 +115,14 @@ app.get('/health', (req, res) => {
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Unhandled server error:', err);
-  
+  logException(err, 'http', 'unhandled_error', {
+    method: req.method,
+    path: req.originalUrl || req.url,
+  });
+
   const isProduction = process.env.NODE_ENV === 'production';
   const errorMessage = isProduction ? 'Internal server error occurred' : (err.message || 'Internal server error occurred');
-  
+
   res.status(500).json({
     success: false,
     error: {
@@ -125,7 +133,11 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 app.listen(Number(port), '0.0.0.0', () => {
-  console.log(`Backend server listening on port ${port}`);
+  logger.info(`Backend server listening on port ${port}`, {
+    component: 'startup',
+    event: 'server.started',
+    port: Number(port),
+  });
 });
 
 // Periodic background system state reconciler (B3 background check)
@@ -133,6 +145,6 @@ setInterval(async () => {
   try {
     await tokenService.reconcileSystemState();
   } catch (err) {
-    console.error('Background System Reconciler error:', err);
+    logException(err, 'reconciler', 'reconcile_system_state');
   }
 }, 15000);

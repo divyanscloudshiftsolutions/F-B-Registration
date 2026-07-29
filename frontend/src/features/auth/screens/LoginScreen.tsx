@@ -206,7 +206,11 @@ export const LoginScreen: React.FC = () => {
               style={{
                 backgroundColor: colors.secondarySurface,
                 borderColor: activeField === 'id' ? colors.gold : colors.inputBorder,
-                borderWidth: 1
+                borderWidth: activeField === 'id' ? 2 : 1,
+                shadowColor: activeField === 'id' ? colors.gold : 'transparent',
+                shadowOpacity: activeField === 'id' ? 0.35 : 0,
+                shadowRadius: 8,
+                elevation: activeField === 'id' ? 4 : 0
               }}
               accessibilityRole="combobox"
               accessibilityLabel="Employee ID entry field"
@@ -219,7 +223,7 @@ export const LoginScreen: React.FC = () => {
                 <Text className="text-base font-extrabold" style={{ color: colors.text }}>
                   {selectedRole}-
                 </Text>
-                <Text className="text-base font-extrabold" style={{ color: idSuffix ? colors.text : 'rgba(156, 163, 175, 0.4)' }}>
+                <Text className="text-base font-extrabold" style={{ color: idSuffix ? colors.gold : 'rgba(156, 163, 175, 0.4)' }}>
                   {idSuffix || 'XX'}
                 </Text>
                 {activeField === 'id' && (
@@ -234,7 +238,11 @@ export const LoginScreen: React.FC = () => {
               style={{
                 backgroundColor: colors.secondarySurface,
                 borderColor: activeField === 'pin' ? colors.gold : colors.inputBorder,
-                borderWidth: 1
+                borderWidth: activeField === 'pin' ? 2 : 1,
+                shadowColor: activeField === 'pin' ? colors.gold : 'transparent',
+                shadowOpacity: activeField === 'pin' ? 0.35 : 0,
+                shadowRadius: 8,
+                elevation: activeField === 'pin' ? 4 : 0
               }}
               accessibilityRole="combobox"
               accessibilityLabel="PIN input field"
@@ -244,7 +252,7 @@ export const LoginScreen: React.FC = () => {
             >
               <Text className="text-[9px] uppercase tracking-wider mb-0.5" style={{ color: colors.muted }}>Shift PIN</Text>
               <View className="flex-row items-center">
-                <Text className="text-base font-extrabold tracking-widest" style={{ color: colors.text }}>
+                <Text className="text-base font-extrabold tracking-widest" style={{ color: enteredPin ? colors.gold : colors.text }}>
                   {enteredPin ? '•'.repeat(enteredPin.length) : '••••'}
                 </Text>
                 {activeField === 'pin' && enteredPin.length < 4 && (
