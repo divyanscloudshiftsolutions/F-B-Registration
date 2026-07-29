@@ -8,6 +8,13 @@ interface ToastMessage {
   message: string;
 }
 
+interface PreselectedTable {
+  id: string;
+  number: string;
+  capacity: number;
+  placeTypeId: string;
+}
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
@@ -16,6 +23,8 @@ interface AuthContextType {
   systemMode: 'online' | 'offline' | 'syncing';
   toasts: ToastMessage[];
   notifications: NotificationItem[];
+  preselectedTable: PreselectedTable | null;
+  setPreselectedTable: (table: PreselectedTable | null) => void;
   toggleTheme: () => void;
   login: (username: string, pin: string) => Promise<boolean>;
   logout: () => Promise<void>;
@@ -31,12 +40,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isDark, setIsDark] = useState<boolean>(true);
   const [systemMode] = useState<'online' | 'offline' | 'syncing'>('online');
+  const [preselectedTable, setPreselectedTable] = useState<PreselectedTable | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [notifications] = useState<NotificationItem[]>([
     {
       id: '1',
       title: 'System Online',
-      message: 'Connected to Production API endpoint.',
+      message: 'System active and ready for venue operations.',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       read: false,
     },
@@ -105,6 +115,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         systemMode,
         toasts,
         notifications,
+        preselectedTable,
+        setPreselectedTable,
         toggleTheme,
         login,
         logout,

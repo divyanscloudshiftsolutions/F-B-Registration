@@ -4,7 +4,6 @@ import { useAuth } from '../context/AuthContext';
 import { AdminNavTabs, type AdminSubTab } from '../components/admin/AdminNavTabs';
 import { TableManagement } from '../components/admin/TableManagement';
 import { StaffManagement } from '../components/admin/StaffManagement';
-import { LiveDashboard } from '../components/admin/LiveDashboard';
 import { RevenueAnalyticsChart } from '../components/admin/RevenueAnalyticsChart';
 import { SmartCardInventory } from '../components/admin/SmartCardInventory';
 import { RateManagement } from '../components/admin/RateManagement';
@@ -39,8 +38,6 @@ export const AdminPage: React.FC = () => {
         return <TableManagement />;
       case 'staff':
         return <StaffManagement />;
-      case 'live':
-        return <LiveDashboard />;
       case 'chart':
         return <RevenueAnalyticsChart />;
       case 'cards':
