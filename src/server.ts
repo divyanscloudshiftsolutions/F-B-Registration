@@ -52,12 +52,13 @@ const limiter = rateLimit({
 });
 
 const allowedOrigins = [
-  process.env.FRONTEND_URL,
+  ...(process.env.FRONTEND_URL?.split(',').map(origin => origin.trim()).filter(Boolean) ?? []),
   'https://nfc-qr-code-production.up.railway.app',
   'https://nfc-qr-code-two.vercel.app',
   'https://nfc-qr-code-007.vercel.app',
+  'https://nfc-qr.app.cloudshiftsolutions.in',
+  'https://api.nfc-qr.app.cloudshiftsolutions.in',
   'http://localhost:3000',
-  'http://localhost:5173',
   'http://localhost:19006',
 ].filter(Boolean) as string[];
 
@@ -65,24 +66,24 @@ app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps, curl, postman)
     if (!origin) return callback(null, true);
-    
+
     const normalizedOrigin = origin.toLowerCase().trim();
-    
+
     // Check if origin is explicitly allowed
     const isAllowed = allowedOrigins.some(allowed => {
       const normalizedAllowed = allowed.toLowerCase().trim();
-      return normalizedOrigin === normalizedAllowed || 
+      return normalizedOrigin === normalizedAllowed ||
              normalizedOrigin === `${normalizedAllowed}/` ||
              normalizedOrigin.startsWith(normalizedAllowed);
     });
-    
+
     // Check if origin is a local dev address or a Vercel deployment
-    const isLocalOrVercel = normalizedOrigin.includes('localhost') || 
-                            normalizedOrigin.includes('127.0.0.1') || 
+    const isLocalOrVercel = normalizedOrigin.includes('localhost') ||
+                            normalizedOrigin.includes('127.0.0.1') ||
                             normalizedOrigin.startsWith('chrome-extension://') ||
                             normalizedOrigin.endsWith('.vercel.app') ||
                             normalizedOrigin.includes('.vercel.app');
-    
+
     if (isAllowed || isLocalOrVercel) {
       callback(null, true);
     } else {
