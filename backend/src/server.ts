@@ -57,6 +57,7 @@ const allowedOrigins = [
   'https://nfc-qr-code-two.vercel.app',
   'https://nfc-qr-code-007.vercel.app',
   'http://localhost:3000',
+  'http://localhost:5173',
   'http://localhost:19006',
 ].filter(Boolean) as string[];
 
