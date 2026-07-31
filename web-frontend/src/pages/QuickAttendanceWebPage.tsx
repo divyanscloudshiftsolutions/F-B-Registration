@@ -8,21 +8,52 @@ export const QuickAttendanceWebPage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [employeeCode, setEmployeeCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [attendanceResult, setAttendanceResult] = useState<any | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
 
+  const stopCameraInternal = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        try {
+          track.stop();
+          track.enabled = false;
+        } catch {}
+      });
+      streamRef.current = null;
+    }
+
+    if (videoRef.current && videoRef.current.srcObject) {
+      const srcObj = videoRef.current.srcObject as MediaStream;
+      if (srcObj && srcObj.getTracks) {
+        srcObj.getTracks().forEach(track => {
+          try {
+            track.stop();
+            track.enabled = false;
+          } catch {}
+        });
+      }
+      try {
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      } catch {}
+    }
+
+    setCameraActive(false);
+  };
+
   const startCamera = async () => {
+    stopCameraInternal();
     setErrorMessage(null);
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
         audio: false,
       });
-      setStream(mediaStream);
+      streamRef.current = mediaStream;
       setCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
@@ -31,51 +62,29 @@ export const QuickAttendanceWebPage: React.FC = () => {
       showToast('Camera enabled successfully.', 'success');
     } catch (err: any) {
       setErrorMessage('Camera access required for facial attendance. Please check browser permissions.');
-      setCameraActive(false);
+      stopCameraInternal();
       showToast('Failed to access camera.', 'danger');
     }
   };
 
   const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const currentSrcObject = videoRef.current.srcObject as MediaStream;
-      if (currentSrcObject && currentSrcObject.getTracks) {
-        currentSrcObject.getTracks().forEach(track => {
-          track.stop();
-          track.enabled = false;
-        });
-      }
-      videoRef.current.pause();
-      videoRef.current.srcObject = null;
-    }
-
-    if (stream) {
-      stream.getTracks().forEach(track => {
-        track.stop();
-        track.enabled = false;
-      });
-      setStream(null);
-    }
-
-    setCameraActive(false);
+    stopCameraInternal();
     showToast('Camera disabled.', 'info');
   };
 
+  // Component unmount cleanup ONLY (Do NOT auto-start camera on mount)
   useEffect(() => {
-    startCamera();
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
+      stopCameraInternal();
     };
   }, []);
 
   useEffect(() => {
-    if (cameraActive && stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
+    if (cameraActive && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
       videoRef.current.play().catch(() => {});
     }
-  }, [cameraActive, stream]);
+  }, [cameraActive]);
 
   const handleCaptureAndSubmit = async () => {
     if (isSubmitting || !cameraActive || !videoRef.current) return;
