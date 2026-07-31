@@ -311,9 +311,13 @@ class ApiService {
     try {
       let res: any;
       try {
-        res = await this.request<any>('/config/rates');
+        res = await this.request<any>('/rate-cards');
       } catch {
-        res = await this.request<any>('/place-types');
+        try {
+          res = await this.request<any>('/config/rates');
+        } catch {
+          res = await this.request<any>('/place-types');
+        }
       }
       const rawList = Array.isArray(res) ? res : (res?.rates || res?.placeTypes || res?.data?.placeTypes || res?.data || []);
       if (rawList.length > 0) {
