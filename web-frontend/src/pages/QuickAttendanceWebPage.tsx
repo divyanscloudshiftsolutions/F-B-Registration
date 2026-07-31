@@ -37,13 +37,26 @@ export const QuickAttendanceWebPage: React.FC = () => {
   };
 
   const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-    }
-    if (videoRef.current) {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const currentSrcObject = videoRef.current.srcObject as MediaStream;
+      if (currentSrcObject && currentSrcObject.getTracks) {
+        currentSrcObject.getTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+        });
+      }
+      videoRef.current.pause();
       videoRef.current.srcObject = null;
     }
+
+    if (stream) {
+      stream.getTracks().forEach(track => {
+        track.stop();
+        track.enabled = false;
+      });
+      setStream(null);
+    }
+
     setCameraActive(false);
     showToast('Camera disabled.', 'info');
   };
