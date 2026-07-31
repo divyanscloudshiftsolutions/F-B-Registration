@@ -3365,21 +3365,36 @@ const updateRateCardHandler = async (req: Request, res: Response) => {
   }
 };
 
-router.put('/rate-card/:id', authenticate, authorize(['admin']), updateRateCardHandler);
-router.put('/rate-cards/:id', authenticate, authorize(['admin']), updateRateCardHandler);
-
-// Admin list rate-cards
-router.get('/rate-cards', authenticate, async (req: Request, res: Response) => {
+const getRateCardsHandler = async (req: Request, res: Response) => {
   try {
     const rates = await prisma.placeTypeConfig.findMany();
     return res.json({
       success: true,
-      data: { placeTypes: rates }
+      data: { placeTypes: rates },
+      placeTypes: rates,
+      rates: rates.map(r => ({
+        id: r.id,
+        name: r.name,
+        placeType: r.name,
+        ratePerPerson: Number(r.ratePerPerson),
+        baseTimeMinutes: r.baseTimeMinutes,
+        redemptionsPerPerson: r.redemptionsPerPerson,
+      }))
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
-});
+};
+
+router.get('/rate-cards', authenticate, getRateCardsHandler);
+router.get('/rate-card', authenticate, getRateCardsHandler);
+router.get('/config/rates', authenticate, getRateCardsHandler);
+router.get('/place-types', authenticate, getRateCardsHandler);
+
+router.put('/rate-card/:id', authenticate, authorize(['admin']), updateRateCardHandler);
+router.put('/rate-cards/:id', authenticate, authorize(['admin']), updateRateCardHandler);
+router.put('/config/rates/:id', authenticate, authorize(['admin']), updateRateCardHandler);
+router.put('/place-types/:id', authenticate, authorize(['admin']), updateRateCardHandler);
 
 // ==========================================
 // 8. ADMIN REPORTS ENDPOINTS
