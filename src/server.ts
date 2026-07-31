@@ -117,7 +117,9 @@ app.use(cors({
     if (isAllowed || isCloudShiftOrigin || isLocalOrVercel) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      // Reject without throwing — Error callbacks become Express 500s with no
+      // Access-Control-Allow-Origin, which browsers misreport as a CORS failure.
+      callback(null, false);
     }
   },
   credentials: true
