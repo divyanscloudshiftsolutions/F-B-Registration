@@ -64,6 +64,14 @@ const allowedOrigins = [
   'http://192.168.1.150:8091',
 ].filter(Boolean) as string[];
 
+const getOriginHostname = (origin: string) => {
+  try {
+    return new URL(origin).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+};
+
 const isPrivateNetworkOrigin = (origin: string) => {
   const match = origin.match(/^https?:\/\/((\d{1,3}(?:\.\d{1,3}){3}))(?:[:/]|$)/i);
   if (!match) return false;
@@ -85,6 +93,7 @@ app.use(cors({
     if (!origin) return callback(null, true);
 
     const normalizedOrigin = origin.toLowerCase().trim();
+    const originHost = getOriginHostname(normalizedOrigin);
 
     // Check if origin is explicitly allowed
     const isAllowed = allowedOrigins.some(allowed => {
@@ -94,6 +103,9 @@ app.use(cors({
              normalizedOrigin.startsWith(normalizedAllowed);
     });
 
+    const isCloudShiftOrigin = originHost.endsWith('.cloudshiftsolutions.in') ||
+      originHost === 'cloudshiftsolutions.in';
+
     // Check if origin is a local dev address, a private-network address, or a Vercel deployment
     const isLocalOrVercel = normalizedOrigin.includes('localhost') ||
                             normalizedOrigin.includes('127.0.0.1') ||
@@ -102,7 +114,7 @@ app.use(cors({
                             normalizedOrigin.includes('.vercel.app') ||
                             isPrivateNetworkOrigin(normalizedOrigin);
 
-    if (isAllowed || isLocalOrVercel) {
+    if (isAllowed || isCloudShiftOrigin || isLocalOrVercel) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
