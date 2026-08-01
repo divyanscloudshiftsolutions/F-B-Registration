@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { DataProvider } from './context/DataContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { LoginPage } from './pages/LoginPage';
@@ -12,7 +13,13 @@ import { AdminPage } from './pages/AdminPage';
 
 const AppContent: React.FC = () => {
   const { user, toasts, dismissToast } = useAuth();
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [activeTab, setActiveTabState] = useState<string>(() => {
+    return localStorage.getItem('nfc_web_active_tab') || 'dashboard';
+  });
+  const setActiveTab = (tab: string) => {
+    setActiveTabState(tab);
+    localStorage.setItem('nfc_web_active_tab', tab);
+  };
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
   if (!user) {
@@ -99,7 +106,9 @@ const AppContent: React.FC = () => {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <DataProvider>
+        <AppContent />
+      </DataProvider>
     </AuthProvider>
   );
 }

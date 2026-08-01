@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { DollarSign, Edit3, RefreshCw, X, Clock, Wine } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
 
 export const RateManagement: React.FC = () => {
   const { showToast } = useAuth();
-  const [rates, setRates] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { rates: rawRates, isLoading, refreshRates } = useData();
   const [editingRate, setEditingRate] = useState<any | null>(null);
 
   // Form State
@@ -15,22 +15,7 @@ export const RateManagement: React.FC = () => {
   const [drinkAllowance, setDrinkAllowance] = useState('2');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const loadRates = async () => {
-    setIsLoading(true);
-    try {
-      const data = await api.getRates();
-      const filtered = data.filter((r: any) => (r.id !== 'vip_lounge' && r.name !== 'VIP Lounge' && r.placeType !== 'VIP_LOUNGE'));
-      setRates(filtered);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to load rate cards.', 'danger');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadRates();
-  }, []);
+  const rates = rawRates.filter((r: any) => (r.id !== 'vip_lounge' && r.name !== 'VIP Lounge' && r.placeType !== 'VIP_LOUNGE'));
 
   const openEditModal = (r: any) => {
     setEditingRate(r);
@@ -61,7 +46,7 @@ export const RateManagement: React.FC = () => {
       });
       showToast(`Rate card for ${editingRate.name || editingRate.placeType} updated!`, 'success');
       setEditingRate(null);
-      loadRates();
+      refreshRates();
     } catch (err: any) {
       showToast(err.message || 'Failed to update rate card.', 'danger');
     } finally {
@@ -79,7 +64,7 @@ export const RateManagement: React.FC = () => {
         </div>
 
         <button
-          onClick={loadRates}
+          onClick={refreshRates}
           className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 border border-white/10 flex items-center gap-1.5 transition-all"
         >
           <RefreshCw size={14} /> Refresh Rates

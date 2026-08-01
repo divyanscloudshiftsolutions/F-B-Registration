@@ -12,7 +12,13 @@ import { CustomerSessionsManager } from '../components/admin/CustomerSessionsMan
 
 export const AdminPage: React.FC = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<AdminSubTab>('tables');
+  const [activeTab, setActiveTabState] = useState<AdminSubTab>(() => {
+    return (localStorage.getItem('nfc_web_admin_subtab') as AdminSubTab) || 'tables';
+  });
+  const setActiveTab = (tab: AdminSubTab) => {
+    setActiveTabState(tab);
+    localStorage.setItem('nfc_web_admin_subtab', tab);
+  };
 
   // Role Security Check matching NfcBarContext.tsx
   const userRole = user?.role ? user.role.toLowerCase() : '';
