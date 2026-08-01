@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   User, 
   Phone, 
@@ -12,15 +12,18 @@ import {
   Grid3X3,
   Receipt,
   RotateCcw,
-  AlertTriangle
+  AlertTriangle,
+  Camera
 } from 'lucide-react';
 import { api } from '../services/api';
-import type { Table, Token } from '../types';
+import type { Token } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 
 export const CheckInPage: React.FC = () => {
   const { showToast, preselectedTable, setPreselectedTable } = useAuth();
-  const [stage, setStage] = useState<1 | 2 | 3 | 4>(1);
+  const { tables, rates, tokens: activeTokens, refreshTables, refreshTokens } = useData();
+  const [stage, setStage] = useState<1 | 2 | 3 | 4 | 5>(1);
 
   // Stage 1: Form Input States
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -28,27 +31,33 @@ export const CheckInPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [personsCount, setPersonsCount] = useState(2);
   const [deliveryMode, setDeliveryMode] = useState<'NFC_CARD' | 'EMAIL_QR'>('EMAIL_QR');
-
-  // Dynamic Rates State loaded from API
-  const [rates, setRates] = useState<any[]>([]);
   const [selectedPlaceTypeId, setSelectedPlaceTypeId] = useState('standing_bar');
 
   // Stage 2: Seating State
-  const [tables, setTables] = useState<Table[]>([]);
   const [selectedTableId, setSelectedTableId] = useState('');
-  const [activeTokens, setActiveTokens] = useState<Token[]>([]);
 
-  // Stage 3: Payment Details State
+  // Stage 3: Camera & QR Scanner State
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [qrCodeInput, setQrCodeInput] = useState('');
+  const [isVerifyingQr, setIsVerifyingQr] = useState(false);
+  const [qrVerificationSuccess, setQrVerificationSuccess] = useState(false);
+  const [qrVerificationError, setQrVerificationError] = useState<string | null>(null);
+
+  // Stage 4: Payment Details State
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'UPI'>('CASH');
   const [cardUid, setCardUid] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Stage 4: Output Pass Ticket
+  // Stage 5: Output Pass Ticket
   const [createdToken, setCreatedToken] = useState<Token | null>(null);
 
-  // ----------------------------------------------------
+  // Delivery mode defaults to EMAIL_QR always, operator switches manually if needed
+
   // EXACT VALIDATION REGEXES MATCHING REACT NATIVE SOURCE OF TRUTH
-  // ----------------------------------------------------
   const isValidName = (name: string): boolean => {
     const trimmed = name.trim();
     return /^[a-zA-Z\s.'-]{2,100}$/.test(trimmed);
@@ -92,33 +101,6 @@ export const CheckInPage: React.FC = () => {
   // STEP 1 VALIDATION BARRIER (Button disabled if false)
   const isStep1Valid = isNameOk && isPhoneOk && isEmailOk && isCapacityOk;
 
-  const loadData = async () => {
-    try {
-      const [tableData, mode, ratesData, tokensData] = await Promise.all([
-        api.getTables(),
-        api.getDeliveryMode(),
-        api.getRates(),
-        api.getActiveTokens(),
-      ]);
-      setTables(tableData);
-      if (mode === 'NFC_CARD' || mode === 'EMAIL_QR') {
-        setDeliveryMode(mode);
-      }
-      if (Array.isArray(ratesData) && ratesData.length > 0) {
-        setRates(ratesData);
-      }
-      if (Array.isArray(tokensData)) {
-        setActiveTokens(tokensData);
-      }
-    } catch {
-      // Graceful fallback
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
   // Pre-select table if navigated from Tables floor plan
   useEffect(() => {
     if (preselectedTable) {
@@ -142,15 +124,6 @@ export const CheckInPage: React.FC = () => {
   const calculatedTotal = personsCount * currentRateCard.ratePerPerson;
   const totalAllowedDrinks = personsCount * currentRateCard.redemptionsPerPerson;
 
-  const handleSetHeadcount = (count: number) => {
-    if (selectedTableObj && count > selectedTableObj.capacity) {
-      showToast(`Headcount cannot exceed Table ${selectedTableObj.tableNumber} capacity of ${selectedTableObj.capacity} seats.`, 'warning');
-      setPersonsCount(selectedTableObj.capacity);
-    } else {
-      setPersonsCount(count);
-    }
-  };
-
   const handleStage1Next = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -162,7 +135,7 @@ export const CheckInPage: React.FC = () => {
     }
 
     if (preselectedTable) {
-      setStage(3); // Skip directly to payment stage if table preselected from floor plan
+      setStage(3); // Go to Stage 3 (QR Scan) if preselected
     } else {
       setStage(2);
     }
@@ -170,6 +143,100 @@ export const CheckInPage: React.FC = () => {
 
   const handleStage2Next = () => {
     setStage(3);
+  };
+
+  // Camera & QR control methods
+  const startCamera = async (mode: 'user' | 'environment' = facingMode) => {
+    setCameraError(null);
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+
+    try {
+      let mediaStream: MediaStream;
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        });
+      } catch {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
+      setStream(mediaStream);
+      setCameraActive(true);
+    } catch {
+      setCameraError('Camera access unavailable. Please grant browser camera permissions or use manual token verification.');
+      setCameraActive(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setCameraActive(false);
+  };
+
+  const toggleFacingMode = () => {
+    const nextMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(nextMode);
+    if (cameraActive) {
+      startCamera(nextMode);
+    }
+  };
+
+  // Bind video stream whenever stream state or videoRef mounts
+  useEffect(() => {
+    if (cameraActive && stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraActive, stream, stage]);
+
+  useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [stream]);
+
+  const handleVerifyQR = async (code: string) => {
+    const cleanCode = code.trim();
+    if (!cleanCode) return;
+    setIsVerifyingQr(true);
+    setQrVerificationError(null);
+    setQrVerificationSuccess(false);
+
+    try {
+      const res = await api.verifyQR(cleanCode);
+      if (res.success && res.token) {
+        setQrVerificationSuccess(true);
+        showToast(`Token #${res.token.tokenNumber} verified successfully!`, 'success');
+        
+        // Populate inputs if verified pre-registered session returned
+        if (res.token.customer?.name) setCustomerName(res.token.customer.name);
+        if (res.token.customer?.phoneNumber) setPhoneNumber(res.token.customer.phoneNumber);
+        if (res.token.customer?.email) setEmail(res.token.customer.email);
+        if (res.token.personsCount) setPersonsCount(res.token.personsCount);
+        
+        setStage(4); // Advance to payment
+        stopCamera();
+      } else {
+        setQrVerificationError('Token verification failed.');
+        showToast('Token QR verification failed.', 'danger');
+      }
+    } catch (err: any) {
+      setQrVerificationError(err.message || 'Invalid or expired QR token.');
+      showToast(err.message || 'Token verification failed.', 'danger');
+    } finally {
+      setIsVerifyingQr(false);
+    }
   };
 
   const handleFinalCheckInSubmit = async (e: React.FormEvent) => {
@@ -199,7 +266,9 @@ export const CheckInPage: React.FC = () => {
           await api.assignTable(selectedTableId, res.token.id).catch(() => {});
         }
         showToast(`Guest ${customerName} checked in successfully! Token: ${res.token.tokenNumber}`, 'success');
-        setStage(4);
+        refreshTokens();
+        refreshTables();
+        setStage(5);
       } else {
         showToast('Check-in failed. Please try again.', 'danger');
       }
@@ -216,6 +285,7 @@ export const CheckInPage: React.FC = () => {
     setCustomerName('');
     setEmail('');
     setPersonsCount(2);
+    setDeliveryMode('EMAIL_QR');
     setSelectedTableId('');
     setCardUid('');
     setCreatedToken(null);
@@ -236,29 +306,48 @@ export const CheckInPage: React.FC = () => {
     <div className="max-w-7xl mx-auto space-y-6">
       
       {/* Wizard Progress Header Bar */}
-      <div className="glass-panel p-4 rounded-2xl border border-white/10 flex items-center justify-between">
-        {[
-          { num: 1, label: '1. Customer Info' },
-          { num: 2, label: '2. Seating & Plan' },
-          { num: 3, label: '3. Payment & Mode' },
-          { num: 4, label: '4. Pass Generated' },
-        ].map(step => (
-          <div 
-            key={step.num} 
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              stage === step.num 
-                ? 'bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/20 font-black' 
-                : stage > step.num 
-                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
-                : 'text-gray-500 bg-white/5'
-            }`}
-          >
-            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] bg-black/20 font-mono">
-              {stage > step.num ? '✓' : step.num}
-            </span>
-            <span>{step.label}</span>
-          </div>
-        ))}
+      <div className="glass-panel p-6 rounded-2xl border border-white/10 relative overflow-hidden">
+        {/* Background connector line */}
+        <div className="absolute left-[6%] right-[6%] top-1/2 -translate-y-1/2 h-[2px] bg-white/5 -z-10" />
+        
+        {/* Progress fill line */}
+        <div 
+          className="absolute left-[6%] top-1/2 -translate-y-1/2 h-[2px] bg-[#D4AF37] transition-all duration-500 ease-out -z-10"
+          style={{ width: `${((stage - 1) / 4) * 88}%` }}
+        />
+
+        <div className="flex items-center justify-between w-full">
+          {[
+            { num: 1, label: 'Customer Info' },
+            { num: 2, label: 'Table Seating' },
+            { num: 3, label: 'QR Verification' },
+            { num: 4, label: 'Payment Details' },
+            { num: 5, label: 'Pass Generated' },
+          ].map(step => {
+            const isCompleted = stage > step.num;
+            const isActive = stage === step.num;
+            return (
+              <div key={step.num} className="flex flex-col items-center gap-2 relative z-10">
+                <div 
+                  className={`w-9 h-9 rounded-full flex items-center justify-center text-xs transition-all duration-300 ${
+                    isCompleted 
+                      ? 'bg-emerald-500 text-black font-black shadow-lg shadow-emerald-500/20' 
+                      : isActive 
+                      ? 'bg-[#D4AF37] text-black font-black shadow-lg shadow-[#D4AF37]/35 ring-4 ring-[#D4AF37]/20 scale-110' 
+                      : 'bg-[#1A202C] text-gray-500 border border-white/10'
+                  }`}
+                >
+                  {isCompleted ? '✓' : step.num}
+                </div>
+                <span className={`text-[10px] uppercase tracking-wider font-extrabold transition-all ${
+                  isActive ? 'text-[#D4AF37]' : isCompleted ? 'text-emerald-400' : 'text-gray-500'
+                }`}>
+                  {step.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Main Dual-Column Desktop Grid */}
@@ -424,12 +513,67 @@ export const CheckInPage: React.FC = () => {
                     <label className="block text-xs font-semibold text-gray-300 mb-1.5 flex items-center gap-1.5">
                       <Users size={14} className="text-[#D4AF37]" /> Guest Headcount (Persons)
                     </label>
+                    
+                    {/* Custom Increment/Decrement and Editable Input Control */}
+                    <div className="flex items-center gap-3 mb-3 bg-[#1A202C] border border-white/10 rounded-xl p-2 max-w-[240px]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextVal = Math.max(1, personsCount - 1);
+                          setPersonsCount(nextVal);
+                        }}
+                        disabled={personsCount <= 1}
+                        className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white font-black flex items-center justify-center disabled:opacity-40 transition-all cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        max={maxCapacity}
+                        value={personsCount}
+                        onChange={e => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val) && val >= 1) {
+                            if (val > maxCapacity) {
+                              showToast(`Headcount cannot exceed Table maximum capacity of ${maxCapacity} seats.`, 'warning');
+                              setPersonsCount(maxCapacity);
+                            } else {
+                              setPersonsCount(val);
+                            }
+                          }
+                        }}
+                        className="flex-1 bg-transparent text-center text-sm font-bold text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (personsCount >= maxCapacity) {
+                            showToast(`Headcount cannot exceed Table maximum capacity of ${maxCapacity} seats.`, 'warning');
+                          } else {
+                            setPersonsCount(personsCount + 1);
+                          }
+                        }}
+                        disabled={personsCount >= maxCapacity}
+                        className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white font-black flex items-center justify-center disabled:opacity-40 transition-all cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+
                     <div className="flex flex-wrap items-center gap-2">
                       {[1, 2, 3, 4, 5, 6, 8, 10].map(count => (
                         <button
                           type="button"
                           key={count}
-                          onClick={() => handleSetHeadcount(count)}
+                          onClick={() => {
+                            if (count > maxCapacity) {
+                              showToast(`Headcount cannot exceed Table maximum capacity of ${maxCapacity} seats.`, 'warning');
+                              setPersonsCount(maxCapacity);
+                            } else {
+                              setPersonsCount(count);
+                            }
+                          }}
                           className={`px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-all ${
                             personsCount === count
                               ? 'bg-[#D4AF37] text-black border-[#D4AF37] font-black shadow-lg shadow-[#D4AF37]/20'
@@ -573,15 +717,164 @@ export const CheckInPage: React.FC = () => {
             </div>
           )}
 
-          {/* STAGE 3: PAYMENT DETAILS */}
+          {/* STAGE 3: QR PASS SCAN & VERIFY */}
           {stage === 3 && (
+            <div className="glass-panel p-8 rounded-3xl border border-white/10 space-y-6">
+              <div className="flex items-center gap-3 pb-4 border-b border-white/10">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center font-bold">
+                  <QrCode size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Stage 3: Guest QR Verification</h3>
+                  <p className="text-xs text-gray-400">Scan pre-registration QR code or enter token number manually</p>
+                </div>
+              </div>
+
+              {/* Live Camera Viewfinder Layer */}
+              <div className="relative rounded-2xl overflow-hidden bg-black/60 border border-white/10 aspect-video flex flex-col items-center justify-center shadow-inner">
+                {cameraActive ? (
+                  <>
+                    <video 
+                      ref={videoRef} 
+                      autoPlay 
+                      playsInline 
+                      muted 
+                      className="w-full h-full object-cover" 
+                    />
+                    
+                    {/* Pulsing red laser scanner overlay */}
+                    <div className="absolute left-[15%] right-[15%] h-[2px] bg-red-500 top-1/2 -translate-y-1/2 z-20 shadow-[0_0_8px_#EF4444] animate-pulse" />
+                    
+                    {/* Golden target guide frame overlay */}
+                    <div className="absolute w-44 h-44 border-2 border-[#D4AF37] rounded-3xl z-10 flex items-center justify-center bg-black/10 shadow-[0_0_15px_rgba(212,175,55,0.25)]">
+                      <span className="text-[9px] text-[#D4AF37] font-black uppercase tracking-wider bg-black/60 px-2 py-0.5 rounded-md">Viewfinder</span>
+                    </div>
+
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 px-4 py-1.5 rounded-full border border-white/10 z-30">
+                      <p className="text-[10px] text-white font-extrabold uppercase tracking-widest text-center">
+                        Align QR Code within the golden frame
+                      </p>
+                    </div>
+
+                    {/* Camera Control Switches */}
+                    <div className="absolute top-4 right-4 flex gap-2 z-30">
+                      <button
+                        type="button"
+                        onClick={toggleFacingMode}
+                        className="px-2.5 py-1.5 rounded-lg bg-black/75 hover:bg-black text-[10px] font-bold text-white border border-white/15 transition-all cursor-pointer"
+                      >
+                        Switch Source
+                      </button>
+                      <button
+                        type="button"
+                        onClick={stopCamera}
+                        className="px-2.5 py-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 text-[10px] font-bold text-white border border-red-500/30 transition-all cursor-pointer"
+                      >
+                        Close Viewfinder
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center p-6 space-y-4">
+                    <QrCode className="mx-auto text-gray-500 animate-pulse" size={44} />
+                    <div>
+                      <p className="text-xs text-gray-300 font-bold">Live QR Scanner Inactive</p>
+                      <p className="text-[10px] text-gray-500 mt-0.5">Activate camera to verify digital passes automatically</p>
+                    </div>
+                    {cameraError && (
+                      <p className="text-[11px] text-amber-400 font-semibold max-w-md mx-auto">{cameraError}</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => startCamera(facingMode)}
+                      className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-gray-300 border border-white/10 inline-flex items-center gap-2 transition-all cursor-pointer shadow-md"
+                    >
+                      <Camera size={14} /> Start Camera Scanner
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Manual Input Fallback */}
+              <div className="space-y-2.5">
+                <label className="block text-xs font-semibold text-gray-300">Or Input Token Number Manually</label>
+                <div className="flex gap-2.5">
+                  <input
+                    type="text"
+                    value={qrCodeInput}
+                    onChange={e => {
+                      setQrCodeInput(e.target.value.toUpperCase());
+                      setQrVerificationError(null);
+                    }}
+                    placeholder="e.g. BAR-20260728-1"
+                    className="flex-1 bg-[#1A202C] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white font-mono placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
+                  />
+                  <button
+                    type="button"
+                    disabled={isVerifyingQr || !qrCodeInput.trim()}
+                    onClick={() => handleVerifyQR(qrCodeInput)}
+                    className="px-6 py-2.5 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider disabled:opacity-40 transition-all cursor-pointer shadow-md"
+                  >
+                    {isVerifyingQr ? 'Verifying...' : 'Verify Token'}
+                  </button>
+                </div>
+
+                {qrVerificationError && (
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 flex items-center gap-1.5 text-[11px] text-red-400">
+                    <AlertTriangle size={14} className="shrink-0" />
+                    <span>{qrVerificationError}</span>
+                  </div>
+                )}
+
+                {qrVerificationSuccess && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2.5 flex items-center gap-1.5 text-[11px] text-emerald-400">
+                    <CheckCircle2 size={14} className="shrink-0" />
+                    <span>Token verified! Member details populated successfully.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Stage Navigation Buttons */}
+              <div className="pt-4 border-t border-white/10 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopCamera();
+                    if (preselectedTable) {
+                      setStage(1); // Go back to stage 1 if preselected from table plan
+                    } else {
+                      setStage(2);
+                    }
+                  }}
+                  className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold flex items-center gap-2 cursor-pointer transition-all"
+                >
+                  <ChevronLeft size={16} /> Back
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopCamera();
+                    setStage(4); // Manual proceed to Payment
+                  }}
+                  className="px-8 py-3.5 rounded-xl gold-gradient-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl cursor-pointer"
+                >
+                  <span>Proceed to Payment</span>
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STAGE 4: PAYMENT DETAILS */}
+          {stage === 4 && (
             <div className="glass-panel p-8 rounded-3xl border border-white/10 space-y-6">
               <div className="flex items-center gap-3 pb-4 border-b border-white/10">
                 <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center font-bold">
                   <CreditCard size={20} />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">Stage 3: Payment Method & Confirmation</h3>
+                  <h3 className="text-lg font-bold text-white">Stage 4: Payment Method & Confirmation</h3>
                   <p className="text-xs text-gray-400">Collect payment and complete check-in pass issuance</p>
                 </div>
               </div>
@@ -606,7 +899,7 @@ export const CheckInPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setPaymentMode('CASH')}
-                      className={`py-3.5 rounded-xl border text-xs font-bold transition-all ${
+                      className={`py-3.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                         paymentMode === 'CASH'
                           ? 'bg-[#D4AF37] text-black border-[#D4AF37] font-black shadow-lg shadow-[#D4AF37]/20'
                           : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
@@ -617,7 +910,7 @@ export const CheckInPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setPaymentMode('UPI')}
-                      className={`py-3.5 rounded-xl border text-xs font-bold transition-all ${
+                      className={`py-3.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                         paymentMode === 'UPI'
                           ? 'bg-[#D4AF37] text-black border-[#D4AF37] font-black shadow-lg shadow-[#D4AF37]/20'
                           : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
@@ -631,8 +924,8 @@ export const CheckInPage: React.FC = () => {
                 <div className="pt-4 flex items-center justify-between">
                   <button
                     type="button"
-                    onClick={() => setStage(2)}
-                    className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold flex items-center gap-2"
+                    onClick={() => setStage(3)}
+                    className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold flex items-center gap-2 cursor-pointer transition-all"
                   >
                     <ChevronLeft size={16} /> Back
                   </button>
@@ -640,7 +933,7 @@ export const CheckInPage: React.FC = () => {
                   <button
                     type="submit"
                     disabled={isSubmitting || !isStep1Valid}
-                    className="px-8 py-3.5 rounded-xl gold-gradient-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="px-8 py-3.5 rounded-xl gold-gradient-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {isSubmitting ? (
                       <span>Issuing Pass...</span>
@@ -656,8 +949,8 @@ export const CheckInPage: React.FC = () => {
             </div>
           )}
 
-          {/* STAGE 4: CHECK-IN SUCCESS PASS TICKET */}
-          {stage === 4 && createdToken && (
+          {/* STAGE 5: CHECK-IN SUCCESS PASS TICKET */}
+          {stage === 5 && createdToken && (
             <div className="glass-panel p-8 rounded-3xl border border-emerald-500/30 bg-emerald-500/5 space-y-6 text-center">
               <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
                 <CheckCircle2 size={36} />
@@ -689,7 +982,7 @@ export const CheckInPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleResetWizard}
-                className="px-8 py-3.5 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider shadow-xl inline-flex items-center gap-2"
+                className="px-8 py-3.5 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider shadow-xl inline-flex items-center gap-2 cursor-pointer"
               >
                 <RotateCcw size={16} /> Check In Next Guest
               </button>
@@ -704,34 +997,52 @@ export const CheckInPage: React.FC = () => {
             <h4 className="text-sm font-bold text-white uppercase tracking-wider">Live Check-In Receipt</h4>
           </div>
 
-          <div className="space-y-3 text-xs">
-            <div className="flex justify-between text-gray-400">
+          <div className="space-y-4 text-xs">
+            <div className="flex justify-between text-gray-400 border-b border-white/5 pb-2">
               <span>Customer Name:</span>
               <span className="font-bold text-white">{customerName || '—'}</span>
             </div>
-            <div className="flex justify-between text-gray-400">
+            <div className="flex justify-between text-gray-400 border-b border-white/5 pb-2">
               <span>Phone Number:</span>
               <span className="font-mono text-white">{phoneNumber || '—'}</span>
             </div>
-            <div className="flex justify-between text-gray-400">
+            <div className="flex justify-between text-gray-400 border-b border-white/5 pb-2">
               <span>Delivery Channel:</span>
               <span className="font-bold text-emerald-400">{deliveryMode === 'EMAIL_QR' ? 'Digital Email QR' : 'NFC Smart Card'}</span>
             </div>
-            <div className="flex justify-between text-gray-400">
-              <span>Headcount:</span>
-              <span className="font-bold text-amber-300">{personsCount} Persons</span>
+            <div className="flex justify-between text-gray-400 border-b border-white/5 pb-2">
+              <span>Selected Area:</span>
+              <span className="font-bold text-[#D4AF37]">{currentRateCard.name}</span>
             </div>
-            <div className="flex justify-between text-gray-400">
-              <span>Category / Rate:</span>
-              <span className="font-bold text-white">{currentRateCard.name}</span>
-            </div>
-            <div className="flex justify-between text-gray-400">
+            <div className="flex justify-between text-gray-400 border-b border-white/5 pb-2">
               <span>Assigned Table:</span>
               <span className="font-mono font-bold text-emerald-400">{selectedTableObj ? selectedTableObj.tableNumber : 'Unassigned'}</span>
             </div>
+            
+            {/* Dynamic Rates Table Details */}
+            <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2 mt-2">
+              <p className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Pricing Details</p>
+              <div className="flex justify-between text-gray-400">
+                <span>Base Cover / Person:</span>
+                <span className="text-white font-bold">₹{currentRateCard.ratePerPerson}</span>
+              </div>
+              <div className="flex justify-between text-gray-400">
+                <span>Beverages Included:</span>
+                <span className="text-amber-300 font-bold">{currentRateCard.redemptionsPerPerson} drinks/guest</span>
+              </div>
+              <div className="flex justify-between text-gray-400">
+                <span>Session Duration:</span>
+                <span className="text-emerald-400 font-bold">{Math.round((currentRateCard.baseTimeMinutes || 120) / 60)} hours</span>
+              </div>
+              <div className="flex justify-between text-gray-400 border-t border-white/10 pt-2 mt-1">
+                <span>Calculated Subtotal:</span>
+                <span className="text-white font-black">₹{currentRateCard.ratePerPerson} × {personsCount}</span>
+              </div>
+            </div>
+
             <div className="flex justify-between text-gray-400">
-              <span>Drink Allowance:</span>
-              <span className="font-bold text-amber-400">{totalAllowedDrinks} Drinks Included</span>
+              <span>Total Allowed Drinks:</span>
+              <span className="font-bold text-amber-300">{totalAllowedDrinks} Drinks</span>
             </div>
           </div>
 

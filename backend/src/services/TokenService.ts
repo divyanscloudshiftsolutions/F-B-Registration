@@ -601,6 +601,8 @@ export class TokenService {
           await redisService.del(`token:${token.tokenNumber}`);
         }
       }, { timeout: 15000 });
+      await redisService.del('tokens:active').catch(() => {});
+      await redisService.del('tables:all').catch(() => {});
     }
 
     // 3. Reconcile expired active/extended sessions
@@ -663,6 +665,8 @@ export class TokenService {
         }
       }, { timeout: 15000 });
       await redisService.del('table:available:all');
+      await redisService.del('tokens:active').catch(() => {});
+      await redisService.del('tables:all').catch(() => {});
     }
   }
 

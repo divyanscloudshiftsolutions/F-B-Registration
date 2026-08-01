@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Clock, Search, RefreshCw, LogOut, X } from 'lucide-react';
 import { api } from '../../services/api';
 import type { Token } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
 
 export const CustomerSessionsManager: React.FC = () => {
   const { showToast } = useAuth();
-  const [tokens, setTokens] = useState<Token[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { tokens, isLoading, refreshTokens, refreshTables } = useData();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
@@ -22,22 +22,6 @@ export const CustomerSessionsManager: React.FC = () => {
   const [additionalAmount, setAdditionalAmount] = useState(500);
   const [isSubmittingExtend, setIsSubmittingExtend] = useState(false);
 
-  const loadSessions = async () => {
-    setIsLoading(true);
-    try {
-      const data = await api.getActiveTokens();
-      setTokens(data);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to load customer sessions.', 'danger');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadSessions();
-  }, []);
-
   const handleDeactivateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!deactivatingToken) return;
@@ -47,7 +31,8 @@ export const CustomerSessionsManager: React.FC = () => {
       await api.closeToken(deactivatingToken.tokenNumber, closeReason);
       showToast(`Session ${deactivatingToken.tokenNumber} deactivated successfully.`, 'success');
       setDeactivatingToken(null);
-      loadSessions();
+      refreshTokens();
+      refreshTables();
     } catch (err: any) {
       showToast(err.message || 'Failed to deactivate session.', 'danger');
     } finally {
@@ -64,7 +49,7 @@ export const CustomerSessionsManager: React.FC = () => {
       await api.extendToken(extendingToken.tokenNumber, extraMinutes, additionalAmount);
       showToast(`Session ${extendingToken.tokenNumber} extended by ${extraMinutes} mins.`, 'success');
       setExtendingToken(null);
-      loadSessions();
+      refreshTokens();
     } catch (err: any) {
       showToast(err.message || 'Failed to extend session.', 'danger');
     } finally {
@@ -114,7 +99,7 @@ export const CustomerSessionsManager: React.FC = () => {
           ))}
 
           <button
-            onClick={loadSessions}
+            onClick={refreshTokens}
             className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 border border-white/10 flex items-center gap-1.5 transition-all"
           >
             <RefreshCw size={14} /> Refresh

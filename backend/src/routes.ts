@@ -655,57 +655,62 @@ router.post('/auth/register', authenticate, authorize(['admin']), async (req: Re
   const email = finalUsername.includes('@') ? finalUsername : `${finalUsername.toLowerCase()}@cloudshiftsolutions.in`;
 
   let signupTenantId: string | null = null;
-  try {
-    const signupRes = await fetchWithTimeout(`${authApiUrl}/api/auth/signup`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        Email: email,
-        Password: finalPassword,
-        full_name: finalFullName,
-        tenant_code: 'cloud-shift-solutions'
-      })
-    }, 2000);
+  if (process.env.NODE_ENV === 'test') {
+    console.warn(`[test env] Bypassing external registration service. Performing local-only registration.`);
+    signupSucceeded = true;
+  } else {
+    try {
+      const signupRes = await fetchWithTimeout(`${authApiUrl}/api/auth/signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          Email: email,
+          Password: finalPassword,
+          full_name: finalFullName,
+          tenant_code: 'cloud-shift-solutions'
+        })
+      }, 2000);
 
-    if (signupRes.ok) {
-      signupSucceeded = true;
-      const data = await signupRes.json().catch(() => ({}));
-      if (data && data.user && data.user.id) {
-        createdExternalId = data.user.id;
+      if (signupRes.ok) {
+        signupSucceeded = true;
+        const data = await signupRes.json().catch(() => ({}));
+        if (data && data.user && data.user.id) {
+          createdExternalId = data.user.id;
+        }
+        if (data && data.tenant && data.tenant.id) {
+          signupTenantId = data.tenant.id;
+        }
+      } else {
+        const errorText = await signupRes.text().catch(() => 'Signup request failed');
+        if (signupRes.status === 409 || (signupRes.status === 400 && errorText.includes('already exists'))) {
+          signupSucceeded = true;
+        } else {
+          return res.status(500).json({
+            success: false,
+            error: { code: 'AUTH_007', message: `External registration failed with status ${signupRes.status}: ${errorText}` }
+          });
+        }
       }
-      if (data && data.tenant && data.tenant.id) {
-        signupTenantId = data.tenant.id;
-      }
-    } else {
-      const errorText = await signupRes.text().catch(() => 'Signup request failed');
-      if (signupRes.status === 409 || (signupRes.status === 400 && errorText.includes('already exists'))) {
+    } catch (err: any) {
+      const isUnreachable = 
+        err.code === 'ECONNREFUSED' || 
+        err.code === 'ENOTFOUND' || 
+        err.code === 'ETIMEDOUT' || 
+        err.name === 'AbortError' ||
+        err.message.includes('fetch failed');
+
+      if (isUnreachable || process.env.NODE_ENV === 'test') {
+        console.warn(`External registration service is unreachable (${err.message}). Performing local-only registration.`);
         signupSucceeded = true;
       } else {
+        console.error('External registration request failed:', err);
         return res.status(500).json({
           success: false,
-          error: { code: 'AUTH_007', message: `External registration failed with status ${signupRes.status}: ${errorText}` }
+          error: { code: 'AUTH_008', message: `External registration service is unavailable: ${err.message}` }
         });
       }
-    }
-  } catch (err: any) {
-    const isUnreachable = 
-      err.code === 'ECONNREFUSED' || 
-      err.code === 'ENOTFOUND' || 
-      err.code === 'ETIMEDOUT' || 
-      err.name === 'AbortError' ||
-      err.message.includes('fetch failed');
-
-    if (isUnreachable || process.env.NODE_ENV === 'test') {
-      console.warn(`External registration service is unreachable (${err.message}). Performing local-only registration.`);
-      signupSucceeded = true;
-    } else {
-      console.error('External registration request failed:', err);
-      return res.status(500).json({
-        success: false,
-        error: { code: 'AUTH_008', message: `External registration service is unavailable: ${err.message}` }
-      });
     }
   }
 
@@ -738,6 +743,8 @@ router.post('/auth/register', authenticate, authorize(['admin']), async (req: Re
         status: 'SUCCESS'
       }
     }).catch(() => {});
+
+    await redisService.del('users:all').catch(() => {});
 
     return res.status(201).json({
       success: true,
@@ -809,6 +816,16 @@ router.get('/auth/me', authenticate, async (req: AuthenticatedRequest, res: Resp
 // GET /api/users (Admin Only)
 router.get('/users', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
   try {
+    const cacheKey = 'users:all';
+    const cachedData = await redisService.get(cacheKey);
+    if (cachedData) {
+      try {
+        return res.json(JSON.parse(cachedData));
+      } catch (parseErr) {
+        console.warn('[Redis] Failed to parse cached users:', parseErr);
+      }
+    }
+
     const users = await prisma.user.findMany({
       include: { role: true },
       orderBy: { username: 'asc' }
@@ -827,7 +844,10 @@ router.get('/users', authenticate, authorize(['admin']), async (req: Request, re
       createdAt: u.createdAt,
       lastLogin: u.lastLogin
     }));
-    return res.json({ success: true, data: formattedUsers });
+    const resultPayload = { success: true, data: formattedUsers };
+    await redisService.setex(cacheKey, 3600, JSON.stringify(resultPayload));
+
+    return res.json(resultPayload);
   } catch (err: any) {
     return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
   }
@@ -982,6 +1002,8 @@ router.put('/users/:id', authenticate, authorize(['admin']), async (req: Request
       }
     }
 
+    await redisService.del('users:all').catch(() => {});
+
     return res.json({
       success: true,
       message: 'User updated successfully',
@@ -1034,6 +1056,8 @@ router.patch('/users/:id/status', authenticate, authorize(['admin']), async (req
       include: { role: true }
     });
 
+    await redisService.del('users:all').catch(() => {});
+
     return res.json({
       success: true,
       message: 'User status updated successfully',
@@ -1057,6 +1081,16 @@ router.patch('/users/:id/status', authenticate, authorize(['admin']), async (req
 // Get all tables
 router.get('/tables', authenticate, async (req: Request, res: Response) => {
   try {
+    const cacheKey = 'tables:all';
+    const cachedData = await redisService.get(cacheKey);
+    if (cachedData) {
+      try {
+        return res.json(JSON.parse(cachedData));
+      } catch (parseErr) {
+        console.warn('[Redis] Failed to parse cached tables:', parseErr);
+      }
+    }
+
     await tokenService.reconcileSystemState();
     const tables = await prisma.table.findMany({
       include: { placeType: true },
@@ -1073,6 +1107,8 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
       status: t.status.toUpperCase(),
       isActive: t.isActive,
     }));
+
+    await redisService.setex(cacheKey, 300, JSON.stringify(oldTables));
 
     return res.json(oldTables);
   } catch (err: any) {
@@ -1156,6 +1192,9 @@ router.post('/tables/assign', authenticate, authorize(['receptionist', 'admin'])
         }
       });
     }
+    await redisService.del('tables:all').catch(() => {});
+    await redisService.del('tokens:active').catch(() => {});
+
     return res.json({
       success: true,
       data: {
@@ -1202,6 +1241,9 @@ router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 
     if (log && log.vacatedAt) {
       occupancyDurationMinutes = Math.floor((new Date(log.vacatedAt).getTime() - new Date(log.occupiedAt).getTime()) / 60000);
     }
+
+    await redisService.del('tables:all').catch(() => {});
+    await redisService.del('tokens:active').catch(() => {});
 
     return res.json({
       success: true,
@@ -1267,6 +1309,7 @@ router.post('/tables', authenticate, authorize(['admin']), async (req: Request, 
 
     await redisService.del(`table:available:${finalPlaceTypeId}`);
     await redisService.del('table:available:all');
+    await redisService.del('tables:all').catch(() => {});
 
     return res.status(201).json(table); // compatible with admin crud return
   } catch (err: any) {
@@ -1281,6 +1324,7 @@ router.delete('/tables/:id', authenticate, authorize(['admin']), async (req: Req
     const table = await prisma.table.delete({ where: { id } });
     await redisService.del(`table:available:${table.placeTypeId}`);
     await redisService.del('table:available:all');
+    await redisService.del('tables:all').catch(() => {});
     return res.json({ message: 'Table deleted successfully' });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: { code: 'DELETE_ERR', message: err.message } });
@@ -1358,6 +1402,7 @@ router.put('/tables/:id', authenticate, authorize(['admin']), async (req: Reques
     await redisService.del(`table:available:${updated.placeTypeId}`);
     await redisService.del(`table:available:${table.placeTypeId}`);
     await redisService.del('table:available:all');
+    await redisService.del('tables:all').catch(() => {});
 
     return res.json(updated);
   } catch (err: any) {
@@ -1434,6 +1479,7 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
 
     await redisService.del(`table:available:${updated.placeTypeId}`);
     await redisService.del('table:available:all');
+    await redisService.del('tables:all').catch(() => {});
 
     return res.json(updated);
   } catch (err: any) {
@@ -1642,6 +1688,10 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
       cardUid: deliveryMode === 'NFC_CARD' ? finalCardUid : null,
       createdAt: token.issuedAt.toISOString(),
     };
+
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+    await redisService.del('cards:all').catch(() => {});
 
     return res.status(201).json(responseData);
   } catch (err: any) {
@@ -2027,6 +2077,10 @@ const activateSessionHandler = async (req: AuthenticatedRequest, res: Response) 
       createdAt: updatedToken.issuedAt.toISOString(),
     };
 
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+    await redisService.del('cards:all').catch(() => {});
+
     return res.status(200).json(responseData);
   } catch (err: any) {
     if (err.code === 'CONFLICT') {
@@ -2044,6 +2098,10 @@ const cancelSessionHandler = async (req: AuthenticatedRequest, res: Response) =>
   try {
     const cancelEnum = cancelReason === 'PAYMENT_CANCELLED' ? CancelReason.PAYMENT_CANCELLED : CancelReason.USER_CANCELLED;
     const updatedToken = await tokenService.cancelPendingSession(tokenNumber, cancelledBy, cancelEnum);
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+    await redisService.del('cards:all').catch(() => {});
+
     return res.status(200).json({ success: true, message: 'Session cancelled successfully.', data: updatedToken });
   } catch (err: any) {
     console.error(err);
@@ -2306,6 +2364,16 @@ router.put('/config/delivery-mode', authenticate, authorize(['admin']), async (r
 // Get active tokens (list)
 router.get('/tokens/active', authenticate, async (req: Request, res: Response) => {
   try {
+    const cacheKey = 'tokens:active';
+    const cachedData = await redisService.get(cacheKey);
+    if (cachedData) {
+      try {
+        return res.json(JSON.parse(cachedData));
+      } catch (parseErr) {
+        console.warn('[Redis] Failed to parse cached active tokens:', parseErr);
+      }
+    }
+
     await tokenService.reconcileSystemState();
     const activeTokens = await prisma.token.findMany({
       where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] } },
@@ -2341,6 +2409,8 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
         status: t.table.status.toUpperCase(),
       } : null
     }));
+
+    await redisService.setex(cacheKey, 300, JSON.stringify(oldTokens));
 
     return res.json(oldTokens);
   } catch (err: any) {
@@ -2637,6 +2707,8 @@ const extendSessionHandler = async (req: AuthenticatedRequest, res: Response) =>
       }
     };
 
+    await redisService.del('tokens:active').catch(() => {});
+
     return res.json(responseData);
   } catch (err: any) {
     console.error(err);
@@ -2709,6 +2781,10 @@ const checkoutSessionHandler = async (req: AuthenticatedRequest, res: Response) 
       }
     };
 
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+    await redisService.del('cards:all').catch(() => {});
+
     return res.json(responseData);
   } catch (err: any) {
     console.error(err);
@@ -2740,6 +2816,10 @@ router.post('/sessions/:tokenNumber/close', authenticate, authorize(['admin', 'r
       eraseCard !== undefined ? eraseCard : true,
       force === true
     );
+
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+    await redisService.del('cards:all').catch(() => {});
 
     return res.json({
       success: true,
@@ -2816,6 +2896,10 @@ router.post('/sessions/close-by-qr', authenticate, authorize(['admin', 'receptio
       CloseReason.QR_SCAN,
       eraseCard !== undefined ? eraseCard : true
     );
+
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+    await redisService.del('cards:all').catch(() => {});
 
     return res.json({
       success: true,
@@ -3058,17 +3142,31 @@ router.get('/tokens/:tokenNumber/redemptions', authenticate, async (req: Request
 // Get all cards (Admin Only)
 router.get('/cards', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
   try {
+    const cacheKey = 'cards:all';
+    const cachedData = await redisService.get(cacheKey);
+    if (cachedData) {
+      try {
+        return res.json(JSON.parse(cachedData));
+      } catch (parseErr) {
+        console.warn('[Redis] Failed to parse cached cards:', parseErr);
+      }
+    }
+
     const cards = await prisma.card.findMany({
       orderBy: { nfcUid: 'asc' }
     });
-    return res.json(cards.map(c => ({
+    const formatted = cards.map(c => ({
       id: c.id,
       cardUid: c.nfcUid,
       status: c.status.toLowerCase(),
       writeCycles: c.writeCycles,
       lastWrittenAt: c.lastWrittenAt,
       assignedAt: c.assignedAt
-    })));
+    }));
+
+    await redisService.setex(cacheKey, 3600, JSON.stringify(formatted));
+
+    return res.json(formatted);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
@@ -3100,6 +3198,7 @@ router.post('/cards/register', authenticate, authorize(['admin']), async (req: R
         status: status || 'available',
       }
     });
+    await redisService.del('cards:all').catch(() => {});
     return res.status(201).json(card);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
@@ -3172,9 +3271,9 @@ const updateCardStatusHandler = async (req: Request, res: Response) => {
       data: { status: requestedStatus }
     });
 
-    // Invalidate available table cache
     await redisService.del('table:available:all');
     await redisService.del(`card:${cardUid}:status`);
+    await redisService.del('cards:all').catch(() => {});
 
     return res.json({
       id: card.id,
@@ -3353,6 +3452,8 @@ const updateRateCardHandler = async (req: Request, res: Response) => {
       }
     }
 
+    await redisService.del('rates:all').catch(() => {});
+
     return res.json({
       id: pt.id,
       placeType: pt.name,
@@ -3367,8 +3468,18 @@ const updateRateCardHandler = async (req: Request, res: Response) => {
 
 const getRateCardsHandler = async (req: Request, res: Response) => {
   try {
+    const cacheKey = 'rates:all';
+    const cachedData = await redisService.get(cacheKey);
+    if (cachedData) {
+      try {
+        return res.json(JSON.parse(cachedData));
+      } catch (parseErr) {
+        console.warn('[Redis] Failed to parse cached rates:', parseErr);
+      }
+    }
+
     const rates = await prisma.placeTypeConfig.findMany();
-    return res.json({
+    const resultPayload = {
       success: true,
       data: { placeTypes: rates },
       placeTypes: rates,
@@ -3380,7 +3491,11 @@ const getRateCardsHandler = async (req: Request, res: Response) => {
         baseTimeMinutes: r.baseTimeMinutes,
         redemptionsPerPerson: r.redemptionsPerPerson,
       }))
-    });
+    };
+
+    await redisService.setex(cacheKey, 3600, JSON.stringify(resultPayload));
+
+    return res.json(resultPayload);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }

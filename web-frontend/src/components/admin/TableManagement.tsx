@@ -1,13 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Grid3X3, Plus, RefreshCw, X } from 'lucide-react';
 import { api } from '../../services/api';
-import type { Table } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
 
 export const TableManagement: React.FC = () => {
   const { showToast } = useAuth();
-  const [tables, setTables] = useState<Table[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { tables, isLoading, refreshTables } = useData();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<'STANDING_BAR' | 'PREMIUM_LOUNGE'>('STANDING_BAR');
 
@@ -16,22 +15,6 @@ export const TableManagement: React.FC = () => {
   const [capacity, setCapacity] = useState('4');
   const [placeType, setPlaceType] = useState('STANDING_BAR');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const loadTables = async () => {
-    setIsLoading(true);
-    try {
-      const data = await api.getTables();
-      setTables(data);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to load seating tables.', 'danger');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadTables();
-  }, []);
 
   const filteredTables = tables.filter(tb => {
     const p = (tb.placeTypeId || tb.categoryName || tb.tableNumber || '').toUpperCase();
@@ -60,7 +43,7 @@ export const TableManagement: React.FC = () => {
       });
       showToast(`Table ${tableNumber} created successfully!`, 'success');
       setIsModalOpen(false);
-      loadTables();
+      refreshTables();
     } catch (err: any) {
       showToast(err.message || 'Failed to create table.', 'danger');
     } finally {
@@ -72,7 +55,7 @@ export const TableManagement: React.FC = () => {
     try {
       await api.releaseTable(tableId);
       showToast('Table released successfully!', 'success');
-      loadTables();
+      refreshTables();
     } catch (err: any) {
       showToast(err.message || 'Failed to release table.', 'danger');
     }
@@ -108,7 +91,7 @@ export const TableManagement: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={loadTables}
+            onClick={refreshTables}
             className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 border border-white/10 flex items-center gap-1.5 transition-all"
           >
             <RefreshCw size={14} /> Refresh

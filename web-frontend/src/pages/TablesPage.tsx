@@ -1,8 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Grid3X3, RefreshCw, X, CheckCircle2, Users, ArrowRight } from 'lucide-react';
 import { api } from '../services/api';
-import type { Table, Token } from '../types';
+import type { Table } from '../types';
 import { useAuth } from '../context/AuthContext';
+
+interface TablesPageProps {
+  onNavigateToCheckIn?: () => void;
+}
+
+import { useData } from '../context/DataContext';
 
 interface TablesPageProps {
   onNavigateToCheckIn?: () => void;
@@ -10,11 +16,21 @@ interface TablesPageProps {
 
 export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) => {
   const { showToast, setPreselectedTable } = useAuth();
-  const [tables, setTables] = useState<Table[]>([]);
-  const [tokens, setTokens] = useState<Token[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [placeZone, setPlaceZone] = useState<'STANDING_BAR' | 'PREMIUM_LOUNGE'>('STANDING_BAR');
-  const [filter, setFilter] = useState<string>('all');
+  const { tables, tokens, isLoading, refreshTables, refreshTokens } = useData();
+  const [placeZone, setPlaceZoneState] = useState<'STANDING_BAR' | 'PREMIUM_LOUNGE'>(() => {
+    return (localStorage.getItem('nfc_web_tables_zone') as 'STANDING_BAR' | 'PREMIUM_LOUNGE') || 'STANDING_BAR';
+  });
+  const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
+    setPlaceZoneState(zone);
+    localStorage.setItem('nfc_web_tables_zone', zone);
+  };
+  const [filter, setFilterState] = useState<string>(() => {
+    return localStorage.getItem('nfc_web_tables_filter') || 'all';
+  });
+  const setFilter = (val: string) => {
+    setFilterState(val);
+    localStorage.setItem('nfc_web_tables_filter', val);
+  };
 
   // Assign Modal State
   const [assigningTable, setAssigningTable] = useState<Table | null>(null);
@@ -24,25 +40,9 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
   // Centered Table Inspection Dialog Modal State
   const [inspectingTable, setInspectingTable] = useState<Table | null>(null);
 
-  const loadTables = async () => {
-    setIsLoading(true);
-    try {
-      const [tableData, tokenData] = await Promise.all([
-        api.getTables(),
-        api.getActiveTokens(),
-      ]);
-      setTables(tableData);
-      setTokens(tokenData);
-    } catch {
-      showToast('Unable to load latest seating floor plan.', 'danger');
-    } finally {
-      setIsLoading(false);
-    }
+  const handleRefresh = async () => {
+    await Promise.all([refreshTables(), refreshTokens()]);
   };
-
-  useEffect(() => {
-    loadTables();
-  }, []);
 
   const zoneFilteredTables = tables.filter(tb => {
     const p = (tb.placeTypeId || tb.categoryName || tb.tableNumber || '').toUpperCase();
@@ -65,7 +65,8 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
       if (inspectingTable && inspectingTable.id === tableId) {
         setInspectingTable(null);
       }
-      loadTables();
+      refreshTables();
+      refreshTokens();
     } catch (err: any) {
       showToast(err.message || 'Failed to release table.', 'danger');
     }
@@ -81,7 +82,8 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
       showToast(`Table ${assigningTable.tableNumber} assigned successfully!`, 'success');
       setAssigningTable(null);
       setSelectedTokenId('');
-      loadTables();
+      refreshTables();
+      refreshTokens();
     } catch (err: any) {
       showToast(err.message || 'Failed to assign table.', 'danger');
     } finally {
@@ -163,7 +165,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
           </div>
 
           <button
-            onClick={loadTables}
+            onClick={handleRefresh}
             className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-gray-300 border border-white/10 flex items-center gap-2 whitespace-nowrap transition-all"
           >
             <RefreshCw size={14} /> Refresh Floor Plan
