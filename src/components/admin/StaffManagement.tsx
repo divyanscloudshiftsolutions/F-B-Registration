@@ -29,7 +29,8 @@ export const StaffManagement: React.FC = () => {
   const expectedPrefix = role === 'admin' ? 'ADM' : (role === 'receptionist' ? 'REC' : (role === 'bartender' ? 'BAR' : 'MGR'));
   const isUsernameValid = new RegExp('^' + expectedPrefix + '-\\d{2}$').test(username.trim().toUpperCase());
   const isPinValid = /^\d{4}$/.test(pin.trim());
-  const isFormValid = isFullNameValid && isUsernameValid && isPinValid;
+  const isDuplicate = users.some(u => u.username.toUpperCase() === username.trim().toUpperCase());
+  const isFormValid = isFullNameValid && isUsernameValid && isPinValid && !isDuplicate;
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,22 +74,22 @@ export const StaffManagement: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Action Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-white/10">
+      <div className="flex flex-wrap items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3.5 top-3 text-gray-400" size={16} />
+          <Search className="absolute left-3.5 top-3 text-text-muted" size={16} />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search staff members by name, code or role..."
-            className="w-full bg-[#1A202C] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
+            className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
           />
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={refreshUsers}
-            className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 border border-white/10 flex items-center gap-1.5 transition-all"
+            className="px-3.5 py-2 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted border border-border-main flex items-center gap-1.5 transition-all"
           >
             <RefreshCw size={14} /> Refresh
           </button>
@@ -103,16 +104,16 @@ export const StaffManagement: React.FC = () => {
       </div>
 
       {/* Staff User Directory Table */}
-      <div className="glass-panel rounded-2xl p-6 border border-white/10">
+      <div className="glass-panel rounded-2xl p-6 border border-border-main">
         {isLoading ? (
-          <div className="py-12 text-center text-gray-400 text-sm">Loading staff user directory...</div>
+          <div className="py-12 text-center text-text-muted text-sm">Loading staff user directory...</div>
         ) : filteredUsers.length === 0 ? (
-          <div className="py-12 text-center text-gray-500 text-sm">No staff members found matching criteria.</div>
+          <div className="py-12 text-center text-text-muted text-sm">No staff members found matching criteria.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-white/10 text-gray-400 uppercase font-semibold text-[10px] tracking-wider">
+                <tr className="border-b border-border-main text-text-muted uppercase font-semibold text-[10px] tracking-wider">
                   <th className="pb-3 px-3">Employee Code</th>
                   <th className="pb-3 px-3">Full Name</th>
                   <th className="pb-3 px-3">Shift Role</th>
@@ -121,16 +122,16 @@ export const StaffManagement: React.FC = () => {
                   <th className="pb-3 px-3">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-border-main">
                 {filteredUsers.map(u => (
-                  <tr key={u.id} className="hover:bg-white/5 transition-colors">
+                  <tr key={u.id} className="hover:bg-bg-primary transition-colors">
                     <td className="py-3 px-3 font-mono font-bold text-[#D4AF37]">{u.username}</td>
-                    <td className="py-3 px-3 font-semibold text-white">{u.fullName}</td>
+                    <td className="py-3 px-3 font-semibold text-text-main">{u.fullName}</td>
                     <td className="py-3 px-3">
                       <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                        u.role === 'admin' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
-                        u.role === 'receptionist' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :
-                        u.role === 'bartender' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
+                        u.role === 'admin' ? 'dark:bg-amber-500/20 bg-amber-500/10 dark:text-amber-300 text-amber-700 border border-amber-500/40' :
+                        u.role === 'receptionist' ? 'dark:bg-blue-500/20 bg-blue-500/10 dark:text-blue-300 text-blue-700 border border-blue-500/40' :
+                        u.role === 'bartender' ? 'bg-emerald-500/20 dark:text-emerald-300 text-emerald-700 border border-emerald-500/40' :
                         'bg-purple-500/20 text-purple-300 border border-purple-500/40'
                       }`}>
                         {u.role}
@@ -138,12 +139,12 @@ export const StaffManagement: React.FC = () => {
                     </td>
                     <td className="py-3 px-3">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        u.isActive ? 'badge-active' : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                        u.isActive ? 'badge-active' : 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-400 text-red-700 border border-red-500/30'
                       }`}>
                         {u.isActive ? 'ACTIVE' : 'INACTIVE'}
                       </span>
                     </td>
-                    <td className="py-3 px-3 font-mono text-gray-400">
+                    <td className="py-3 px-3 font-mono text-text-muted">
                       {u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'Never'}
                     </td>
                     <td className="py-3 px-3">
@@ -151,8 +152,8 @@ export const StaffManagement: React.FC = () => {
                         onClick={() => handleToggleStatus(u)}
                         className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all ${
                           u.isActive
-                            ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/30'
-                            : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                            ? 'bg-red-500/10 hover:dark:bg-red-500/20 bg-red-500/10 dark:text-red-400 text-red-700 border-red-500/30'
+                            : 'bg-emerald-500/10 hover:bg-emerald-500/20 dark:text-emerald-400 text-emerald-700 border-emerald-500/30'
                         }`}
                       >
                         {u.isActive ? 'Deactivate' : 'Activate'}
@@ -169,10 +170,10 @@ export const StaffManagement: React.FC = () => {
       {/* CREATE STAFF MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#121620] border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
             <button 
               onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+              className="absolute top-4 right-4 text-text-muted hover:text-text-main"
             >
               <X size={18} />
             </button>
@@ -183,11 +184,11 @@ export const StaffManagement: React.FC = () => {
 
             <form onSubmit={handleCreateUser} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">Shift Role</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Shift Role</label>
                 <select
                   value={role}
                   onChange={e => setRole(e.target.value as UserRole)}
-                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#D4AF37]"
                 >
                   <option value="receptionist">Receptionist (REC)</option>
                   <option value="bartender">Bartender (BAR)</option>
@@ -197,34 +198,51 @@ export const StaffManagement: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">Full Name</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Full Name</label>
                 <input
                   type="text"
                   value={fullName}
                   onChange={e => setFullName(e.target.value)}
                   placeholder="e.g. Divyansh Saxena"
-                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#D4AF37]"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">
-                  Employee Code Username <span className="text-gray-500">(Must match pattern {expectedPrefix}-xx)</span>
+                <label className="block text-xs font-semibold text-text-muted mb-1">
+                  Employee Code Username <span className="text-text-muted">(Must match pattern {expectedPrefix}-xx)</span>
                 </label>
                 <input
                   type="text"
                   value={username}
                   onChange={e => setUsername(e.target.value.toUpperCase())}
                   placeholder={`e.g. ${expectedPrefix}-01`}
-                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-[#D4AF37]"
+                  className={`w-full bg-bg-primary border rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37] ${
+                    username.trim() && (!isUsernameValid || isDuplicate) ? 'border-red-500/50 focus:border-red-500' : 'border-border-main'
+                  }`}
                   required
                 />
+                {username.trim() && !isUsernameValid && (
+                  <p className="text-[10px] dark:text-red-400 text-red-700 mt-1 font-medium">
+                    Invalid format. Expected pattern: <strong className="font-bold">{expectedPrefix}-XX</strong> (e.g., {expectedPrefix}-01, {expectedPrefix}-02)
+                  </p>
+                )}
+                {username.trim() && isUsernameValid && isDuplicate && (
+                  <p className="text-[10px] dark:text-red-400 text-red-700 mt-1 font-medium">
+                    Duplicate code. The employee username <strong className="font-bold">{username}</strong> is already registered.
+                  </p>
+                )}
+                {username.trim() && isUsernameValid && !isDuplicate && (
+                  <p className="text-[10px] dark:text-emerald-400 text-emerald-700 mt-1 font-medium">
+                    ✓ Employee code is valid and available.
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">
-                  4-Digit Access PIN <span className="text-gray-500">(Numeric only)</span>
+                <label className="block text-xs font-semibold text-text-muted mb-1">
+                  4-Digit Access PIN <span className="text-text-muted">(Numeric only)</span>
                 </label>
                 <input
                   type="password"
@@ -232,7 +250,7 @@ export const StaffManagement: React.FC = () => {
                   onChange={e => setPin(e.target.value)}
                   maxLength={4}
                   placeholder="e.g. 1234"
-                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37]"
                   required
                 />
               </div>
@@ -241,7 +259,7 @@ export const StaffManagement: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300"
+                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted"
                 >
                   Cancel
                 </button>

@@ -58,7 +58,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#0A0C10] text-gray-100 font-sans">
+    <div className="flex min-h-screen bg-bg-primary text-text-main font-sans">
       {/* Navigation Sidebar */}
       <Sidebar
         activeTab={activeTab}

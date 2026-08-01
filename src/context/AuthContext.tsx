@@ -30,6 +30,9 @@ interface AuthContextType {
   logout: () => Promise<void>;
   showToast: (message: string, type?: 'success' | 'danger' | 'warning' | 'info') => void;
   dismissToast: (id: string) => void;
+  addNotification: (title: string, message: string) => void;
+  markNotificationsAsRead: () => void;
+  clearNotifications: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -38,19 +41,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(api.getToken());
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isDark, setIsDark] = useState<boolean>(true);
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    const savedTheme = localStorage.getItem('nfc_web_theme');
+    return savedTheme !== 'light'; // Default to true (dark theme)
+  });
   const [systemMode] = useState<'online' | 'offline' | 'syncing'>('online');
   const [preselectedTable, setPreselectedTable] = useState<PreselectedTable | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [notifications] = useState<NotificationItem[]>([
-    {
-      id: '1',
-      title: 'System Online',
-      message: 'System active and ready for venue operations.',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      read: false,
-    },
-  ]);
+
+  // Notifications state loaded from localStorage
+  const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
+    const saved = localStorage.getItem('nfc_web_notifications');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // Fallback below
+      }
+    }
+    return [
+      {
+        id: '1',
+        title: 'System Online',
+        message: 'System active and ready for venue operations.',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        read: false,
+      },
+    ];
+  });
+
+  // Apply DOM Theme classes
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  }, [isDark]);
+
+  // Sync notifications to localStorage
+  useEffect(() => {
+    localStorage.setItem('nfc_web_notifications', JSON.stringify(notifications));
+  }, [notifications]);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('nfc_web_user');
@@ -65,7 +99,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [token]);
 
   const toggleTheme = () => {
-    setIsDark(prev => !prev);
+    setIsDark(prev => {
+      const next = !prev;
+      localStorage.setItem('nfc_web_theme', next ? 'dark' : 'light');
+      return next;
+    });
   };
 
   const showToast = (message: string, type: 'success' | 'danger' | 'warning' | 'info' = 'info') => {
@@ -88,6 +126,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setToken(res.token);
         localStorage.setItem('nfc_web_user', JSON.stringify(res.user));
         showToast(`Welcome back, ${res.user.fullName}!`, 'success');
+        
+        // Log receptionist/admin login notification
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const newNotif: NotificationItem = {
+          id: Date.now().toString(),
+          title: 'Staff Access Granted',
+          message: `${res.user.fullName} logged into administrative portal successfully.`,
+          timestamp: timeStr,
+          read: false,
+        };
+        setNotifications(prev => [newNotif, ...prev]);
+
         return true;
       }
       return false;
@@ -103,6 +153,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(null);
     localStorage.removeItem('nfc_web_user');
     showToast('Logged out successfully.', 'info');
+  };
+
+  // Helper actions for notifications
+  const addNotification = (title: string, message: string) => {
+    const newNotif: NotificationItem = {
+      id: Date.now().toString(),
+      title,
+      message,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      read: false,
+    };
+    setNotifications(prev => [newNotif, ...prev]);
+  };
+
+  const markNotificationsAsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
+
+  const clearNotifications = () => {
+    setNotifications([]);
   };
 
   return (
@@ -122,6 +192,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         showToast,
         dismissToast,
+        addNotification,
+        markNotificationsAsRead,
+        clearNotifications,
       }}
     >
       {children}

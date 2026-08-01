@@ -49,19 +49,19 @@ export const SystemSettingsConfig: React.FC = () => {
   return (
     <div className="max-w-3xl space-y-6">
       {/* Delivery Mode System Configuration */}
-      <div className="glass-panel p-6 rounded-3xl border border-white/10 space-y-4">
-        <div className="flex items-center gap-3 pb-3 border-b border-white/10">
+      <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-4">
+        <div className="flex items-center gap-3 pb-3 border-b border-border-main">
           <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center font-bold">
             <Settings size={20} />
           </div>
           <div>
-            <h3 className="text-base font-bold text-white">Global Ticket Pass Delivery Mode</h3>
-            <p className="text-xs text-gray-400">Configure default ticket dispatch method across reception check-in</p>
+            <h3 className="text-base font-bold text-text-main">Global Ticket Pass Delivery Mode</h3>
+            <p className="text-xs text-text-muted">Configure default ticket dispatch method across reception check-in</p>
           </div>
         </div>
 
         {isLoading ? (
-          <div className="py-6 text-center text-gray-400 text-sm">Loading delivery settings...</div>
+          <div className="py-6 text-center text-text-muted text-sm">Loading delivery settings...</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <button
@@ -70,16 +70,16 @@ export const SystemSettingsConfig: React.FC = () => {
               className={`p-5 rounded-2xl border text-left flex flex-col justify-between h-36 transition-all ${
                 deliveryMode === 'NFC_CARD'
                   ? 'bg-[#D4AF37]/15 border-[#D4AF37] shadow-xl shadow-[#D4AF37]/10'
-                  : 'bg-white/5 border-white/10 hover:bg-white/10'
+                  : 'bg-bg-primary border-border-main hover:bg-bg-card'
               }`}
             >
               <div className="flex justify-between items-center">
-                <CreditCard size={24} className={deliveryMode === 'NFC_CARD' ? 'text-[#D4AF37]' : 'text-gray-400'} />
+                <CreditCard size={24} className={deliveryMode === 'NFC_CARD' ? 'text-[#D4AF37]' : 'text-text-muted'} />
                 {deliveryMode === 'NFC_CARD' && <CheckCircle2 size={18} className="text-[#D4AF37]" />}
               </div>
               <div>
-                <p className="text-xs font-bold text-white">NFC Smart Card</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">Physical smart card pair</p>
+                <p className="text-xs font-bold text-text-main">NFC Smart Card</p>
+                <p className="text-[10px] text-text-muted mt-0.5">Physical smart card pair</p>
               </div>
             </button>
 
@@ -89,16 +89,16 @@ export const SystemSettingsConfig: React.FC = () => {
               className={`p-5 rounded-2xl border text-left flex flex-col justify-between h-36 transition-all ${
                 deliveryMode === 'EMAIL_QR'
                   ? 'bg-[#D4AF37]/15 border-[#D4AF37] shadow-xl shadow-[#D4AF37]/10'
-                  : 'bg-white/5 border-white/10 hover:bg-white/10'
+                  : 'bg-bg-primary border-border-main hover:bg-bg-card'
               }`}
             >
               <div className="flex justify-between items-center">
-                <QrCode size={24} className={deliveryMode === 'EMAIL_QR' ? 'text-[#D4AF37]' : 'text-gray-400'} />
+                <QrCode size={24} className={deliveryMode === 'EMAIL_QR' ? 'text-[#D4AF37]' : 'text-text-muted'} />
                 {deliveryMode === 'EMAIL_QR' && <CheckCircle2 size={18} className="text-[#D4AF37]" />}
               </div>
               <div>
-                <p className="text-xs font-bold text-white">Digital Email QR</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">Pass sent to guest phone/email</p>
+                <p className="text-xs font-bold text-text-main">Digital Email QR</p>
+                <p className="text-[10px] text-text-muted mt-0.5">Pass sent to guest phone/email</p>
               </div>
             </button>
 
@@ -108,16 +108,16 @@ export const SystemSettingsConfig: React.FC = () => {
               className={`p-5 rounded-2xl border text-left flex flex-col justify-between h-36 transition-all ${
                 deliveryMode === 'BOTH'
                   ? 'bg-[#D4AF37]/15 border-[#D4AF37] shadow-xl shadow-[#D4AF37]/10'
-                  : 'bg-white/5 border-white/10 hover:bg-white/10'
+                  : 'bg-bg-primary border-border-main hover:bg-bg-card'
               }`}
             >
               <div className="flex justify-between items-center">
-                <Shield size={24} className={deliveryMode === 'BOTH' ? 'text-[#D4AF37]' : 'text-gray-400'} />
+                <Shield size={24} className={deliveryMode === 'BOTH' ? 'text-[#D4AF37]' : 'text-text-muted'} />
                 {deliveryMode === 'BOTH' && <CheckCircle2 size={18} className="text-[#D4AF37]" />}
               </div>
               <div>
-                <p className="text-xs font-bold text-white">Dual Mode (Both)</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">Issue both NFC Card & Digital QR</p>
+                <p className="text-xs font-bold text-text-main">Dual Mode (Both)</p>
+                <p className="text-[10px] text-text-muted mt-0.5">Issue both NFC Card & Digital QR</p>
               </div>
             </button>
           </div>
@@ -125,23 +125,23 @@ export const SystemSettingsConfig: React.FC = () => {
       </div>
 
       {/* System Terminal Status Info Box */}
-      <div className="glass-panel p-6 rounded-3xl border border-white/10 space-y-4">
+      <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-4">
         <h4 className="text-xs font-bold uppercase text-[#D4AF37] tracking-wider">Terminal Operational Status</h4>
-        <div className="p-4 rounded-2xl bg-[#141A25] border border-white/10 space-y-2 text-xs">
+        <div className="p-4 rounded-2xl bg-bg-primary border border-border-main space-y-2 text-xs">
           <div className="flex justify-between">
-            <span className="text-gray-400">Terminal Connectivity:</span>
-            <span className="font-semibold text-emerald-400">Active • Connected</span>
+            <span className="text-text-muted">Terminal Connectivity:</span>
+            <span className="font-semibold dark:text-emerald-400 text-emerald-700">Active • Connected</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-400">System Mode:</span>
-            <span className="font-semibold text-white">Shift Management Ready</span>
+            <span className="text-text-muted">System Mode:</span>
+            <span className="font-semibold text-text-main">Shift Management Ready</span>
           </div>
         </div>
 
         <div className="pt-2 flex justify-end">
           <button
             onClick={handleClearCache}
-            className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold border border-red-500/30 transition-all flex items-center gap-2"
+            className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 dark:text-red-400 text-red-700 text-xs font-bold border border-red-500/30 transition-all flex items-center gap-2"
           >
             <Trash2 size={14} /> Clear Local Browser Cache
           </button>

@@ -1,13 +1,8 @@
 import React, { useState } from 'react';
-import { Grid3X3, RefreshCw, X, CheckCircle2, Users, ArrowRight } from 'lucide-react';
+import { Grid3X3, RefreshCw, X, CheckCircle2, Users, ArrowRight, Search, UserPlus } from 'lucide-react';
 import { api } from '../services/api';
 import type { Table } from '../types';
 import { useAuth } from '../context/AuthContext';
-
-interface TablesPageProps {
-  onNavigateToCheckIn?: () => void;
-}
-
 import { useData } from '../context/DataContext';
 
 interface TablesPageProps {
@@ -110,19 +105,19 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
     : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-text-main">
       
       {/* Non-Overlapping Structured Control Toolbar */}
-      <div className="glass-panel p-5 rounded-3xl border border-white/10 space-y-4">
+      <div className="glass-panel p-5 rounded-3xl border border-border-main space-y-4">
         {/* Tier 1: Primary Zone Switcher Tabs */}
-        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/10">
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-border-main">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setPlaceZone('STANDING_BAR')}
-              className={`px-5 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider border whitespace-nowrap transition-all ${
+              className={`px-5 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider border whitespace-nowrap transition-all cursor-pointer ${
                 placeZone === 'STANDING_BAR'
                   ? 'bg-[#D4AF37] text-black border-[#D4AF37] shadow-xl shadow-[#D4AF37]/20 font-black'
-                  : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+                  : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
               }`}
             >
               Standard Zone (Standing Bar)
@@ -130,33 +125,33 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
 
             <button
               onClick={() => setPlaceZone('PREMIUM_LOUNGE')}
-              className={`px-5 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider border whitespace-nowrap transition-all ${
+              className={`px-5 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider border whitespace-nowrap transition-all cursor-pointer ${
                 placeZone === 'PREMIUM_LOUNGE'
                   ? 'bg-[#D4AF37] text-black border-[#D4AF37] shadow-xl shadow-[#D4AF37]/20 font-black'
-                  : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+                  : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
               }`}
             >
               Premium Zone (Lounge)
             </button>
           </div>
 
-          <div className="text-xs font-bold text-gray-400">
-            Total Tables: <span className="text-white font-mono">{filteredTables.length}</span>
+          <div className="text-xs font-bold text-text-muted">
+            Total Tables: <span className="text-text-main font-mono">{filteredTables.length}</span>
           </div>
         </div>
 
         {/* Tier 2: Secondary Status Filters & Refresh Action */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mr-1">Status Filter:</span>
+            <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1">Status Filter:</span>
             {['all', 'available', 'occupied'].map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider border whitespace-nowrap transition-all ${
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider border whitespace-nowrap transition-all cursor-pointer ${
                   filter === f
-                    ? 'bg-white/20 text-white border-white/40 shadow-md'
-                    : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'
+                    ? 'bg-bg-card text-text-main border-border-main shadow-md'
+                    : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
                 }`}
               >
                 {f}
@@ -166,7 +161,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
 
           <button
             onClick={handleRefresh}
-            className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-gray-300 border border-white/10 flex items-center gap-2 whitespace-nowrap transition-all"
+            className="px-4 py-2 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-bold text-text-muted hover:text-text-main border border-border-main flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer"
           >
             <RefreshCw size={14} /> Refresh Floor Plan
           </button>
@@ -175,15 +170,13 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
 
       {/* Stable Table Cards Floor Plan Grid */}
       {isLoading ? (
-        <div className="py-20 text-center text-gray-400 text-sm">Loading floor layout & seat maps...</div>
+        <div className="py-20 text-center text-text-muted text-sm">Loading floor layout & seat maps...</div>
       ) : filteredTables.length === 0 ? (
-        <div className="glass-panel p-12 rounded-3xl border border-white/10 text-center space-y-3">
-          <Grid3X3 className="mx-auto text-gray-500" size={32} />
-          <p className="text-sm font-bold text-gray-300">No Seating Tables Available</p>
-          <p className="text-xs text-gray-400">There are no tables matching the selected zone filter right now.</p>
+        <div className="glass-panel p-12 rounded-3xl border border-border-main text-center space-y-3">
+          <p className="text-text-muted text-sm">No tables match your filter parameters.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {filteredTables.map(tb => {
             const isOccupied = tb.status === 'occupied';
             const capacity = tb.capacity || 4;
@@ -196,15 +189,15 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                 onClick={() => setInspectingTable(tb)}
                 className={`p-6 rounded-3xl border transition-all cursor-pointer relative overflow-hidden grid grid-rows-[auto_1fr_auto] gap-4 h-72 ${
                   isOccupied
-                    ? 'bg-[#121620]/50 border-amber-500/20 opacity-75 shadow-lg shadow-black/40'
-                    : 'bg-[#121620] border-emerald-500/25 hover:border-[#D4AF37]/50 hover:shadow-xl hover:shadow-[#D4AF37]/5 shadow-md'
+                    ? 'bg-bg-surface/50 border-amber-500/20 opacity-75 shadow-lg shadow-black/40'
+                    : 'bg-bg-surface border-emerald-500/25 hover:border-[#D4AF37]/50 hover:shadow-xl hover:shadow-[#D4AF37]/5 shadow-md'
                 }`}
               >
                 {/* Row 1: Header - Table Number & Status Pill */}
                 <div className="grid grid-cols-2 items-center justify-between">
                   <div>
                     <span className="font-mono text-[#D4AF37] font-black text-2xl tracking-wide">{tb.tableNumber}</span>
-                    <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block mt-0.5">
+                    <p className="text-[10px] text-text-muted font-semibold uppercase tracking-wider block mt-0.5">
                       {placeZone === 'STANDING_BAR' ? 'Standard Zone' : 'Premium Zone'}
                     </p>
                   </div>
@@ -213,8 +206,8 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                     <span
                       className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
                         isOccupied 
-                          ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' 
-                          : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                          ? 'dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 border border-amber-500/30' 
+                          : 'dark:bg-emerald-500/15 bg-emerald-500/10 dark:text-emerald-400 text-emerald-700 border border-emerald-500/30'
                       }`}
                     >
                       {isOccupied ? <Users size={12} /> : <CheckCircle2 size={12} />}
@@ -224,16 +217,16 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                 </div>
 
                 {/* Row 2: Grid Layout for Visual Seating & Metrics */}
-                <div className="py-2.5 px-4 rounded-2xl bg-black/40 border border-white/5 grid grid-rows-[auto_1fr_auto] items-center gap-1.5">
-                  <div className="flex justify-between w-full text-[10px] text-gray-400 font-bold uppercase">
+                <div className="py-2.5 px-4 rounded-2xl bg-bg-primary border border-border-main grid grid-rows-[auto_1fr_auto] items-center gap-1.5">
+                  <div className="flex justify-between w-full text-[10px] text-text-muted font-bold uppercase">
                     <span>Seat Capacity</span>
-                    <span className={isOccupied ? 'text-amber-400 font-extrabold' : 'text-emerald-400 font-extrabold'}>
+                    <span className={isOccupied ? 'dark:text-amber-400 text-amber-700 font-extrabold' : 'dark:text-emerald-400 text-emerald-700 font-extrabold'}>
                       {occupiedCount} / {capacity} Seats
                     </span>
                   </div>
 
                   {/* Micro Floor Plan Seating Alignment */}
-                  <div className="relative flex items-center justify-center h-14 bg-[#121620]/30 rounded-xl border border-white/5">
+                  <div className="relative flex items-center justify-center h-14 bg-bg-surface/30 rounded-xl border border-border-main">
                     {/* Top Seats Row */}
                     <div className="absolute top-1.5 flex gap-2">
                       {Array.from({ length: Math.ceil(capacity / 2) }).map((_, i) => {
@@ -244,7 +237,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                             className={`w-3 h-3 rounded-full border transition-all ${
                               isFilled
                                 ? 'bg-amber-500 border-amber-300 shadow-md shadow-amber-500/30 animate-pulse'
-                                : 'bg-white/5 border-white/10'
+                                : 'bg-bg-primary border-border-main'
                             }`}
                             title={`Seat #${i + 1} (${isFilled ? 'Occupied' : 'Empty'})`}
                           />
@@ -253,8 +246,8 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                     </div>
 
                     {/* Central table plate */}
-                    <div className={`px-4 py-0.5 bg-[#1C2333] border rounded text-[9px] font-mono font-black tracking-wider shadow ${
-                      isOccupied ? 'text-amber-400 border-amber-500/30' : 'text-[#D4AF37] border-white/10'
+                    <div className={`px-4 py-0.5 bg-bg-primary border rounded text-[9px] font-mono font-black tracking-wider shadow ${
+                      isOccupied ? 'dark:text-amber-400 text-amber-700 border-amber-500/30' : 'text-[#D4AF37] border-border-main'
                     }`}>
                       {tb.tableNumber}
                     </div>
@@ -269,7 +262,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                             className={`w-3 h-3 rounded-full border transition-all ${
                               isFilled
                                 ? 'bg-amber-500 border-amber-300 shadow-md shadow-amber-500/30 animate-pulse'
-                                : 'bg-white/5 border-white/10'
+                                : 'bg-bg-primary border-border-main'
                             }`}
                             title={`Seat #${Math.ceil(capacity / 2) + i + 1} (${isFilled ? 'Occupied' : 'Empty'})`}
                           />
@@ -278,41 +271,48 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                     </div>
                   </div>
 
-                  <div className="h-5 flex items-center justify-center">
-                    {assignedToken ? (
-                      <p className="text-[11px] font-bold text-amber-300 truncate max-w-full text-center">
-                        👤 {assignedToken.customer?.name || 'Guest'} ({assignedToken.tokenNumber})
-                      </p>
-                    ) : (
-                      <p className="text-[10px] text-emerald-400/80 text-center font-medium">Ready for guest seating</p>
-                    )}
-                  </div>
+                  {assignedToken && (
+                    <div className="flex items-center justify-between text-[10px] border-t border-border-main pt-1 text-text-muted">
+                      <span className="font-semibold truncate max-w-[80px]">👤 {assignedToken.customer?.name || 'Guest'}</span>
+                      <span className="font-mono text-[#D4AF37] font-bold">{assignedToken.tokenNumber}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Row 3: Action Buttons */}
-                <div className="pt-2 border-t border-white/10">
+                <div className="flex gap-2">
                   {isOccupied ? (
                     <button
-                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleRelease(tb.id);
+                        setInspectingTable(tb);
                       }}
-                      className="w-full py-2.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold text-xs border border-red-500/30 transition-all text-center cursor-pointer"
+                      className="w-full py-2.5 rounded-xl bg-amber-500/10 hover:dark:bg-amber-500/20 bg-amber-500/10 dark:text-amber-300 text-amber-700 text-xs font-bold border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      Release Table
+                      <Search size={14} /> Inspect Details
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRedirectToCheckIn(tb);
-                      }}
-                      className="w-full py-2.5 rounded-xl bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] font-bold text-xs border border-[#D4AF37]/30 transition-all text-center cursor-pointer"
-                    >
-                      Assign Guest
-                    </button>
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRedirectToCheckIn(tb);
+                        }}
+                        className="flex-1 py-2.5 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                      >
+                        <UserPlus size={14} /> Assign
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setInspectingTable(tb);
+                        }}
+                        className="py-2.5 px-3 rounded-xl bg-bg-primary hover:bg-bg-card border border-border-main text-text-muted hover:text-text-main transition-all cursor-pointer"
+                        title="View Setup Diagram"
+                      >
+                        <Search size={14} />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -321,34 +321,37 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
         </div>
       )}
 
-      {/* CENTERED TABLE INSPECTION DIALOG MODAL BOX */}
-      {inspectingTable && (() => {
+      {/* INSPECT DETAILS MODAL */}
+      {(() => {
+        if (!inspectingTable) return null;
         const capacity = inspectingTable.capacity || 4;
+        const assignedToken = tokens.find(tk => tk.tableId === inspectingTable.id || (tk.table && tk.table.id === inspectingTable.id));
         const isOccupied = inspectingTable.status === 'occupied';
-        const occupiedCount = inspectingToken ? (inspectingToken.personsCount || 1) : (isOccupied ? capacity : 0);
+        const occupiedCount = assignedToken ? (assignedToken.personsCount || 1) : (isOccupied ? capacity : 0);
+
         const topCount = Math.ceil(capacity / 2);
         const bottomCount = Math.floor(capacity / 2);
 
         return (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-            <div className="w-full max-w-lg bg-[#121620] border border-white/10 rounded-3xl p-6 space-y-6 shadow-2xl relative animate-scaleUp">
+            <div className="w-full max-w-lg bg-bg-surface border border-border-main rounded-3xl p-6 space-y-6 shadow-2xl relative text-text-main animate-scaleUp">
               
               {/* Header */}
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center justify-between pb-3 border-b border-border-main">
                 <div className="flex items-center gap-2 text-[#D4AF37] font-bold text-base">
                   <Grid3X3 size={20} /> Table {inspectingTable.tableNumber} Inspection Dialog
                 </div>
                 <button 
                   onClick={() => setInspectingTable(null)}
-                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-gray-400 hover:text-white transition-all cursor-pointer"
+                  className="p-1.5 rounded-lg bg-bg-primary hover:bg-bg-card text-text-muted hover:text-text-main transition-all cursor-pointer"
                 >
                   <X size={20} />
                 </button>
               </div>
 
               {/* Top Center Visual Seating View */}
-              <div className="p-5 rounded-2xl bg-[#0B0E14] border border-white/10 flex flex-col items-center justify-center space-y-3">
-                <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400">
+              <div className="p-5 rounded-2xl bg-bg-primary border border-border-main flex flex-col items-center justify-center space-y-3">
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-text-muted">
                   Visual Seating Alignment ({occupiedCount} / {capacity} Seats Occupied)
                 </p>
 
@@ -361,7 +364,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                         <div key={`top-${i}`} className="flex flex-col items-center gap-1">
                           <div className={`w-1 h-3 rounded-full ${isFilled ? 'bg-amber-400' : 'bg-gray-600'}`} />
                           <div className={`w-8 h-8 rounded-full border flex items-center justify-center text-xs font-bold ${
-                            isFilled ? 'bg-amber-500/20 border-amber-400 text-amber-300 font-extrabold shadow-sm shadow-amber-500/20' : 'bg-white/5 border-white/10 text-gray-500'
+                            isFilled ? 'dark:bg-amber-500/20 bg-amber-500/10 dark:border-amber-400 border-amber-500 dark:text-amber-300 text-amber-700 font-extrabold shadow-sm' : 'bg-bg-primary border-border-main text-text-muted'
                           }`}>
                             👤
                           </div>
@@ -371,9 +374,9 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                   </div>
 
                   {/* Table Surface */}
-                  <div className="px-8 py-3 rounded-2xl bg-[#1A202C] border-2 border-[#D4AF37] text-center min-w-[180px] shadow-lg">
+                  <div className="px-8 py-3 rounded-2xl bg-bg-surface border-2 border-[#D4AF37] text-center min-w-[180px] shadow-lg">
                     <p className="font-mono text-[#D4AF37] font-black text-lg">{inspectingTable.tableNumber}</p>
-                    <p className="text-[10px] text-gray-300 font-semibold">{placeZone === 'STANDING_BAR' ? 'Standard Zone' : 'Premium Zone'}</p>
+                    <p className="text-[10px] text-text-muted font-semibold">{placeZone === 'STANDING_BAR' ? 'Standard Zone' : 'Premium Zone'}</p>
                   </div>
 
                   {/* Bottom Seats Row */}
@@ -383,7 +386,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                       return (
                         <div key={`bottom-${i}`} className="flex flex-col items-center gap-1">
                           <div className={`w-8 h-8 rounded-full border flex items-center justify-center text-xs font-bold ${
-                            isFilled ? 'bg-amber-500/20 border-amber-400 text-amber-300 font-extrabold shadow-sm shadow-amber-500/20' : 'bg-white/5 border-white/10 text-gray-500'
+                            isFilled ? 'dark:bg-amber-500/20 bg-amber-500/10 dark:border-amber-400 border-amber-500 dark:text-amber-300 text-amber-700 font-extrabold shadow-sm' : 'bg-bg-primary border-border-main text-text-muted'
                           }`}>
                             👤
                           </div>
@@ -397,38 +400,38 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
 
               {/* Table & Session Metrics */}
               <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="p-3.5 rounded-2xl bg-[#141A25] border border-white/10 space-y-1">
-                  <span className="text-gray-400 text-[10px] font-bold uppercase">Status</span>
-                  <p className={`font-bold text-sm uppercase ${inspectingTable.status === 'occupied' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                <div className="p-3.5 rounded-2xl bg-bg-primary border border-border-main space-y-1">
+                  <span className="text-text-muted text-[10px] font-bold uppercase">Status</span>
+                  <p className={`font-bold text-sm uppercase ${inspectingTable.status === 'occupied' ? 'dark:text-amber-400 text-amber-700' : 'dark:text-emerald-400 text-emerald-700'}`}>
                     {inspectingTable.status}
                   </p>
                 </div>
 
-                <div className="p-3.5 rounded-2xl bg-[#141A25] border border-white/10 space-y-1">
-                  <span className="text-gray-400 text-[10px] font-bold uppercase">Capacity Limit</span>
-                  <p className="font-bold text-sm text-white">{inspectingTable.capacity} Guests Max</p>
+                <div className="p-3.5 rounded-2xl bg-bg-primary border border-border-main space-y-1">
+                  <span className="text-text-muted text-[10px] font-bold uppercase">Capacity Limit</span>
+                  <p className="font-bold text-sm text-text-main">{inspectingTable.capacity} Guests Max</p>
                 </div>
               </div>
 
               {inspectingToken && (
-                <div className="p-4 rounded-2xl bg-[#141A25] border border-white/10 space-y-2 text-xs">
+                <div className="p-4 rounded-2xl bg-bg-primary border border-border-main space-y-2 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Assigned Customer:</span>
-                    <span className="font-bold text-white">{inspectingToken.customer?.name || 'Guest'} ({inspectingToken.customer?.phoneNumber || '—'})</span>
+                    <span className="text-text-muted">Assigned Customer:</span>
+                    <span className="font-bold text-text-main">{inspectingToken.customer?.name || 'Guest'} ({inspectingToken.customer?.phoneNumber || '—'})</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Token Pass:</span>
+                    <span className="text-text-muted">Token Pass:</span>
                     <span className="font-mono text-[#D4AF37] font-bold">{inspectingToken.tokenNumber}</span>
                   </div>
                 </div>
               )}
 
               {/* Action Buttons */}
-              <div className="pt-2 border-t border-white/10 flex gap-3">
+              <div className="pt-2 border-t border-border-main flex gap-3">
                 <button
                   type="button"
                   onClick={() => setInspectingTable(null)}
-                  className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-gray-300"
+                  className="flex-1 py-3 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-bold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
                 >
                   Close Dialog
                 </button>
@@ -437,7 +440,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                   <button
                     type="button"
                     onClick={() => handleRelease(inspectingTable.id)}
-                    className="flex-1 py-3 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold text-xs border border-red-500/30 transition-all text-center"
+                    className="flex-1 py-3 rounded-xl dark:bg-red-500/20 bg-red-500/10 hover:bg-red-500/30 dark:text-red-300 text-red-700 font-bold text-xs border border-red-500/30 transition-all text-center cursor-pointer"
                   >
                     Release Table
                   </button>
@@ -445,14 +448,13 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                   <button
                     type="button"
                     onClick={() => handleRedirectToCheckIn(inspectingTable)}
-                    className="flex-1 py-3 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg"
+                    className="flex-1 py-3 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg cursor-pointer"
                   >
                     <span>Assign Guest & Check-In</span>
                     <ArrowRight size={16} />
                   </button>
                 )}
               </div>
-
             </div>
           </div>
         );
@@ -461,10 +463,10 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
       {/* ASSIGN TABLE MODAL */}
       {assigningTable && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#121620] border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
             <button 
               onClick={() => setAssigningTable(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+              className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
             >
               <X size={18} />
             </button>
@@ -475,14 +477,14 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
 
             <form onSubmit={handleAssignSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">Active Guest Token Pass</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Active Guest Token Pass</label>
                 {tokens.length === 0 ? (
-                  <p className="text-xs text-gray-500 p-2 bg-white/5 rounded-xl">No active guest tokens available for assignment.</p>
+                  <p className="text-xs text-text-muted p-2 bg-bg-primary rounded-xl">No active guest tokens available for assignment.</p>
                 ) : (
                   <select
                     value={selectedTokenId}
                     onChange={e => setSelectedTokenId(e.target.value)}
-                    className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#D4AF37]"
+                    className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#D4AF37]"
                     required
                   >
                     <option value="">Select Token Pass...</option>
@@ -499,14 +501,14 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                 <button
                   type="button"
                   onClick={() => setAssigningTable(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300"
+                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingAssign || !selectedTokenId}
-                  className="flex-1 py-2.5 rounded-xl gold-gradient-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
+                  className="flex-1 py-2.5 rounded-xl gold-gradient-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
                 >
                   {isSubmittingAssign ? 'Assigning...' : 'Confirm Seating'}
                 </button>

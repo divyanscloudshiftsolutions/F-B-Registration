@@ -44,19 +44,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside 
-      className={`h-screen sticky top-0 bg-[#0E121B] border-r border-white/10 flex flex-col justify-between transition-all duration-300 z-30 ${
+      className={`h-screen sticky top-0 bg-bg-surface border-r border-border-main flex flex-col justify-between transition-all duration-300 z-30 ${
         collapsed ? 'w-20' : 'w-64'
       }`}
     >
       {/* Brand Top Header */}
       <div>
-        <div className="h-16 border-b border-white/10 flex items-center justify-between px-4">
+        <div className="h-16 border-b border-border-main flex items-center justify-between px-4">
           {!collapsed && (
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg gold-gradient-btn flex items-center justify-center text-black font-black text-sm">
                 🍸
               </div>
-              <span className="font-extrabold text-white tracking-wider text-sm">NFC BAR SYSTEM</span>
+              <span className="font-extrabold text-text-main tracking-wider text-sm">NFC BAR SYSTEM</span>
             </div>
           )}
           {collapsed && (
@@ -67,7 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+            className="p-1.5 rounded-lg bg-bg-primary hover:bg-bg-card text-text-muted hover:text-text-main transition-colors cursor-pointer"
           >
             {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </button>
@@ -82,14 +82,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-xs font-bold transition-all ${
+                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   isActive
                     ? 'bg-gradient-to-r from-[#D4AF37] to-[#F5E08B] text-black shadow-lg shadow-[#D4AF37]/20 font-black'
-                    : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                    : 'text-text-muted hover:bg-bg-card hover:text-text-main'
                 }`}
                 title={collapsed ? item.label : undefined}
               >
-                <Icon size={18} className={isActive ? 'text-black' : 'text-gray-400'} />
+                <Icon size={18} className={isActive ? 'text-black' : 'text-text-muted'} />
                 {!collapsed && <span>{item.label}</span>}
               </button>
             );
@@ -98,17 +98,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Footer Profile & Logout */}
-      <div className="p-3 border-t border-white/10">
+      <div className="p-3 border-t border-border-main">
         {user && !collapsed && (
           <div className="mb-3 px-2">
-            <p className="text-xs font-bold text-white truncate">{user.fullName || user.username}</p>
+            <p className="text-xs font-bold text-text-main truncate">{user.fullName || user.username}</p>
             <p className="text-[10px] text-[#D4AF37] uppercase tracking-wider font-semibold">{user.role}</p>
           </div>
         )}
 
         <button
           onClick={logout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold dark:text-red-400 text-red-700 hover:bg-red-500/10 transition-colors cursor-pointer"
           title={collapsed ? 'Sign Out' : undefined}
         >
           <LogOut size={18} />
