@@ -151,14 +151,14 @@ export const CustomerSessionsManager: React.FC = () => {
                     <td className="py-3 px-3 flex items-center gap-2">
                       <button
                         onClick={() => setExtendingToken(tk)}
-                        className="px-2.5 py-1 rounded bg-amber-500/10 hover:dark:bg-amber-500/20 bg-amber-500/10 dark:text-amber-300 text-amber-700 text-[10px] font-bold border border-amber-500/30 transition-all flex items-center gap-1"
+                        className="px-2.5 py-1 rounded cursor-pointer dark:bg-amber-500/20 bg-amber-500/10 hover:dark:bg-amber-500/30 hover:bg-amber-500/20 dark:text-amber-300 text-amber-700 text-[10px] font-bold border border-amber-500/30 transition-all flex items-center gap-1"
                       >
                         <Clock size={12} /> Extend
                       </button>
 
                       <button
                         onClick={() => setDeactivatingToken(tk)}
-                        className="px-2.5 py-1 rounded bg-red-500/10 hover:dark:bg-red-500/20 bg-red-500/10 dark:text-red-400 text-red-700 text-[10px] font-bold border border-red-500/30 transition-all flex items-center gap-1"
+                        className="px-2.5 py-1 rounded cursor-pointer dark:bg-red-500/20 bg-red-500/10 hover:dark:bg-red-500/30 hover:bg-red-500/20 dark:text-red-400 text-red-700 text-[10px] font-bold border border-red-500/30 transition-all flex items-center gap-1"
                       >
                         <LogOut size={12} /> Deactivate
                       </button>
