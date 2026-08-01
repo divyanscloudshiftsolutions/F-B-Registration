@@ -103,13 +103,13 @@ export const SmartCardInventory: React.FC = () => {
                     <td className="py-3 px-3 flex items-center gap-2">
                       <button
                         onClick={() => handleUpdateStatus(c.cardUid, 'AVAILABLE')}
-                        className="px-2 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 dark:text-emerald-300 text-emerald-700 text-[10px] font-bold border border-emerald-500/30 transition-all"
+                        className="px-2 py-1 rounded cursor-pointer dark:bg-emerald-500/20 bg-emerald-500/10 hover:dark:bg-emerald-500/30 hover:bg-emerald-500/20 dark:text-emerald-300 text-emerald-700 text-[10px] font-bold border border-emerald-500/30 transition-all"
                       >
                         Available
                       </button>
                       <button
                         onClick={() => handleUpdateStatus(c.cardUid, 'LOST')}
-                        className="px-2 py-1 rounded bg-red-500/10 hover:dark:bg-red-500/20 bg-red-500/10 dark:text-red-400 text-red-700 text-[10px] font-bold border border-red-500/30 transition-all"
+                        className="px-2 py-1 rounded cursor-pointer dark:bg-red-500/20 bg-red-500/10 hover:dark:bg-red-500/30 hover:bg-red-500/20 dark:text-red-400 text-red-700 text-[10px] font-bold border border-red-500/30 transition-all"
                       >
                         Mark Lost
                       </button>

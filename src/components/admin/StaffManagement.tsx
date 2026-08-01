@@ -150,10 +150,10 @@ export const StaffManagement: React.FC = () => {
                     <td className="py-3 px-3">
                       <button
                         onClick={() => handleToggleStatus(u)}
-                        className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all ${
+                        className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
                           u.isActive
-                            ? 'bg-red-500/10 hover:dark:bg-red-500/20 bg-red-500/10 dark:text-red-400 text-red-700 border-red-500/30'
-                            : 'bg-emerald-500/10 hover:bg-emerald-500/20 dark:text-emerald-400 text-emerald-700 border-emerald-500/30'
+                            ? 'dark:bg-red-500/20 bg-red-500/10 hover:dark:bg-red-500/30 hover:bg-red-500/20 dark:text-red-400 text-red-700 border-red-500/30'
+                            : 'dark:bg-emerald-500/20 bg-emerald-500/10 hover:dark:bg-emerald-500/30 hover:bg-emerald-500/20 dark:text-emerald-400 text-emerald-700 border-emerald-500/30'
                         }`}
                       >
                         {u.isActive ? 'Deactivate' : 'Activate'}

@@ -99,16 +99,6 @@ const AppContent: React.FC = () => {
           </div>
         ))}
       </div>
-
-      {/* SVG Liquid Morphing Filter Definition */}
-      <svg style={{ visibility: 'hidden', position: 'absolute', width: 0, height: 0 }} aria-hidden="true">
-        <defs>
-          <filter id="liquid-glass-morph">
-            <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="3" result="noise" />
-            <feDisplacementMap in="SourceGraphic" in2="noise" scale="45" xChannelSelector="R" yChannelSelector="G" />
-          </filter>
-        </defs>
-      </svg>
     </div>
   );
 };
