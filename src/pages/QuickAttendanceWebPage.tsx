@@ -135,52 +135,54 @@ export const QuickAttendanceWebPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="glass-panel p-8 rounded-3xl border border-white/10 relative overflow-hidden">
+    <div className="max-w-2xl mx-auto space-y-4">
+      <div className="glass-panel p-5 rounded-3xl border border-border-main relative overflow-hidden">
         
         {/* Header Title & Camera Enable / Disable Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center font-bold">
-              <UserCheck size={20} />
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-border-main">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 flex items-center justify-center font-bold">
+              <UserCheck size={18} />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white">FaceMark Quick Facial Attendance Kiosk</h3>
-              <p className="text-xs text-gray-400">Biometric facial recognition check-in & check-out</p>
+              <h3 className="text-base font-bold text-text-main">FaceMark Quick Facial Attendance Kiosk</h3>
+              <p className="text-[10px] text-text-muted">Biometric facial recognition check-in & check-out</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {/* Camera Toggle Action Buttons */}
             {cameraActive ? (
               <button
                 type="button"
                 onClick={stopCamera}
-                className="px-4 py-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/30 text-xs font-extrabold flex items-center gap-2 transition-all shadow-lg"
+                className="px-3.5 py-1.5 rounded-lg dark:bg-red-500/15 bg-red-500/10 hover:bg-red-500/25 dark:text-red-400 text-red-700 border border-red-500/30 text-[10px] font-extrabold flex items-center gap-1.5 transition-all shadow-lg cursor-pointer"
               >
-                <VideoOff size={16} />
+                <VideoOff size={14} />
                 <span>Disable Camera</span>
               </button>
             ) : (
               <button
                 type="button"
                 onClick={startCamera}
-                className="px-4 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-extrabold flex items-center gap-2 transition-all shadow-lg"
+                className="px-3.5 py-1.5 rounded-lg dark:bg-emerald-500/15 bg-emerald-500/10 hover:bg-emerald-500/25 dark:text-emerald-400 text-emerald-700 border border-emerald-500/30 text-[10px] font-extrabold flex items-center gap-1.5 transition-all shadow-lg cursor-pointer"
               >
-                <Video size={16} />
+                <Video size={14} />
                 <span>Enable Camera</span>
               </button>
             )}
 
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-semibold text-gray-300">
-              <Shield size={14} className="text-[#D4AF37]" />
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-bg-primary border border-border-main text-[10px] font-semibold text-text-muted">
+              <Shield size={12} className="text-[#D4AF37]" />
               <span>FaceMark AI</span>
             </div>
           </div>
         </div>
 
         {/* Video Camera View Box */}
-        <div className="relative rounded-2xl bg-black overflow-hidden aspect-video border border-white/10 flex items-center justify-center shadow-2xl">
+        <div className={`relative rounded-2xl overflow-hidden aspect-video border border-border-main flex items-center justify-center shadow-2xl ${
+          cameraActive ? 'bg-black' : 'bg-bg-primary'
+        }`}>
           {cameraActive ? (
             <video
               ref={videoRef}
@@ -190,18 +192,18 @@ export const QuickAttendanceWebPage: React.FC = () => {
               className="w-full h-full object-cover transform -scale-x-100"
             />
           ) : (
-            <div className="flex flex-col items-center justify-center text-center p-8 space-y-3">
-              <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-500">
-                <VideoOff size={32} />
+            <div className="flex flex-col items-center justify-center text-center p-6 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-bg-surface border border-border-main flex items-center justify-center text-text-muted">
+                <VideoOff size={24} />
               </div>
-              <p className="text-sm font-bold text-gray-300">Camera is currently disabled</p>
-              <p className="text-xs text-gray-500 max-w-sm">Click the "Enable Camera" button above to turn on webcam for biometric attendance.</p>
+              <p className="text-xs font-bold text-text-main">Camera is currently disabled</p>
+              <p className="text-[10px] text-text-muted max-w-xs">Click the "Enable Camera" button above to turn on webcam for biometric attendance.</p>
               <button
                 type="button"
                 onClick={startCamera}
-                className="px-6 py-2.5 rounded-xl gold-gradient-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg"
+                className="px-5 py-2 rounded-xl gold-gradient-btn text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 shadow-lg cursor-pointer"
               >
-                <Video size={16} /> Enable Camera
+                <Video size={14} /> Enable Camera
               </button>
             </div>
           )}
@@ -212,40 +214,40 @@ export const QuickAttendanceWebPage: React.FC = () => {
           {/* Scanning Reticle Frame Overlay */}
           {!attendanceResult && !errorMessage && cameraActive && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-64 h-64 border-2 border-dashed border-[#D4AF37]/60 rounded-full animate-pulse flex items-center justify-center">
-                <div className="w-56 h-56 border border-white/20 rounded-full" />
+              <div className="w-48 h-48 border-2 border-dashed border-[#D4AF37]/60 rounded-full animate-pulse flex items-center justify-center">
+                <div className="w-40 h-40 border border-white/20 rounded-full" />
               </div>
             </div>
           )}
 
           {/* Result Card Overlay */}
           {attendanceResult && (
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-md p-6 flex flex-col items-center justify-center text-center space-y-4">
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl ${
-                attendanceResult.action === 'check-in' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500' : 'bg-blue-500/20 text-blue-400 border border-blue-500'
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center space-y-3">
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
+                attendanceResult.action === 'check-in' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500' : 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
               }`}>
-                <CheckCircle2 size={40} />
+                <CheckCircle2 size={28} />
               </div>
 
               <div>
-                <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest ${
+                <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
                   attendanceResult.action === 'check-in' ? 'badge-active' : 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
                 }`}>
                   {attendanceResult.action}
                 </span>
-                <h3 className="text-2xl font-black text-white mt-2">{attendanceResult.userName || 'Employee Identified'}</h3>
-                <p className="text-xs text-gray-400 font-mono mt-0.5">{attendanceResult.userEmail}</p>
+                <h3 className="text-lg font-black text-text-main mt-1.5">{attendanceResult.userName || 'Employee Identified'}</h3>
+                <p className="text-[10px] text-text-muted font-mono mt-0.5">{attendanceResult.userEmail}</p>
               </div>
 
               {attendanceResult.confidence && (
-                <div className="text-xs font-semibold text-[#D4AF37] bg-white/5 px-3 py-1 rounded-full border border-white/10">
+                <div className="text-[10px] font-semibold text-[#D4AF37] bg-bg-primary px-2.5 py-0.5 rounded-full border border-border-main">
                   Confidence Score: {(attendanceResult.confidence * 100).toFixed(1)}%
                 </div>
               )}
 
               <button
                 onClick={handleReset}
-                className="mt-4 px-8 py-3 rounded-xl gold-gradient-btn text-xs uppercase font-bold tracking-wider"
+                className="mt-2 px-6 py-2 rounded-xl gold-gradient-btn text-[10px] uppercase font-bold tracking-wider cursor-pointer"
               >
                 Scan Next Employee
               </button>
@@ -254,17 +256,17 @@ export const QuickAttendanceWebPage: React.FC = () => {
 
           {/* Error State Overlay */}
           {errorMessage && (
-            <div className="absolute inset-0 bg-black/85 backdrop-blur-md p-6 flex flex-col items-center justify-center text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-red-500/20 border border-red-500 text-red-400 flex items-center justify-center text-2xl">
-                <AlertTriangle size={36} />
+            <div className="absolute inset-0 bg-black/85 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center space-y-3">
+              <div className="w-12 h-12 rounded-full dark:bg-red-500/20 bg-red-500/10 border border-red-500 dark:text-red-400 text-red-700 flex items-center justify-center text-xl">
+                <AlertTriangle size={24} />
               </div>
 
-              <h4 className="text-lg font-bold text-red-400">Attendance Verification Failed</h4>
-              <p className="text-xs text-gray-300 max-w-md">{errorMessage}</p>
+              <h4 className="text-sm font-bold dark:text-red-400 text-red-700">Attendance Verification Failed</h4>
+              <p className="text-[10px] text-text-muted max-w-sm">{errorMessage}</p>
 
               <button
                 onClick={handleReset}
-                className="mt-4 px-8 py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold uppercase tracking-wider transition-all"
+                className="mt-2 px-6 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-text-main text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer"
               >
                 Try Again
               </button>
@@ -274,34 +276,34 @@ export const QuickAttendanceWebPage: React.FC = () => {
 
         {/* Shutter Controls & Employee Code Option */}
         {!attendanceResult && !errorMessage && (
-          <div className="mt-6 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="w-full md:w-80">
+          <div className="mt-4 flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="w-full md:w-64">
               <input
                 type="text"
                 value={employeeCode}
                 onChange={e => setEmployeeCode(e.target.value)}
                 placeholder="Optional Employee ID (e.g. EMP-99)"
-                className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
+                className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
               />
             </div>
 
-            <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="flex items-center gap-2.5 w-full md:w-auto">
               {!cameraActive ? (
                 <button
                   type="button"
                   onClick={startCamera}
-                  className="w-full md:w-auto px-8 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center gap-2 text-sm uppercase font-black tracking-wider shadow-xl transition-all"
+                  className="w-full md:w-auto px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-text-main flex items-center justify-center gap-1.5 text-xs uppercase font-black tracking-wider shadow-xl transition-all cursor-pointer"
                 >
-                  <Video size={18} />
+                  <Video size={16} />
                   <span>Enable Camera</span>
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={stopCamera}
-                  className="px-5 py-3.5 rounded-2xl bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 flex items-center justify-center gap-2 text-sm uppercase font-bold tracking-wider transition-all"
+                  className="px-4 py-2.5 rounded-xl dark:bg-red-500/20 bg-red-500/10 hover:bg-red-500/30 dark:text-red-400 text-red-700 border border-red-500/30 flex items-center justify-center gap-1.5 text-xs uppercase font-bold tracking-wider transition-all cursor-pointer"
                 >
-                  <VideoOff size={18} />
+                  <VideoOff size={16} />
                   <span>Disable Camera</span>
                 </button>
               )}
@@ -309,10 +311,10 @@ export const QuickAttendanceWebPage: React.FC = () => {
               <button
                 onClick={handleCaptureAndSubmit}
                 disabled={isSubmitting || !cameraActive}
-                className="flex-1 md:flex-initial px-8 py-3.5 rounded-2xl gold-gradient-btn flex items-center justify-center gap-2 text-sm uppercase font-black tracking-wider disabled:opacity-40 disabled:cursor-not-allowed shadow-xl"
+                className="flex-1 md:flex-initial px-6 py-2.5 rounded-xl gold-gradient-btn flex items-center justify-center gap-1.5 text-xs uppercase font-black tracking-wider disabled:opacity-40 disabled:cursor-not-allowed shadow-xl cursor-pointer"
               >
-                <Camera size={20} />
-                <span>{isSubmitting ? 'Verifying Face...' : 'Capture & Verify Attendance'}</span>
+                <Camera size={16} />
+                <span>{isSubmitting ? 'Verifying...' : 'Capture & Verify'}</span>
               </button>
             </div>
           </div>

@@ -144,14 +144,14 @@ export const BartenderPage: React.FC = () => {
     <div className="max-w-6xl mx-auto space-y-6">
       
       {/* Header Banner */}
-      <div className="glass-panel p-6 rounded-3xl border border-white/10 flex flex-wrap items-center justify-between gap-4">
+      <div className="glass-panel p-6 rounded-3xl border border-border-main flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-400 flex items-center justify-center font-bold text-xl">
+          <div className="w-12 h-12 rounded-2xl dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 flex items-center justify-center font-bold text-xl">
             <Wine size={24} />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-white tracking-wide">Bartender Service Station</h2>
-            <p className="text-xs text-gray-400">Scan guest QR pass or enter token number to verify and dispense drinks</p>
+            <h2 className="text-xl font-bold text-text-main tracking-wide">Bartender Service Station</h2>
+            <p className="text-xs text-text-muted">Scan guest QR pass or enter token number to verify and dispense drinks</p>
           </div>
         </div>
 
@@ -159,7 +159,7 @@ export const BartenderPage: React.FC = () => {
           {cameraActive && (
             <button
               onClick={toggleFacingMode}
-              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-gray-300 border border-white/10 flex items-center gap-1.5 transition-all"
+              className="px-3.5 py-2 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-bold text-text-muted border border-border-main flex items-center gap-1.5 transition-all"
               title="Switch Camera Source"
             >
               <RefreshCw size={14} />
@@ -170,7 +170,7 @@ export const BartenderPage: React.FC = () => {
           {!cameraActive ? (
             <button
               onClick={() => startCamera(facingMode)}
-              className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-gray-300 border border-white/10 flex items-center gap-2 transition-all"
+              className="px-4 py-2 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-bold text-text-muted border border-border-main flex items-center gap-2 transition-all"
             >
               <Camera size={16} /> Enable Camera Scanner
             </button>
@@ -189,11 +189,13 @@ export const BartenderPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         
         {/* Left Workstation Panel: Scanner & Search */}
-        <div className="glass-panel p-6 rounded-3xl border border-white/10 space-y-6">
+        <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-6">
           <h3 className="text-sm font-bold uppercase text-[#D4AF37] tracking-wider">1. Pass Verification Terminal</h3>
 
           {/* Camera View / Reticle Box */}
-          <div className="relative rounded-2xl overflow-hidden bg-black/60 border border-white/10 aspect-video flex flex-col items-center justify-center">
+          <div className={`relative rounded-2xl overflow-hidden border border-border-main aspect-video flex flex-col items-center justify-center ${
+            cameraActive ? 'bg-black' : 'bg-bg-primary'
+          }`}>
             {cameraActive ? (
               <>
                 <video 
@@ -211,10 +213,10 @@ export const BartenderPage: React.FC = () => {
               </>
             ) : (
               <div className="text-center p-6 space-y-3">
-                <Camera className="mx-auto text-gray-500" size={40} />
-                <p className="text-xs text-gray-400">Click &quot;Enable Camera Scanner&quot; above to activate live QR scanner</p>
+                <Camera className="mx-auto text-text-muted" size={40} />
+                <p className="text-xs text-text-muted">Click &quot;Enable Camera Scanner&quot; above to activate live QR scanner</p>
                 {cameraError && (
-                  <p className="text-xs text-amber-400 font-semibold">{cameraError}</p>
+                  <p className="text-xs dark:text-amber-400 text-amber-700 font-semibold">{cameraError}</p>
                 )}
               </div>
             )}
@@ -222,16 +224,16 @@ export const BartenderPage: React.FC = () => {
 
           {/* Manual Token Lookup Form */}
           <form onSubmit={handleVerify} className="space-y-3 pt-2">
-            <label className="block text-xs font-semibold text-gray-300">Or Enter Token Code Manually</label>
+            <label className="block text-xs font-semibold text-text-muted">Or Enter Token Code Manually</label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3.5 top-3 text-gray-400" size={18} />
+                <Search className="absolute left-3.5 top-3 text-text-muted" size={18} />
                 <input
                   type="text"
                   value={tokenInput}
                   onChange={e => setTokenInput(e.target.value.toUpperCase())}
                   placeholder="e.g. TK-108"
-                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white font-mono placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
                 />
               </div>
 
@@ -247,22 +249,22 @@ export const BartenderPage: React.FC = () => {
         </div>
 
         {/* Right Workstation Panel: Verified Pass Details Card */}
-        <div className="glass-panel p-6 rounded-3xl border border-white/10 space-y-6">
+        <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-6">
           <h3 className="text-sm font-bold uppercase text-[#D4AF37] tracking-wider">2. Verified Guest Pass Summary</h3>
 
           {!scannedToken ? (
-            <div className="py-20 text-center text-gray-400 text-xs space-y-2">
+            <div className="py-20 text-center text-text-muted text-xs space-y-2">
               <Wine className="mx-auto text-gray-600" size={36} />
-              <p className="font-bold text-gray-300">No Guest Pass Verified Yet</p>
+              <p className="font-bold text-text-muted">No Guest Pass Verified Yet</p>
               <p>Scan a guest QR pass or enter token code to verify drink quota</p>
             </div>
           ) : (
             <div className="space-y-6 animate-fadeIn">
               
               {/* Token Number & Status Header */}
-              <div className="p-4 rounded-2xl bg-[#141A25] border border-white/10 flex items-center justify-between">
+              <div className="p-4 rounded-2xl bg-bg-primary border border-border-main flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Token Pass</span>
+                  <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block">Token Pass</span>
                   <span className="font-mono text-2xl font-black text-[#D4AF37]">{scannedToken.tokenNumber}</span>
                 </div>
 
@@ -280,32 +282,32 @@ export const BartenderPage: React.FC = () => {
 
               {/* Guest Details */}
               <div className="space-y-2 text-xs">
-                <div className="flex justify-between p-3 rounded-xl bg-white/5 border border-white/10">
-                  <span className="text-gray-400">Guest Name:</span>
-                  <span className="font-bold text-white text-sm">{scannedToken.customer?.name || 'Guest'}</span>
+                <div className="flex justify-between p-3 rounded-xl bg-bg-primary border border-border-main">
+                  <span className="text-text-muted">Guest Name:</span>
+                  <span className="font-bold text-text-main text-sm">{scannedToken.customer?.name || 'Guest'}</span>
                 </div>
 
-                <div className="flex justify-between p-3 rounded-xl bg-white/5 border border-white/10">
-                  <span className="text-gray-400">Phone Contact:</span>
-                  <span className="font-mono text-gray-300">{scannedToken.customer?.phoneNumber || '—'}</span>
+                <div className="flex justify-between p-3 rounded-xl bg-bg-primary border border-border-main">
+                  <span className="text-text-muted">Phone Contact:</span>
+                  <span className="font-mono text-text-muted">{scannedToken.customer?.phoneNumber || '—'}</span>
                 </div>
 
-                <div className="flex justify-between p-3 rounded-xl bg-white/5 border border-white/10">
-                  <span className="text-gray-400">Guest Headcount:</span>
-                  <span className="font-bold text-white">{scannedToken.personsCount} Guests</span>
+                <div className="flex justify-between p-3 rounded-xl bg-bg-primary border border-border-main">
+                  <span className="text-text-muted">Guest Headcount:</span>
+                  <span className="font-bold text-text-main">{scannedToken.personsCount} Guests</span>
                 </div>
               </div>
 
               {/* Drink Quota Usage Progress Bar */}
-              <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-2">
+              <div className="p-4 rounded-2xl bg-bg-primary border border-border-main space-y-2">
                 <div className="flex justify-between text-xs font-bold">
-                  <span className="text-gray-400">Drink Quota Allowance:</span>
-                  <span className={isQuotaDepleted ? 'text-red-400' : 'text-emerald-400'}>
+                  <span className="text-text-muted">Drink Quota Allowance:</span>
+                  <span className={isQuotaDepleted ? 'dark:text-red-400 text-red-700' : 'dark:text-emerald-400 text-emerald-700'}>
                     {redemptionsUsed} / {totalAllowed} Drinks Used
                   </span>
                 </div>
 
-                <div className="w-full h-3 rounded-full bg-white/10 overflow-hidden">
+                <div className="w-full h-3 rounded-full bg-bg-card overflow-hidden">
                   <div 
                     className={`h-full transition-all duration-500 ${
                       isQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'
@@ -329,7 +331,7 @@ export const BartenderPage: React.FC = () => {
                 {redemptionsUsed > 0 && (
                   <button
                     onClick={handleUndo}
-                    className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-amber-300 border border-amber-500/30 flex items-center justify-center gap-2 transition-all"
+                    className="w-full py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-bold text-amber-300 border border-amber-500/30 flex items-center justify-center gap-2 transition-all"
                   >
                     <RotateCcw size={14} /> Revert Last Drink Redemption
                   </button>

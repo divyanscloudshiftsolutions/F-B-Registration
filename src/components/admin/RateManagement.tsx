@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { DollarSign, Edit3, RefreshCw, X, Clock, Wine } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
 
 export const RateManagement: React.FC = () => {
   const { showToast } = useAuth();
-  const [rates, setRates] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { rates: rawRates, isLoading, refreshRates } = useData();
   const [editingRate, setEditingRate] = useState<any | null>(null);
 
   // Form State
@@ -15,22 +15,7 @@ export const RateManagement: React.FC = () => {
   const [drinkAllowance, setDrinkAllowance] = useState('2');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const loadRates = async () => {
-    setIsLoading(true);
-    try {
-      const data = await api.getRates();
-      const filtered = data.filter((r: any) => (r.id !== 'vip_lounge' && r.name !== 'VIP Lounge' && r.placeType !== 'VIP_LOUNGE'));
-      setRates(filtered);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to load rate cards.', 'danger');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadRates();
-  }, []);
+  const rates = rawRates.filter((r: any) => (r.id !== 'vip_lounge' && r.name !== 'VIP Lounge' && r.placeType !== 'VIP_LOUNGE'));
 
   const openEditModal = (r: any) => {
     setEditingRate(r);
@@ -61,7 +46,7 @@ export const RateManagement: React.FC = () => {
       });
       showToast(`Rate card for ${editingRate.name || editingRate.placeType} updated!`, 'success');
       setEditingRate(null);
-      loadRates();
+      refreshRates();
     } catch (err: any) {
       showToast(err.message || 'Failed to update rate card.', 'danger');
     } finally {
@@ -72,15 +57,15 @@ export const RateManagement: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Header */}
-      <div className="flex items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-white/10">
+      <div className="flex items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
         <div>
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Place Type Rate Cards & Pricing Config</h3>
-          <p className="text-xs text-gray-400">Configure cover charge rates, base hours, and drink allowances</p>
+          <h3 className="text-sm font-bold text-text-main uppercase tracking-wider">Place Type Rate Cards & Pricing Config</h3>
+          <p className="text-xs text-text-muted">Configure cover charge rates, base hours, and drink allowances</p>
         </div>
 
         <button
-          onClick={loadRates}
-          className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 border border-white/10 flex items-center gap-1.5 transition-all"
+          onClick={refreshRates}
+          className="px-3.5 py-2 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted border border-border-main flex items-center gap-1.5 transition-all"
         >
           <RefreshCw size={14} /> Refresh Rates
         </button>
@@ -88,14 +73,14 @@ export const RateManagement: React.FC = () => {
 
       {/* Rates Cards Grid */}
       {isLoading ? (
-        <div className="py-12 text-center text-gray-400 text-sm">Loading rate cards...</div>
+        <div className="py-12 text-center text-text-muted text-sm">Loading rate cards...</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {rates.map(r => (
-            <div key={r.id} className="glass-panel p-6 rounded-3xl border border-white/10 space-y-4 relative overflow-hidden flex flex-col justify-between">
+            <div key={r.id} className="glass-panel p-6 rounded-3xl border border-border-main space-y-4 relative overflow-hidden flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-bold text-white text-base">{r.name || r.placeType}</span>
+                  <span className="font-bold text-text-main text-base">{r.name || r.placeType}</span>
                   <button
                     onClick={() => openEditModal(r)}
                     className="p-2 rounded-xl bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] transition-all"
@@ -105,16 +90,16 @@ export const RateManagement: React.FC = () => {
                   </button>
                 </div>
 
-                <p className="text-3xl font-black text-[#D4AF37]">₹{r.ratePerPerson} <span className="text-xs font-normal text-gray-400">/ person</span></p>
+                <p className="text-3xl font-black text-[#D4AF37]">₹{r.ratePerPerson} <span className="text-xs font-normal text-text-muted">/ person</span></p>
 
-                <div className="mt-4 pt-4 border-t border-white/10 text-xs text-gray-300 space-y-2">
+                <div className="mt-4 pt-4 border-t border-border-main text-xs text-text-muted space-y-2">
                   <p className="flex items-center justify-between">
-                    <span className="text-gray-400 flex items-center gap-1.5"><Clock size={14} /> Base Duration:</span>
-                    <span className="font-bold text-white">{Math.round((r.baseTimeMinutes || 120) / 60)} Hours</span>
+                    <span className="text-text-muted flex items-center gap-1.5"><Clock size={14} /> Base Duration:</span>
+                    <span className="font-bold text-text-main">{Math.round((r.baseTimeMinutes || 120) / 60)} Hours</span>
                   </p>
                   <p className="flex items-center justify-between">
-                    <span className="text-gray-400 flex items-center gap-1.5"><Wine size={14} /> Drink Allowance:</span>
-                    <span className="font-bold text-amber-300">{r.redemptionsPerPerson || 2} Drinks / Guest</span>
+                    <span className="text-text-muted flex items-center gap-1.5"><Wine size={14} /> Drink Allowance:</span>
+                    <span className="font-bold dark:text-amber-300 text-amber-700">{r.redemptionsPerPerson || 2} Drinks / Guest</span>
                   </p>
                 </div>
               </div>
@@ -126,10 +111,10 @@ export const RateManagement: React.FC = () => {
       {/* EDIT RATE CARD MODAL */}
       {editingRate && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#121620] border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
             <button 
               onClick={() => setEditingRate(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+              className="absolute top-4 right-4 text-text-muted hover:text-text-main"
             >
               <X size={18} />
             </button>
@@ -140,19 +125,19 @@ export const RateManagement: React.FC = () => {
 
             <form onSubmit={handleUpdateRate} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">Rate Per Person (₹)</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Rate Per Person (₹)</label>
                 <input
                   type="number"
                   value={ratePerPerson}
                   onChange={e => setRatePerPerson(e.target.value)}
                   min={0}
-                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37]"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">Base Duration (Hours: 0.5 - 24)</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Base Duration (Hours: 0.5 - 24)</label>
                 <input
                   type="number"
                   step="0.5"
@@ -160,20 +145,20 @@ export const RateManagement: React.FC = () => {
                   onChange={e => setDurationHours(e.target.value)}
                   min={0.5}
                   max={24}
-                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37]"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">Drink Allowance Per Person (0 - 50)</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Drink Allowance Per Person (0 - 50)</label>
                 <input
                   type="number"
                   value={drinkAllowance}
                   onChange={e => setDrinkAllowance(e.target.value)}
                   min={0}
                   max={50}
-                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37]"
                   required
                 />
               </div>
@@ -182,7 +167,7 @@ export const RateManagement: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setEditingRate(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300"
+                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted"
                 >
                   Cancel
                 </button>

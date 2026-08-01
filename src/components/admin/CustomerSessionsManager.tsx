@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Clock, Search, RefreshCw, LogOut, X } from 'lucide-react';
 import { api } from '../../services/api';
 import type { Token } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
 
 export const CustomerSessionsManager: React.FC = () => {
   const { showToast } = useAuth();
-  const [tokens, setTokens] = useState<Token[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { tokens, isLoading, refreshTokens, refreshTables } = useData();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
@@ -22,22 +22,6 @@ export const CustomerSessionsManager: React.FC = () => {
   const [additionalAmount, setAdditionalAmount] = useState(500);
   const [isSubmittingExtend, setIsSubmittingExtend] = useState(false);
 
-  const loadSessions = async () => {
-    setIsLoading(true);
-    try {
-      const data = await api.getActiveTokens();
-      setTokens(data);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to load customer sessions.', 'danger');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadSessions();
-  }, []);
-
   const handleDeactivateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!deactivatingToken) return;
@@ -47,7 +31,8 @@ export const CustomerSessionsManager: React.FC = () => {
       await api.closeToken(deactivatingToken.tokenNumber, closeReason);
       showToast(`Session ${deactivatingToken.tokenNumber} deactivated successfully.`, 'success');
       setDeactivatingToken(null);
-      loadSessions();
+      refreshTokens();
+      refreshTables();
     } catch (err: any) {
       showToast(err.message || 'Failed to deactivate session.', 'danger');
     } finally {
@@ -64,7 +49,7 @@ export const CustomerSessionsManager: React.FC = () => {
       await api.extendToken(extendingToken.tokenNumber, extraMinutes, additionalAmount);
       showToast(`Session ${extendingToken.tokenNumber} extended by ${extraMinutes} mins.`, 'success');
       setExtendingToken(null);
-      loadSessions();
+      refreshTokens();
     } catch (err: any) {
       showToast(err.message || 'Failed to extend session.', 'danger');
     } finally {
@@ -86,15 +71,15 @@ export const CustomerSessionsManager: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Search & Filter Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-white/10">
+      <div className="flex flex-wrap items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3.5 top-3 text-gray-400" size={16} />
+          <Search className="absolute left-3.5 top-3 text-text-muted" size={16} />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by Token Number, Customer Name, or Phone..."
-            className="w-full bg-[#1A202C] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
+            className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
           />
         </div>
 
@@ -106,7 +91,7 @@ export const CustomerSessionsManager: React.FC = () => {
               className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${
                 statusFilter === f
                   ? 'bg-[#D4AF37] text-black border-[#D4AF37]'
-                  : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+                  : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
               }`}
             >
               {f}
@@ -114,8 +99,8 @@ export const CustomerSessionsManager: React.FC = () => {
           ))}
 
           <button
-            onClick={loadSessions}
-            className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 border border-white/10 flex items-center gap-1.5 transition-all"
+            onClick={refreshTokens}
+            className="px-3.5 py-1.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted border border-border-main flex items-center gap-1.5 transition-all"
           >
             <RefreshCw size={14} /> Refresh
           </button>
@@ -123,16 +108,16 @@ export const CustomerSessionsManager: React.FC = () => {
       </div>
 
       {/* Customer Sessions Directory Table */}
-      <div className="glass-panel rounded-2xl p-6 border border-white/10">
+      <div className="glass-panel rounded-2xl p-6 border border-border-main">
         {isLoading ? (
-          <div className="py-12 text-center text-gray-400 text-sm">Loading customer sessions...</div>
+          <div className="py-12 text-center text-text-muted text-sm">Loading customer sessions...</div>
         ) : filteredTokens.length === 0 ? (
-          <div className="py-12 text-center text-gray-500 text-sm">No customer sessions found.</div>
+          <div className="py-12 text-center text-text-muted text-sm">No customer sessions found.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-white/10 text-gray-400 uppercase font-semibold text-[10px] tracking-wider">
+                <tr className="border-b border-border-main text-text-muted uppercase font-semibold text-[10px] tracking-wider">
                   <th className="pb-3 px-3">Token #</th>
                   <th className="pb-3 px-3">Customer Name</th>
                   <th className="pb-3 px-3">Phone</th>
@@ -143,18 +128,18 @@ export const CustomerSessionsManager: React.FC = () => {
                   <th className="pb-3 px-3">Admin Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-border-main">
                 {filteredTokens.map(tk => (
-                  <tr key={tk.id} className="hover:bg-white/5 transition-colors">
+                  <tr key={tk.id} className="hover:bg-bg-primary transition-colors">
                     <td className="py-3 px-3 font-mono font-bold text-[#D4AF37]">{tk.tokenNumber}</td>
-                    <td className="py-3 px-3 font-semibold text-white">{tk.customer?.name || 'Walk-in Guest'}</td>
-                    <td className="py-3 px-3 font-mono text-gray-300">{tk.customer?.phoneNumber || 'N/A'}</td>
-                    <td className="py-3 px-3 font-semibold text-gray-200">{tk.personsCount} Guests</td>
+                    <td className="py-3 px-3 font-semibold text-text-main">{tk.customer?.name || 'Walk-in Guest'}</td>
+                    <td className="py-3 px-3 font-mono text-text-muted">{tk.customer?.phoneNumber || 'N/A'}</td>
+                    <td className="py-3 px-3 font-semibold text-text-main">{tk.personsCount} Guests</td>
                     <td className="py-3 px-3">
-                      <span className="font-mono text-amber-300 font-bold">{tk.redemptionsUsed}</span> / {tk.totalRedemptionsAllowed} Drinks
+                      <span className="font-mono dark:text-amber-300 text-amber-700 font-bold">{tk.redemptionsUsed}</span> / {tk.totalRedemptionsAllowed} Drinks
                     </td>
                     <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-gray-300 border border-white/10">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-bg-card text-text-muted border border-border-main">
                         {tk.deliveryMode}
                       </span>
                     </td>
@@ -166,14 +151,14 @@ export const CustomerSessionsManager: React.FC = () => {
                     <td className="py-3 px-3 flex items-center gap-2">
                       <button
                         onClick={() => setExtendingToken(tk)}
-                        className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/30 transition-all flex items-center gap-1"
+                        className="px-2.5 py-1 rounded cursor-pointer dark:bg-amber-500/20 bg-amber-500/10 hover:dark:bg-amber-500/30 hover:bg-amber-500/20 dark:text-amber-300 text-amber-700 text-[10px] font-bold border border-amber-500/30 transition-all flex items-center gap-1"
                       >
                         <Clock size={12} /> Extend
                       </button>
 
                       <button
                         onClick={() => setDeactivatingToken(tk)}
-                        className="px-2.5 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold border border-red-500/30 transition-all flex items-center gap-1"
+                        className="px-2.5 py-1 rounded cursor-pointer dark:bg-red-500/20 bg-red-500/10 hover:dark:bg-red-500/30 hover:bg-red-500/20 dark:text-red-400 text-red-700 text-[10px] font-bold border border-red-500/30 transition-all flex items-center gap-1"
                       >
                         <LogOut size={12} /> Deactivate
                       </button>
@@ -189,29 +174,29 @@ export const CustomerSessionsManager: React.FC = () => {
       {/* EXTEND SESSION MODAL */}
       {extendingToken && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#121620] border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
             <button 
               onClick={() => setExtendingToken(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+              className="absolute top-4 right-4 text-text-muted hover:text-text-main"
             >
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+            <div className="flex items-center gap-2 dark:text-amber-400 text-amber-700 font-bold text-sm">
               <Clock size={18} /> Admin Extend Session Time
             </div>
 
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-text-muted">
               Token Number: <span className="font-mono font-bold text-[#D4AF37]">{extendingToken.tokenNumber}</span> ({extendingToken.customer?.name})
             </p>
 
             <form onSubmit={handleExtendSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">Additional Minutes</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Additional Minutes</label>
                 <select
                   value={extraMinutes}
                   onChange={e => setExtraMinutes(Number(e.target.value))}
-                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#D4AF37]"
                 >
                   <option value={30}>30 Minutes</option>
                   <option value={60}>60 Minutes (1 Hour)</option>
@@ -221,12 +206,12 @@ export const CustomerSessionsManager: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">Additional Fee (₹)</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Additional Fee (₹)</label>
                 <input
                   type="number"
                   value={additionalAmount}
                   onChange={e => setAdditionalAmount(Number(e.target.value))}
-                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37]"
                   required
                 />
               </div>
@@ -235,7 +220,7 @@ export const CustomerSessionsManager: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setExtendingToken(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300"
+                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted"
                 >
                   Cancel
                 </button>
@@ -255,29 +240,29 @@ export const CustomerSessionsManager: React.FC = () => {
       {/* DEACTIVATE SESSION MODAL */}
       {deactivatingToken && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#121620] border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
             <button 
               onClick={() => setDeactivatingToken(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+              className="absolute top-4 right-4 text-text-muted hover:text-text-main"
             >
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-2 text-red-400 font-bold text-sm">
+            <div className="flex items-center gap-2 dark:text-red-400 text-red-700 font-bold text-sm">
               <LogOut size={18} /> Admin Deactivate Session
             </div>
 
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-text-muted">
               Token Number: <span className="font-mono font-bold text-[#D4AF37]">{deactivatingToken.tokenNumber}</span> ({deactivatingToken.customer?.name})
             </p>
 
             <form onSubmit={handleDeactivateSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1">Select Deactivation Reason</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Select Deactivation Reason</label>
                 <select
                   value={closeReason}
                   onChange={e => setCloseReason(e.target.value)}
-                  className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-red-500"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-red-500"
                 >
                   <option value="CHECKOUT">Standard Guest Checkout</option>
                   <option value="EXPIRED">Session Time Expired</option>
@@ -289,14 +274,14 @@ export const CustomerSessionsManager: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setDeactivatingToken(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300"
+                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingClose}
-                  className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold uppercase tracking-wider"
+                  className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-text-main text-xs font-bold uppercase tracking-wider"
                 >
                   {isSubmittingClose ? 'Deactivating...' : 'Confirm Deactivation'}
                 </button>
