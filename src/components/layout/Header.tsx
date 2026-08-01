@@ -44,6 +44,43 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
     }
   };
 
+  const toggleThemeWithWave = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (
+      !(document as any).startViewTransition ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      toggleTheme();
+      return;
+    }
+
+    const x = e.clientX;
+    const y = e.clientY;
+
+    const right = window.innerWidth - x;
+    const bottom = window.innerHeight - y;
+    const maxRadius = Math.hypot(Math.max(x, right), Math.max(y, bottom));
+
+    const transition = (document as any).startViewTransition(() => {
+      toggleTheme();
+    });
+
+    transition.ready.then(() => {
+      document.documentElement.animate(
+        {
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${maxRadius}px at ${x}px ${y}px)`
+          ]
+        },
+        {
+          duration: 800,
+          easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+          pseudoElement: '::view-transition-new(root)'
+        }
+      );
+    });
+  };
+
   const handleClearAll = (e: React.MouseEvent) => {
     e.stopPropagation();
     clearNotifications();
@@ -154,7 +191,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
 
         {/* Theme Toggle Button */}
         <button
-          onClick={toggleTheme}
+          onClick={toggleThemeWithWave}
           className="p-2 rounded-xl bg-white/5 border border-border-main text-text-muted hover:text-text-main hover:bg-white/10 transition-all cursor-pointer"
           title="Toggle Color Theme"
         >
