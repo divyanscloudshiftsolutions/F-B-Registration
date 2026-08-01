@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   User, 
   Phone, 
@@ -95,8 +95,35 @@ export const CheckInPage: React.FC = () => {
     : (isValidEmail(email) && !isEmailActive);
 
   const selectedTableObj = tables.find(t => t.id === selectedTableId);
-  const maxCapacity = selectedTableObj ? selectedTableObj.capacity : (preselectedTable ? preselectedTable.capacity : 20);
+  
+  // Dynamic Max Capacities based on tables configuration
+  const maxCapacity = tables.length > 0 ? Math.max(...tables.map(t => t.capacity)) : 20;
   const isCapacityOk = personsCount > 0 && personsCount <= maxCapacity;
+
+  // Zone specific max capacities
+  const standardTables = tables.filter(t => t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-'));
+  const premiumTables = tables.filter(t => t.placeTypeId === 'PREMIUM_LOUNGE' || t.tableNumber.startsWith('L-'));
+  const standardMaxCapacity = standardTables.length > 0 ? Math.max(...standardTables.map(t => t.capacity)) : 6;
+  const premiumMaxCapacity = premiumTables.length > 0 ? Math.max(...premiumTables.map(t => t.capacity)) : 20;
+
+  // Generate quick-select buttons dynamically from actual table capacities configuration
+  const quickSelectButtons = useMemo(() => {
+    if (tables.length === 0) return [1, 2, 3, 4, 5, 6, 8, 10];
+    const capacities = Array.from(new Set(tables.map(t => t.capacity))).sort((a, b) => a - b);
+    const list = new Set<number>();
+    list.add(1);
+    capacities.forEach(c => {
+      if (c > 0) list.add(c);
+    });
+    return Array.from(list).sort((a, b) => a - b);
+  }, [tables]);
+
+  // Auto-adjust selected place category type if headcount exceeds the maximum capacity of the standard zone
+  useEffect(() => {
+    if (selectedPlaceTypeId === 'standing_bar' && personsCount > standardMaxCapacity) {
+      setSelectedPlaceTypeId('premium_lounge');
+    }
+  }, [personsCount, standardMaxCapacity, selectedPlaceTypeId]);
 
   // STEP 1 VALIDATION BARRIER (Button disabled if false)
   const isStep1Valid = isNameOk && isPhoneOk && isEmailOk && isCapacityOk;
@@ -107,7 +134,7 @@ export const CheckInPage: React.FC = () => {
       const matchedCategory = preselectedTable.number.startsWith('L-') ? 'premium_lounge' : 'standing_bar';
       setSelectedPlaceTypeId(preselectedTable.placeTypeId || matchedCategory);
       setSelectedTableId(preselectedTable.id);
-      setPersonsCount(Math.min(preselectedTable.capacity, 10));
+      setPersonsCount(preselectedTable.capacity);
       showToast(`Table ${preselectedTable.number} (Max ${preselectedTable.capacity} guests) pre-selected for check-in.`, 'info');
     }
   }, [preselectedTable]);
@@ -562,7 +589,7 @@ export const CheckInPage: React.FC = () => {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {[1, 2, 3, 4, 5, 6, 8, 10].map(count => (
+                      {quickSelectButtons.map((count: number) => (
                         <button
                           type="button"
                           key={count}
@@ -642,19 +669,37 @@ export const CheckInPage: React.FC = () => {
                   ]).map(rc => {
                     const rcId = rc.id || (rc.name?.toLowerCase().includes('lounge') ? 'premium_lounge' : 'standing_bar');
                     const isSel = selectedPlaceTypeId === rcId;
+                    const isAvailable = rcId === 'premium_lounge'
+                      ? personsCount <= premiumMaxCapacity
+                      : personsCount <= standardMaxCapacity;
+
                     return (
                       <div
                         key={rcId}
-                        onClick={() => setSelectedPlaceTypeId(rcId)}
-                        className={`p-5 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between h-36 ${
-                          isSel
-                            ? 'bg-[#D4AF37]/15 border-[#D4AF37] shadow-xl shadow-[#D4AF37]/10'
-                            : 'bg-bg-primary border-border-main hover:bg-bg-card'
+                        onClick={() => {
+                          if (isAvailable) {
+                            setSelectedPlaceTypeId(rcId);
+                          } else {
+                            showToast(`${rc.name || (rcId === 'premium_lounge' ? 'Premium Lounge' : 'Standing Bar')} is unavailable for a group of ${personsCount} (Max table capacity is ${rcId === 'premium_lounge' ? premiumMaxCapacity : standardMaxCapacity} seats).`, 'warning');
+                          }
+                        }}
+                        className={`p-5 rounded-2xl border transition-all flex flex-col justify-between h-36 ${
+                          !isAvailable
+                            ? 'bg-bg-primary/40 border-border-main/50 opacity-40 cursor-not-allowed'
+                            : isSel
+                            ? 'bg-[#D4AF37]/15 border-[#D4AF37] shadow-xl shadow-[#D4AF37]/10 cursor-pointer'
+                            : 'bg-bg-primary border-border-main hover:bg-bg-card cursor-pointer'
                         }`}
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-bold text-text-main text-sm">{rc.name || (rcId === 'premium_lounge' ? 'Premium Lounge' : 'Standing Bar')}</span>
-                          {isSel && <CheckCircle2 size={18} className="text-[#D4AF37]" />}
+                          {!isAvailable ? (
+                            <span className="text-[9px] font-bold bg-red-500/10 border border-red-500/20 text-red-500 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                              Unavailable
+                            </span>
+                          ) : isSel ? (
+                            <CheckCircle2 size={18} className="text-[#D4AF37]" />
+                          ) : null}
                         </div>
                         <div>
                           <p className="text-2xl font-black text-[#D4AF37]">₹{rc.ratePerPerson} <span className="text-xs text-text-muted font-normal">/ person</span></p>
@@ -991,67 +1036,91 @@ export const CheckInPage: React.FC = () => {
         </div>
 
         {/* Right 4 Columns: Live Billing Summary Receipt Side Panel */}
-        <div className="lg:col-span-4 glass-panel p-6 rounded-3xl border border-border-main space-y-6 sticky top-6">
-          <div className="flex items-center gap-2 pb-4 border-b border-border-main">
-            <Receipt size={18} className="text-[#D4AF37]" />
-            <h4 className="text-sm font-bold text-text-main uppercase tracking-wider">Live Check-In Receipt</h4>
-          </div>
-
-          <div className="space-y-4 text-xs">
-            <div className="flex justify-between text-text-muted border-b border-border-main pb-2">
-              <span>Customer Name:</span>
-              <span className="font-bold text-text-main">{customerName || '—'}</span>
-            </div>
-            <div className="flex justify-between text-text-muted border-b border-border-main pb-2">
-              <span>Phone Number:</span>
-              <span className="font-mono text-text-main">{phoneNumber || '—'}</span>
-            </div>
-            <div className="flex justify-between text-text-muted border-b border-border-main pb-2">
-              <span>Delivery Channel:</span>
-              <span className="font-bold dark:text-emerald-400 text-emerald-700">{deliveryMode === 'EMAIL_QR' ? 'Digital Email QR' : 'NFC Smart Card'}</span>
-            </div>
-            <div className="flex justify-between text-text-muted border-b border-border-main pb-2">
-              <span>Selected Area:</span>
-              <span className="font-bold text-[#D4AF37]">{currentRateCard.name}</span>
-            </div>
-            <div className="flex justify-between text-text-muted border-b border-border-main pb-2">
-              <span>Assigned Table:</span>
-              <span className="font-mono font-bold dark:text-emerald-400 text-emerald-700">{selectedTableObj ? selectedTableObj.tableNumber : 'Unassigned'}</span>
-            </div>
-            
-            {/* Dynamic Rates Table Details */}
-            <div className="p-3.5 rounded-2xl bg-bg-primary border border-border-main space-y-2 mt-2">
-              <p className="text-[10px] font-black uppercase text-text-muted tracking-wider">Pricing Details</p>
-              <div className="flex justify-between text-text-muted">
-                <span>Base Cover / Person:</span>
-                <span className="text-text-main font-bold">₹{currentRateCard.ratePerPerson}</span>
-              </div>
-              <div className="flex justify-between text-text-muted">
-                <span>Beverages Included:</span>
-                <span className="dark:text-amber-300 text-amber-700 font-bold">{currentRateCard.redemptionsPerPerson} drinks/guest</span>
-              </div>
-              <div className="flex justify-between text-text-muted">
-                <span>Session Duration:</span>
-                <span className="dark:text-emerald-400 text-emerald-700 font-bold">{Math.round((currentRateCard.baseTimeMinutes || 120) / 60)} hours</span>
-              </div>
-              <div className="flex justify-between text-text-muted border-t border-border-main pt-2 mt-1">
-                <span>Calculated Subtotal:</span>
-                <span className="text-text-main font-black">₹{currentRateCard.ratePerPerson} × {personsCount}</span>
-              </div>
+        <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-6">
+          {/* Header Card */}
+          <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-5 shadow-xl">
+            <div className="flex items-center gap-2.5 pb-3.5 border-b border-border-main">
+              <Receipt size={18} className="text-[#D4AF37]" />
+              <h4 className="text-xs font-black text-text-main uppercase tracking-wider">Live Check-In Receipt</h4>
             </div>
 
-            <div className="flex justify-between text-text-muted">
-              <span>Total Allowed Drinks:</span>
-              <span className="font-bold dark:text-amber-300 text-amber-700">{totalAllowedDrinks} Drinks</span>
-            </div>
-          </div>
+            {/* Customer & Delivery Channel Info Card */}
+            <div className="space-y-3.5 text-xs">
+              <div className="p-3.5 rounded-2xl bg-bg-primary border border-border-main space-y-2.5">
+                <p className="text-[9px] font-black uppercase text-text-muted tracking-widest">Customer Details</p>
+                <div className="flex justify-between items-center text-text-muted">
+                  <span>Name:</span>
+                  <span className="font-bold text-text-main text-right truncate max-w-[160px]" title={customerName}>{customerName || '—'}</span>
+                </div>
+                <div className="flex justify-between items-center text-text-muted">
+                  <span>Phone:</span>
+                  <span className="font-mono font-bold text-text-main text-right">{phoneNumber || '—'}</span>
+                </div>
+                <div className="flex justify-between items-center text-text-muted">
+                  <span>Channel:</span>
+                  <span className="font-bold dark:text-emerald-400 text-emerald-700 text-right">
+                    {deliveryMode === 'EMAIL_QR' ? '📩 Digital Email QR' : '💳 NFC Smart Card'}
+                  </span>
+                </div>
+              </div>
 
-          <div className="pt-4 border-t border-border-main space-y-1">
-            <div className="flex justify-between items-baseline">
-              <span className="text-xs text-text-muted uppercase font-semibold">Total Payable Amount</span>
-              <span className="text-2xl font-black text-[#D4AF37]">₹{calculatedTotal}</span>
+              {/* Seating Assignment Info Card */}
+              <div className="p-3.5 rounded-2xl bg-bg-primary border border-border-main space-y-2.5">
+                <p className="text-[9px] font-black uppercase text-text-muted tracking-widest">Seating Assignment</p>
+                <div className="flex justify-between items-center text-text-muted">
+                  <span>Selected Area:</span>
+                  <span className="font-bold text-[#D4AF37] text-right">{currentRateCard.name}</span>
+                </div>
+                <div className="flex justify-between items-center text-text-muted">
+                  <span>Assigned Table:</span>
+                  <span className="font-mono font-bold dark:text-emerald-400 text-emerald-700 text-right">
+                    {selectedTableObj ? `Table ${selectedTableObj.tableNumber}` : '🚨 Unassigned'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-text-muted">
+                  <span>Guest Headcount:</span>
+                  <span className="font-bold text-text-main text-right">{personsCount} {personsCount === 1 ? 'Person' : 'Persons'}</span>
+                </div>
+              </div>
+
+              {/* Calculation & Pricing Card */}
+              <div className="p-3.5 rounded-2xl bg-bg-primary border border-border-main space-y-2.5">
+                <p className="text-[9px] font-black uppercase text-text-muted tracking-widest">Cover Calculation</p>
+                <div className="flex justify-between items-center text-text-muted">
+                  <span>Base Cover / Guest:</span>
+                  <span className="text-text-main font-bold">₹{currentRateCard.ratePerPerson}</span>
+                </div>
+                <div className="flex justify-between items-center text-text-muted">
+                  <span>Hourly Duration:</span>
+                  <span className="dark:text-emerald-400 text-emerald-700 font-bold">{Math.round((currentRateCard.baseTimeMinutes || 120) / 60)} Hours</span>
+                </div>
+                <div className="flex justify-between items-center text-text-muted">
+                  <span>Drink Allowance:</span>
+                  <span className="dark:text-amber-300 text-amber-700 font-bold">{currentRateCard.redemptionsPerPerson} Drinks / Person</span>
+                </div>
+                <div className="border-t border-border-main/50 pt-2.5 mt-1 space-y-2">
+                  <div className="flex justify-between items-center text-text-muted">
+                    <span>Cover Charge Formula:</span>
+                    <span className="font-mono text-text-main font-bold">₹{currentRateCard.ratePerPerson} × {personsCount}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-text-muted">
+                    <span>Beverages Allocation:</span>
+                    <span className="font-mono dark:text-amber-300 text-amber-700 font-bold">{currentRateCard.redemptionsPerPerson} × {personsCount} = {totalAllowedDrinks} Drinks</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <p className="text-[10px] text-text-muted">Includes entry cover & drink allowances</p>
+
+            {/* Total Summary Footer */}
+            <div className="pt-4 border-t border-border-main flex justify-between items-center bg-bg-primary -mx-6 -mb-6 p-6 rounded-b-3xl">
+              <div>
+                <span className="text-[10px] text-text-muted uppercase font-black tracking-wider">Total Payable Amount</span>
+                <p className="text-[10px] text-text-muted mt-0.5">Includes entry cover & drinks</p>
+              </div>
+              <div className="text-right">
+                <span className="text-2xl font-black text-[#D4AF37]">₹{calculatedTotal}</span>
+              </div>
+            </div>
           </div>
         </div>
 
