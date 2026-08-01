@@ -29,7 +29,7 @@ export const CheckInPage: React.FC = () => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [email, setEmail] = useState('');
-  const [personsCount, setPersonsCount] = useState(2);
+  const [personsCount, setPersonsCount] = useState<number | ''>(2);
   const [deliveryMode, setDeliveryMode] = useState<'NFC_CARD' | 'EMAIL_QR'>('EMAIL_QR');
   const [selectedPlaceTypeId, setSelectedPlaceTypeId] = useState('standing_bar');
 
@@ -98,7 +98,7 @@ export const CheckInPage: React.FC = () => {
   
   // Dynamic Max Capacities based on tables configuration
   const maxCapacity = tables.length > 0 ? Math.max(...tables.map(t => t.capacity)) : 20;
-  const isCapacityOk = personsCount > 0 && personsCount <= maxCapacity;
+  const isCapacityOk = typeof personsCount === 'number' && personsCount > 0 && personsCount <= maxCapacity;
 
   // Zone specific max capacities
   const standardTables = tables.filter(t => t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-'));
@@ -120,7 +120,8 @@ export const CheckInPage: React.FC = () => {
 
   // Auto-adjust selected place category type if headcount exceeds the maximum capacity of the standard zone
   useEffect(() => {
-    if (selectedPlaceTypeId === 'standing_bar' && personsCount > standardMaxCapacity) {
+    const personsCountNum = typeof personsCount === 'number' ? personsCount : 0;
+    if (selectedPlaceTypeId === 'standing_bar' && personsCountNum > standardMaxCapacity) {
       setSelectedPlaceTypeId('premium_lounge');
     }
   }, [personsCount, standardMaxCapacity, selectedPlaceTypeId]);
@@ -148,8 +149,9 @@ export const CheckInPage: React.FC = () => {
     redemptionsPerPerson: selectedPlaceTypeId === 'premium_lounge' ? 4 : 2,
   };
 
-  const calculatedTotal = personsCount * currentRateCard.ratePerPerson;
-  const totalAllowedDrinks = personsCount * currentRateCard.redemptionsPerPerson;
+  const personsCountNum = typeof personsCount === 'number' ? personsCount : 0;
+  const calculatedTotal = personsCountNum * currentRateCard.ratePerPerson;
+  const totalAllowedDrinks = personsCountNum * currentRateCard.redemptionsPerPerson;
 
   const handleStage1Next = (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,6 +160,7 @@ export const CheckInPage: React.FC = () => {
       if (!isNameOk) showToast('Please enter a valid customer full name (2-100 letters).', 'danger');
       else if (!isPhoneOk) showToast('Please enter a valid 10-digit Indian mobile number.', 'danger');
       else if (!isEmailOk) showToast('Please enter a valid email address.', 'danger');
+      else if (!isCapacityOk) showToast(`Please enter a valid headcount between 1 and ${maxCapacity} guests.`, 'danger');
       return;
     }
 
@@ -322,7 +325,7 @@ export const CheckInPage: React.FC = () => {
   // Filter available tables by place category & seating capacity compatibility matching React Native
   const compatibleAvailableTables = tables.filter(t => {
     const isAvailable = t.status === 'available';
-    const isCapacitySuitable = t.capacity >= personsCount;
+    const isCapacitySuitable = typeof personsCount === 'number' && t.capacity >= personsCount;
     const matchesCategory = selectedPlaceTypeId === 'premium_lounge'
       ? (t.placeTypeId === 'PREMIUM_LOUNGE' || t.tableNumber.startsWith('L-'))
       : (t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-'));
@@ -546,22 +549,28 @@ export const CheckInPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => {
-                          const nextVal = Math.max(1, personsCount - 1);
+                          const nextVal = Math.max(1, personsCountNum - 1);
                           setPersonsCount(nextVal);
                         }}
-                        disabled={personsCount <= 1}
+                        disabled={personsCountNum <= 1}
                         className="w-8 h-8 rounded-lg bg-bg-primary hover:bg-bg-card text-text-main font-black flex items-center justify-center disabled:opacity-40 transition-all cursor-pointer"
                       >
                         -
                       </button>
                       <input
-                        type="number"
-                        min="1"
-                        max={maxCapacity}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={personsCount}
+                        placeholder="e.g. 2"
                         onChange={e => {
-                          const val = parseInt(e.target.value, 10);
-                          if (!isNaN(val) && val >= 1) {
+                          const rawVal = e.target.value;
+                          if (rawVal === '') {
+                            setPersonsCount('');
+                            return;
+                          }
+                          const val = parseInt(rawVal, 10);
+                          if (!isNaN(val)) {
                             if (val > maxCapacity) {
                               showToast(`Headcount cannot exceed Table maximum capacity of ${maxCapacity} seats.`, 'warning');
                               setPersonsCount(maxCapacity);
@@ -575,13 +584,13 @@ export const CheckInPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => {
-                          if (personsCount >= maxCapacity) {
+                          if (personsCountNum >= maxCapacity) {
                             showToast(`Headcount cannot exceed Table maximum capacity of ${maxCapacity} seats.`, 'warning');
                           } else {
-                            setPersonsCount(personsCount + 1);
+                            setPersonsCount(personsCountNum + 1);
                           }
                         }}
-                        disabled={personsCount >= maxCapacity}
+                        disabled={personsCountNum >= maxCapacity}
                         className="w-8 h-8 rounded-lg bg-bg-primary hover:bg-bg-card text-text-main font-black flex items-center justify-center disabled:opacity-40 transition-all cursor-pointer"
                       >
                         +
@@ -670,8 +679,8 @@ export const CheckInPage: React.FC = () => {
                     const rcId = rc.id || (rc.name?.toLowerCase().includes('lounge') ? 'premium_lounge' : 'standing_bar');
                     const isSel = selectedPlaceTypeId === rcId;
                     const isAvailable = rcId === 'premium_lounge'
-                      ? personsCount <= premiumMaxCapacity
-                      : personsCount <= standardMaxCapacity;
+                      ? personsCountNum <= premiumMaxCapacity
+                      : personsCountNum <= standardMaxCapacity;
 
                     return (
                       <div
@@ -1041,86 +1050,210 @@ export const CheckInPage: React.FC = () => {
           <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-5 shadow-xl">
             <div className="flex items-center gap-2.5 pb-3.5 border-b border-border-main">
               <Receipt size={18} className="text-[#D4AF37]" />
-              <h4 className="text-xs font-black text-text-main uppercase tracking-wider">Live Check-In Receipt</h4>
+              <h4 className="text-xs font-black text-text-main uppercase tracking-wider font-sans">
+                {selectedTableId ? 'Live Check-In Receipt' : 'Live Rate Comparison'}
+              </h4>
             </div>
 
-            {/* Customer & Delivery Channel Info Card */}
-            <div className="space-y-3.5 text-xs">
-              <div className="p-3.5 rounded-2xl bg-bg-primary border border-border-main space-y-2.5">
-                <p className="text-[9px] font-black uppercase text-text-muted tracking-widest">Customer Details</p>
-                <div className="flex justify-between items-center text-text-muted">
-                  <span>Name:</span>
-                  <span className="font-bold text-text-main text-right truncate max-w-[160px]" title={customerName}>{customerName || '—'}</span>
-                </div>
-                <div className="flex justify-between items-center text-text-muted">
-                  <span>Phone:</span>
-                  <span className="font-mono font-bold text-text-main text-right">{phoneNumber || '—'}</span>
-                </div>
-                <div className="flex justify-between items-center text-text-muted">
-                  <span>Channel:</span>
-                  <span className="font-bold dark:text-emerald-400 text-emerald-700 text-right">
-                    {deliveryMode === 'EMAIL_QR' ? '📩 Digital Email QR' : '💳 NFC Smart Card'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Seating Assignment Info Card */}
-              <div className="p-3.5 rounded-2xl bg-bg-primary border border-border-main space-y-2.5">
-                <p className="text-[9px] font-black uppercase text-text-muted tracking-widest">Seating Assignment</p>
-                <div className="flex justify-between items-center text-text-muted">
-                  <span>Selected Area:</span>
-                  <span className="font-bold text-[#D4AF37] text-right">{currentRateCard.name}</span>
-                </div>
-                <div className="flex justify-between items-center text-text-muted">
-                  <span>Assigned Table:</span>
-                  <span className="font-mono font-bold dark:text-emerald-400 text-emerald-700 text-right">
-                    {selectedTableObj ? `Table ${selectedTableObj.tableNumber}` : '🚨 Unassigned'}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-text-muted">
-                  <span>Guest Headcount:</span>
-                  <span className="font-bold text-text-main text-right">{personsCount} {personsCount === 1 ? 'Person' : 'Persons'}</span>
-                </div>
-              </div>
-
-              {/* Calculation & Pricing Card */}
-              <div className="p-3.5 rounded-2xl bg-bg-primary border border-border-main space-y-2.5">
-                <p className="text-[9px] font-black uppercase text-text-muted tracking-widest">Cover Calculation</p>
-                <div className="flex justify-between items-center text-text-muted">
-                  <span>Base Cover / Guest:</span>
-                  <span className="text-text-main font-bold">₹{currentRateCard.ratePerPerson}</span>
-                </div>
-                <div className="flex justify-between items-center text-text-muted">
-                  <span>Hourly Duration:</span>
-                  <span className="dark:text-emerald-400 text-emerald-700 font-bold">{Math.round((currentRateCard.baseTimeMinutes || 120) / 60)} Hours</span>
-                </div>
-                <div className="flex justify-between items-center text-text-muted">
-                  <span>Drink Allowance:</span>
-                  <span className="dark:text-amber-300 text-amber-700 font-bold">{currentRateCard.redemptionsPerPerson} Drinks / Person</span>
-                </div>
-                <div className="border-t border-border-main/50 pt-2.5 mt-1 space-y-2">
+            {selectedTableId ? (
+              /* Single Selected Area Receipt (Only after Table Selection) */
+              <div className="space-y-4 text-xs font-sans">
+                {/* Customer & Delivery Channel Info Card */}
+                <div className="p-3.5 rounded-2xl bg-bg-primary border border-border-main space-y-2.5">
+                  <p className="text-[9px] font-black uppercase text-text-muted tracking-widest">Customer Details</p>
                   <div className="flex justify-between items-center text-text-muted">
-                    <span>Cover Charge Formula:</span>
-                    <span className="font-mono text-text-main font-bold">₹{currentRateCard.ratePerPerson} × {personsCount}</span>
+                    <span>Name:</span>
+                    <span className="font-bold text-text-main text-right truncate max-w-[160px]" title={customerName}>{customerName || '—'}</span>
                   </div>
                   <div className="flex justify-between items-center text-text-muted">
-                    <span>Beverages Allocation:</span>
-                    <span className="font-mono dark:text-amber-300 text-amber-700 font-bold">{currentRateCard.redemptionsPerPerson} × {personsCount} = {totalAllowedDrinks} Drinks</span>
+                    <span>Phone:</span>
+                    <span className="font-mono font-bold text-text-main text-right">{phoneNumber || '—'}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-text-muted">
+                    <span>Channel:</span>
+                    <span className="font-bold dark:text-emerald-400 text-emerald-700 text-right">
+                      {deliveryMode === 'EMAIL_QR' ? '📩 Digital Email QR' : '💳 NFC Smart Card'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Seating Assignment Info Card */}
+                <div className="p-3.5 rounded-2xl bg-bg-primary border border-border-main space-y-2.5">
+                  <p className="text-[9px] font-black uppercase text-text-muted tracking-widest">Seating Assignment</p>
+                  <div className="flex justify-between items-center text-text-muted">
+                    <span>Selected Area:</span>
+                    <span className="font-bold text-[#D4AF37] text-right">{currentRateCard.name}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-text-muted">
+                    <span>Assigned Table:</span>
+                    <span className="font-mono font-bold dark:text-emerald-400 text-emerald-700 text-right">
+                      {selectedTableObj ? `Table ${selectedTableObj.tableNumber}` : '🚨 Unassigned'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-text-muted">
+                    <span>Guest Headcount:</span>
+                    <span className="font-bold text-text-main text-right">{personsCountNum} {personsCountNum === 1 ? 'Person' : 'Persons'}</span>
+                  </div>
+                </div>
+
+                {/* Calculation & Pricing Card */}
+                <div className="p-3.5 rounded-2xl bg-bg-primary border border-border-main space-y-2.5">
+                  <p className="text-[9px] font-black uppercase text-text-muted tracking-widest">Cover Calculation</p>
+                  <div className="flex justify-between items-center text-text-muted">
+                    <span>Base Cover / Guest:</span>
+                    <span className="text-text-main font-bold">₹{currentRateCard.ratePerPerson}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-text-muted">
+                    <span>Hourly Duration:</span>
+                    <span className="dark:text-emerald-400 text-emerald-700 font-bold">{Math.round((currentRateCard.baseTimeMinutes || 120) / 60)} Hours</span>
+                  </div>
+                  <div className="flex justify-between items-center text-text-muted">
+                    <span>Drink Allowance:</span>
+                    <span className="dark:text-amber-300 text-amber-700 font-bold">{currentRateCard.redemptionsPerPerson} Drinks / Person</span>
+                  </div>
+                  <div className="border-t border-border-main/50 pt-2.5 mt-1 space-y-2">
+                    <div className="flex justify-between items-center text-text-muted">
+                      <span>Cover Charge Formula:</span>
+                      <span className="font-mono text-text-main font-bold">₹{currentRateCard.ratePerPerson} × {personsCountNum}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-text-muted">
+                      <span>Beverages Allocation:</span>
+                      <span className="font-mono dark:text-amber-300 text-amber-700 font-bold">{currentRateCard.redemptionsPerPerson} × {personsCountNum} = {totalAllowedDrinks} Drinks</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Total Summary Footer */}
+                <div className="pt-4 border-t border-border-main flex justify-between items-center bg-bg-primary -mx-6 -mb-6 p-6 rounded-b-3xl">
+                  <div>
+                    <span className="text-[10px] text-text-muted uppercase font-black tracking-wider">Total Payable Amount</span>
+                    <p className="text-[10px] text-text-muted mt-0.5">Includes entry cover & drinks</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-2xl font-black text-[#D4AF37]">₹{calculatedTotal}</span>
                   </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              /* Before Table Selection: Compare both sections side-by-side or stacked */
+              <div className="space-y-4 text-xs font-sans">
+                <p className="text-[10px] font-black uppercase text-text-muted tracking-wider">
+                  Compare Seating Cover Options
+                </p>
 
-            {/* Total Summary Footer */}
-            <div className="pt-4 border-t border-border-main flex justify-between items-center bg-bg-primary -mx-6 -mb-6 p-6 rounded-b-3xl">
-              <div>
-                <span className="text-[10px] text-text-muted uppercase font-black tracking-wider">Total Payable Amount</span>
-                <p className="text-[10px] text-text-muted mt-0.5">Includes entry cover & drinks</p>
+                {/* Standard Bar Summary */}
+                {(() => {
+                  const standardRate = rates.find(r => r.id === 'standing_bar') || {
+                    id: 'standing_bar',
+                    name: 'Standing Bar',
+                    ratePerPerson: 500,
+                    baseTimeMinutes: 120,
+                    redemptionsPerPerson: 2,
+                  };
+                  const standardAvailableCount = tables.filter(t => (t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-')) && t.status === 'available' && t.capacity >= personsCountNum).length;
+                  const isAvailable = personsCountNum > 0 && personsCountNum <= standardMaxCapacity;
+                  const standardTotal = standardRate.ratePerPerson * personsCountNum;
+                  const standardDrinks = standardRate.redemptionsPerPerson * personsCountNum;
+
+                  return (
+                    <div className={`p-4 rounded-2xl border transition-all ${
+                      !isAvailable 
+                        ? 'bg-bg-primary/50 border-border-main opacity-50' 
+                        : 'bg-bg-primary border-border-main'
+                    }`}>
+                      <div className="flex justify-between items-center pb-2 border-b border-border-main/50 mb-2">
+                        <span className="font-bold text-text-main">Standard Bar</span>
+                        {!isAvailable ? (
+                          <span className="text-[8px] font-bold bg-red-500/10 border border-red-500/20 text-red-500 px-2 py-0.5 rounded-full uppercase">
+                            {personsCountNum === 0 ? 'No Headcount' : 'Unavailable'}
+                          </span>
+                        ) : (
+                          <span className="text-[8px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-2 py-0.5 rounded-full uppercase">
+                            Available
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-1.5 text-[11px]">
+                        <div className="flex justify-between text-text-muted">
+                          <span>Max Seat Support:</span>
+                          <span className="text-text-main font-bold">{standardMaxCapacity} Seats</span>
+                        </div>
+                        <div className="flex justify-between text-text-muted">
+                          <span>Available Tables:</span>
+                          <span className="text-text-main font-bold">{standardAvailableCount} Tables</span>
+                        </div>
+                        <div className="flex justify-between text-text-muted">
+                          <span>Beverage Quota:</span>
+                          <span className="dark:text-amber-300 text-amber-700 font-bold">{standardDrinks} Drinks</span>
+                        </div>
+                        <div className="flex justify-between items-baseline pt-1.5 border-t border-border-main/50 mt-1">
+                          <span className="font-bold text-text-main">Estimated Cost:</span>
+                          <span className="text-base font-black text-[#D4AF37]">₹{standardTotal}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Premium Lounge Summary */}
+                {(() => {
+                  const premiumRate = rates.find(r => r.id === 'premium_lounge') || {
+                    id: 'premium_lounge',
+                    name: 'Premium Lounge',
+                    ratePerPerson: 1000,
+                    baseTimeMinutes: 180,
+                    redemptionsPerPerson: 4,
+                  };
+                  const premiumAvailableCount = tables.filter(t => (t.placeTypeId === 'PREMIUM_LOUNGE' || t.tableNumber.startsWith('L-')) && t.status === 'available' && t.capacity >= personsCountNum).length;
+                  const isAvailable = personsCountNum > 0 && personsCountNum <= premiumMaxCapacity;
+                  const premiumTotal = premiumRate.ratePerPerson * personsCountNum;
+                  const premiumDrinks = premiumRate.redemptionsPerPerson * personsCountNum;
+
+                  return (
+                    <div className={`p-4 rounded-2xl border transition-all ${
+                      !isAvailable 
+                        ? 'bg-bg-primary/50 border-border-main opacity-50' 
+                        : 'bg-bg-primary border-border-main'
+                    }`}>
+                      <div className="flex justify-between items-center pb-2 border-b border-border-main/50 mb-2">
+                        <span className="font-bold text-text-main">Premium Lounge</span>
+                        {!isAvailable ? (
+                          <span className="text-[8px] font-bold bg-red-500/10 border border-red-500/20 text-red-500 px-2 py-0.5 rounded-full uppercase">
+                            {personsCountNum === 0 ? 'No Headcount' : 'Unavailable'}
+                          </span>
+                        ) : (
+                          <span className="text-[8px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-2 py-0.5 rounded-full uppercase">
+                            Available
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-1.5 text-[11px]">
+                        <div className="flex justify-between text-text-muted">
+                          <span>Max Seat Support:</span>
+                          <span className="text-text-main font-bold">{premiumMaxCapacity} Seats</span>
+                        </div>
+                        <div className="flex justify-between text-text-muted">
+                          <span>Available Tables:</span>
+                          <span className="text-text-main font-bold">{premiumAvailableCount} Tables</span>
+                        </div>
+                        <div className="flex justify-between text-text-muted">
+                          <span>Beverage Quota:</span>
+                          <span className="dark:text-amber-300 text-amber-700 font-bold">{premiumDrinks} Drinks</span>
+                        </div>
+                        <div className="flex justify-between items-baseline pt-1.5 border-t border-border-main/50 mt-1">
+                          <span className="font-bold text-text-main">Estimated Cost:</span>
+                          <span className="text-base font-black text-[#D4AF37]">₹{premiumTotal}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="bg-bg-primary border border-border-main p-3 rounded-2xl text-[10px] text-text-muted">
+                  🚨 Please select a table in Stage 2 to generate the final receipt pass.
+                </div>
               </div>
-              <div className="text-right">
-                <span className="text-2xl font-black text-[#D4AF37]">₹{calculatedTotal}</span>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
