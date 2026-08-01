@@ -115,14 +115,14 @@ export const RevenueAnalyticsChart: React.FC = () => {
                     
                     {/* Hover Floating Tooltip Popup */}
                     <div className="absolute bottom-full mb-2 hidden group-hover:flex flex-col items-center z-30 transition-all duration-200">
-                      <div className="bg-bg-surface border border-border-main px-3 py-2 rounded-xl shadow-2xl text-[10px] whitespace-nowrap text-text-main font-bold">
-                        <p className="text-text-muted">Hour: {d.hour}</p>
+                      <div className="dark:bg-bg-surface bg-zinc-900 dark:border-border-main border-zinc-800 px-3 py-2 rounded-xl shadow-2xl text-[10px] whitespace-nowrap dark:text-text-main text-white font-bold">
+                        <p className="dark:text-text-muted text-zinc-400">Hour: {d.hour}</p>
                         <p className="text-[#D4AF37] font-black text-xs mt-0.5">₹{d.amount.toLocaleString()}</p>
-                        <p className="text-[9px] text-text-muted font-medium mt-0.5">
+                        <p className="text-[9px] dark:text-text-muted text-zinc-400 font-medium mt-0.5">
                           {d.peak ? '🔥 Peak Hour' : 'Regular Shift'}
                         </p>
                       </div>
-                      <div className="w-2 h-2 bg-bg-surface border-r border-b border-border-main rotate-45 -mt-1" />
+                      <div className="w-2 h-2 dark:bg-bg-surface bg-zinc-900 border-r border-b dark:border-border-main border-zinc-800 rotate-45 -mt-1" />
                     </div>
 
                     {/* Numerical Label on top of the Bar */}

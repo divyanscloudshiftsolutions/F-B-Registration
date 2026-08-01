@@ -278,7 +278,7 @@ export const TableManagement: React.FC = () => {
                 </div>
                 <button 
                   onClick={() => setInspectingTable(null)}
-                  className="p-1.5 rounded-lg bg-bg-primary hover:bg-white/15 text-text-muted hover:text-text-main transition-all cursor-pointer"
+                  className="p-1.5 rounded-lg bg-bg-primary hover:bg-black/5 dark:hover:bg-white/10 text-text-muted hover:text-text-main transition-all cursor-pointer"
                 >
                   <X size={20} />
                 </button>

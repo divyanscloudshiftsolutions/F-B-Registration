@@ -22,7 +22,6 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
   const [isOpen, setIsOpen] = useState(false);
   const unreadNotifications = notifications.filter(n => !n.read).length;
   const popoverRef = useRef<HTMLDivElement>(null);
-  const [glassWave, setGlassWave] = useState<{ x: number; y: number; radius: number; opacity: number } | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -61,43 +60,25 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
     const bottom = window.innerHeight - y;
     const maxRadius = Math.hypot(Math.max(x, right), Math.max(y, bottom));
 
-    // 1. Trigger the Glass Wave expansion
-    setGlassWave({ x, y, radius: 0, opacity: 0.85 });
-
-    // Request animation frame to transition properties smoothly
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        setGlassWave(prev => prev ? { ...prev, radius: maxRadius * 1.15, opacity: 0 } : null);
-      }, 10);
+    const transition = (document as any).startViewTransition(() => {
+      toggleTheme();
     });
 
-    // 2. Trigger wobbly View Transition slightly after (50ms) to allow glass wave to lead the reveal
-    setTimeout(() => {
-      const transition = (document as any).startViewTransition(() => {
-        toggleTheme();
-      });
-
-      transition.ready.then(() => {
-        document.documentElement.animate(
-          {
-            clipPath: [
-              `circle(0px at ${x}px ${y}px)`,
-              `circle(${maxRadius}px at ${x}px ${y}px)`
-            ]
-          },
-          {
-            duration: 850,
-            easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
-            pseudoElement: '::view-transition-new(root)'
-          }
-        );
-      });
-    }, 50);
-
-    // 3. Clear glass wave DOM overlay after transition settles
-    setTimeout(() => {
-      setGlassWave(null);
-    }, 1150);
+    transition.ready.then(() => {
+      document.documentElement.animate(
+        {
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${maxRadius}px at ${x}px ${y}px)`
+          ]
+        },
+        {
+          duration: 800,
+          easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+          pseudoElement: '::view-transition-new(root)'
+        }
+      );
+    });
   };
 
   const handleClearAll = (e: React.MouseEvent) => {
@@ -217,18 +198,6 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
           {isDark ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} />}
         </button>
       </div>
-
-      {/* Glass Wave Backdrop Blur Ripple Overlay */}
-      {glassWave && (
-        <div 
-          style={{
-            clipPath: `circle(${glassWave.radius}px at ${glassWave.x}px ${glassWave.y}px)`,
-            opacity: glassWave.opacity,
-            transition: 'clip-path 950ms cubic-bezier(0.16, 1, 0.3, 1), opacity 950ms cubic-bezier(0.16, 1, 0.3, 1)'
-          }}
-          className="fixed inset-0 pointer-events-none z-[99999] backdrop-blur-[12px] border-[16px] border-white/20 dark:border-white/10"
-        />
-      )}
     </header>
   );
 };
