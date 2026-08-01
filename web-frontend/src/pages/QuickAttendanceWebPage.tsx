@@ -136,17 +136,17 @@ export const QuickAttendanceWebPage: React.FC = () => {
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
-      <div className="glass-panel p-5 rounded-3xl border border-white/10 relative overflow-hidden">
+      <div className="glass-panel p-5 rounded-3xl border border-border-main relative overflow-hidden">
         
         {/* Header Title & Camera Enable / Disable Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-white/10">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-border-main">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center font-bold">
+            <div className="w-9 h-9 rounded-xl dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 flex items-center justify-center font-bold">
               <UserCheck size={18} />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">FaceMark Quick Facial Attendance Kiosk</h3>
-              <p className="text-[10px] text-gray-400">Biometric facial recognition check-in & check-out</p>
+              <h3 className="text-base font-bold text-text-main">FaceMark Quick Facial Attendance Kiosk</h3>
+              <p className="text-[10px] text-text-muted">Biometric facial recognition check-in & check-out</p>
             </div>
           </div>
 
@@ -156,7 +156,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
               <button
                 type="button"
                 onClick={stopCamera}
-                className="px-3.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/30 text-[10px] font-extrabold flex items-center gap-1.5 transition-all shadow-lg cursor-pointer"
+                className="px-3.5 py-1.5 rounded-lg dark:bg-red-500/15 bg-red-500/10 hover:bg-red-500/25 dark:text-red-400 text-red-700 border border-red-500/30 text-[10px] font-extrabold flex items-center gap-1.5 transition-all shadow-lg cursor-pointer"
               >
                 <VideoOff size={14} />
                 <span>Disable Camera</span>
@@ -165,14 +165,14 @@ export const QuickAttendanceWebPage: React.FC = () => {
               <button
                 type="button"
                 onClick={startCamera}
-                className="px-3.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-[10px] font-extrabold flex items-center gap-1.5 transition-all shadow-lg cursor-pointer"
+                className="px-3.5 py-1.5 rounded-lg dark:bg-emerald-500/15 bg-emerald-500/10 hover:bg-emerald-500/25 dark:text-emerald-400 text-emerald-700 border border-emerald-500/30 text-[10px] font-extrabold flex items-center gap-1.5 transition-all shadow-lg cursor-pointer"
               >
                 <Video size={14} />
                 <span>Enable Camera</span>
               </button>
             )}
 
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] font-semibold text-gray-300">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-bg-primary border border-border-main text-[10px] font-semibold text-text-muted">
               <Shield size={12} className="text-[#D4AF37]" />
               <span>FaceMark AI</span>
             </div>
@@ -180,7 +180,9 @@ export const QuickAttendanceWebPage: React.FC = () => {
         </div>
 
         {/* Video Camera View Box */}
-        <div className="relative rounded-2xl bg-black overflow-hidden aspect-video border border-white/10 flex items-center justify-center shadow-2xl">
+        <div className={`relative rounded-2xl overflow-hidden aspect-video border border-border-main flex items-center justify-center shadow-2xl ${
+          cameraActive ? 'bg-black' : 'bg-bg-primary'
+        }`}>
           {cameraActive ? (
             <video
               ref={videoRef}
@@ -191,11 +193,11 @@ export const QuickAttendanceWebPage: React.FC = () => {
             />
           ) : (
             <div className="flex flex-col items-center justify-center text-center p-6 space-y-3">
-              <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-500">
+              <div className="w-12 h-12 rounded-full bg-bg-surface border border-border-main flex items-center justify-center text-text-muted">
                 <VideoOff size={24} />
               </div>
-              <p className="text-xs font-bold text-gray-300">Camera is currently disabled</p>
-              <p className="text-[10px] text-gray-500 max-w-xs">Click the "Enable Camera" button above to turn on webcam for biometric attendance.</p>
+              <p className="text-xs font-bold text-text-main">Camera is currently disabled</p>
+              <p className="text-[10px] text-text-muted max-w-xs">Click the "Enable Camera" button above to turn on webcam for biometric attendance.</p>
               <button
                 type="button"
                 onClick={startCamera}
@@ -222,7 +224,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
           {attendanceResult && (
             <div className="absolute inset-0 bg-black/80 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center space-y-3">
               <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
-                attendanceResult.action === 'check-in' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500' : 'bg-blue-500/20 text-blue-400 border border-blue-500'
+                attendanceResult.action === 'check-in' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500' : 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
               }`}>
                 <CheckCircle2 size={28} />
               </div>
@@ -233,12 +235,12 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 }`}>
                   {attendanceResult.action}
                 </span>
-                <h3 className="text-lg font-black text-white mt-1.5">{attendanceResult.userName || 'Employee Identified'}</h3>
-                <p className="text-[10px] text-gray-400 font-mono mt-0.5">{attendanceResult.userEmail}</p>
+                <h3 className="text-lg font-black text-text-main mt-1.5">{attendanceResult.userName || 'Employee Identified'}</h3>
+                <p className="text-[10px] text-text-muted font-mono mt-0.5">{attendanceResult.userEmail}</p>
               </div>
 
               {attendanceResult.confidence && (
-                <div className="text-[10px] font-semibold text-[#D4AF37] bg-white/5 px-2.5 py-0.5 rounded-full border border-white/10">
+                <div className="text-[10px] font-semibold text-[#D4AF37] bg-bg-primary px-2.5 py-0.5 rounded-full border border-border-main">
                   Confidence Score: {(attendanceResult.confidence * 100).toFixed(1)}%
                 </div>
               )}
@@ -255,16 +257,16 @@ export const QuickAttendanceWebPage: React.FC = () => {
           {/* Error State Overlay */}
           {errorMessage && (
             <div className="absolute inset-0 bg-black/85 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center space-y-3">
-              <div className="w-12 h-12 rounded-full bg-red-500/20 border border-red-500 text-red-400 flex items-center justify-center text-xl">
+              <div className="w-12 h-12 rounded-full dark:bg-red-500/20 bg-red-500/10 border border-red-500 dark:text-red-400 text-red-700 flex items-center justify-center text-xl">
                 <AlertTriangle size={24} />
               </div>
 
-              <h4 className="text-sm font-bold text-red-400">Attendance Verification Failed</h4>
-              <p className="text-[10px] text-gray-300 max-w-sm">{errorMessage}</p>
+              <h4 className="text-sm font-bold dark:text-red-400 text-red-700">Attendance Verification Failed</h4>
+              <p className="text-[10px] text-text-muted max-w-sm">{errorMessage}</p>
 
               <button
                 onClick={handleReset}
-                className="mt-2 px-6 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                className="mt-2 px-6 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-text-main text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer"
               >
                 Try Again
               </button>
@@ -281,7 +283,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 value={employeeCode}
                 onChange={e => setEmployeeCode(e.target.value)}
                 placeholder="Optional Employee ID (e.g. EMP-99)"
-                className="w-full bg-[#1A202C] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
+                className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
               />
             </div>
 
@@ -290,7 +292,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={startCamera}
-                  className="w-full md:w-auto px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center gap-1.5 text-xs uppercase font-black tracking-wider shadow-xl transition-all cursor-pointer"
+                  className="w-full md:w-auto px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-text-main flex items-center justify-center gap-1.5 text-xs uppercase font-black tracking-wider shadow-xl transition-all cursor-pointer"
                 >
                   <Video size={16} />
                   <span>Enable Camera</span>
@@ -299,7 +301,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={stopCamera}
-                  className="px-4 py-2.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 flex items-center justify-center gap-1.5 text-xs uppercase font-bold tracking-wider transition-all cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl dark:bg-red-500/20 bg-red-500/10 hover:bg-red-500/30 dark:text-red-400 text-red-700 border border-red-500/30 flex items-center justify-center gap-1.5 text-xs uppercase font-bold tracking-wider transition-all cursor-pointer"
                 >
                   <VideoOff size={16} />
                   <span>Disable Camera</span>
