@@ -3,11 +3,11 @@ import { UserPlus, Search, RefreshCw, X } from 'lucide-react';
 import { api } from '../../services/api';
 import type { User, UserRole } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
 
 export const StaffManagement: React.FC = () => {
   const { showToast } = useAuth();
-  const [users, setUsers] = useState<User[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { users, isLoading, refreshUsers } = useData();
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -17,22 +17,6 @@ export const StaffManagement: React.FC = () => {
   const [role, setRole] = useState<UserRole>('receptionist');
   const [pin, setPin] = useState('1234');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const loadUsers = async () => {
-    setIsLoading(true);
-    try {
-      const data = await api.getUsers();
-      setUsers(data);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to load staff directory.', 'danger');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadUsers();
-  }, []);
 
   // Update default username prefix when role changes
   useEffect(() => {
@@ -62,7 +46,7 @@ export const StaffManagement: React.FC = () => {
       showToast(`Staff member ${fullName} (${username}) created successfully!`, 'success');
       setIsModalOpen(false);
       setFullName('');
-      loadUsers();
+      refreshUsers();
     } catch (err: any) {
       showToast(err.message || 'Failed to register staff member.', 'danger');
     } finally {
@@ -74,7 +58,7 @@ export const StaffManagement: React.FC = () => {
     try {
       await api.updateUserStatus(user.id, !user.isActive);
       showToast(`User ${user.username} is now ${!user.isActive ? 'Active' : 'Inactive'}.`, 'info');
-      loadUsers();
+      refreshUsers();
     } catch (err: any) {
       showToast(err.message || 'Failed to update user status.', 'danger');
     }
@@ -103,7 +87,7 @@ export const StaffManagement: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={loadUsers}
+            onClick={refreshUsers}
             className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 border border-white/10 flex items-center gap-1.5 transition-all"
           >
             <RefreshCw size={14} /> Refresh

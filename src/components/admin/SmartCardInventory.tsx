@@ -1,36 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Search, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
 
 export const SmartCardInventory: React.FC = () => {
   const { showToast } = useAuth();
-  const [cards, setCards] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { cards, isLoading, refreshCards } = useData();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<string>('all');
-
-  const loadCards = async () => {
-    setIsLoading(true);
-    try {
-      const data = await api.getCards();
-      setCards(data);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to load smart card inventory.', 'danger');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadCards();
-  }, []);
 
   const handleUpdateStatus = async (cardUid: string, status: string) => {
     try {
       await api.updateCardStatus(cardUid, status);
       showToast(`Card ${cardUid} status updated to ${status}.`, 'success');
-      loadCards();
+      refreshCards();
     } catch (err: any) {
       showToast(err.message || 'Failed to update card status.', 'danger');
     }
@@ -75,7 +59,7 @@ export const SmartCardInventory: React.FC = () => {
           ))}
 
           <button
-            onClick={loadCards}
+            onClick={refreshCards}
             className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 border border-white/10 flex items-center gap-1.5 transition-all"
           >
             <RefreshCw size={14} /> Refresh

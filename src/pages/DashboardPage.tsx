@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Users, 
   Grid3X3, 
@@ -10,14 +10,13 @@ import {
   X
 } from 'lucide-react';
 import { api } from '../services/api';
-import type { Token, Table } from '../types';
+import type { Token } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 
 export const DashboardPage: React.FC = () => {
   const { showToast } = useAuth();
-  const [tokens, setTokens] = useState<Token[]>([]);
-  const [tables, setTables] = useState<Table[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { tokens, tables, isLoading, refreshTokens, refreshTables } = useData();
 
   // Extend Modal State
   const [extendingToken, setExtendingToken] = useState<Token | null>(null);
@@ -30,26 +29,6 @@ export const DashboardPage: React.FC = () => {
   const [closeReason, setCloseReason] = useState('CHECKOUT');
   const [isSubmittingClose, setIsSubmittingClose] = useState(false);
 
-  const loadData = async () => {
-    setIsLoading(true);
-    try {
-      const [tokenData, tableData] = await Promise.all([
-        api.getActiveTokens(),
-        api.getTables(),
-      ]);
-      setTokens(tokenData);
-      setTables(tableData);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to load dashboard metrics.', 'danger');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
   const handleExtendSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!extendingToken) return;
@@ -59,7 +38,7 @@ export const DashboardPage: React.FC = () => {
       await api.extendToken(extendingToken.tokenNumber, extraMinutes, additionalAmount);
       showToast(`Session for ${extendingToken.tokenNumber} extended by ${extraMinutes} mins.`, 'success');
       setExtendingToken(null);
-      loadData();
+      refreshTokens();
     } catch (err: any) {
       showToast(err.message || 'Failed to extend session.', 'danger');
     } finally {
@@ -76,7 +55,8 @@ export const DashboardPage: React.FC = () => {
       await api.closeToken(closingToken.tokenNumber, closeReason);
       showToast(`Session ${closingToken.tokenNumber} closed (${closeReason}).`, 'success');
       setClosingToken(null);
-      loadData();
+      refreshTokens();
+      refreshTables();
     } catch (err: any) {
       showToast(err.message || 'Failed to close session.', 'danger');
     } finally {
@@ -152,7 +132,7 @@ export const DashboardPage: React.FC = () => {
             <p className="text-xs text-gray-400">Real-time NFC & QR active seating tickets</p>
           </div>
           <button 
-            onClick={loadData}
+            onClick={() => { refreshTokens(); refreshTables(); }}
             className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 transition-colors border border-white/10"
           >
             Refresh List
