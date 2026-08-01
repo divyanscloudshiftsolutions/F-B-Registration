@@ -196,8 +196,8 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                 onClick={() => setInspectingTable(tb)}
                 className={`p-6 rounded-3xl border transition-all cursor-pointer relative overflow-hidden grid grid-rows-[auto_1fr_auto] gap-4 h-72 ${
                   isOccupied
-                    ? 'bg-emerald-500/10 border-emerald-500/40 shadow-xl shadow-emerald-500/5'
-                    : 'bg-[#121620] border-white/10 hover:border-[#D4AF37]/50'
+                    ? 'bg-[#121620]/50 border-amber-500/20 opacity-75 shadow-lg shadow-black/40'
+                    : 'bg-[#121620] border-emerald-500/25 hover:border-[#D4AF37]/50 hover:shadow-xl hover:shadow-[#D4AF37]/5 shadow-md'
                 }`}
               >
                 {/* Row 1: Header - Table Number & Status Pill */}
@@ -213,8 +213,8 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                     <span
                       className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
                         isOccupied 
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' 
-                          : 'bg-white/5 text-gray-400 border border-white/10'
+                          ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' 
+                          : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                       }`}
                     >
                       {isOccupied ? <Users size={12} /> : <CheckCircle2 size={12} />}
@@ -224,38 +224,67 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                 </div>
 
                 {/* Row 2: Grid Layout for Visual Seating & Metrics */}
-                <div className="py-3 px-4 rounded-2xl bg-black/40 border border-white/5 grid grid-rows-[auto_auto_auto] items-center gap-2">
+                <div className="py-2.5 px-4 rounded-2xl bg-black/40 border border-white/5 grid grid-rows-[auto_1fr_auto] items-center gap-1.5">
                   <div className="flex justify-between w-full text-[10px] text-gray-400 font-bold uppercase">
                     <span>Seat Capacity</span>
-                    <span className={isOccupied ? 'text-emerald-400' : 'text-gray-400'}>
+                    <span className={isOccupied ? 'text-amber-400 font-extrabold' : 'text-emerald-400 font-extrabold'}>
                       {occupiedCount} / {capacity} Seats
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-center gap-2 py-1">
-                    {Array.from({ length: capacity }).map((_, i) => {
-                      const isFilled = i < occupiedCount;
-                      return (
-                        <div
-                          key={i}
-                          className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all ${
-                            isFilled
-                              ? 'bg-emerald-500 border-emerald-300 shadow-md shadow-emerald-500/40'
-                              : 'bg-white/10 border-white/20'
-                          }`}
-                          title={`Seat #${i + 1} (${isFilled ? 'Occupied' : 'Empty'})`}
-                        />
-                      );
-                    })}
+                  {/* Micro Floor Plan Seating Alignment */}
+                  <div className="relative flex items-center justify-center h-14 bg-[#121620]/30 rounded-xl border border-white/5">
+                    {/* Top Seats Row */}
+                    <div className="absolute top-1.5 flex gap-2">
+                      {Array.from({ length: Math.ceil(capacity / 2) }).map((_, i) => {
+                        const isFilled = i < occupiedCount;
+                        return (
+                          <div
+                            key={`mini-top-${i}`}
+                            className={`w-3 h-3 rounded-full border transition-all ${
+                              isFilled
+                                ? 'bg-amber-500 border-amber-300 shadow-md shadow-amber-500/30 animate-pulse'
+                                : 'bg-white/5 border-white/10'
+                            }`}
+                            title={`Seat #${i + 1} (${isFilled ? 'Occupied' : 'Empty'})`}
+                          />
+                        );
+                      })}
+                    </div>
+
+                    {/* Central table plate */}
+                    <div className={`px-4 py-0.5 bg-[#1C2333] border rounded text-[9px] font-mono font-black tracking-wider shadow ${
+                      isOccupied ? 'text-amber-400 border-amber-500/30' : 'text-[#D4AF37] border-white/10'
+                    }`}>
+                      {tb.tableNumber}
+                    </div>
+
+                    {/* Bottom Seats Row */}
+                    <div className="absolute bottom-1.5 flex gap-2">
+                      {Array.from({ length: Math.floor(capacity / 2) }).map((_, i) => {
+                        const isFilled = (Math.ceil(capacity / 2) + i) < occupiedCount;
+                        return (
+                          <div
+                            key={`mini-bottom-${i}`}
+                            className={`w-3 h-3 rounded-full border transition-all ${
+                              isFilled
+                                ? 'bg-amber-500 border-amber-300 shadow-md shadow-amber-500/30 animate-pulse'
+                                : 'bg-white/5 border-white/10'
+                            }`}
+                            title={`Seat #${Math.ceil(capacity / 2) + i + 1} (${isFilled ? 'Occupied' : 'Empty'})`}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
 
                   <div className="h-5 flex items-center justify-center">
                     {assignedToken ? (
-                      <p className="text-[11px] font-bold text-emerald-300 truncate max-w-full text-center">
+                      <p className="text-[11px] font-bold text-amber-300 truncate max-w-full text-center">
                         👤 {assignedToken.customer?.name || 'Guest'} ({assignedToken.tokenNumber})
                       </p>
                     ) : (
-                      <p className="text-[10px] text-gray-500 text-center font-medium">Ready for guest seating</p>
+                      <p className="text-[10px] text-emerald-400/80 text-center font-medium">Ready for guest seating</p>
                     )}
                   </div>
                 </div>
@@ -269,7 +298,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                         e.stopPropagation();
                         handleRelease(tb.id);
                       }}
-                      className="w-full py-2.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold text-xs border border-red-500/30 transition-all text-center"
+                      className="w-full py-2.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold text-xs border border-red-500/30 transition-all text-center cursor-pointer"
                     >
                       Release Table
                     </button>
@@ -280,7 +309,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                         e.stopPropagation();
                         handleRedirectToCheckIn(tb);
                       }}
-                      className="w-full py-2.5 rounded-xl bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] font-bold text-xs border border-[#D4AF37]/30 transition-all text-center"
+                      className="w-full py-2.5 rounded-xl bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] font-bold text-xs border border-[#D4AF37]/30 transition-all text-center cursor-pointer"
                     >
                       Assign Guest
                     </button>
@@ -311,7 +340,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                 </div>
                 <button 
                   onClick={() => setInspectingTable(null)}
-                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-gray-400 hover:text-white transition-all"
+                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-gray-400 hover:text-white transition-all cursor-pointer"
                 >
                   <X size={20} />
                 </button>
@@ -330,9 +359,9 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                       const isFilled = i < occupiedCount;
                       return (
                         <div key={`top-${i}`} className="flex flex-col items-center gap-1">
-                          <div className={`w-1 h-3 rounded-full ${isFilled ? 'bg-emerald-400' : 'bg-gray-600'}`} />
+                          <div className={`w-1 h-3 rounded-full ${isFilled ? 'bg-amber-400' : 'bg-gray-600'}`} />
                           <div className={`w-8 h-8 rounded-full border flex items-center justify-center text-xs font-bold ${
-                            isFilled ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300' : 'bg-white/5 border-white/10 text-gray-500'
+                            isFilled ? 'bg-amber-500/20 border-amber-400 text-amber-300 font-extrabold shadow-sm shadow-amber-500/20' : 'bg-white/5 border-white/10 text-gray-500'
                           }`}>
                             👤
                           </div>
@@ -354,11 +383,11 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                       return (
                         <div key={`bottom-${i}`} className="flex flex-col items-center gap-1">
                           <div className={`w-8 h-8 rounded-full border flex items-center justify-center text-xs font-bold ${
-                            isFilled ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300' : 'bg-white/5 border-white/10 text-gray-500'
+                            isFilled ? 'bg-amber-500/20 border-amber-400 text-amber-300 font-extrabold shadow-sm shadow-amber-500/20' : 'bg-white/5 border-white/10 text-gray-500'
                           }`}>
                             👤
                           </div>
-                          <div className={`w-1 h-3 rounded-full ${isFilled ? 'bg-emerald-400' : 'bg-gray-600'}`} />
+                          <div className={`w-1 h-3 rounded-full ${isFilled ? 'bg-amber-400' : 'bg-gray-600'}`} />
                         </div>
                       );
                     })}
@@ -370,7 +399,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="p-3.5 rounded-2xl bg-[#141A25] border border-white/10 space-y-1">
                   <span className="text-gray-400 text-[10px] font-bold uppercase">Status</span>
-                  <p className={`font-bold text-sm uppercase ${inspectingTable.status === 'occupied' ? 'text-emerald-400' : 'text-gray-300'}`}>
+                  <p className={`font-bold text-sm uppercase ${inspectingTable.status === 'occupied' ? 'text-amber-400' : 'text-emerald-400'}`}>
                     {inspectingTable.status}
                   </p>
                 </div>
