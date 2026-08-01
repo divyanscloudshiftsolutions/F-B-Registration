@@ -1,6 +1,20 @@
 @import "tailwindcss";
 
 :root {
+  --bg-primary: #F9FAFB;
+  --bg-surface: #FFFFFF;
+  --bg-card: #F3F4F6;
+  --border-color: rgba(0, 0, 0, 0.08);
+  --text-main: #111827;
+  --text-muted: #4B5563;
+  --color-gold: #C49B24;
+  --color-gold-hover: #A37F15;
+  --color-teal: #10B981;
+  --color-danger: #EF4444;
+  --bg-card-glass: rgba(255, 255, 255, 0.85);
+}
+
+.dark {
   --bg-primary: #0A0C10;
   --bg-surface: #12161F;
   --bg-card: #181E2A;
@@ -11,6 +25,16 @@
   --color-gold-hover: #B59328;
   --color-teal: #10B981;
   --color-danger: #EF4444;
+  --bg-card-glass: rgba(24, 30, 42, 0.75);
+}
+
+@theme {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-card: var(--bg-card);
+  --color-border-main: var(--border-color);
+  --color-text-main: var(--text-main);
+  --color-text-muted: var(--text-muted);
 }
 
 body {
@@ -28,10 +52,10 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--bg-primary);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--border-color);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -39,10 +63,10 @@ body {
 }
 
 .glass-panel {
-  background: rgba(24, 30, 42, 0.75);
+  background: var(--bg-card-glass);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
 }
 
 .gold-gradient-btn {
@@ -78,4 +102,36 @@ body {
   background-color: rgba(156, 163, 175, 0.15);
   color: #9CA3AF;
   border: 1px solid rgba(156, 163, 175, 0.3);
+}
+
+/* Revenue Analytics Chart Custom Bar Styles */
+.analytics-bar-regular {
+  background-color: #cbd5e1 !important; /* Light theme: slate-300 */
+}
+.analytics-bar-regular:hover {
+  background-color: #94a3b8 !important; /* Light theme: slate-400 */
+}
+
+.dark .analytics-bar-regular {
+  background-color: rgba(255, 255, 255, 0.15) !important; /* Dark theme: white/15 */
+}
+.dark .analytics-bar-regular:hover {
+  background-color: rgba(255, 255, 255, 0.25) !important; /* Dark theme: white/25 */
+}
+
+/* Premium Wave Theme Transition Configurations */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* Position screenshots properly to expand the new screen above the old one */
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 9999;
+  filter: url(#liquid-glass-morph);
 }

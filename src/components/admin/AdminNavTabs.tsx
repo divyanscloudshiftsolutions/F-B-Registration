@@ -35,7 +35,7 @@ export const AdminNavTabs: React.FC<AdminNavTabsProps> = ({ activeTab, setActive
   ];
 
   return (
-    <div className="glass-panel p-2 rounded-2xl border border-white/10 flex flex-wrap gap-2">
+    <div className="glass-panel p-2 rounded-2xl border border-border-main flex flex-wrap gap-2">
       {tabs.map(t => {
         const Icon = t.icon;
         const isSel = activeTab === t.id;

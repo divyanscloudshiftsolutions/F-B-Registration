@@ -121,7 +121,12 @@ class ApiService {
   async createUser(userData: { username: string; fullName: string; pin: string; role: string }) {
     return this.request<{ success: boolean; user: User }>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify(userData),
+      body: JSON.stringify({
+        username: userData.username,
+        password: userData.pin,
+        fullName: userData.fullName,
+        role: userData.role,
+      }),
     });
   }
 
@@ -271,8 +276,8 @@ class ApiService {
 
   // Delivery Config APIs
   async getDeliveryMode(): Promise<string> {
-    const res = await this.request<{ success: boolean; mode: string }>('/config/delivery-mode');
-    return res.mode || 'NFC_CARD';
+    const res = await this.request<{ success: boolean; mode?: string; deliveryMode?: string }>('/config/delivery-mode');
+    return res.deliveryMode || res.mode || 'EMAIL_QR';
   }
 
   async setDeliveryMode(mode: 'NFC_CARD' | 'EMAIL_QR' | 'BOTH'): Promise<void> {
