@@ -30,6 +30,7 @@
 }
 
 @theme {
+  --font-sans: 'Poppins', sans-serif;
   --color-bg-primary: var(--bg-primary);
   --color-bg-surface: var(--bg-surface);
   --color-bg-card: var(--bg-card);
