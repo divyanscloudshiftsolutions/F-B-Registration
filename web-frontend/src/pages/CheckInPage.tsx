@@ -369,7 +369,7 @@ export const CheckInPage: React.FC = () => {
                 >
                   {isCompleted ? '✓' : step.num}
                 </div>
-                <span className={`text-[10px] uppercase tracking-wider font-extrabold transition-all ${
+                <span className={`text-[10px] uppercase tracking-wider font-extrabold transition-all hidden md:block ${
                   isActive ? 'text-[#D4AF37]' : isCompleted ? 'dark:text-emerald-400 text-emerald-700' : 'text-text-muted'
                 }`}>
                   {step.label}
@@ -377,6 +377,17 @@ export const CheckInPage: React.FC = () => {
               </div>
             );
           })}
+        </div>
+
+        {/* Mobile-only status text tracker */}
+        <div className="text-center mt-4 text-[10px] uppercase tracking-widest font-black text-[#D4AF37] md:hidden">
+          Step {stage} of 5: {[
+            'Customer Info',
+            'Table Seating',
+            'QR Verification',
+            'Payment Details',
+            'Pass Generated'
+          ][stage - 1]}
         </div>
       </div>
 
@@ -723,9 +734,9 @@ export const CheckInPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-text-muted mb-2">2. Assign Seating Table (Filtered for {personsCount} Guests)</label>
+                <label className="block text-xs font-semibold text-text-muted mb-2">2. Assign Seating Table (Filtered for {personsCountNum} Guests)</label>
                 {compatibleAvailableTables.length === 0 ? (
-                  <p className="text-xs text-text-muted py-3">No available tables with capacity for {personsCount} guests in this zone. You may proceed without table assignment.</p>
+                  <p className="text-xs text-text-muted py-3">No available tables with capacity for {personsCountNum} guests in this zone. You may proceed without table assignment.</p>
                 ) : (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {compatibleAvailableTables.map(tb => {
@@ -735,14 +746,14 @@ export const CheckInPage: React.FC = () => {
                           key={tb.id}
                           type="button"
                           onClick={() => setSelectedTableId(isSel ? '' : tb.id)}
-                          className={`p-3 rounded-xl border text-center transition-all ${
+                          className={`p-3 rounded-xl border text-center transition-all cursor-pointer ${
                             isSel
                               ? 'bg-emerald-500/20 border-emerald-400 dark:text-emerald-300 text-emerald-700 font-bold shadow-lg'
                               : 'bg-bg-primary border-border-main text-text-muted hover:bg-bg-card'
                           }`}
                         >
                           <p className="font-mono text-sm font-black">{tb.tableNumber}</p>
-                          <p className="text-[10px] text-text-muted mt-0.5">{personsCount} / {tb.capacity} Seats</p>
+                          <p className="text-[10px] text-text-muted mt-0.5">{personsCountNum} / {tb.capacity} Seats</p>
                         </button>
                       );
                     })}
