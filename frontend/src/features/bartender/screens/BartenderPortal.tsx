@@ -771,6 +771,23 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
                 </View>
               </View>
 
+              {/* Start QR Scan Target */}
+              {emailQrEnabled && (
+                <TouchableOpacity 
+                  className="w-full rounded-[20px] py-4 items-center justify-center shadow-xl border mb-4"
+                  style={{ backgroundColor: colors.gold, borderColor: colors.gold, borderWidth: 1.5 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Start camera QR code scan"
+                  onPress={handleQrScan}
+                  activeOpacity={0.85}
+                >
+                  <View className="flex-row items-center gap-2">
+                    <Text style={{ fontSize: 16 }}>📷</Text>
+                    <Text className="font-black text-sm tracking-widest uppercase" style={{ color: colors.goldButtonText }}>START QR SCAN</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
               {/* Active sessions list helper */}
               <Text className="text-[10px] font-bold uppercase tracking-wider mb-2.5 px-1" style={{ color: colors.muted }}>Active Checked-in Guests:</Text>
               <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
