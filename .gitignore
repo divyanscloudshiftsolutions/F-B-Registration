@@ -36,3 +36,11 @@ yarn-error.log*
 backend/neon_dump.sql
 DB Tables.txt
 
+# Exclude issues, documentation, and non-runtime files
+issues/
+git-remember
+why prisma!.txt
+.agents/
+Test Reports/
+.claude/
+
