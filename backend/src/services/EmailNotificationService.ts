@@ -146,10 +146,10 @@ export class EmailNotificationService {
     // 3. API Dispatch with x-api-key authentication
     const apiKey = process.env.NOTIFICATION_API_KEY || '';
     const isTesting = process.env.NODE_ENV === 'test';
-    const sendRealEmails = process.env.SEND_REAL_EMAILS === 'true' && !isTesting;
+    const sendRealEmails = process.env.SEND_REAL_EMAILS !== 'false' && !isTesting;
 
     if (!sendRealEmails) {
-      console.info(`[Email Worker] Mocking email dispatch to ${to} (token: ${tokenNumber}) [real send skipped: SEND_REAL_EMAILS is not true or NODE_ENV is test]`);
+      console.info(`[Email Worker] Mocking email dispatch to ${to} (token: ${tokenNumber}) [real send skipped: SEND_REAL_EMAILS is set to false or NODE_ENV is test]`);
       await prisma.token.update({
         where: { tokenNumber },
         data: {
