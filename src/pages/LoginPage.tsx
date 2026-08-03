@@ -159,7 +159,7 @@ export const LoginPage: React.FC = () => {
                     setErrorMsg('');
                   }}
                   placeholder="e.g. ADM-03"
-                  className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-text-muted focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-text-muted focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 transition-all"
                   required
                 />
               </div>
@@ -178,7 +178,7 @@ export const LoginPage: React.FC = () => {
                     setErrorMsg('');
                   }}
                   placeholder="••••"
-                  className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-text-muted focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-text-muted focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 transition-all"
                   required
                 />
               </div>

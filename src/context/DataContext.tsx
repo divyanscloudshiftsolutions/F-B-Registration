@@ -71,7 +71,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshCards = async () => {
-    if (user?.role !== 'admin') return;
+    if (user?.role?.toLowerCase() !== 'admin') return;
     try {
       const data = await deduplicate('cards', () => api.getCards());
       setCards(data);
@@ -81,7 +81,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshUsers = async () => {
-    if (user?.role !== 'admin') return;
+    if (user?.role?.toLowerCase() !== 'admin') return;
     try {
       const res = await deduplicate('users', () => api.getUsers()) as any;
       // Handle response structure { success: true, data: [...] } or array

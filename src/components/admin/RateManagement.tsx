@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DollarSign, Edit3, RefreshCw, X, Clock, Wine } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -8,6 +8,11 @@ export const RateManagement: React.FC = () => {
   const { showToast } = useAuth();
   const { rates: rawRates, isLoading, refreshRates } = useData();
   const [editingRate, setEditingRate] = useState<any | null>(null);
+
+  // Fetch rates on component mount
+  useEffect(() => {
+    refreshRates();
+  }, []);
 
   // Form State
   const [ratePerPerson, setRatePerPerson] = useState('500');

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -9,6 +9,11 @@ export const SmartCardInventory: React.FC = () => {
   const { cards, isLoading, refreshCards } = useData();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<string>('all');
+
+  // Fetch cards on component mount
+  useEffect(() => {
+    refreshCards();
+  }, []);
 
   const handleUpdateStatus = async (cardUid: string, status: string) => {
     try {

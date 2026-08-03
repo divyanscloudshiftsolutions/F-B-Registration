@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Clock, Search, RefreshCw, LogOut, X } from 'lucide-react';
 import { api } from '../../services/api';
 import type { Token } from '../../types';
@@ -10,6 +10,12 @@ export const CustomerSessionsManager: React.FC = () => {
   const { tokens, isLoading, refreshTokens, refreshTables } = useData();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  // Fetch tokens and tables on component mount
+  useEffect(() => {
+    refreshTokens();
+    refreshTables();
+  }, []);
 
   // Deactivate Session Modal State
   const [deactivatingToken, setDeactivatingToken] = useState<Token | null>(null);
