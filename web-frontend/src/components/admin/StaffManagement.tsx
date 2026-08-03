@@ -9,6 +9,11 @@ export const StaffManagement: React.FC = () => {
   const { showToast } = useAuth();
   const { users, isLoading, refreshUsers } = useData();
   const [search, setSearch] = useState('');
+
+  // Fetch users on component mount
+  useEffect(() => {
+    refreshUsers();
+  }, []);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form State

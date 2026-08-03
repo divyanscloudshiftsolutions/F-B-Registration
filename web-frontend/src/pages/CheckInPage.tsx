@@ -13,7 +13,9 @@ import {
   Receipt,
   RotateCcw,
   AlertTriangle,
-  Camera
+  Camera,
+  Minus,
+  Plus
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Token } from '../types';
@@ -118,13 +120,26 @@ export const CheckInPage: React.FC = () => {
     return Array.from(list).sort((a, b) => a - b);
   }, [tables]);
 
+  // Find database UUIDs for standard bar and premium lounge
+  const dbStandardRate = rates.find(r => r.name?.toUpperCase() === 'STANDING_BAR' || r.name?.toLowerCase().includes('standing'));
+  const dbPremiumRate = rates.find(r => r.name?.toUpperCase() === 'PREMIUM_LOUNGE' || r.name?.toLowerCase().includes('lounge'));
+  const standardId = dbStandardRate?.id || 'standing_bar';
+  const premiumId = dbPremiumRate?.id || 'premium_lounge';
+
+  // Sync selectedPlaceTypeId to standardId once rates load
+  useEffect(() => {
+    if (selectedPlaceTypeId === 'standing_bar' && standardId !== 'standing_bar') {
+      setSelectedPlaceTypeId(standardId);
+    }
+  }, [rates, standardId]);
+
   // Auto-adjust selected place category type if headcount exceeds the maximum capacity of the standard zone
   useEffect(() => {
     const personsCountNum = typeof personsCount === 'number' ? personsCount : 0;
-    if (selectedPlaceTypeId === 'standing_bar' && personsCountNum > standardMaxCapacity) {
-      setSelectedPlaceTypeId('premium_lounge');
+    if (selectedPlaceTypeId === standardId && personsCountNum > standardMaxCapacity) {
+      setSelectedPlaceTypeId(premiumId);
     }
-  }, [personsCount, standardMaxCapacity, selectedPlaceTypeId]);
+  }, [personsCount, standardMaxCapacity, selectedPlaceTypeId, standardId, premiumId]);
 
   // STEP 1 VALIDATION BARRIER (Button disabled if false)
   const isStep1Valid = isNameOk && isPhoneOk && isEmailOk && isCapacityOk;
@@ -132,26 +147,26 @@ export const CheckInPage: React.FC = () => {
   // Pre-select table if navigated from Tables floor plan
   useEffect(() => {
     if (preselectedTable) {
-      const matchedCategory = preselectedTable.number.startsWith('L-') ? 'premium_lounge' : 'standing_bar';
+      const matchedCategory = preselectedTable.number.startsWith('L-') ? premiumId : standardId;
       setSelectedPlaceTypeId(preselectedTable.placeTypeId || matchedCategory);
       setSelectedTableId(preselectedTable.id);
       setPersonsCount(preselectedTable.capacity);
       showToast(`Table ${preselectedTable.number} (Max ${preselectedTable.capacity} guests) pre-selected for check-in.`, 'info');
     }
-  }, [preselectedTable]);
+  }, [preselectedTable, standardId, premiumId]);
 
   // Derived current rate card
   const currentRateCard = rates.find(r => r.id === selectedPlaceTypeId) || {
     id: selectedPlaceTypeId,
-    name: selectedPlaceTypeId === 'premium_lounge' ? 'Premium Lounge' : 'Standing Bar',
-    ratePerPerson: selectedPlaceTypeId === 'premium_lounge' ? 1000 : 500,
-    baseTimeMinutes: selectedPlaceTypeId === 'premium_lounge' ? 180 : 120,
-    redemptionsPerPerson: selectedPlaceTypeId === 'premium_lounge' ? 4 : 2,
+    name: selectedPlaceTypeId === premiumId ? 'Premium Lounge' : 'Standing Bar',
+    ratePerPerson: selectedPlaceTypeId === premiumId ? (dbPremiumRate?.ratePerPerson ?? 1000) : (dbStandardRate?.ratePerPerson ?? 500),
+    baseTimeMinutes: selectedPlaceTypeId === premiumId ? (dbPremiumRate?.baseTimeMinutes ?? 180) : (dbStandardRate?.baseTimeMinutes ?? 120),
+    redemptionsPerPerson: selectedPlaceTypeId === premiumId ? (dbPremiumRate?.redemptionsPerPerson ?? 4) : (dbStandardRate?.redemptionsPerPerson ?? 2),
   };
 
   const personsCountNum = typeof personsCount === 'number' ? personsCount : 0;
-  const calculatedTotal = personsCountNum * currentRateCard.ratePerPerson;
-  const totalAllowedDrinks = personsCountNum * currentRateCard.redemptionsPerPerson;
+  const calculatedTotal = personsCountNum * (currentRateCard.ratePerPerson || 0);
+  const totalAllowedDrinks = personsCountNum * (currentRateCard.redemptionsPerPerson || 0);
 
   const handleStage1Next = (e: React.FormEvent) => {
     e.preventDefault();
@@ -326,7 +341,7 @@ export const CheckInPage: React.FC = () => {
   const compatibleAvailableTables = tables.filter(t => {
     const isAvailable = t.status === 'available';
     const isCapacitySuitable = typeof personsCount === 'number' && t.capacity >= personsCount;
-    const matchesCategory = selectedPlaceTypeId === 'premium_lounge'
+    const matchesCategory = selectedPlaceTypeId === premiumId
       ? (t.placeTypeId === 'PREMIUM_LOUNGE' || t.tableNumber.startsWith('L-'))
       : (t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-'));
     return isAvailable && isCapacitySuitable && matchesCategory;
@@ -463,8 +478,8 @@ export const CheckInPage: React.FC = () => {
                       placeholder="e.g. 9876543210"
                       className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-sm text-text-main focus:outline-none transition-all ${
                         phoneNumber.trim().length > 0 && !isValidPhone(phoneNumber)
-                          ? 'border-red-500/80 focus:border-red-500'
-                          : 'border-border-main focus:border-[#D4AF37]'
+                          ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                          : 'border-border-main focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20'
                       }`}
                       required
                     />
@@ -493,8 +508,8 @@ export const CheckInPage: React.FC = () => {
                       placeholder="e.g. Rahul Sharma"
                       className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-sm text-text-main focus:outline-none transition-all ${
                         customerName.trim().length > 0 && !isNameOk
-                          ? 'border-red-500/80 focus:border-red-500'
-                          : 'border-border-main focus:border-[#D4AF37]'
+                          ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                          : 'border-border-main focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20'
                       }`}
                       required
                     />
@@ -526,8 +541,8 @@ export const CheckInPage: React.FC = () => {
                       placeholder="e.g. rahul@gmail.com"
                       className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-sm text-text-main focus:outline-none transition-all ${
                         (deliveryMode === 'EMAIL_QR' && email.trim().length === 0) || (email.trim().length > 0 && !isValidEmail(email))
-                          ? 'border-red-500/80 focus:border-red-500'
-                          : 'border-border-main focus:border-[#D4AF37]'
+                          ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                          : 'border-border-main focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20'
                       }`}
                     />
                     {deliveryMode === 'EMAIL_QR' && email.trim().length === 0 && (
@@ -556,7 +571,11 @@ export const CheckInPage: React.FC = () => {
                     </label>
                     
                     {/* Custom Increment/Decrement and Editable Input Control */}
-                    <div className="flex items-center gap-3 mb-3 bg-bg-primary border border-border-main rounded-xl p-2 max-w-[240px]">
+                    <div className={`flex items-center justify-between mb-3 bg-bg-primary border rounded-xl p-1 w-full max-w-[160px] transition-all duration-200 ${
+                      personsCount !== '' && !isCapacityOk
+                        ? 'border-red-500/80 focus-within:border-red-500 focus-within:ring-2 focus-within:ring-red-500/20'
+                        : 'border-border-main focus-within:border-[#D4AF37] focus-within:ring-2 focus-within:ring-[#D4AF37]/20'
+                    }`}>
                       <button
                         type="button"
                         onClick={() => {
@@ -564,16 +583,17 @@ export const CheckInPage: React.FC = () => {
                           setPersonsCount(nextVal);
                         }}
                         disabled={personsCountNum <= 1}
-                        className="w-8 h-8 rounded-lg bg-bg-primary hover:bg-bg-card text-text-main font-black flex items-center justify-center disabled:opacity-40 transition-all cursor-pointer"
+                        className="w-7 h-7 rounded-lg bg-bg-card hover:bg-bg-primary text-text-main flex items-center justify-center disabled:opacity-30 disabled:hover:bg-bg-card transition-all cursor-pointer border border-border-main/40 shrink-0"
+                        title="Decrease headcount"
                       >
-                        -
+                        <Minus size={10} className="stroke-[3]" />
                       </button>
                       <input
                         type="text"
                         inputMode="numeric"
                         pattern="[0-9]*"
                         value={personsCount}
-                        placeholder="e.g. 2"
+                        placeholder="2"
                         onChange={e => {
                           const rawVal = e.target.value;
                           if (rawVal === '') {
@@ -590,7 +610,7 @@ export const CheckInPage: React.FC = () => {
                             }
                           }
                         }}
-                        className="flex-1 bg-transparent text-center text-sm font-bold text-text-main focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none cursor-pointer"
+                        className="w-12 bg-transparent text-center text-sm font-black text-text-main focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none cursor-text select-all"
                       />
                       <button
                         type="button"
@@ -602,9 +622,10 @@ export const CheckInPage: React.FC = () => {
                           }
                         }}
                         disabled={personsCountNum >= maxCapacity}
-                        className="w-8 h-8 rounded-lg bg-bg-primary hover:bg-bg-card text-text-main font-black flex items-center justify-center disabled:opacity-40 transition-all cursor-pointer"
+                        className="w-7 h-7 rounded-lg bg-bg-card hover:bg-bg-primary text-text-main flex items-center justify-center disabled:opacity-30 disabled:hover:bg-bg-card transition-all cursor-pointer border border-border-main/40 shrink-0"
+                        title="Increase headcount"
                       >
-                        +
+                        <Plus size={10} className="stroke-[3]" />
                       </button>
                     </div>
 
@@ -687,9 +708,9 @@ export const CheckInPage: React.FC = () => {
                     { id: 'standing_bar', name: 'Standing Bar', ratePerPerson: 500, redemptionsPerPerson: 2, baseTimeMinutes: 120 },
                     { id: 'premium_lounge', name: 'Premium Lounge', ratePerPerson: 1000, redemptionsPerPerson: 4, baseTimeMinutes: 180 },
                   ]).map(rc => {
-                    const rcId = rc.id || (rc.name?.toLowerCase().includes('lounge') ? 'premium_lounge' : 'standing_bar');
+                    const rcId = rc.id || (rc.name?.toLowerCase().includes('lounge') ? premiumId : standardId);
                     const isSel = selectedPlaceTypeId === rcId;
-                    const isAvailable = rcId === 'premium_lounge'
+                    const isAvailable = rcId === premiumId
                       ? personsCountNum <= premiumMaxCapacity
                       : personsCountNum <= standardMaxCapacity;
 
@@ -700,7 +721,7 @@ export const CheckInPage: React.FC = () => {
                           if (isAvailable) {
                             setSelectedPlaceTypeId(rcId);
                           } else {
-                            showToast(`${rc.name || (rcId === 'premium_lounge' ? 'Premium Lounge' : 'Standing Bar')} is unavailable for a group of ${personsCount} (Max table capacity is ${rcId === 'premium_lounge' ? premiumMaxCapacity : standardMaxCapacity} seats).`, 'warning');
+                            showToast(`${rc.name || (rcId === premiumId ? 'Premium Lounge' : 'Standing Bar')} is unavailable for a group of ${personsCount} (Max table capacity is ${rcId === premiumId ? premiumMaxCapacity : standardMaxCapacity} seats).`, 'warning');
                           }
                         }}
                         className={`p-5 rounded-2xl border transition-all flex flex-col justify-between h-36 ${
@@ -872,7 +893,7 @@ export const CheckInPage: React.FC = () => {
                       setQrVerificationError(null);
                     }}
                     placeholder="e.g. BAR-20260728-1"
-                    className="flex-1 bg-bg-primary border border-border-main rounded-xl px-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
+                    className="flex-1 bg-bg-primary border border-border-main rounded-xl px-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20"
                   />
                   <button
                     type="button"
@@ -953,7 +974,7 @@ export const CheckInPage: React.FC = () => {
                       value={cardUid}
                       onChange={e => setCardUid(e.target.value)}
                       placeholder="e.g. NFC-883921"
-                      className="w-full bg-bg-primary border border-border-main rounded-xl px-4 py-3 text-sm text-text-main font-mono focus:outline-none focus:border-[#D4AF37]"
+                      className="w-full bg-bg-primary border border-border-main rounded-xl px-4 py-3 text-sm text-text-main font-mono focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20"
                     />
                   </div>
                 )}
@@ -1124,7 +1145,7 @@ export const CheckInPage: React.FC = () => {
                   </div>
                   <div className="border-t border-border-main/50 pt-2.5 mt-1 space-y-2">
                     <div className="flex justify-between items-center text-text-muted">
-                      <span>Cover Charge Formula:</span>
+                      <span>Cover Charge Calculation:</span>
                       <span className="font-mono text-text-main font-bold">₹{currentRateCard.ratePerPerson} × {personsCountNum}</span>
                     </div>
                     <div className="flex justify-between items-center text-text-muted">
@@ -1154,7 +1175,7 @@ export const CheckInPage: React.FC = () => {
 
                 {/* Standard Bar Summary */}
                 {(() => {
-                  const standardRate = rates.find(r => r.id === 'standing_bar') || {
+                  const standardRate = dbStandardRate || {
                     id: 'standing_bar',
                     name: 'Standing Bar',
                     ratePerPerson: 500,
@@ -1163,8 +1184,8 @@ export const CheckInPage: React.FC = () => {
                   };
                   const standardAvailableCount = tables.filter(t => (t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-')) && t.status === 'available' && t.capacity >= personsCountNum).length;
                   const isAvailable = personsCountNum > 0 && personsCountNum <= standardMaxCapacity;
-                  const standardTotal = standardRate.ratePerPerson * personsCountNum;
-                  const standardDrinks = standardRate.redemptionsPerPerson * personsCountNum;
+                  const standardTotal = (standardRate.ratePerPerson || 0) * personsCountNum;
+                  const standardDrinks = (standardRate.redemptionsPerPerson || 0) * personsCountNum;
 
                   return (
                     <div className={`p-4 rounded-2xl border transition-all ${
@@ -1186,6 +1207,10 @@ export const CheckInPage: React.FC = () => {
                       </div>
                       <div className="space-y-1.5 text-[11px]">
                         <div className="flex justify-between text-text-muted">
+                          <span>Rate per Head:</span>
+                          <span className="text-text-main font-bold">₹{standardRate.ratePerPerson}</span>
+                        </div>
+                        <div className="flex justify-between text-text-muted">
                           <span>Max Seat Support:</span>
                           <span className="text-text-main font-bold">{standardMaxCapacity} Seats</span>
                         </div>
@@ -1197,6 +1222,12 @@ export const CheckInPage: React.FC = () => {
                           <span>Beverage Quota:</span>
                           <span className="dark:text-amber-300 text-amber-700 font-bold">{standardDrinks} Drinks</span>
                         </div>
+                        {personsCountNum > 0 && (
+                          <div className="flex justify-between text-text-muted">
+                            <span>Calculation:</span>
+                            <span className="font-mono text-text-main">₹{standardRate.ratePerPerson} × {personsCountNum}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between items-baseline pt-1.5 border-t border-border-main/50 mt-1">
                           <span className="font-bold text-text-main">Estimated Cost:</span>
                           <span className="text-base font-black text-[#D4AF37]">₹{standardTotal}</span>
@@ -1208,7 +1239,7 @@ export const CheckInPage: React.FC = () => {
 
                 {/* Premium Lounge Summary */}
                 {(() => {
-                  const premiumRate = rates.find(r => r.id === 'premium_lounge') || {
+                  const premiumRate = dbPremiumRate || {
                     id: 'premium_lounge',
                     name: 'Premium Lounge',
                     ratePerPerson: 1000,
@@ -1217,8 +1248,8 @@ export const CheckInPage: React.FC = () => {
                   };
                   const premiumAvailableCount = tables.filter(t => (t.placeTypeId === 'PREMIUM_LOUNGE' || t.tableNumber.startsWith('L-')) && t.status === 'available' && t.capacity >= personsCountNum).length;
                   const isAvailable = personsCountNum > 0 && personsCountNum <= premiumMaxCapacity;
-                  const premiumTotal = premiumRate.ratePerPerson * personsCountNum;
-                  const premiumDrinks = premiumRate.redemptionsPerPerson * personsCountNum;
+                  const premiumTotal = (premiumRate.ratePerPerson || 0) * personsCountNum;
+                  const premiumDrinks = (premiumRate.redemptionsPerPerson || 0) * personsCountNum;
 
                   return (
                     <div className={`p-4 rounded-2xl border transition-all ${
@@ -1240,6 +1271,10 @@ export const CheckInPage: React.FC = () => {
                       </div>
                       <div className="space-y-1.5 text-[11px]">
                         <div className="flex justify-between text-text-muted">
+                          <span>Rate per Head:</span>
+                          <span className="text-text-main font-bold">₹{premiumRate.ratePerPerson}</span>
+                        </div>
+                        <div className="flex justify-between text-text-muted">
                           <span>Max Seat Support:</span>
                           <span className="text-text-main font-bold">{premiumMaxCapacity} Seats</span>
                         </div>
@@ -1251,6 +1286,12 @@ export const CheckInPage: React.FC = () => {
                           <span>Beverage Quota:</span>
                           <span className="dark:text-amber-300 text-amber-700 font-bold">{premiumDrinks} Drinks</span>
                         </div>
+                        {personsCountNum > 0 && (
+                          <div className="flex justify-between text-text-muted">
+                            <span>Calculation:</span>
+                            <span className="font-mono text-text-main">₹{premiumRate.ratePerPerson} × {personsCountNum}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between items-baseline pt-1.5 border-t border-border-main/50 mt-1">
                           <span className="font-bold text-text-main">Estimated Cost:</span>
                           <span className="text-base font-black text-[#D4AF37]">₹{premiumTotal}</span>
