@@ -23,7 +23,7 @@ class ApiService {
       headers,
     });
 
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 403) {
       localStorage.removeItem('nfc_web_token');
       localStorage.removeItem('nfc_web_user');
       window.location.reload();
