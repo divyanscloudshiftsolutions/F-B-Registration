@@ -1,8 +1,41 @@
 import type { User, Table, Token } from '../types';
 
-export const API_BASE_URL = 'https://api.nfc-qr.app.cloudshiftsolutions.in/api';
+export const DEPLOYED_API_BASE_URL = 'https://api.nfc-qr.app.cloudshiftsolutions.in/api';
+export const LOCAL_API_BASE_URL = 'http://localhost:4000/api';
 
 class ApiService {
+  private activeBaseUrl: string | null = null;
+
+  public async getBaseUrl(): Promise<string> {
+    if (this.activeBaseUrl) return this.activeBaseUrl;
+
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 600);
+
+        // Ping the local backend to check if it is active and running
+        const res = await fetch(`${LOCAL_API_BASE_URL}/tables`, {
+          method: 'GET',
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok || res.status === 401 || res.status === 403) {
+          this.activeBaseUrl = LOCAL_API_BASE_URL;
+          console.log('[API] Auto-detected local backend active. Routing to local DB:', LOCAL_API_BASE_URL);
+          return LOCAL_API_BASE_URL;
+        }
+      } catch (e) {
+        // Local backend is offline or down
+      }
+    }
+
+    this.activeBaseUrl = DEPLOYED_API_BASE_URL;
+    console.log('[API] Routing to deployed DB:', DEPLOYED_API_BASE_URL);
+    return DEPLOYED_API_BASE_URL;
+  }
+
   public getToken(): string | null {
     return localStorage.getItem('nfc_web_token');
   }
@@ -18,12 +51,13 @@ class ApiService {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const baseUrl = await this.getBaseUrl();
+    const response = await fetch(`${baseUrl}${endpoint}`, {
       ...options,
       headers,
     });
 
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 403) {
       localStorage.removeItem('nfc_web_token');
       localStorage.removeItem('nfc_web_user');
       window.location.reload();
