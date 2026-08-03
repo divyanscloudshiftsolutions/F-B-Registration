@@ -1,0 +1,24 @@
+Repository Pushing Guidelines
+==============================
+Refer to this guide when determining which files to push to which repository.
+
+1. Backend Repository (dev organizational repo):
+   * Link: https://github.com/cloudshiftsolutions-dev/Backend---NFC-QR-code-Management
+   * Rule: Only update and push if files in the `backend` folder are updated.
+
+2. Frontend Repository (dev organizational repo):
+   * Link: https://github.com/cloudshiftsolutions-dev/Frontend---NFC-QR-code-Management
+   * Rule: Push frontend-updates.
+
+3. Web Frontend Repository (dev organizational repo):
+   * Link: https://github.com/cloudshiftsolutions-dev/Web-Frontend---NFC-QR-code-Management
+   * Rule: Push to dev's `web-frontend` repo.
+
+4. Personal ID Repository (NFC-QR-CODE):
+   * Link: https://github.com/divyanscloudshiftsolutions/NFC-QR-code
+   * Rule: Push `frontend` only.
+
+5. EAS / EIS Updates:
+   * Rule: Update the respective location in the repo (run EAS builds/updates in `frontend/frontend` folder).
+
+If there is any confusion in pushing updated files to Git, reference this file to verify which file goes to which repository.
