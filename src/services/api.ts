@@ -287,11 +287,42 @@ class ApiService {
   }
 
   // QR Verification & Dispensing APIs
-  async verifyQR(qrPayload: string) {
-    return this.request<{ success: boolean; token: Token; customer: any }>('/qr/verify', {
-      method: 'POST',
-      body: JSON.stringify({ qrPayload }),
+  async verifyQR(tokenNumber: string) {
+    const res = await this.request<any>(`/check-in/verify-qr/${tokenNumber}`, {
+      method: 'GET',
     });
+    return {
+      success: true,
+      token: {
+        id: res.id,
+        tokenNumber: res.tokenNumber,
+        customerId: '',
+        personsCount: res.persons,
+        placeTypeId: '',
+        amountPaid: res.amountPaid,
+        paymentVerified: res.paymentVerified,
+        startTime: res.startTime,
+        endTime: res.endTime,
+        totalRedemptionsAllowed: res.redemptionLimit,
+        redemptionsUsed: res.redemptionCount,
+        status: res.status,
+        issuedBy: '',
+        deliveryMode: 'EMAIL_QR',
+        customer: {
+          id: '',
+          phoneNumber: res.phoneNumber,
+          name: res.customerName,
+          email: res.email || undefined,
+          totalVisits: 1
+        }
+      } as Token,
+      customer: {
+        id: '',
+        name: res.customerName,
+        phoneNumber: res.phoneNumber,
+        email: res.email || undefined
+      }
+    };
   }
 
   async redeemDrink(tokenId: string, drinkName?: string) {
