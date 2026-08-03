@@ -15,3 +15,6 @@
 {"timestamp":"2026-07-11T14:54:41.706Z","tokenNumber":"BAR-20260711-00004","oldStatus":"ACTIVE","newStatus":"CLOSED","reason":"session closed: QR_SCAN","initiatedBy":"4bbf2f3f-c98c-4d4f-a1f3-b17434650986"}
 {"timestamp":"2026-07-17T18:31:10.638Z","tokenNumber":"BAR-20260714-00001","oldStatus":"PENDING_PAYMENT","newStatus":"EXPIRED","reason":"chronological pending auto-expiration","initiatedBy":"system_reconciler"}
 {"timestamp":"2026-07-17T18:31:10.915Z","tokenNumber":"BAR-20260714-00003","oldStatus":"PENDING_PAYMENT","newStatus":"EXPIRED","reason":"chronological pending auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-08-01T10:28:33.647Z","tokenNumber":"BAR-20260801-00003","oldStatus":"PENDING_PAYMENT","newStatus":"EXPIRED","reason":"chronological pending auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-08-01T10:28:33.663Z","tokenNumber":"BAR-20260801-00001","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-08-01T10:28:33.675Z","tokenNumber":"BAR-20260801-00002","oldStatus":"EXTENDED","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
