@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Grid3X3, Plus, RefreshCw, X, CheckCircle2, Users } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -10,6 +10,12 @@ export const TableManagement: React.FC = () => {
   const { tables, tokens, isLoading, refreshTables, refreshTokens } = useData();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<'STANDING_BAR' | 'PREMIUM_LOUNGE'>('STANDING_BAR');
+
+  // Fetch tables and tokens on component mount
+  useEffect(() => {
+    refreshTables();
+    refreshTokens();
+  }, []);
 
   // Form State
   const [tableNumber, setTableNumber] = useState('S-01');
