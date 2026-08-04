@@ -279,7 +279,7 @@ export const CheckInPage: React.FC = () => {
     setQrVerificationSuccess(false);
 
     try {
-      const res = await api.verifyQR(cleanCode);
+      const res = await api.verifyCheckInQR(cleanCode);
       if (res.success && res.token) {
         setQrVerificationSuccess(true);
         setActivePendingToken(res.token); // Store scanned pending token
