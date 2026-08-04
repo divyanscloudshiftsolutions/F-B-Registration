@@ -370,6 +370,18 @@ class ApiService {
 
   // QR Verification & Dispensing APIs
   async verifyQR(tokenNumber: string) {
+    const res = await this.request<any>('/qr/verify', {
+      method: 'POST',
+      body: JSON.stringify({ token: tokenNumber }),
+    });
+    return {
+      success: true,
+      token: res.token as Token,
+      customer: res.token?.customer || null
+    };
+  }
+
+  async verifyCheckInQR(tokenNumber: string) {
     const res = await this.request<any>(`/check-in/verify-qr/${tokenNumber}`, {
       method: 'GET',
     });

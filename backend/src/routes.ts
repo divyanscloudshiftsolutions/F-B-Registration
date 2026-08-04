@@ -2229,19 +2229,20 @@ router.post('/tokens/:id/resend-email', authenticate, authorize(['receptionist',
 
 // Verify signed QR token payload
 router.post('/qr/verify', authenticate, authorize(['bartender', 'receptionist', 'admin']), async (req: Request, res: Response) => {
-  const { token } = req.body;
-  if (!token) {
+  const tokenVal = req.body.token || req.body.qrPayload;
+  if (!tokenVal) {
     return res.status(400).json({ success: false, error: { message: 'token payload is required.' } });
   }
 
   try {
-    const tokenRecord = await tokenService.getTokenByNumber(token);
+    const tokenRecord = await tokenService.getTokenByNumber(tokenVal);
     if (!tokenRecord) {
       return res.status(404).json({ success: false, error: { message: 'Token not found' } });
     }
 
     return res.json({
       success: true,
+      token: tokenRecord,
       data: {
         valid: tokenRecord.status === TokenStatus.ACTIVE || tokenRecord.status === TokenStatus.EXTENDED,
         tokenNumber: tokenRecord.tokenNumber,
