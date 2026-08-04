@@ -2077,6 +2077,23 @@ const activateSessionHandler = async (req: AuthenticatedRequest, res: Response) 
       createdAt: updatedToken.issuedAt.toISOString(),
     };
 
+    if (updatedToken.deliveryMode === 'EMAIL_QR' && updatedToken.customer.email && !updatedToken.emailSent) {
+      await prisma.token.update({
+        where: { id: updatedToken.id },
+        data: {
+          emailSent: true,
+          emailDeliveryStatus: 'SENT',
+          emailSentAt: new Date()
+        }
+      }).catch(() => {});
+
+      emailNotificationService.enqueueEmailJob(
+        updatedToken.customer.email.trim().toLowerCase(),
+        updatedToken.tokenNumber,
+        updatedToken.customer.name
+      );
+    }
+
     await redisService.del('tokens:active').catch(() => {});
     await redisService.del('tables:all').catch(() => {});
     await redisService.del('cards:all').catch(() => {});

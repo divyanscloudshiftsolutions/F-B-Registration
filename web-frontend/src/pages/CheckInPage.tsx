@@ -57,6 +57,10 @@ export const CheckInPage: React.FC = () => {
   // Stage 5: Output Pass Ticket
   const [createdToken, setCreatedToken] = useState<Token | null>(null);
 
+  // Pre-registered flow state
+  const [activePendingToken, setActivePendingToken] = useState<Token | null>(null);
+  const [systemDeliveryMode, setSystemDeliveryMode] = useState<'NFC_CARD' | 'EMAIL_QR' | 'BOTH'>('BOTH');
+
   // Delivery mode defaults to EMAIL_QR always, operator switches manually if needed
 
   // EXACT VALIDATION REGEXES MATCHING REACT NATIVE SOURCE OF TRUTH
@@ -132,6 +136,22 @@ export const CheckInPage: React.FC = () => {
       setSelectedPlaceTypeId(standardId);
     }
   }, [rates, standardId]);
+
+  // Load system delivery mode on initialization
+  useEffect(() => {
+    const fetchDeliveryConfig = async () => {
+      try {
+        const mode = await api.getDeliveryMode();
+        setSystemDeliveryMode(mode as any);
+        if (mode === 'EMAIL_QR' || mode === 'NFC_CARD') {
+          setDeliveryMode(mode);
+        }
+      } catch (err) {
+        console.error('Failed to load system delivery mode config:', err);
+      }
+    };
+    fetchDeliveryConfig();
+  }, []);
 
   // Auto-adjust selected place category type if headcount exceeds the maximum capacity of the standard zone
   useEffect(() => {
@@ -262,6 +282,7 @@ export const CheckInPage: React.FC = () => {
       const res = await api.verifyQR(cleanCode);
       if (res.success && res.token) {
         setQrVerificationSuccess(true);
+        setActivePendingToken(res.token); // Store scanned pending token
         showToast(`Token #${res.token.tokenNumber} verified successfully!`, 'success');
         
         // Populate inputs if verified pre-registered session returned
@@ -295,24 +316,46 @@ export const CheckInPage: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      const res = await api.createCustomerCheckIn({
-        phoneNumber: phoneNumber.trim(),
-        customerName: customerName.trim(),
-        email: email.trim() || undefined,
-        personsCount,
-        placeTypeId: selectedPlaceTypeId,
-        deliveryMode,
-        cardUid: deliveryMode === 'NFC_CARD' ? (cardUid.trim() || `NFC-${Date.now().toString(36).toUpperCase()}`) : undefined,
-      });
+      let res;
+      if (activePendingToken) {
+        const selectedTable = tables.find(t => t.id === selectedTableId);
+        const tableNumber = selectedTable ? selectedTable.tableNumber : '';
+
+        // 1. Update check-in and table allocation options inside pending state first
+        await api.createPendingCheckIn({
+          phoneNumber: phoneNumber.trim(),
+          customerName: customerName.trim(),
+          email: email.trim() || '',
+          personsCount: typeof personsCount === 'number' ? personsCount : 1,
+          placeTypeId: selectedPlaceTypeId,
+          tableId: selectedTableId || undefined,
+          tableNumber: tableNumber || undefined,
+          tokenNumber: activePendingToken.tokenNumber
+        });
+
+        // 2. Activate token payment and seat occupation
+        res = await api.activateSession(activePendingToken.tokenNumber, tableNumber, calculatedTotal);
+      } else {
+        res = await api.createCustomerCheckIn({
+          phoneNumber: phoneNumber.trim(),
+          customerName: customerName.trim(),
+          email: email.trim() || undefined,
+          personsCount,
+          placeTypeId: selectedPlaceTypeId,
+          deliveryMode,
+          cardUid: deliveryMode === 'NFC_CARD' ? (cardUid.trim() || `NFC-${Date.now().toString(36).toUpperCase()}`) : undefined,
+        });
+      }
 
       if (res.success && res.token) {
         setCreatedToken(res.token);
-        if (selectedTableId) {
+        if (!activePendingToken && selectedTableId) {
           await api.assignTable(selectedTableId, res.token.id).catch(() => {});
         }
         showToast(`Guest ${customerName} checked in successfully! Token: ${res.token.tokenNumber}`, 'success');
         refreshTokens();
         refreshTables();
+        setActivePendingToken(null); // Reset pending check-in tracker
         setStage(5);
       } else {
         showToast('Check-in failed. Please try again.', 'danger');
@@ -335,6 +378,7 @@ export const CheckInPage: React.FC = () => {
     setCardUid('');
     setCreatedToken(null);
     setPreselectedTable(null);
+    setActivePendingToken(null);
   };
 
   // Filter available tables by place category & seating capacity compatibility matching React Native
@@ -433,35 +477,39 @@ export const CheckInPage: React.FC = () => {
                     📦 Select Delivery Channel <span className="dark:text-red-400 text-red-700">*</span>
                   </label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div
-                      onClick={() => setDeliveryMode('EMAIL_QR')}
-                      className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center gap-3 ${
-                        deliveryMode === 'EMAIL_QR'
-                          ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-text-main shadow-lg shadow-[#D4AF37]/10'
-                          : 'bg-bg-primary border-border-main text-text-muted hover:bg-bg-card'
-                      }`}
-                    >
-                      <QrCode size={24} className={deliveryMode === 'EMAIL_QR' ? 'text-[#D4AF37]' : ''} />
-                      <div>
-                        <p className="text-xs font-bold text-text-main">Digital Email QR Pass</p>
-                        <p className="text-[10px] text-text-muted">Sent instantly to guest email & phone</p>
+                    {(systemDeliveryMode === 'EMAIL_QR' || systemDeliveryMode === 'BOTH') && (
+                      <div
+                        onClick={() => setDeliveryMode('EMAIL_QR')}
+                        className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center gap-3 ${
+                          deliveryMode === 'EMAIL_QR'
+                            ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-text-main shadow-lg shadow-[#D4AF37]/10'
+                            : 'bg-bg-primary border-border-main text-text-muted hover:bg-bg-card'
+                        }`}
+                      >
+                        <QrCode size={24} className={deliveryMode === 'EMAIL_QR' ? 'text-[#D4AF37]' : ''} />
+                        <div>
+                          <p className="text-xs font-bold text-text-main">Digital Email QR Pass</p>
+                          <p className="text-[10px] text-text-muted">Sent instantly to guest email & phone</p>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div
-                      onClick={() => setDeliveryMode('NFC_CARD')}
-                      className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center gap-3 ${
-                        deliveryMode === 'NFC_CARD'
-                          ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-text-main shadow-lg shadow-[#D4AF37]/10'
-                          : 'bg-bg-primary border-border-main text-text-muted hover:bg-bg-card'
-                      }`}
-                    >
-                      <CreditCard size={24} className={deliveryMode === 'NFC_CARD' ? 'text-[#D4AF37]' : ''} />
-                      <div>
-                        <p className="text-xs font-bold text-text-main">NFC Smart Card</p>
-                        <p className="text-[10px] text-text-muted">Physical smart card UID pairing</p>
+                    {(systemDeliveryMode === 'NFC_CARD' || systemDeliveryMode === 'BOTH') && (
+                      <div
+                        onClick={() => setDeliveryMode('NFC_CARD')}
+                        className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center gap-3 ${
+                          deliveryMode === 'NFC_CARD'
+                            ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-text-main shadow-lg shadow-[#D4AF37]/10'
+                            : 'bg-bg-primary border-border-main text-text-muted hover:bg-bg-card'
+                        }`}
+                      >
+                        <CreditCard size={24} className={deliveryMode === 'NFC_CARD' ? 'text-[#D4AF37]' : ''} />
+                        <div>
+                          <p className="text-xs font-bold text-text-main">NFC Smart Card</p>
+                          <p className="text-[10px] text-text-muted">Physical smart card UID pairing</p>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
 
