@@ -286,6 +286,88 @@ class ApiService {
     });
   }
 
+  async activateSession(tokenNumber: string, tableNumber: string, amountPaid: number) {
+    const res = await this.request<any>('/check-in/activate', {
+      method: 'POST',
+      body: JSON.stringify({ tokenNumber, tableNumber, amountPaid }),
+    });
+    return {
+      success: true,
+      token: {
+        id: res.id,
+        tokenNumber: res.tokenNumber,
+        customerId: '',
+        personsCount: res.persons,
+        placeTypeId: '',
+        amountPaid: res.amountPaid,
+        paymentVerified: res.paymentVerified,
+        startTime: res.startTime,
+        endTime: res.endTime,
+        totalRedemptionsAllowed: res.redemptionLimit,
+        redemptionsUsed: res.redemptionCount,
+        status: res.status,
+        issuedBy: '',
+        deliveryMode: 'EMAIL_QR',
+        customer: {
+          id: '',
+          phoneNumber: res.phoneNumber,
+          name: res.customerName,
+          email: res.email || undefined,
+          totalVisits: 1
+        }
+      } as Token
+    };
+  }
+
+  async createPendingCheckIn(payload: {
+    phoneNumber: string;
+    customerName: string;
+    email: string;
+    personsCount: number;
+    placeTypeId: string;
+    tableId?: string;
+    tableNumber?: string;
+    tokenNumber?: string;
+  }) {
+    const res = await this.request<any>('/check-in/pending', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return {
+      success: true,
+      token: {
+        id: res.id,
+        tokenNumber: res.tokenNumber,
+        customerId: '',
+        personsCount: res.persons,
+        placeTypeId: '',
+        amountPaid: res.amountPaid,
+        paymentVerified: res.paymentVerified,
+        startTime: res.startTime,
+        endTime: res.endTime,
+        totalRedemptionsAllowed: res.redemptionLimit,
+        redemptionsUsed: res.redemptionCount,
+        status: res.status,
+        issuedBy: '',
+        deliveryMode: 'EMAIL_QR',
+        customer: {
+          id: '',
+          phoneNumber: res.phoneNumber,
+          name: res.customerName,
+          email: res.email || undefined,
+          totalVisits: 1
+        }
+      } as Token
+    };
+  }
+
+  async cancelSession(tokenNumber: string, cancelReason: string) {
+    return this.request<{ success: boolean }>('/check-in/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ tokenNumber, cancelReason }),
+    });
+  }
+
   // QR Verification & Dispensing APIs
   async verifyQR(tokenNumber: string) {
     const res = await this.request<any>(`/check-in/verify-qr/${tokenNumber}`, {
