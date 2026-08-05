@@ -26,7 +26,7 @@ export class RedemptionService {
     payload: string,
     bartenderId: string,
     redeemedAt?: Date | string,
-    presentationType: 'NFC_TAP' | 'QR_SCAN' = 'NFC_TAP'
+    presentationType: 'QR_SCAN' = 'QR_SCAN'
   ): Promise<RedemptionResult> {
     const tokenNumber = payload;
 
@@ -56,12 +56,9 @@ export class RedemptionService {
         }
         const token = tokens[0];
 
-        // Validate that presentation matches original delivery mode to prevent crossing modes
-        if (presentationType === 'QR_SCAN' && token.deliveryMode !== 'EMAIL_QR') {
-          throw new Error('NFC token cannot be redeemed via QR scan.');
-        }
-        if (presentationType === 'NFC_TAP' && token.deliveryMode !== 'NFC_CARD') {
-          throw new Error('Email QR token cannot be redeemed via NFC tap.');
+        // Validate delivery mode
+        if (token.deliveryMode !== 'EMAIL_QR') {
+          throw new Error('Invalid delivery mode for redemption.');
         }
 
         // Validate payment status

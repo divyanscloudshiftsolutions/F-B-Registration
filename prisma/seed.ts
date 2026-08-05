@@ -13,9 +13,8 @@ async function main() {
   await prisma.tableOccupancyLog.deleteMany({});
   await prisma.token.deleteMany({});
   await prisma.customer.deleteMany({});
-  await prisma.card.deleteMany({});
   await prisma.table.deleteMany({});
-  console.log('Transaction tables, seating tables, and card inventory cleared.');
+  console.log('Transaction tables, seating tables cleared.');
 
   // 1. Create triggers in PostgreSQL database using raw SQL
   console.log('Creating triggers...');
@@ -90,12 +89,7 @@ async function main() {
     ON tokens(table_id) 
     WHERE status IN ('ACTIVE', 'EXTENDED');
   `);
-  await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS uq_card_active_token;`);
-  await prisma.$executeRawUnsafe(`
-    CREATE UNIQUE INDEX uq_card_active_token 
-    ON cards(current_token_id) 
-    WHERE current_token_id IS NOT NULL;
-  `);
+
   await prisma.$executeRawUnsafe(`
     ALTER TABLE tables DROP CONSTRAINT IF EXISTS chk_table_capacity;
   `);
@@ -318,32 +312,8 @@ async function main() {
   }
   console.log('Tables seeded.');
 
-  // 6. Seed Cards
-  console.log('Seeding cards...');
-  for (let i = 1; i <= 50; i++) {
-    const nfcUid = `CARD-${String(i).padStart(3, '0')}`;
-    await prisma.card.upsert({
-      where: { nfcUid },
-      update: { status: 'available' },
-      create: {
-        nfcUid,
-        status: 'available',
-        writeCycles: 0,
-      },
-    });
-  }
-  console.log('Cards seeded.');
-
   // 7. Seed System Configurations
   console.log('Seeding system configs...');
-  await prisma.systemConfig.upsert({
-    where: { configKey: 'nfc_card_enabled' },
-    update: {},
-    create: {
-      configKey: 'nfc_card_enabled',
-      configValue: 'true',
-    },
-  });
   await prisma.systemConfig.upsert({
     where: { configKey: 'email_qr_enabled' },
     update: {},
@@ -440,12 +410,12 @@ async function main() {
       redemptionsUsed: 1,
       status: 'ACTIVE',
       issuedBy: receptionistId,
-      deliveryMode: 'NFC_CARD',
-      emailSent: false,
+      deliveryMode: 'EMAIL_QR',
+      emailSent: true,
     }
   });
 
-  // Assign S-01 status and card
+  // Assign S-01 status
   if (tableS01) {
     await prisma.table.update({
       where: { id: tableS01.id },
@@ -456,14 +426,6 @@ async function main() {
       }
     });
   }
-  await prisma.card.update({
-    where: { nfcUid: 'CARD-001' },
-    data: {
-      status: 'assigned',
-      currentTokenId: token1.id,
-      assignedAt: token1.startTime,
-    }
-  });
 
   // Create redemptions
   await prisma.redemption.create({
@@ -492,12 +454,12 @@ async function main() {
       redemptionsUsed: 5,
       status: 'EXTENDED',
       issuedBy: receptionistId,
-      deliveryMode: 'NFC_CARD',
-      emailSent: false,
+      deliveryMode: 'EMAIL_QR',
+      emailSent: true,
     }
   });
 
-  // Assign L-01 status and card
+  // Assign L-01 status
   if (tableL01) {
     await prisma.table.update({
       where: { id: tableL01.id },
@@ -508,14 +470,6 @@ async function main() {
       }
     });
   }
-  await prisma.card.update({
-    where: { nfcUid: 'CARD-002' },
-    data: {
-      status: 'assigned',
-      currentTokenId: token2.id,
-      assignedAt: token2.startTime,
-    }
-  });
 
   // Create redemptions
   for (let seq = 1; seq <= 5; seq++) {
