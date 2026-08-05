@@ -3,7 +3,7 @@ import { StyleSheet, Text, View, Animated, Modal, TouchableOpacity, BackHandler,
 import { useTheme } from '../../context/ThemeContext';
 import { ANIMATIONS } from '../../theme/animations';
 import { AppIcon } from './AppIcon';
-import { useNfcBar } from '../../context/NfcBarContext';
+import { useBar } from '../../context/BarContext';
 import { AnimatedToast } from './AnimatedToast';
 
 interface AlertModalProps {
@@ -15,7 +15,7 @@ interface AlertModalProps {
 
 export const AlertModal: React.FC<AlertModalProps> = ({ visible, onClose, title, children }) => {
   const { colors } = useTheme();
-  const { toasts, dismissToast } = useNfcBar();
+  const { toasts, dismissToast } = useBar();
   
   // Animation state values
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -251,3 +251,4 @@ const styles = StyleSheet.create({
     maxWidth: 380,
   }
 });
+

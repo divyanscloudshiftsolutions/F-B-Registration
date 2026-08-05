@@ -136,7 +136,7 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-const THEME_STORAGE_KEY = '@nfc_bar_theme_mode';
+const THEME_STORAGE_KEY = '@bar_theme_mode';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [themeMode, setThemeState] = useState<ThemeMode>('dark');
@@ -210,3 +210,4 @@ export const useTheme = () => {
 };
 
 export const useAppTheme = useTheme;
+

@@ -35,7 +35,7 @@ if (process.env.REDIS_URL) {
   }
 }
 
-// API Gateway Rate Limiter (B2 component in nfc.md)
+// API Gateway Rate Limiter (B2 component in system_details.md)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 1000, // Limit each IP to 1000 requests per 15-minute window
@@ -104,7 +104,7 @@ app.use('/api', router);
 app.get('/', (req, res) => {
   res.json({
     status: 'OK',
-    message: 'NFC Bar Management System Backend API is running. Mount all requests on /api',
+    message: 'Bar Management System Backend API is running. Mount all requests on /api',
     timestamp: new Date().toISOString()
   });
 });

@@ -245,7 +245,7 @@ Module Name: Customer Check-in Workflow
 Page Name: Check-in Wizard
 
 Purpose:
-The Customer Check-in module is responsible for registering a new customer, collecting customer details, validating information, assigning an available table, processing payment, and activating the customer session through either an NFC Card or an Email QR Code.
+The Customer Check-in module is responsible for registering a new customer, collecting customer details, validating information, assigning an available table, processing payment, and activating the customer session through either an QR Card or an Email QR Code.
 
 Who Can Access:
 
@@ -270,7 +270,7 @@ There are two supported customer check-in methods:
 
 Method 1
 
-NFC Card Check-in
+QR Card Check-in
 
 Method 2
 
@@ -329,14 +329,14 @@ Delivery Method
 
 Available options
 
-NFC Card
+QR Card
 Email QR Code
-Method A — NFC Card Workflow
+Method A — QR Card Workflow
 Step 2
 
 Choose
 
-NFC Card
+QR Card
 
 ↓
 
@@ -388,9 +388,9 @@ Receptionist collects payment manually.
 
 Step 6
 
-Program NFC Card
+Program QR Card
 
-Staff places a blank NFC Card near the device.
+Staff places a blank QR Card near the device.
 
 Click
 
@@ -416,7 +416,7 @@ Table becomes OCCUPIED
 
 Card becomes ASSIGNED
 
-NFC Success Flow
+QR Success Flow
 
 Customer Details
 
@@ -430,7 +430,7 @@ Payment
 
 ↓
 
-Write NFC Card
+Write QR Card
 
 ↓
 
@@ -440,11 +440,11 @@ Activate Session
 
 Customer Seated
 
-NFC Failure Cases
+QR Failure Cases
 
 Possible failures
 
-NFC Disabled
+QR Disabled
 Card Removed Early
 Invalid Card
 Write Failed
@@ -631,13 +631,13 @@ Table capacity cannot be exceeded.
 Duplicate active sessions are blocked.
 Payment required before activation.
 QR Token can be used only once.
-NFC Card cannot be assigned twice.
+QR Card cannot be assigned twice.
 Occupied tables cannot be reassigned.
 Edge Cases
 Customer enters wrong phone number.
 Duplicate customer attempts check-in.
 Internet disconnects during activation.
-NFC write interrupted.
+QR write interrupted.
 QR expired.
 Table occupied while assigning.
 Invalid email.
@@ -655,9 +655,9 @@ Next Seating Area select pannuvanga.
 
 Adhukkapparam rendu option irukkum.
 
-Option 1 — NFC Card
+Option 1 — QR Card
 
-Reception staff NFC Card select pannuvanga.
+Reception staff QR Card select pannuvanga.
 
 Continue pannumbodhu Available Tables open aagum.
 
@@ -665,7 +665,7 @@ Green table select pannuvanga.
 
 Bill collect pannuvanga.
 
-Blank NFC Card phone backside-la touch pannuvanga.
+Blank QR Card phone backside-la touch pannuvanga.
 
 Write Card button click pannuvanga.
 
@@ -1210,7 +1210,7 @@ Module Name: Bartender Portal
 Page Name: Bartender Workspace
 
 Purpose:
-The Bartender Portal enables bartenders to validate customer sessions using either an NFC card or QR code, verify the remaining drink balance, redeem drink coupons, maintain redemption history, and prevent duplicate or unauthorized redemptions.
+The Bartender Portal enables bartenders to validate customer sessions using either an QR card or QR code, verify the remaining drink balance, redeem drink coupons, maintain redemption history, and prevent duplicate or unauthorized redemptions.
 
 Who Can Access
 
@@ -1232,7 +1232,7 @@ Main Purpose
 
 The Bartender Portal allows staff to:
 
-Scan NFC Cards
+Scan QR Cards
 Scan QR Codes
 Verify Active Sessions
 View Customer Details
@@ -1248,7 +1248,7 @@ Customer arrives at the counter.
 
 Customer presents
 
-NFC Card
+QR Card
 OR
 QR Code
 
@@ -1276,14 +1276,14 @@ Drink coupon redeemed.
 
 Remaining balance updated instantly.
 
-Method 1 — NFC Scan
+Method 1 — QR Scan
 Step 1
 
-Customer taps NFC Card on the device.
+Customer taps QR Card on the device.
 
 ↓
 
-Application starts NFC scanning.
+Application starts QR scanning.
 
 Step 2
 
@@ -1327,7 +1327,7 @@ Coupon deducted.
 
 Remaining balance decreases.
 
-NFC Success Flow
+QR Success Flow
 
 Tap Card
 
@@ -1421,9 +1421,9 @@ Remaining
 Every redemption updates immediately.
 
 Buttons
-Scan NFC
+Scan QR
 
-Starts NFC Reader.
+Starts QR Reader.
 
 Scan QR
 
@@ -1480,9 +1480,9 @@ Used for audit purposes.
 
 Backend APIs
 
-Validate NFC
+Validate QR
 
-POST /nfc/validate
+POST /QR/validate
 
 Validate QR
 
@@ -1525,7 +1525,7 @@ Customer Arrives
 
 ↓
 
-Scan NFC / QR
+Scan QR / QR
 
 ↓
 
@@ -1555,7 +1555,7 @@ Failure Flow
 
 Possible failures
 
-Invalid NFC Card
+Invalid QR Card
 Invalid QR
 Expired Session
 Already Closed Session
@@ -1575,13 +1575,13 @@ Closed sessions cannot redeem.
 Duplicate redemption blocked.
 Every redemption is logged.
 Edge Cases
-Customer scans same NFC card twice quickly.
+Customer scans same QR card twice quickly.
 Two bartenders scan the same customer simultaneously.
 Internet disconnects during redemption.
 Session expires while serving.
 Customer has zero balance.
 QR already invalidated.
-NFC card unreadable.
+QR card unreadable.
 API timeout.
 UI Features
 
@@ -1858,7 +1858,7 @@ Application performs
 
 Close Session
 Release Table
-Deactivate NFC/QR Token
+Deactivate QR/QR Token
 Archive Session
 Update Reports
 Step 5
@@ -2015,23 +2015,23 @@ Smooth UI transitions
 
 
 
-Module 6 — NFC Card Management
+Module 6 — QR Card Management
 Functional Details
 
-Module Name: NFC Card Management
+Module Name: QR Card Management
 
 Pages Included:
 
-NFC Card Inventory
+QR Card Inventory
 Card Assignment
-Write NFC Card
+Write QR Card
 Card Validation
 Replace Card
 Release Card
 Card History
 
 Purpose:
-The NFC Card Management module manages the complete lifecycle of NFC cards used within the system. It handles card registration, writing secure session tokens, assigning cards to customers, validating cards during usage, replacing lost or damaged cards, releasing cards after checkout, and maintaining a complete audit history.
+The QR Card Management module manages the complete lifecycle of QR cards used within the system. It handles card registration, writing secure session tokens, assigning cards to customers, validating cards during usage, replacing lost or damaged cards, releasing cards after checkout, and maintaining a complete audit history.
 
 Who Can Access
 
@@ -2050,7 +2050,7 @@ Dashboard
 
 ↓
 
-NFC Card Management
+QR Card Management
 
 OR
 
@@ -2062,20 +2062,20 @@ Delivery Method
 
 ↓
 
-NFC Card
+QR Card
 
 Main Purpose
 
 The module allows users to
 
-Register NFC Cards
+Register QR Cards
 Assign Cards
 Write Session Data
 Validate Cards
 Replace Cards
 Release Cards
 View Card History
-NFC Card Lifecycle
+QR Card Lifecycle
 
 Blank Card
 
@@ -2147,11 +2147,11 @@ Customer completes registration.
 
 Select
 
-NFC Card
+QR Card
 
 Step 2
 
-System displays available NFC cards.
+System displays available QR cards.
 
 Reception staff selects one.
 
@@ -2171,7 +2171,7 @@ Card is linked to customer session.
 
 Ready for writing.
 
-NFC Write Workflow
+QR Write Workflow
 Step 1
 
 Reception staff clicks
@@ -2180,11 +2180,11 @@ Write Card
 
 Step 2
 
-Application requests NFC permission.
+Application requests QR permission.
 
 Step 3
 
-Staff places NFC card near device.
+Staff places QR card near device.
 
 Step 4
 
@@ -2206,7 +2206,7 @@ Card becomes Active.
 
 Session Activated.
 
-NFC Validation Workflow
+QR Validation Workflow
 
 Whenever customer taps the card
 
@@ -2283,7 +2283,7 @@ Ready for next customer
 
 Card History
 
-Every NFC operation is logged.
+Every QR operation is logged.
 
 History includes
 
@@ -2313,27 +2313,27 @@ Backend APIs
 
 Available Cards
 
-GET /nfc/cards
+GET /QR/cards
 
 Assign Card
 
-POST /nfc/assign
+POST /QR/assign
 
 Write Card
 
-POST /nfc/write
+POST /QR/write
 
 Validate Card
 
-POST /nfc/validate
+POST /QR/validate
 
 Replace Card
 
-PUT /nfc/replace
+PUT /QR/replace
 
 Release Card
 
-PUT /nfc/release
+PUT /QR/release
 Database Operations
 
 Read Available Card
@@ -2364,7 +2364,7 @@ Archive History
 
 Business Rules
 One card can belong to only one active session.
-One customer can have only one active NFC card.
+One customer can have only one active QR card.
 Assigned cards cannot be reused.
 Released cards become available again.
 Disabled cards cannot be assigned.
@@ -2374,7 +2374,7 @@ Failure Scenarios
 
 Possible failures
 
-NFC disabled
+QR disabled
 Unsupported device
 Card removed early
 Write failed
@@ -2397,7 +2397,7 @@ Internet disconnects while writing.
 Validation attempted after checkout.
 UI Features
 
-The NFC Card Management module includes
+The QR Card Management module includes
 
 Card status indicators
 Write progress dialog
@@ -2434,7 +2434,7 @@ QR Activation
 QR Expiration
 
 Purpose:
-The QR Code Management module provides a contactless check-in mechanism for customers who do not use NFC cards. It securely generates unique QR codes, delivers them through email, validates them during customer arrival, activates customer sessions, and prevents duplicate or fraudulent usage.
+The QR Code Management module provides a contactless check-in mechanism for customers who do not use QR cards. It securely generates unique QR codes, delivers them through email, validates them during customer arrival, activates customer sessions, and prevents duplicate or fraudulent usage.
 
 Who Can Access
 
@@ -3398,7 +3398,7 @@ Occupied Tables
 Available Tables
 Pending Check-ins
 QR Sessions
-NFC Sessions
+QR Sessions
 Total Payments
 Extension Requests
 Average Session Duration
@@ -3617,7 +3617,7 @@ Pending Check-ins
 Customer Count
 Payment Summary
 QR Usage
-NFC Usage
+QR Usage
 Graphs & Charts
 
 The dashboard may display:
@@ -3808,7 +3808,7 @@ Reception Staff
 Customer Management
 Check-in
 Checkout
-NFC
+QR
 QR
 Own Profile
 Bartender
@@ -3985,7 +3985,7 @@ Permissions include access to:
 Dashboard
 Reports
 Customer Module
-NFC Module
+QR Module
 QR Module
 Payments
 Tables
@@ -4058,7 +4058,7 @@ System notifications include:
 Session Expiry
 Payment Confirmation
 QR Generated
-NFC Write Success
+QR Write Success
 Extension Requests
 System Errors
 
@@ -4331,11 +4331,11 @@ QR Sent
 QR Scanned
 QR Expired
 QR Validation Failed
-NFC Notifications
+QR Notifications
 Card Assigned
 Card Written Successfully
-NFC Validation Success
-NFC Write Failed
+QR Validation Success
+QR Write Failed
 Card Released
 System Notifications
 Server Connected
@@ -4511,7 +4511,7 @@ Invalid Phone Number
 Business Errors
 Table Occupied
 QR Already Used
-NFC Already Assigned
+QR Already Assigned
 Session Expired
 Payment Pending
 Network Errors
@@ -4682,7 +4682,7 @@ Customer check-in while offline.
 Payment confirmed after internet restoration.
 Multiple devices syncing simultaneously.
 QR validation during intermittent connectivity.
-NFC write interrupted by network loss.
+QR write interrupted by network loss.
 Duplicate offline requests after reconnect.
 Session expiry during synchronization.
 Backend restart while users are active.
@@ -4716,7 +4716,7 @@ Delivery Method Selected
 
 ↓
 
-NFC Card OR Email QR Generated
+QR Card OR Email QR Generated
 
 ↓
 
@@ -4780,7 +4780,7 @@ Table Released
 
 ↓
 
-NFC Card Released / QR Marked Used
+QR Card Released / QR Marked Used
 
 ↓
 
@@ -4808,7 +4808,7 @@ Customer Management
 
 ↓
 
-QR / NFC Management
+QR / QR Management
 
 ↓
 
@@ -4854,6 +4854,7 @@ System Analytics
 ↓
 
 Transaction History
+
 
 
 

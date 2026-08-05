@@ -90,7 +90,7 @@ export interface SessionToken {
   redemptionLimit: number;
   redemptionCount: number;
   status: TokenStatus;
-  cardUid: string;
+  cardUid?: string | null;
   deliveryMode?: 'NFC_CARD' | 'EMAIL_QR';
   paymentVerified?: boolean;
   emailSent?: boolean;

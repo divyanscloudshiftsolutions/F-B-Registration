@@ -1,18 +1,18 @@
-# NFC & Email QR Bar System Management System Task Report
+# QR & Email QR Bar System Management System Task Report
 
-This report outlines the features, architecture, validation status, and test coverage of the newly integrated **Email QR Mode** alongside the existing **NFC Card Mode** in the NFC Bar Management System.
+This report outlines the features, architecture, validation status, and test coverage of the newly integrated **Email QR Mode** alongside the existing **QR Card Mode** in the Bar Management System.
 
 ---
 
 ## 1. Executive Summary
 
-We have successfully integrated a configurable **Token Delivery Mode** into the existing NFC Bar Management System. The system supports two mutually exclusive modes:
-1. `NFC_CARD` (Existing Flow)
+We have successfully integrated a configurable **Token Delivery Mode** into the existing Bar Management System. The system supports two mutually exclusive modes:
+1. `QR_CARD` (Existing Flow)
 2. `EMAIL_QR` (New Flow)
 
-These modes share all backend business logic, database transaction locking, remaining drink calculations, and seat occupancy workflows. The selected mode governs how tokens are issued (NFC Card Tap vs Email QR scan) and validated during redemption.
+These modes share all backend business logic, database transaction locking, remaining drink calculations, and seat occupancy workflows. The selected mode governs how tokens are issued (QR Card Tap vs Email QR scan) and validated during redemption.
 
-Both modes have been thoroughly verified through E2E automation suites. Existing NFC functionality remains **fully regression-free**, and the system dynamically switches modes at runtime.
+Both modes have been thoroughly verified through E2E automation suites. Existing QR functionality remains **fully regression-free**, and the system dynamically switches modes at runtime.
 
 ---
 
@@ -23,10 +23,10 @@ Both modes have been thoroughly verified through E2E automation suites. Existing
 | Feature / Endpoint | Description | Status |
 | :--- | :--- | :--- |
 | **Dynamic Mode Toggle** | Retrieved from `SystemConfig` database model, cached in Redis for high performance, and managed by Admin endpoints. | **Active & Verified** |
-| **Conditional Check-in** | Validates `email` (mandatory in `EMAIL_QR`) or `nfcCardUid` (mandatory in `NFC_CARD`) dynamically based on active mode. | **Active & Verified** |
+| **Conditional Check-in** | Validates `email` (mandatory in `EMAIL_QR`) or `QRCardUid` (mandatory in `QR_CARD`) dynamically based on active mode. | **Active & Verified** |
 | **Cryptographic QR Signing** | Signs QR payloads using JWT and the server's `GLOBAL_SIGNING_KEY` to prevent forgery. | **Active & Verified** |
-| **Unified Redemption Endpoint** | Single endpoint `POST /api/redemptions` taking `presentationType` (`NFC_TAP` \| `QR_SCAN`) to process all redemptions. | **Active & Verified** |
-| **Security Controls** | Rejects crossing presentation modes (e.g. scanning an NFC token via QR scan, or tapping a QR token). | **Active & Verified** |
+| **Unified Redemption Endpoint** | Single endpoint `POST /api/redemptions` taking `presentationType` (`QR_TAP` \| `QR_SCAN`) to process all redemptions. | **Active & Verified** |
+| **Security Controls** | Rejects crossing presentation modes (e.g. scanning an QR token via QR scan, or tapping a QR token). | **Active & Verified** |
 | **Email Queue Worker** | Enqueues and dispatches emails with QR codes, handles exponential backoffs, and records statuses (`SENT`, `FAILED`, `PENDING`) in the database. | **Active & Verified** |
 
 ### B. Database Schema & Models
@@ -34,7 +34,7 @@ Both modes have been thoroughly verified through E2E automation suites. Existing
 The PostgreSQL database schema was synchronized via Prisma (`npx prisma db push`) to add the following:
 * **`SystemConfig` Table**: Stores configuration parameters like `token_delivery_mode`.
 * **`Token` Table Enhancements**:
-  * `deliveryMode`: Tracks whether the token was issued via `NFC_CARD` or `EMAIL_QR`.
+  * `deliveryMode`: Tracks whether the token was issued via `QR_CARD` or `EMAIL_QR`.
   * `emailSent`: Boolean indicating if the email notification was dispatched.
   * `emailSentAt`: DateTime tracking email dispatch time.
   * `emailDeliveryStatus`: Enum/String tracking status (`PENDING`, `SENT`, `FAILED`).
@@ -44,7 +44,7 @@ The PostgreSQL database schema was synchronized via Prisma (`npx prisma db push`
 The frontend has been updated to remove dependency on hardcoded mocks:
 * **State Initialization**: All state hooks (`tables`, `sessions`, `rates`, `notifications`) are initialized with empty arrays.
 * **Dynamic Loading & Sync**: On application boot, the context loads cached tables, sessions, rates, and notifications from the device local storage. If online, it immediately queries backend APIs and overrides local states, subsequently updating the local storage cache.
-* **Decoupled Utilities**: Extracted validation helper `isTableExpiring` into `nfc_bar_utils.ts` and deleted the outdated hardcoded mock file `nfc_bar_data.ts` completely.
+* **Decoupled Utilities**: Extracted validation helper `isTableExpiring` into `QR_bar_utils.ts` and deleted the outdated hardcoded mock file `QR_bar_data.ts` completely.
 
 ---
 
@@ -53,7 +53,7 @@ The frontend has been updated to remove dependency on hardcoded mocks:
 We validated the system using two independent test suites running E2E scenarios on a test Express server:
 
 ### 1. Existing E2E Sync Test Suite (`sync.test.ts`)
-* **Scope**: Existing NFC-based receptionist check-ins, bartender redemptions, drink limits, table seat occupancy logs, automatic triggers, hourly breakdowns, daily reports, rate card updates, and database row-locking verification.
+* **Scope**: Existing QR-based receptionist check-ins, bartender redemptions, drink limits, table seat occupancy logs, automatic triggers, hourly breakdowns, daily reports, rate card updates, and database row-locking verification.
 * **Result**: **PASS** (All 12 complex test cases successfully executed).
 
 ### 2. New Email QR Test Suite (`email-qr.test.ts`)
@@ -74,7 +74,7 @@ async getConfiguredDeliveryMode(): Promise<string> {
     where: { configKey: 'token_delivery_mode' }
   });
 
-  const mode = configRecord?.configValue || 'NFC_CARD';
+  const mode = configRecord?.configValue || 'QR_CARD';
   await redisService.setex('config:token_delivery_mode', 86400, mode);
   return mode;
 }
@@ -94,10 +94,10 @@ const tokens = await tx.$queryRaw<any[]>`
 
 // Validate that presentation matches original delivery mode to prevent crossing modes
 if (presentationType === 'QR_SCAN' && token.deliveryMode !== 'EMAIL_QR') {
-  throw new Error('NFC token cannot be redeemed via QR scan.');
+  throw new Error('QR token cannot be redeemed via QR scan.');
 }
-if (presentationType === 'NFC_TAP' && token.deliveryMode !== 'NFC_CARD') {
-  throw new Error('Email QR token cannot be redeemed via NFC tap.');
+if (presentationType === 'QR_TAP' && token.deliveryMode !== 'QR_CARD') {
+  throw new Error('Email QR token cannot be redeemed via QR tap.');
 }
 ```
 
@@ -112,9 +112,9 @@ Cleaning up database for Email QR tests...
 Cleaned up database.
 Logging in...
 Test 1: GET /config/delivery-mode
-✓ Initial mode verified as NFC_CARD.
-Test 2: Check-in under NFC_CARD mode without Card UID (should fail)
-✓ Rejected check-in without NFC card UID in NFC_CARD mode.
+✓ Initial mode verified as QR_CARD.
+Test 2: Check-in under QR_CARD mode without Card UID (should fail)
+✓ Rejected check-in without QR card UID in QR_CARD mode.
 Test 3: PUT /config/delivery-mode -> EMAIL_QR
 ✓ Token Delivery Mode updated to EMAIL_QR.
 Test 4: Check-in under EMAIL_QR mode without email (should fail)
@@ -131,10 +131,10 @@ Test 8: POST /qr/verify (Invalid signature)
 ✓ Rejected forged QR code payload.
 Test 9: POST /redemptions (Valid QR_SCAN)
 ✓ Redemption recorded successfully via QR scan.
-Test 10: Block redemption of EMAIL_QR token via NFC_TAP presentation type
-✓ Blocked crossing presentation modes (EMAIL_QR token via NFC_TAP).
-Test 11: Toggle back to NFC_CARD mode, create token, and verify QR redemption is blocked
-✓ Blocked crossing presentation modes (NFC token via QR_SCAN).
+Test 10: Block redemption of EMAIL_QR token via QR_TAP presentation type
+✓ Blocked crossing presentation modes (EMAIL_QR token via QR_TAP).
+Test 11: Toggle back to QR_CARD mode, create token, and verify QR redemption is blocked
+✓ Blocked crossing presentation modes (QR token via QR_SCAN).
 Test 12: POST /tokens/:id/resend-email
 [Email Queue] Enqueued email job for qr.customer@gmail.com (token: BAR-20260627-00001)
 ✓ Resend email job enqueued successfully.
@@ -143,3 +143,4 @@ Test 12: POST /tokens/:id/resend-email
 ALL EMAIL QR INTEGRATION TESTS PASSED!
 =========================================
 ```
+

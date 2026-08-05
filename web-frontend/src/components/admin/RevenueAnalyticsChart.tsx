@@ -68,7 +68,7 @@ export const RevenueAnalyticsChart: React.FC = () => {
 
         <button
           onClick={handleExportCSV}
-          className="px-4 py-2 rounded-xl gold-gradient-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg cursor-pointer"
+          className="px-4 py-2 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg cursor-pointer"
         >
           <Download size={16} /> Export Sessions CSV
         </button>
@@ -77,7 +77,7 @@ export const RevenueAnalyticsChart: React.FC = () => {
       {/* Hourly Sales Bar Chart Component */}
       <div className="glass-panel p-6 rounded-2xl border border-border-main space-y-6">
         <div className="flex items-center justify-between pb-3 border-b border-border-main">
-          <div className="flex items-center gap-2 text-[#D4AF37] font-bold text-sm animate-fadeIn">
+          <div className="flex items-center gap-2 text-[#8D6CE5] font-bold text-sm animate-fadeIn">
             <BarChart3 size={18} /> Hourly Revenue Breakdown & Peak Collections
           </div>
           <span className="text-xs font-bold dark:text-emerald-400 text-emerald-700 flex items-center gap-1">
@@ -117,7 +117,7 @@ export const RevenueAnalyticsChart: React.FC = () => {
                     <div className="absolute bottom-full mb-2 hidden group-hover:flex flex-col items-center z-30 transition-all duration-200">
                       <div className="dark:bg-bg-surface bg-zinc-900 dark:border-border-main border-zinc-800 px-3 py-2 rounded-xl shadow-2xl text-[10px] whitespace-nowrap dark:text-text-main text-white font-bold">
                         <p className="dark:text-text-muted text-zinc-400">Hour: {d.hour}</p>
-                        <p className="text-[#D4AF37] font-black text-xs mt-0.5">₹{d.amount.toLocaleString()}</p>
+                        <p className="text-[#8D6CE5] font-black text-xs mt-0.5">₹{d.amount.toLocaleString()}</p>
                         <p className="text-[9px] dark:text-text-muted text-zinc-400 font-medium mt-0.5">
                           {d.peak ? '🔥 Peak Hour' : 'Regular Shift'}
                         </p>
@@ -135,14 +135,14 @@ export const RevenueAnalyticsChart: React.FC = () => {
                       style={{ height: `${heightPercent * 0.8}%` }}
                       className={`w-full rounded-t-xl transition-all duration-300 cursor-pointer ${
                         d.peak 
-                          ? 'bg-gradient-to-t from-[#D4AF37] to-[#F5E08B] shadow-lg shadow-[#D4AF37]/30 hover:scale-105' 
+                          ? 'bg-gradient-to-t from-[#8D6CE5] to-[#F5E08B] shadow-lg shadow-[#8D6CE5]/30 hover:scale-105' 
                           : 'analytics-bar-regular hover:scale-105'
                       }`}
                     />
                     
                     {/* X-Axis Tick Label */}
                     <span className={`text-[10px] font-bold absolute top-full mt-2.5 whitespace-nowrap select-none ${
-                      d.peak ? 'text-[#D4AF37]' : 'text-text-muted'
+                      d.peak ? 'text-[#8D6CE5]' : 'text-text-muted'
                     }`}>
                       {d.hour}
                     </span>
@@ -156,7 +156,7 @@ export const RevenueAnalyticsChart: React.FC = () => {
         {/* Chart Legend Footer */}
         <div className="flex items-center justify-center gap-6 pt-4 border-t border-border-main text-[11px] font-bold text-text-muted select-none">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded bg-gradient-to-t from-[#D4AF37] to-[#F5E08B]" />
+            <div className="w-3 h-3 rounded bg-gradient-to-t from-[#8D6CE5] to-[#F5E08B]" />
             <span>Peak Hour Revenue</span>
           </div>
           <div className="flex items-center gap-2">
@@ -168,3 +168,4 @@ export const RevenueAnalyticsChart: React.FC = () => {
     </div>
   );
 };
+

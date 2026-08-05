@@ -5,12 +5,11 @@ import {
   ActivityIndicator, StyleSheet, Modal, Platform, Animated, LayoutAnimation
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useNfcBar, getFriendlyErrorMessage, getBackendUrl } from '../../../context/NfcBarContext';
+import { useBar, getFriendlyErrorMessage, getBackendUrl } from '../../../context/BarContext';
 import { useTheme } from '../../../context/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SessionToken, TokenStatus } from '../../../types/nfc_bar';
+import { SessionToken, TokenStatus } from '../../../types/bar_types';
 import { AppIcon } from '../../../components/common/AppIcon';
-import nfcService from '../../../services/nfc/nfcManager';
 import { useActionProgress } from '../../../utils/actionProgress';
 
 const formatRedemptionTime = (timestampStr: string) => {
@@ -28,7 +27,7 @@ const formatRedemptionTime = (timestampStr: string) => {
 };
 
 export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
-  const { sessions, redeemDrinkForCard, undoDrinkRedemption, tokenType, nfcEnabled, emailQrEnabled, fetchLatestState, showToast, setOverlayActive } = useNfcBar();
+  const { sessions, redeemDrinkForCard, undoDrinkRedemption, emailQrEnabled, fetchLatestState, showToast, setOverlayActive } = useBar();
   const { loadingAction, secondsLeft, startAction, stopAction, isProcessing } = useActionProgress();
   const { colors, isDark } = useTheme();
   const [bartenderState, setBartenderState] = useState<'idle' | 'scanning' | 'scanned' | 'depleted' | 'error'>('idle');
@@ -53,7 +52,7 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
     if (!startAction('close_session')) return;
     setIsClosingSession(true);
     try {
-      const activeToken = await AsyncStorage.getItem('nfc_bar_user_token');
+      const activeToken = await AsyncStorage.getItem('bar_user_token');
       const res = await fetch(`${BACKEND_URL}/sessions/${tokenToClose}/close`, {
         method: 'POST',
         headers: {
@@ -92,7 +91,7 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
     setScanningForClose(false);
     setIsClosingSession(true);
     try {
-      const activeToken = await AsyncStorage.getItem('nfc_bar_user_token');
+      const activeToken = await AsyncStorage.getItem('bar_user_token');
       const res = await fetch(`${BACKEND_URL}/sessions/close-by-qr`, {
         method: 'POST',
         headers: {
@@ -259,7 +258,7 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
 
   const fetchRedemptionsHistory = async (tokenNum: string) => {
     try {
-      const token = await AsyncStorage.getItem('nfc_bar_user_token');
+      const token = await AsyncStorage.getItem('bar_user_token');
       if (!token) return;
       const res = await fetch(`${BACKEND_URL}/tokens/${tokenNum}/redemptions`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -308,93 +307,7 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
     fetchRedemptionsHistory(found.tokenNumber);
   };
 
-  const handlePhysicalScan = async () => {
-    setBartenderState('scanning');
-    setErrorMessage('');
-    setScannedCardUid(null);
-    setActiveSession(null);
 
-    try {
-      await nfcService.initialize();
-      const details = await nfcService.readCardDetails();
-      if (!details || !details.nfcUid) {
-        throw new Error('Failed to read card information.');
-      }
-
-      const cardUid = details.nfcUid;
-      const tokenNumber = details.tokenNumber;
-      setScannedCardUid(cardUid);
-
-      // Find active session either by cardUid or by tokenNumber
-      const found = sessions.find(s => 
-        ((cardUid && s.cardUid === cardUid && s.status === TokenStatus.ACTIVE) || 
-         (tokenNumber && s.tokenNumber === tokenNumber && s.status === TokenStatus.ACTIVE)) &&
-        s.paymentVerified === true
-      );
-
-      if (!found) {
-        setBartenderState('error');
-        setErrorMessage('Unknown card or token session closed.');
-        return;
-      }
-      
-      // Check expiration
-      const now = new Date();
-      if (now > new Date(found.endTime)) {
-        setActiveSession(found);
-        setBartenderState('error');
-        setErrorMessage('Expired session! Entitlements locked.');
-        return;
-      }
-
-      // Check drinks depletion
-      if (found.redemptionCount >= found.redemptionLimit) {
-        setActiveSession(found);
-        setBartenderState('depleted');
-        return;
-      }
-
-      setActiveSession(found);
-      setBartenderState('scanned');
-      fetchRedemptionsHistory(found.tokenNumber);
-    } catch (error: any) {
-      console.error('Bartender NFC Scan error:', error);
-      setBartenderState('error');
-      setErrorMessage(error.message || 'NFC Scan failed.');
-    }
-  };
-
-  const handleSimulateScan = (cardId: string) => {
-    setScannedCardUid(cardId);
-    setErrorMessage('');
-    
-    // Find active session
-    const found = sessions.find(s => s.cardUid === cardId && s.status === TokenStatus.ACTIVE && s.paymentVerified === true);
-    if (!found) {
-      setBartenderState('error');
-      setErrorMessage('Unknown card or token session closed.');
-      return;
-    }
-    
-    // Check expiration
-    const now = new Date();
-    if (now > new Date(found.endTime)) {
-      setActiveSession(found);
-      setBartenderState('error');
-      setErrorMessage('Expired session! Entitlements locked.');
-      return;
-    }
-
-    // Check drinks depletion
-    if (found.redemptionCount >= found.redemptionLimit) {
-      setActiveSession(found);
-      setBartenderState('depleted');
-      return;
-    }
-
-    setActiveSession(found);
-    setBartenderState('scanned');
-  };
 
   const processQueue = async () => {
     if (isProcessingQueueRef.current || opQueueRef.current.length === 0) return;
@@ -734,7 +647,7 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
           }}
         >
           <Text className="font-extrabold text-[9px] tracking-wider" style={{ color: colors.teal }}>
-            {emailQrEnabled && !nfcEnabled ? 'EMAIL QR PORTAL' : (nfcEnabled && !emailQrEnabled ? 'NFC PORTAL' : 'HYBRID PORTAL')}
+            QR PORTAL
           </Text>
         </View>
       </View>
@@ -742,166 +655,38 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
       {/* IDLE SCAN TARGET: Massive lower third CTA */}
       {bartenderState === 'idle' && (
         <View className="flex-1 justify-start">
-          {!nfcEnabled ? (
-            <View className="flex-1 flex-col">
-              {/* Email / Token manual input block */}
-              <View 
-                className="rounded-[20px] p-5 shadow-xl mb-4 border"
-                style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1.5 }}
-              >
-                <Text className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: colors.gold }}>Lookup Guest Session</Text>
-                <View className="flex-row gap-2 items-center">
-                  <TextInput
-                    className="flex-1 border rounded-xl px-4 py-3 text-sm font-semibold min-h-[48px]"
-                    style={{ backgroundColor: colors.secondarySurface, borderColor: colors.border, borderWidth: 1.5, color: colors.text }}
-                    placeholder="Enter Token (e.g. BAR-2026...)"
-                    placeholderTextColor={colors.placeholder}
-                    value={enteredToken}
-                    onChangeText={setEnteredToken}
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity 
-                    className="px-5 py-3 rounded-xl min-h-[48px] justify-center items-center border"
-                    style={{ backgroundColor: colors.gold, borderColor: colors.gold }}
-                    onPress={() => handleTokenLookup(enteredToken)}
-                  >
-                    <Text className="font-extrabold text-xs" style={{ color: colors.goldButtonText }}>VALIDATE</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Start QR Scan Target */}
-              {emailQrEnabled && (
+          <View className="flex-1 flex-col">
+            {/* Email / Token manual input block */}
+            <View 
+              className="rounded-[20px] p-5 shadow-xl mb-4 border"
+              style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1.5 }}
+            >
+              <Text className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: colors.gold }}>Lookup Guest Session</Text>
+              <View className="flex-row gap-2 items-center">
+                <TextInput
+                  className="flex-1 border rounded-xl px-4 py-3 text-sm font-semibold min-h-[48px]"
+                  style={{ backgroundColor: colors.secondarySurface, borderColor: colors.border, borderWidth: 1.5, color: colors.text }}
+                  placeholder="Enter Token (e.g. BAR-2026...)"
+                  placeholderTextColor={colors.placeholder}
+                  value={enteredToken}
+                  onChangeText={setEnteredToken}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                />
                 <TouchableOpacity 
-                  className="w-full rounded-[20px] py-4 items-center justify-center shadow-xl border mb-4"
-                  style={{ backgroundColor: colors.gold, borderColor: colors.gold, borderWidth: 1.5 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Start camera QR code scan"
-                  onPress={handleQrScan}
-                  activeOpacity={0.85}
+                  className="px-5 py-3 rounded-xl min-h-[48px] justify-center items-center border"
+                  style={{ backgroundColor: colors.gold, borderColor: colors.gold }}
+                  onPress={() => handleTokenLookup(enteredToken)}
                 >
-                  <View className="flex-row items-center gap-2">
-                    <Text style={{ fontSize: 16 }}>📷</Text>
-                    <Text className="font-black text-sm tracking-widest uppercase" style={{ color: colors.goldButtonText }}>START QR SCAN</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-
-              {/* Active sessions list helper */}
-              <Text className="text-[10px] font-bold uppercase tracking-wider mb-2.5 px-1" style={{ color: colors.muted }}>Active Checked-in Guests:</Text>
-              <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-                {sessions.filter(s => s.status === TokenStatus.ACTIVE && s.paymentVerified === true).length === 0 ? (
-                  <View className="py-8 items-center">
-                    <Text style={{ color: colors.muted, fontSize: 12 }}>No active guest sessions found.</Text>
-                  </View>
-                ) : (
-                  sessions.filter(s => s.status === TokenStatus.ACTIVE && s.paymentVerified === true).map(s => {
-                    const isExpired = calculateTimeRemaining(s.endTime) === 'Expired';
-                    return (
-                      <TouchableOpacity
-                        key={s.id}
-                        className="rounded-xl p-4 mb-2 flex-row justify-between items-center border"
-                        style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1.5 }}
-                        onPress={() => {
-                          setEnteredToken(s.tokenNumber);
-                          handleTokenLookup(s.tokenNumber);
-                        }}
-                      >
-                        <View style={{ flex: 1 }}>
-                          <Text className="text-xs font-bold" style={{ color: colors.text }}>{s.customerName}</Text>
-                          <Text className="text-[10px] font-mono mt-0.5" style={{ color: colors.muted }}>{s.tokenNumber}</Text>
-                          <View className="flex-row items-center gap-2 mt-1 flex-wrap">
-                            <Text className="text-[9px]" style={{ color: colors.muted }}>📞 {s.phoneNumber}</Text>
-                            {s.email ? (
-                              <Text className="text-[9px]" style={{ color: colors.muted }}>✉️ {s.email}</Text>
-                            ) : null}
-                          </View>
-                        </View>
-                        <View className="items-center px-2">
-                          <Text className="text-[10px] font-bold" style={{ color: isExpired ? colors.red : colors.gold }}>
-                            ⏰ {calculateTimeRemaining(s.endTime)}
-                          </Text>
-                        </View>
-                        <View className="items-end" style={{ minWidth: 70 }}>
-                          <Text className="text-[10px] font-extrabold uppercase" style={{ color: colors.gold }}>Table {s.tableNumber}</Text>
-                          <Text className="text-[9px] mt-0.5" style={{ color: colors.muted }}>Drinks: {s.redemptionCount}/{s.redemptionLimit}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </ScrollView>
-            </View>
-          ) : !emailQrEnabled ? (
-            <View className="flex-1 justify-between flex-col py-6">
-              <View className="flex-1 items-center justify-center">
-                {/* Visual Icon Illustration */}
-                <View 
-                  className="w-24 h-24 rounded-full border items-center justify-center mb-4"
-                  style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }}
-                >
-                  <Text className="text-4xl">🍹</Text>
-                </View>
-                <Text className="text-base font-extrabold" style={{ color: colors.text }}>Redemption Scan Target</Text>
-                <Text className="text-[11px] text-center max-w-[70%] mt-1.5 leading-4" style={{ color: colors.muted }}>
-                  Align physical card with sensor scanner to check drink token balance.
-                </Text>
-              </View>
-              
-              {/* Lower Third scan CTA and quick simulators */}
-              <View className="flex-col gap-4">
-                <TouchableOpacity 
-                  className="w-full rounded-[20px] py-5 items-center justify-center shadow-xl border"
-                  style={{ backgroundColor: colors.gold, borderColor: colors.gold, borderWidth: 1.5 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Start physical smart card scan"
-                  onPress={handlePhysicalScan}
-                  activeOpacity={0.85}
-                >
-                  <View className="flex-row items-center gap-2">
-                    <Text className="text-xl">🛜</Text>
-                    <Text className="font-black text-base tracking-widest uppercase" style={{ color: colors.goldButtonText }}>START NFC SCAN</Text>
-                  </View>
+                  <Text className="font-extrabold text-xs" style={{ color: colors.goldButtonText }}>VALIDATE</Text>
                 </TouchableOpacity>
               </View>
             </View>
-          ) : (
-            <ScrollView className="flex-1" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
-              {/* Lookup Guest Session */}
-              <View 
-                className="rounded-[20px] p-5 shadow-xl mb-4 border"
-                style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1.5 }}
-              >
-                <Text className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: colors.gold }}>Lookup Guest Session</Text>
-                <View className="flex-row gap-2 items-center">
-                  <TextInput
-                    className="flex-1 border rounded-xl px-4 py-3 text-sm font-semibold min-h-[48px]"
-                    style={{ backgroundColor: colors.secondarySurface, borderColor: colors.border, borderWidth: 1.5, color: colors.text }}
-                    placeholder="Enter Token (e.g. BAR-2026...)"
-                    placeholderTextColor={colors.placeholder}
-                    value={enteredToken}
-                    onChangeText={setEnteredToken}
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    accessibilityLabel="Enter token number"
-                    accessibilityRole="text"
-                  />
-                  <TouchableOpacity 
-                    className="px-5 py-3 rounded-xl min-h-[48px] justify-center items-center border"
-                    style={{ backgroundColor: colors.gold, borderColor: colors.gold }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Validate token"
-                    onPress={() => handleTokenLookup(enteredToken)}
-                  >
-                    <Text className="font-extrabold text-xs" style={{ color: colors.goldButtonText }}>VALIDATE</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
 
-              {/* Start QR Scan Target */}
+            {/* Start QR Scan Target */}
+            {emailQrEnabled && (
               <TouchableOpacity 
-                className="w-full rounded-[20px] py-4 items-center justify-center shadow-xl border mb-3"
+                className="w-full rounded-[20px] py-4 items-center justify-center shadow-xl border mb-4"
                 style={{ backgroundColor: colors.gold, borderColor: colors.gold, borderWidth: 1.5 }}
                 accessibilityRole="button"
                 accessibilityLabel="Start camera QR code scan"
@@ -913,29 +698,13 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
                   <Text className="font-black text-sm tracking-widest uppercase" style={{ color: colors.goldButtonText }}>START QR SCAN</Text>
                 </View>
               </TouchableOpacity>
+            )}
 
-              {/* Start NFC Scan Target */}
-              <TouchableOpacity 
-                className="w-full rounded-[20px] py-4 items-center justify-center shadow-xl border mb-4"
-                style={{ backgroundColor: colors.gold, borderColor: colors.gold, borderWidth: 1.5 }}
-                accessibilityRole="button"
-                accessibilityLabel="Start card NFC scan"
-                onPress={handlePhysicalScan}
-                activeOpacity={0.85}
-              >
-                <View className="flex-row items-center gap-2">
-                  <Text style={{ fontSize: 16 }}>🛜</Text>
-                  <Text className="font-black text-sm tracking-widest uppercase" style={{ color: colors.goldButtonText }}>START NFC SCAN</Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Active Checked-in Guests */}
-              <Text className="text-[10px] font-bold uppercase tracking-wider mb-2.5 px-1" style={{ color: colors.muted }}>Active Checked-in Guests:</Text>
+            {/* Active sessions list helper */}
+            <Text className="text-[10px] font-bold uppercase tracking-wider mb-2.5 px-1" style={{ color: colors.muted }}>Active Checked-in Guests:</Text>
+            <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
               {sessions.filter(s => s.status === TokenStatus.ACTIVE && s.paymentVerified === true).length === 0 ? (
-                <View 
-                  className="py-6 items-center border rounded-xl"
-                  style={{ backgroundColor: colors.secondarySurface, borderColor: colors.border, borderWidth: 1.5 }}
-                >
+                <View className="py-8 items-center">
                   <Text style={{ color: colors.muted, fontSize: 12 }}>No active guest sessions found.</Text>
                 </View>
               ) : (
@@ -944,7 +713,7 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
                   return (
                     <TouchableOpacity
                       key={s.id}
-                      className="rounded-xl p-3.5 mb-2 flex-row justify-between items-center border"
+                      className="rounded-xl p-4 mb-2 flex-row justify-between items-center border"
                       style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1.5 }}
                       onPress={() => {
                         setEnteredToken(s.tokenNumber);
@@ -953,7 +722,7 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
                     >
                       <View style={{ flex: 1 }}>
                         <Text className="text-xs font-bold" style={{ color: colors.text }}>{s.customerName}</Text>
-                        <Text className="text-[9px] font-mono mt-0.5" style={{ color: colors.muted }}>{s.tokenNumber}</Text>
+                        <Text className="text-[10px] font-mono mt-0.5" style={{ color: colors.muted }}>{s.tokenNumber}</Text>
                         <View className="flex-row items-center gap-2 mt-1 flex-wrap">
                           <Text className="text-[9px]" style={{ color: colors.muted }}>📞 {s.phoneNumber}</Text>
                           {s.email ? (
@@ -962,11 +731,11 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
                         </View>
                       </View>
                       <View className="items-center px-2">
-                        <Text className="text-[9px] font-bold" style={{ color: isExpired ? colors.red : colors.gold }}>
+                        <Text className="text-[10px] font-bold" style={{ color: isExpired ? colors.red : colors.gold }}>
                           ⏰ {calculateTimeRemaining(s.endTime)}
                         </Text>
                       </View>
-                      <View className="items-end" style={{ minWidth: 65 }}>
+                      <View className="items-end" style={{ minWidth: 70 }}>
                         <Text className="text-[10px] font-extrabold uppercase" style={{ color: colors.gold }}>Table {s.tableNumber}</Text>
                         <Text className="text-[9px] mt-0.5" style={{ color: colors.muted }}>Drinks: {s.redemptionCount}/{s.redemptionLimit}</Text>
                       </View>
@@ -975,7 +744,7 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
                 })
               )}
             </ScrollView>
-          )}
+          </View>
         </View>
       )}
 
@@ -988,7 +757,7 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
           onRequestClose={() => setBartenderState('idle')}
         >
           <View style={{ flex: 1, backgroundColor: '#000000', position: 'relative' }}>
-            {emailQrEnabled && permission && permission.granted ? (
+            {permission && permission.granted ? (
               <CameraView
                 key={bartenderState === 'scanning' ? "bartender-active-camera" : "bartender-inactive-camera"}
                 style={{
@@ -1019,13 +788,13 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
                 }}
               >
                 <ActivityIndicator size="large" color={colors.teal} />
-                <Text className="text-sm font-bold mt-4 uppercase tracking-wider" style={{ color: colors.text }}>Scanning Smart Tag...</Text>
-                <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>Interfacing credentials via NFC link</Text>
+                <Text className="text-sm font-bold mt-4 uppercase tracking-wider" style={{ color: colors.text }}>Scanning QR Code...</Text>
+                <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>Scan guest QR code to verify and redeem</Text>
               </View>
             )}
 
             {/* Transparent Overlay Container to Align Controls over the CameraView layer */}
-            {emailQrEnabled && permission && permission.granted && (
+            {permission && permission.granted && (
               <View 
                 style={{
                   position: 'absolute',
@@ -1181,7 +950,7 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
                 {isRedemptionLogExpanded && (
                   <View className="rounded-xl p-3 border" style={{ backgroundColor: colors.secondarySurface, borderColor: colors.border, borderWidth: 1.5 }}>
                     {redemptionsHistory.map((item, index) => {
-                      const logMsg = activeSession.deliveryMode === 'NFC_CARD' ? 'NFC Card Redeemed' : 'QR Voucher Redeemed';
+                      const logMsg = 'QR Voucher Redeemed';
                       return (
                         <View key={item.id || index} className="flex-row justify-between py-1.5 border-b last:border-b-0" style={{ borderBottomColor: index === redemptionsHistory.length - 1 ? 'transparent' : colors.divider }}>
                           <Text className="text-xs font-bold" style={{ color: colors.text }}>
@@ -1477,4 +1246,5 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
     </View>
   );
 };
+
 

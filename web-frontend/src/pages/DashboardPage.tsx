@@ -7,14 +7,20 @@ import {
   TrendingUp,
   Clock,
   LogOut,
-  X
+  X,
+  UserCheck,
+  CalendarRange
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Token } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 
-export const DashboardPage: React.FC = () => {
+interface DashboardPageProps {
+  onNavigate?: (tabId: string, adminSubtab?: string) => void;
+}
+
+export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const { showToast } = useAuth();
   const { tokens, tables, isLoading, refreshTokens, refreshTables } = useData();
 
@@ -75,7 +81,7 @@ export const DashboardPage: React.FC = () => {
     <div className="space-y-6 text-text-main">
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="glass-panel p-5 rounded-2xl flex items-center justify-between border-l-4 border-l-[#D4AF37]">
+        <div className="glass-panel p-5 rounded-2xl flex items-center justify-between border-l-4 border-l-[#8D6CE5]">
           <div>
             <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Active Guest Sessions</p>
             <h3 className="text-2xl font-black text-text-main mt-1">{activeTokensCount}</h3>
@@ -83,7 +89,7 @@ export const DashboardPage: React.FC = () => {
               <TrendingUp size={12} /> {totalGuestsInHouse} Total Guests In-House
             </p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-[#D4AF37]/15 text-[#D4AF37] flex items-center justify-center font-bold">
+          <div className="w-12 h-12 rounded-xl bg-[#8D6CE5]/15 text-[#8D6CE5] flex items-center justify-center font-bold">
             <Users size={24} />
           </div>
         </div>
@@ -124,12 +130,50 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Quick Actions Panel */}
+      <div className="space-y-3">
+        <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider">Quick Actions</h4>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => onNavigate?.('checkin')}
+            className="px-4 py-2.5 rounded-xl primary-btn text-xs font-bold flex items-center gap-2 shadow-md cursor-pointer"
+          >
+            <UserCheck size={16} />
+            <span>New Check-In</span>
+          </button>
+
+          <button
+            onClick={() => onNavigate?.('tables')}
+            className="px-4 py-2.5 rounded-xl bg-bg-surface border border-border-main hover:bg-bg-hover text-text-muted hover:text-text-primary text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <Grid3X3 size={16} />
+            <span>Table Layout</span>
+          </button>
+
+          <button
+            onClick={() => onNavigate?.('tables')}
+            className="px-4 py-2.5 rounded-xl bg-bg-surface border border-border-main hover:bg-bg-hover text-text-muted hover:text-text-primary text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <CalendarRange size={16} />
+            <span>Reservations</span>
+          </button>
+
+          <button
+            onClick={() => onNavigate?.('admin', 'customers')}
+            className="px-4 py-2.5 rounded-xl bg-bg-surface border border-border-main hover:bg-bg-hover text-text-muted hover:text-text-primary text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <Users size={16} />
+            <span>Customer Sessions</span>
+          </button>
+        </div>
+      </div>
+
       {/* Active Guest Sessions Table */}
       <div className="glass-panel rounded-2xl p-6 border border-border-main">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-base font-bold text-text-main">Live Customer Sessions</h3>
-            <p className="text-xs text-text-muted">Real-time NFC & QR active seating tickets</p>
+            <p className="text-xs text-text-muted">Real-time QR active seating tickets</p>
           </div>
           <button 
             onClick={() => { refreshTokens(); refreshTables(); }}
@@ -161,7 +205,7 @@ export const DashboardPage: React.FC = () => {
               <tbody className="divide-y divide-border-main">
                 {tokens.map(tk => (
                   <tr key={tk.id} className="hover:bg-bg-card transition-colors">
-                    <td className="py-3 px-3 font-mono font-bold text-[#D4AF37]">{tk.tokenNumber}</td>
+                    <td className="py-3 px-3 font-mono font-bold text-[#8D6CE5]">{tk.tokenNumber}</td>
                     <td className="py-3 px-3 font-semibold text-text-main">{tk.customer?.name || 'Walk-in Guest'}</td>
                     <td className="py-3 px-3 font-mono text-text-muted">{tk.customer?.phoneNumber || 'N/A'}</td>
                     <td className="py-3 px-3 font-semibold text-text-muted">{tk.personsCount} Guests</td>
@@ -219,7 +263,7 @@ export const DashboardPage: React.FC = () => {
             </div>
 
             <p className="text-xs text-text-muted">
-              Token Number: <span className="font-mono font-bold text-[#D4AF37]">{extendingToken.tokenNumber}</span> ({extendingToken.customer?.name})
+              Token Number: <span className="font-mono font-bold text-[#8D6CE5]">{extendingToken.tokenNumber}</span> ({extendingToken.customer?.name})
             </p>
 
             <form onSubmit={handleExtendSubmit} className="space-y-4">
@@ -228,7 +272,7 @@ export const DashboardPage: React.FC = () => {
                 <select
                   value={extraMinutes}
                   onChange={e => setExtraMinutes(Number(e.target.value))}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
                 >
                   <option value={30}>30 Minutes</option>
                   <option value={60}>60 Minutes (1 Hour)</option>
@@ -243,7 +287,7 @@ export const DashboardPage: React.FC = () => {
                   type="number"
                   value={additionalAmount}
                   onChange={e => setAdditionalAmount(Number(e.target.value))}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
                   required
                 />
               </div>
@@ -259,7 +303,7 @@ export const DashboardPage: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmittingExtend}
-                  className="flex-1 py-2.5 rounded-xl gold-gradient-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
                 >
                   {isSubmittingExtend ? 'Extending...' : 'Confirm Extension'}
                 </button>
@@ -285,7 +329,7 @@ export const DashboardPage: React.FC = () => {
             </div>
 
             <p className="text-xs text-text-muted">
-              Token Number: <span className="font-mono font-bold text-[#D4AF37]">{closingToken.tokenNumber}</span> ({closingToken.customer?.name})
+              Token Number: <span className="font-mono font-bold text-[#8D6CE5]">{closingToken.tokenNumber}</span> ({closingToken.customer?.name})
             </p>
 
             <form onSubmit={handleCloseSubmit} className="space-y-4">
@@ -325,3 +369,4 @@ export const DashboardPage: React.FC = () => {
     </div>
   );
 };
+

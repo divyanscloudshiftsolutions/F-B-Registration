@@ -13,13 +13,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useNfcBar } from '../../../context/NfcBarContext';
+import { useBar } from '../../../context/BarContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { AppIcon } from '../../../components/common/AppIcon';
 
 export const QuickAttendanceScreen: React.FC = () => {
   const { colors, isDark } = useTheme();
-  const { markQuickAttendance, setScreen, currentScreen, user } = useNfcBar();
+  const { markQuickAttendance, setScreen, currentScreen, user } = useBar();
   const insets = useSafeAreaInsets();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -461,3 +461,4 @@ export const QuickAttendanceScreen: React.FC = () => {
 };
 
 export default QuickAttendanceScreen;
+

@@ -1,6 +1,6 @@
-# NFC & QR Code Management System
+# QR & QR Code Management System
 
-An end-to-end event bar and staff management system featuring dual check-in options: **NFC Smart Cards** and **Email QR Tickets**. Shared biometric integration configuration is prepared for future attendance integration.
+An end-to-end event bar and staff management system featuring dual check-in options: **QR Smart Cards** and **Email QR Tickets**. Shared biometric integration configuration is prepared for future attendance integration.
 
 ---
 
@@ -50,7 +50,7 @@ An end-to-end event bar and staff management system featuring dual check-in opti
 
 | Variable | Description | Example Value |
 | :--- | :--- | :--- |
-| `EXPO_PUBLIC_BACKEND_URL` | Backend Express Base URL | `https://api.nfc-qr.app.cloudshiftsolutions.in` |
+| `EXPO_PUBLIC_BACKEND_URL` | Backend Express Base URL | `https://api.QR-qr.app.cloudshiftsolutions.in` |
 
 ---
 
@@ -107,3 +107,4 @@ npx tsc --noEmit
 | **Backend TypeScript Build** | `cd backend && npx tsc --noEmit` |
 | **Frontend TypeScript Build** | `cd frontend && npx tsc --noEmit` |
 | **Prisma ORM Generation** | `cd backend && npx prisma generate` |
+

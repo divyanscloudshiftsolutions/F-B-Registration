@@ -5,12 +5,11 @@ import {
   Animated, LayoutAnimation, UIManager, BackHandler
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useNfcBar } from '../../../context/NfcBarContext';
+import { useBar } from '../../../context/BarContext';
 import { useTheme } from '../../../context/ThemeContext';
-import { SessionToken, PlaceType, TableStatus, TokenStatus, UserRole } from '../../../types/nfc_bar';
-import { isTableExpiring } from '../../../context/nfc_bar_utils';
+import { SessionToken, PlaceType, TableStatus, TokenStatus, UserRole } from '../../../types/bar_types';
+import { isTableExpiring } from '../../../context/bar_utils';
 import { AppIcon } from '../../../components/common/AppIcon';
-import nfcService from '../../../services/nfc/nfcManager';
 import { useResponsive } from '../../../utils/responsive';
 import { AlertModal } from '../../../components/common/AlertModal';
 import { ProgressOverlay } from '../../../components/common/ProgressOverlay';
@@ -24,11 +23,11 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
   const { 
     tables, sessions, rates, checkInGuest, showToast, 
-    preselectedTableNumber, setPreselectedTableNumber, tokenType, 
-    nfcEnabled, emailQrEnabled,
+    preselectedTableNumber, setPreselectedTableNumber, 
+    emailQrEnabled,
     createPendingSession, verifyQrCode, activatePendingSession, cancelPendingSession, setTab, setOverlayActive,
     pendingSessions, fetchPendingSessions, resumingPendingSession, setResumingPendingSession
-  } = useNfcBar();
+  } = useBar();
   const { loadingAction, secondsLeft, startAction, stopAction, isProcessing } = useActionProgress();
   const { colors, isDark } = useTheme();
   const { getTableColumns } = useResponsive();
@@ -47,9 +46,6 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
   const minusScale = useRef(new Animated.Value(1)).current;
   const plusScale = useRef(new Animated.Value(1)).current;
 
-  // Animated value for NFC writing loop
-  const radarAnim = useRef(new Animated.Value(0)).current;
-
   const animateButton = (scale: Animated.Value) => {
     Animated.sequence([
       Animated.timing(scale, { toValue: 0.9, duration: 40, useNativeDriver: true }),
@@ -57,43 +53,9 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
     ]).start();
   };
 
-  useEffect(() => {
-    if (isNfcWriting) {
-      radarAnim.setValue(0);
-      Animated.loop(
-        Animated.timing(radarAnim, {
-          toValue: 1,
-          duration: 1500,
-          useNativeDriver: true
-        })
-      ).start();
-    } else {
-      radarAnim.stopAnimation();
-    }
-  }, [isNfcWriting]);
-
-  const pulseScale1 = radarAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.4]
-  });
-  const pulseOpacity1 = radarAnim.interpolate({
-    inputRange: [0, 0.8, 1],
-    outputRange: [0.5, 0.25, 0]
-  });
-
-  const pulseScale2 = radarAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.25]
-  });
-  const pulseOpacity2 = radarAnim.interpolate({
-    inputRange: [0, 0.7, 1],
-    outputRange: [0.6, 0.3, 0]
-  });
-
   const [permission, requestPermission] = useCameraPermissions();
   
-  const initialMode = nfcEnabled ? 'NFC_CARD' : 'EMAIL_QR';
-  const [selectedDeliveryMode, setSelectedDeliveryMode] = useState<'NFC_CARD' | 'EMAIL_QR'>(initialMode);
+  const selectedDeliveryMode = 'EMAIL_QR';
 
   // Email QR state variables
   const [pendingToken, setPendingToken] = useState<string | null>(null);
@@ -103,14 +65,6 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
   const [qrVerificationError, setQrVerificationError] = useState<string | null>(null);
   const [qrVerificationSuccess, setQrVerificationSuccess] = useState<boolean>(false);
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
-  
-  useEffect(() => {
-    if (!nfcEnabled && emailQrEnabled) {
-      setSelectedDeliveryMode('EMAIL_QR');
-    } else if (nfcEnabled && !emailQrEnabled) {
-      setSelectedDeliveryMode('NFC_CARD');
-    }
-  }, [nfcEnabled, emailQrEnabled]);
 
   useEffect(() => {
     if (step === 5) {
@@ -390,106 +344,34 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
   const maxDrinksTotal = maxDrinksPerPerson * guestCount;
 
   const handlePaymentCollected = async () => {
-    if (selectedDeliveryMode === 'EMAIL_QR') {
-      if (!pendingToken || !selectedTableNum) {
-        showToast('Unable to complete the check-in. The selected table or session information is missing.', 'danger');
-        return;
-      }
-      if (!startAction('activate_pending')) return;
-      setIsNfcWriting(true);
-      setActivationError(null);
-      try {
-        const token = await activatePendingSession(pendingToken, selectedTableNum, totalPrice);
-        stopAction();
-        setIsNfcWriting(false);
-        if (token) {
-          setCreatedSession(token);
-          setNfcWriteState('success');
-          setStep(4);
-        } else {
-          setActivationError('Failed to activate session. No token returned.');
-          setNfcWriteState('error');
-          setStep(4);
-        }
-      } catch (error: any) {
-        stopAction();
-        setIsNfcWriting(false);
-        console.error('Activation error:', error);
+    if (!pendingToken || !selectedTableNum) {
+      showToast('Unable to complete the check-in. The selected table or session information is missing.', 'danger');
+      return;
+    }
+    if (!startAction('activate_pending')) return;
+    setIsNfcWriting(true);
+    setActivationError(null);
+    try {
+      const token = await activatePendingSession(pendingToken, selectedTableNum, totalPrice);
+      stopAction();
+      setIsNfcWriting(false);
+      if (token) {
+        setCreatedSession(token);
+        setNfcWriteState('success');
+        setStep(4);
+      } else {
+        setActivationError('Failed to activate session. No token returned.');
         setNfcWriteState('error');
         setStep(4);
-        setActivationError(error.message || 'Unable to activate the session. Please try again.');
-        showToast(error.message || 'Unable to activate the session. Please try again.', 'danger');
       }
-    } else {
-      setCardUid('');
-      setStep(4);
-    }
-  };
-
-  const handleWriteNfc = async () => {
-    if (!startAction('write_card')) return;
-    setIsNfcWriting(true);
-    setNfcWriteState('idle');
-    
-    try {
-      await nfcService.initialize();
-      
-      // 1. Scan card to get physical UID
-      showToast('Hold the smart card near the device to scan.', 'info');
-      const details = await nfcService.readCardDetails();
-      if (!details || !details.nfcUid) {
-        throw new Error('Failed to read Card UID from NFC tag.');
-      }
-      
-      const physicalCardUid = details.nfcUid;
-      setCardUid(physicalCardUid);
-      
-      // 2. Call checkInGuest to register token in DB / offline queue
-      const token = await checkInGuest({
-        customerName: fullName,
-        phoneNumber: phone,
-        email: email.trim() ? email.trim().toLowerCase() : undefined,
-        persons: guestCount,
-        placeType,
-        tableNumber: selectedTableNum!,
-        amountPaid: totalPrice,
-        redemptionLimit: maxDrinksTotal,
-        cardUid: physicalCardUid,
-        deliveryMode: 'NFC_CARD'
-      });
-
-      if (!token) {
-        throw new Error('Database registration failed.');
-      }
-
-      // 3. Write token number back to physical card NDEF record
-      showToast('Writing data to the smart card... Please keep it close to the device.', 'info');
-      const writeSuccess = await nfcService.writeToCard(token.tokenNumber);
-      if (!writeSuccess) {
-        throw new Error('Failed to write NDEF token number onto tag.');
-      }
-
-      stopAction();
-      setCreatedSession(token);
-      setNfcWriteState('success');
-      showToast('Customer checked in successfully.', 'success');
     } catch (error: any) {
       stopAction();
-      console.error('NFC Write process error:', error);
-      setNfcWriteState('error');
-      let friendlyMsg = 'Unable to complete the check-in. Please try again.';
-      if (error.message?.includes('Failed to read Card UID')) {
-        friendlyMsg = 'Could not read the smart card. Please check the placement and try again.';
-      } else if (error.message?.includes('Database registration failed')) {
-        friendlyMsg = 'Unable to complete the check-in. Please check your connection and try again.';
-      } else if (error.message?.includes('Failed to write NDEF')) {
-        friendlyMsg = 'Could not register the check-in on the smart card. Please try scanning again.';
-      } else if (error.message) {
-        friendlyMsg = error.message;
-      }
-      showToast(friendlyMsg, 'danger');
-    } finally {
       setIsNfcWriting(false);
+      console.error('Activation error:', error);
+      setNfcWriteState('error');
+      setStep(4);
+      setActivationError(error.message || 'Unable to activate the session. Please try again.');
+      showToast(error.message || 'Unable to activate the session. Please try again.', 'danger');
     }
   };
 
@@ -508,17 +390,6 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
     setQrVerificationSuccess(false);
     setQrVerificationError(null);
 
-    // Strictly restore the original check-in method (NFC vs QR)
-    let activeMode: 'NFC_CARD' | 'EMAIL_QR' = selectedDeliveryMode;
-    if (pending.deliveryMode) {
-      activeMode = pending.deliveryMode;
-    } else if (pending.cardUid || pending.deliveryMode === 'NFC_CARD') {
-      activeMode = 'NFC_CARD';
-    } else if (pending.email || pending.tokenNumber?.startsWith('BAR-')) {
-      activeMode = 'EMAIL_QR';
-    }
-    setSelectedDeliveryMode(activeMode);
-
     if (pending.tableNumber && !isAvailable) {
       // Clear selected table and redirect to table selection (Step 2)
       setSelectedTableNum(null);
@@ -526,13 +397,11 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
       showToast(`Table ${pending.tableNumber} is no longer available. Please select another table.`, 'warning');
     } else {
       setSelectedTableNum(pending.tableNumber || null);
-      // Determine the resume step based on preserved activeMode:
+      // Determine the resume step:
       if (!pending.tableNumber) {
         setStep(2);
-      } else if (activeMode === 'EMAIL_QR') {
-        setStep(3); // Step 3: QR Scan for QR flow
       } else {
-        setStep(3); // Step 3: Payment Collection for NFC flow
+        setStep(3);
       }
     }
   };
@@ -604,19 +473,13 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
       
       {/* Circle & Line 5-Step Progress Indicator */}
       <View className="flex-row items-center justify-between mb-6 px-1">
-        {(selectedDeliveryMode === 'NFC_CARD' ? [
-          { num: 1, label: 'Details' },
-          { num: 2, label: 'Table' },
-          { num: 3, label: 'Payment' },
-          { num: 4, label: 'NFC Tap' },
-          { num: 5, label: 'Success' }
-        ] : [
+        {[
           { num: 1, label: 'Details' },
           { num: 2, label: 'Table' },
           { num: 3, label: 'QR Scan' },
           { num: 4, label: 'Payment' },
           { num: 5, label: 'Success' }
-        ]).map((item, idx, arr) => {
+        ].map((item, idx, arr) => {
           const isDone = step > item.num;
           const isActive = step === item.num;
           return (
@@ -1066,41 +929,7 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
               )}
             </View>
 
-            {/* Delivery Method Selector (Only shown if BOTH are enabled) */}
-            {nfcEnabled && emailQrEnabled && (
-              <View 
-                className="rounded-2xl p-4 mb-5 border"
-                style={{ backgroundColor: colors.secondarySurface, borderColor: isDark ? colors.border : '#CBD5E1', borderWidth: 1.5 }}
-              >
-                <Text className="text-xs font-bold mb-3" style={{ color: colors.gold }}>📦 Delivery Method *</Text>
-                <View className="flex-row gap-3">
-                  <TouchableOpacity 
-                    className="flex-1 flex-row items-center justify-center py-3 rounded-xl border min-h-[44px]"
-                    style={{
-                      backgroundColor: selectedDeliveryMode === 'NFC_CARD' ? (isDark ? 'rgba(245,166,35,0.12)' : '#FEF3C7') : colors.surface,
-                      borderColor: selectedDeliveryMode === 'NFC_CARD' ? colors.gold : (isDark ? colors.border : '#CBD5E1'),
-                      borderWidth: 1.5
-                    }}
-                    onPress={() => setSelectedDeliveryMode('NFC_CARD')}
-                  >
-                    <AppIcon name="nfc" color={selectedDeliveryMode === 'NFC_CARD' ? colors.gold : colors.muted} size={16} />
-                    <Text className="text-xs font-bold ml-2" style={{ color: selectedDeliveryMode === 'NFC_CARD' ? colors.gold : colors.muted }}>NFC Smart Card</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    className="flex-1 flex-row items-center justify-center py-3 rounded-xl border min-h-[44px]"
-                    style={{
-                      backgroundColor: selectedDeliveryMode === 'EMAIL_QR' ? (isDark ? 'rgba(245,166,35,0.12)' : '#FEF3C7') : colors.surface,
-                      borderColor: selectedDeliveryMode === 'EMAIL_QR' ? colors.gold : (isDark ? colors.border : '#CBD5E1'),
-                      borderWidth: 1.5
-                    }}
-                    onPress={() => setSelectedDeliveryMode('EMAIL_QR')}
-                  >
-                    <AppIcon name="mail" color={selectedDeliveryMode === 'EMAIL_QR' ? colors.gold : colors.muted} size={16} />
-                    <Text className="text-xs font-bold ml-2" style={{ color: selectedDeliveryMode === 'EMAIL_QR' ? colors.gold : colors.muted }}>Email QR Code</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+
 
             {/* Guest Pax Count Stepper */}
             <View 
@@ -1239,9 +1068,9 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
                         {pending.placeType.replace('_', ' ')} • {pending.persons} Pax • {pending.tableNumber ? `Table ${pending.tableNumber}` : 'Waiting List'}
                       </Text>
                       <View className="px-2 py-0.5 rounded border bg-black/30 border-white/10 flex-row items-center gap-1">
-                        <AppIcon name={pending.deliveryMode === 'NFC_CARD' ? 'nfc' : 'mail'} color={colors.gold} size={10} />
+                        <AppIcon name="mail" color={colors.gold} size={10} />
                         <Text className="text-[9px] font-black text-gold uppercase">
-                          {pending.deliveryMode === 'NFC_CARD' ? 'NFC' : 'QR'}
+                          QR
                         </Text>
                       </View>
                     </View>
@@ -1580,7 +1409,7 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
                 <Text style={{ fontSize: 11, fontWeight: 'bold', color: colors.gold, marginBottom: 8 }}>Scan dummy QR to pay</Text>
                 <View style={{ padding: 8, backgroundColor: '#FFFFFF', borderRadius: 12 }}>
                   <Image
-                    source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=upi://pay?pa=demo@upi&pn=NFCBar&am=${totalPrice}` }}
+                    source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=upi://pay?pa=demo@upi&pn=BarManagementSystem&am=${totalPrice}` }}
                     style={{ width: 150, height: 150, borderRadius: 8 }}
                   />
                 </View>
@@ -1660,9 +1489,8 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
             className="rounded-2xl p-5 shadow-xl border"
             style={{ backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }}
           >
-            {selectedDeliveryMode === 'EMAIL_QR' ? (
-              // EMAIL_QR Flow Success/Error Views
-              (!selectedTableNum && pendingToken) ? (
+            // EMAIL_QR Flow Success/Error Views
+            (!selectedTableNum && pendingToken) ? (
                 <View className="items-center justify-center py-4">
                   <View className="w-16 h-16 rounded-full bg-gold/10 border justify-center items-center mb-4" style={{ borderColor: colors.gold }}>
                     <Text className="text-3xl font-extrabold" style={{ color: colors.gold }}>⏳</Text>
@@ -1775,219 +1603,7 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
                   </View>
                 </View>
               )
-            ) : (
-              // NFC_CARD Flow Views
-              <>
-                {nfcWriteState === 'idle' ? (
-                  <View className="items-center justify-center py-4 w-full">
-                    {/* Premium Summary Grid */}
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -8, marginBottom: 20, width: '100%' }}>
-                      {/* Token ID Card - Full Width */}
-                      <View style={{ width: '100%', padding: 8 }}>
-                        <View style={{
-                          backgroundColor: isDark ? 'rgba(245,166,35,0.08)' : '#FEF3C7',
-                          borderWidth: 1.5,
-                          borderColor: colors.gold,
-                          borderRadius: 12,
-                          padding: 12,
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}>
-                          <Text style={{ fontSize: 9, fontWeight: 'bold', color: colors.gold, textTransform: 'uppercase', marginBottom: 3 }}>Assigned Token Code</Text>
-                          <Text style={{ fontSize: 13, fontWeight: 'bold', color: colors.text, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', letterSpacing: 2 }}>
-                            BAR - {new Date().toISOString().slice(0,10).replace(/-/g,'')} - {cardUid ? (cardUid.includes('-') ? cardUid.split('-')[1] : cardUid.slice(-5).toUpperCase()) : 'AX7K2'}
-                          </Text>
-                        </View>
-                      </View>
 
-                      {/* Area Zone Card */}
-                      <View style={{ width: '50%', padding: 8 }}>
-                        <View style={{
-                          backgroundColor: colors.secondarySurface,
-                          borderWidth: 1.5,
-                          borderColor: isDark ? colors.border : '#E2E8F0',
-                          borderRadius: 12,
-                          padding: 10,
-                          minHeight: 52,
-                          justifyContent: 'center'
-                        }}>
-                          <Text style={{ fontSize: 8, fontWeight: 'bold', color: colors.muted, textTransform: 'uppercase', marginBottom: 2 }}>Seating Area</Text>
-                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: colors.text }} numberOfLines={1}>
-                            {placeType === 'STANDING_BAR' ? 'Standing Bar' : (placeType === 'PREMIUM_LOUNGE' ? 'Premium Lounge' : placeType.replace('_', ' '))}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Table Card */}
-                      <View style={{ width: '50%', padding: 8 }}>
-                        <View style={{
-                          backgroundColor: colors.secondarySurface,
-                          borderWidth: 1.5,
-                          borderColor: isDark ? colors.border : '#E2E8F0',
-                          borderRadius: 12,
-                          padding: 10,
-                          minHeight: 52,
-                          justifyContent: 'center'
-                        }}>
-                          <Text style={{ fontSize: 8, fontWeight: 'bold', color: colors.muted, textTransform: 'uppercase', marginBottom: 2 }}>Seating Table</Text>
-                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: colors.text }} numberOfLines={1}>{selectedTableNum}</Text>
-                        </View>
-                      </View>
-
-                      {/* Guests Card */}
-                      <View style={{ width: '50%', padding: 8 }}>
-                        <View style={{
-                          backgroundColor: colors.secondarySurface,
-                          borderWidth: 1.5,
-                          borderColor: isDark ? colors.border : '#E2E8F0',
-                          borderRadius: 12,
-                          padding: 10,
-                          minHeight: 52,
-                          justifyContent: 'center'
-                        }}>
-                          <Text style={{ fontSize: 8, fontWeight: 'bold', color: colors.muted, textTransform: 'uppercase', marginBottom: 2 }}>Guests</Text>
-                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: colors.text }} numberOfLines={1}>{guestCount} Guests</Text>
-                        </View>
-                      </View>
-
-                      {/* Drink Coupons Card */}
-                      <View style={{ width: '50%', padding: 8 }}>
-                        <View style={{
-                          backgroundColor: colors.secondarySurface,
-                          borderWidth: 1.5,
-                          borderColor: isDark ? colors.border : '#E2E8F0',
-                          borderRadius: 12,
-                          padding: 10,
-                          minHeight: 52,
-                          justifyContent: 'center'
-                        }}>
-                          <Text style={{ fontSize: 8, fontWeight: 'bold', color: colors.muted, textTransform: 'uppercase', marginBottom: 2 }}>Drink Coupons</Text>
-                          <Text style={{ fontSize: 12, fontWeight: 'bold', color: colors.gold }} numberOfLines={1}>
-                            {activeRate ? activeRate.maxDrinks * guestCount : guestCount * 2} Drinks
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    {/* Visual Sweeping Radar Scanner Pulse */}
-                    <View 
-                      style={{ 
-                        width: 144, 
-                        height: 144, 
-                        alignItems: 'center', 
-                        justifyContent: 'center', 
-                        marginTop: 24, 
-                        marginBottom: 24, 
-                        position: 'relative' 
-                      }}
-                    >
-                      {isNfcWriting ? (
-                        <>
-                          <Animated.View style={{ position: 'absolute', width: 130, height: 130, borderRadius: 65, borderWidth: 1.5, borderColor: colors.gold, alignItems: 'center', justifyContent: 'center', opacity: pulseOpacity1, transform: [{ scale: pulseScale1 }] }} />
-                          <Animated.View style={{ position: 'absolute', width: 100, height: 100, borderRadius: 50, borderWidth: 2.5, borderColor: colors.gold, alignItems: 'center', justifyContent: 'center', opacity: pulseOpacity2, transform: [{ scale: pulseScale2 }] }} />
-                          <View style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: isDark ? 'rgba(245, 166, 35, 0.15)' : '#FEF3C7', borderWidth: 2, borderColor: colors.gold, alignItems: 'center', justifyContent: 'center' }}>
-                            <ActivityIndicator size="small" color={colors.gold} style={{ transform: [{ scale: 1.1 }] }} />
-                          </View>
-                        </>
-                      ) : (
-                        <>
-                          <View style={{ position: 'absolute', width: 130, height: 130, borderRadius: 65, borderWidth: 1, borderColor: isDark ? 'rgba(245, 166, 35, 0.15)' : 'rgba(200, 155, 60, 0.15)', alignItems: 'center', justifyContent: 'center' }} />
-                          <View style={{ position: 'absolute', width: 100, height: 100, borderRadius: 50, borderWidth: 2, borderColor: isDark ? 'rgba(245, 166, 35, 0.25)' : 'rgba(200, 155, 60, 0.25)', alignItems: 'center', justifyContent: 'center' }} />
-                          <View style={{ width: 70, height: 70, borderRadius: 35, backgroundColor: isDark ? 'rgba(245, 166, 35, 0.15)' : '#FEF3C7', borderWidth: 2, borderColor: colors.gold, alignItems: 'center', justifyContent: 'center', shadowColor: colors.gold, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 }}>
-                            <Text className="text-2xl" style={{ color: colors.gold }}>🛜</Text>
-                          </View>
-                        </>
-                      )}
-                    </View>
-   
-                    <Text 
-                      className="text-xs text-center max-w-[80%] leading-5"
-                      style={{ marginTop: 8, marginBottom: 28, color: colors.muted }}
-                    >
-                      Place a blank card near the phone to write card details
-                    </Text>
-   
-                    <View className="flex-col w-full">
-                      <TouchableOpacity 
-                        className="w-full bg-gold py-4 rounded-2xl items-center justify-center min-h-[52px] flex-row gap-2 border"
-                        onPress={handleWriteNfc}
-                        disabled={isNfcWriting || isProcessing}
-                        style={{ 
-                          marginBottom: 12, 
-                          opacity: (isNfcWriting || isProcessing) ? 0.5 : 1, 
-                          borderColor: colors.gold,
-                          backgroundColor: (isNfcWriting || isProcessing) ? (isDark ? '#27272A' : '#E4E4E7') : colors.gold
-                        }}
-                      >
-                        <Text className="text-base">🛜</Text>
-                        <Text className="font-extrabold text-base tracking-wide" style={{ color: (isNfcWriting || isProcessing) ? colors.muted : colors.goldButtonText }}>
-                          {loadingAction === 'write_card' ? `Writing... (${secondsLeft}s)` : (isNfcWriting ? 'Writing to Card...' : 'Write to Card')}
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        className="w-full py-4 rounded-2xl border items-center justify-center min-h-[52px]" 
-                        style={{ 
-                          backgroundColor: isDark ? colors.secondarySurface : '#F1F5F9', 
-                          borderColor: isDark ? colors.border : '#CBD5E1',
-                          borderWidth: 1.5
-                        }}
-                        onPress={() => setStep(3)}
-                        disabled={isNfcWriting}
-                      >
-                        <Text className="font-bold text-sm" style={{ color: colors.muted }}>Back</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ) : null}
-
-                {/* Success screen overlay */}
-                {nfcWriteState === 'success' && createdSession && (
-                  <AppSuccessState
-                    title="Table Assigned Successfully"
-                    subtitle="NFC card activated & table assigned to guest"
-                    details={[
-                      { label: 'Table Number', value: selectedTableNum ? `Table ${selectedTableNum}` : 'Assigned' },
-                      { label: 'Guest Name', value: fullName || 'Guest' },
-                      { label: 'Guests Count', value: `${guestCount} Pax` },
-                      { label: 'Card Number', value: cardUid || 'Active' },
-                      { label: 'Drinks Included', value: `${maxDrinksTotal} Free Drinks` },
-                      { label: 'Payment Status', value: `Paid (₹${totalPrice})` }
-                    ]}
-                    primaryButtonTitle="View Table"
-                    onPrimaryPress={() => setTab('tables')}
-                    secondaryButtonTitle="Back to Reception"
-                    onSecondaryPress={resetWizard}
-                  />
-                )}
-
-                {/* Error screen overlay */}
-                {nfcWriteState === 'error' && (
-                  <View className="items-center justify-center py-4">
-                    <Text className="text-4xl mb-3">🛑</Text>
-                    <Text className="text-lg font-bold mb-2" style={{ color: colors.text }}>Card Setup Failed</Text>
-                    <Text className="text-[11px] text-center leading-4 max-w-[85%] mb-6" style={{ color: colors.muted }}>
-                      Failed to write details to the card. Make sure the card is placed correctly near the phone.
-                    </Text>
-                    <View className="flex-row gap-3 w-full">
-                      <TouchableOpacity 
-                        className="flex-1 py-3.5 rounded-xl border items-center justify-center min-h-[48px]" 
-                        style={{ 
-                          backgroundColor: isDark ? colors.secondarySurface : '#F1F5F9', 
-                          borderColor: isDark ? colors.border : '#CBD5E1',
-                          borderWidth: 1.5
-                        }} 
-                        onPress={() => setNfcWriteState('idle')}
-                      >
-                        <Text className="font-bold text-sm" style={{ color: colors.muted }}>Retry Scan</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity className="flex-1 bg-gold py-3.5 rounded-xl items-center justify-center min-h-[48px] border" style={{ borderColor: colors.gold }} onPress={resetWizard}>
-                        <Text className="font-bold text-sm" style={{ color: colors.goldButtonText }}>Reset Form</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-              </>
-            )}
           </View>
         )}
       </ScrollView>
@@ -2285,4 +1901,5 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
     </View>
   );
 };
+
 

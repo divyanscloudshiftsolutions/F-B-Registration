@@ -1,18 +1,18 @@
-# NFC Bar Management System - Complete BRD & Technical Architecture (TypeScript)
+# Bar Bar Management System - Complete BRD & Technical Architecture (TypeScript)
 
 ## 1. Business Requirements Document (BRD)
 
 ### 1.1 Project Overview
-**Project Name:** NFC Tap & Token - Bar Management System
+**Project Name:** Bar Tap & Token - Bar Management System
 
-**Objective:** Digitize customer entry, payment, and redemption process using either NFC cards or Email QR codes (configurable system-wide), eliminating paper tokens and manual tracking. Includes table assignment and occupancy tracking for different place types.
+**Objective:** Digitize customer entry, payment, and redemption process using either Bar cards or Email QR codes (configurable system-wide), eliminating paper tokens and manual tracking. Includes table assignment and occupancy tracking for different place types.
 
 ### 1.2 Stakeholders
 | Stakeholder | Role |
 |-------------|------|
-| Receptionist | Onboards customers, collects payment, configures/verifies delivery mode, issues NFC cards (NFC mode) or triggers Email QR codes (Email QR mode), assigns tables |
-| Bar Tender | Serves drinks, processes redemptions via NFC taps (NFC mode) or QR scans (Email QR mode) |
-| Customer | Receives NFC card or Email QR code, presents it for service, assigned to table |
+| Receptionist | Onboards customers, collects payment, configures/verifies delivery mode, issues Bar cards (Bar mode) or triggers Email QR codes (Email QR mode), assigns tables |
+| Bar Tender | Serves drinks, processes redemptions via Bar taps (Bar mode) or QR scans (Email QR mode) |
+| Customer | Receives Bar card or Email QR code, presents it for service, assigned to table |
 | Admin | Manages rates, views reports, configures global token delivery mode, monitors card inventory, manages table layout |
 | Management | Analyzes sales, redemption patterns, peak hours, table occupancy |
 
@@ -23,7 +23,7 @@
 |----|-------------|
 | FR1.1 | Capture customer phone number (mandatory, unique per session) |
 | FR1.2 | Capture customer name (mandatory) |
-| FR1.3 | Capture email ID (optional in NFC_CARD mode, mandatory in EMAIL_QR mode) |
+| FR1.3 | Capture email ID (optional in Bar_CARD mode, mandatory in EMAIL_QR mode) |
 | FR1.4 | Capture number of persons (1-20, integer) |
 | FR1.5 | Select place type: Standing Bar / Premium Lounge |
 | FR1.6 | **Select available table number for the selected place type** |
@@ -31,20 +31,20 @@
 | FR1.8 | Display calculated amount to receptionist |
 | FR1.9 | Manual payment verification button (after cash/card received) |
 | FR1.10 | Generate unique alphanumeric token number (format: `BAR-YYYYMMDD-XXXXX`) |
-| FR1.11 | Write token number to blank NFC card (NTAG213 compatible) (NFC_CARD mode only) |
+| FR1.11 | Write token number to blank Bar card (NTAG213 compatible) (Bar_CARD mode only) |
 | FR1.12 | Associate token with start time, end time, redemption limit, table_id, and delivery_mode |
 | FR1.13 | Mark table as occupied after successful token creation |
-| FR1.14 | Handover card (NFC_CARD mode only) or trigger automated Email QR dispatch (EMAIL_QR mode only) |
-| FR1.15 | Admin can configure Token Delivery Mode (NFC_CARD / EMAIL_QR) |
+| FR1.14 | Handover card (Bar_CARD mode only) or trigger automated Email QR dispatch (EMAIL_QR mode only) |
+| FR1.15 | Admin can configure Token Delivery Mode (Bar_CARD / EMAIL_QR) |
 | FR1.16 | Configuration is applied globally via System Configuration |
-| FR1.17 | System hides NFC-specific functions when Email QR mode is active |
-| FR1.18 | System hides Email-specific functions when NFC Card mode is active |
+| FR1.17 | System hides Bar-specific functions when Email QR mode is active |
+| FR1.18 | System hides Email-specific functions when Bar Card mode is active |
 
 #### FR2: Redemption Processing (Bar Tender Module)
 | ID | Requirement |
 |----|-------------|
-| FR2.1 | Bar tender taps customer's NFC card (NFC mode) or scans customer's Email QR (Email QR mode) |
-| FR2.2 | App reads token number from card (NFC) or decodes and verifies token signature from QR code (QR) |
+| FR2.1 | Bar tender taps customer's Bar card (Bar mode) or scans customer's Email QR (Email QR mode) |
+| FR2.2 | App reads token number from card (Bar) or decodes and verifies token signature from QR code (QR) |
 | FR2.3 | Fetch token details from backend / Redis cache |
 | FR2.4 | Validate: token exists, status is active, not expired, redemptions remaining > 0 |
 | FR2.5 | Increment redemption count by 1 |
@@ -56,7 +56,7 @@
 | ID | Requirement |
 |----|-------------|
 | FR3.1 | Customer requests time extension |
-| FR3.2 | Receptionist taps customer card (NFC mode) or inputs/scans token number (Email QR mode) |
+| FR3.2 | Receptionist taps customer card (Bar mode) or inputs/scans token number (Email QR mode) |
 | FR3.3 | Display current token details (time left, redemptions used, table number) |
 | FR3.4 | Calculate extension amount based on additional persons/time |
 | FR3.5 | Mark payment collected (manual) |
@@ -67,14 +67,14 @@
 #### FR4: Card Return & Closure
 | ID | Requirement |
 |----|-------------|
-| FR4.1 | Customer returns card at exit (NFC_CARD mode) or receptionist initiates checkout (Email QR mode) |
-| FR4.2 | Receptionist closes session via NFC card tap (NFC_CARD) OR by scanning the customer's Email QR code or searching phone number/name on the dashboard (EMAIL_QR) |
+| FR4.1 | Customer returns card at exit (Bar_CARD mode) or receptionist initiates checkout (Email QR mode) |
+| FR4.2 | Receptionist closes session via Bar card tap (Bar_CARD) OR by scanning the customer's Email QR code or searching phone number/name on the dashboard (EMAIL_QR) |
 | FR4.3 | Mark token status as "closed" |
 | FR4.4 | Mark table as available again |
 | FR4.5 | Calculate total redemptions vs limit, time used vs allocated |
 | FR4.6 | Display session summary |
-| FR4.7 | Option to erase card data (or mark as reusable) (NFC_CARD mode only) |
-| FR4.8 | Card added back to available inventory (NFC_CARD mode only) |
+| FR4.7 | Option to erase card data (or mark as reusable) (Bar_CARD mode only) |
+| FR4.8 | Card added back to available inventory (Bar_CARD mode only) |
 
 #### FR5: Table Management (Admin/Receptionist)
 | ID | Requirement |
@@ -92,7 +92,7 @@
 |----|-------------|
 | FR6.1 | Daily sales report (total collections, redemptions served) |
 | FR6.2 | Peak hour analysis (redemption frequency by hour) |
-| FR6.3 | Card inventory tracking (active, assigned, lost) (NFC_CARD mode) |
+| FR6.3 | Card inventory tracking (active, assigned, lost) (Bar_CARD mode) |
 | FR6.4 | Rate card management (CRUD for place types and rates) |
 | FR6.5 | User management (receptionists, bartenders with roles) |
 | FR6.6 | Table utilization report (average occupancy, turnover rate) |
@@ -109,7 +109,7 @@
 | FR7.6 | Send email automatically upon check-in completion |
 | FR7.7 | Store email delivery status (PENDING / SENT / FAILED) and send timestamp |
 | FR7.8 | Allow receptionist to manually trigger email resend from dashboard |
-| FR7.9 | Customer presents QR code to bartender instead of NFC card |
+| FR7.9 | Customer presents QR code to bartender instead of Bar card |
 
 #### FR8: QR Redemption (EMAIL_QR Mode)
 | ID | Requirement |
@@ -127,8 +127,8 @@
 
 | NFR | Requirement |
 |-----|-------------|
-| NFR1 | NFC read/write latency < 500ms / QR code scan decoding and verification latency < 300ms |
-| NFR2 | App works offline for up to 30 minutes (NFC offline buffer sync / QR signatures require online lookup or locally cached keys) |
+| NFR1 | Bar read/write latency < 500ms / QR code scan decoding and verification latency < 300ms |
+| NFR2 | App works offline for up to 30 minutes (Bar offline buffer sync / QR signatures require online lookup or locally cached keys) |
 | NFR3 | Concurrent tap/scan support (multiple bartenders, no double redemption using Redis distributed locks) |
 | NFR4 | Token number format ensures uniqueness |
 | NFR5 | 99.9% uptime for backend and email dispatch service |
@@ -144,21 +144,21 @@
 | BR2 | Maximum redemptions = 2 drinks per person (configurable) |
 | BR3 | Time extension minimum = 1 hour |
 | BR4 | One active token per phone number at any time |
-| BR5 | Card cannot be reassigned until previous token is closed (NFC_CARD mode only) |
+| BR5 | Card cannot be reassigned until previous token is closed (Bar_CARD mode only) |
 | BR6 | Redemption decrement only on successful tap or QR scan validation (no refunds on unused) |
 | BR7 | One table can have only one active token at a time |
 | BR8 | Table number is assigned at check-in and freed at check-out |
 | BR9 | Configured Token Delivery Mode is mutually exclusive; changing the global configuration instantly applies system-wide to all subsequent check-ins |
-| BR10 | In EMAIL_QR mode, the customer email address is mandatory and validated; in NFC_CARD mode, it is optional |
+| BR10 | In EMAIL_QR mode, the customer email address is mandatory and validated; in Bar_CARD mode, it is optional |
 | BR11 | QR codes must encode a signed payload (JWT or custom JSON signed with HMAC-SHA256) using the application's global key to prevent forgery |
 | BR12 | If the Admin switches the configuration toggle at runtime, existing active tokens must continue using their original `delivery_mode` (stored in the database token record) until closed, ensuring zero session disruption for active customers. |
-| BR13 | Both NFC tap and QR scan resolve to a single, unified Token Validation Pipeline. Concurrency control (Redis locks), SQL row locks, table management updates, limit verification, and reporting updates must execute through this single shared service logic. |
+| BR13 | Both Bar tap and QR scan resolve to a single, unified Token Validation Pipeline. Concurrency control (Redis locks), SQL row locks, table management updates, limit verification, and reporting updates must execute through this single shared service logic. |
 
 ### 1.6 User Stories
 
 | Role | Story |
 |------|-------|
-| Receptionist | "As a receptionist, I want to quickly register groups, collect payment, and either write to an NFC card or trigger a secure QR email based on the active mode, and assign tables efficiently" |
+| Receptionist | "As a receptionist, I want to quickly register groups, collect payment, and either write to an Bar card or trigger a secure QR email based on the active mode, and assign tables efficiently" |
 | Bar Tender | "As a bartender, I want to tap a card or scan an Email QR code to immediately verify authorization and see how many drinks are remaining so I serve correctly" |
 | Customer | "As a customer, I want to tap my card or present my email QR instead of carrying paper tokens or remembering a number, and have a designated table" |
 | Admin | "As an admin, I want to configure the global delivery mode, monitor email delivery, track card inventories, and manage table layouts to maintain seamless bar operations" |
@@ -208,7 +208,7 @@ erDiagram
         timestamp closed_at
         uuid closed_by
         uuid card_id FK "nullable"
-        string delivery_mode "NFC_CARD/EMAIL_QR"
+        string delivery_mode "Bar_CARD/EMAIL_QR"
         boolean email_sent
         timestamp email_sent_at
         string email_delivery_status "PENDING/SENT/FAILED"
@@ -246,7 +246,7 @@ erDiagram
     
     CARD {
         uuid id PK
-        string nfc_uid UK "card unique identifier"
+        string Bar_uid UK "card unique identifier"
         uuid current_token_id FK "nullable"
         string status "available/assigned/lost/damaged"
         timestamp assigned_at
@@ -301,7 +301,7 @@ erDiagram
     SYSTEM_CONFIG {
         uuid id PK
         string config_key UK "e.g., token_delivery_mode"
-        string config_value "NFC_CARD or EMAIL_QR"
+        string config_value "Bar_CARD or EMAIL_QR"
         timestamp updated_at
         uuid updated_by FK
     }
@@ -318,7 +318,7 @@ flowchart TB
         A2[Bar Tender Screen]
         A3[Admin Dashboard Screen]
         A4[Table Management Screen]
-        A5[NFC Manager Module]
+        A5[Bar Manager Module]
         A6[Offline Sync Module]
         A7[QR Scanner Module]
     end
@@ -349,8 +349,8 @@ flowchart TB
     end
     
     subgraph "External"
-        E1[NFC Card Hardware]
-        E2[Phone NFC Reader]
+        E1[Bar Card Hardware]
+        E2[Phone Bar Reader]
         E3[SMTP Server / Email Gateway]
     end
     
@@ -379,7 +379,7 @@ flowchart TB
 // src/types/index.ts
 
 export type PlaceType = 'STANDING_BAR' | 'PREMIUM_LOUNGE';
-export type DeliveryMode = 'NFC_CARD' | 'EMAIL_QR';
+export type DeliveryMode = 'Bar_CARD' | 'EMAIL_QR';
 export type EmailDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED';
 
 export interface Customer {
@@ -435,7 +435,7 @@ export interface Token {
   issuedAt: Date;
   closedAt?: Date;
   closedBy?: string;
-  cardId?: string; // Nullable, only in NFC_CARD mode
+  cardId?: string; // Nullable, only in Bar_CARD mode
   deliveryMode: DeliveryMode;
   emailSent: boolean;
   emailSentAt?: Date;
@@ -463,7 +463,7 @@ export interface Redemption {
 
 export interface Card {
   id: string;
-  nfcUid: string;
+  BarUid: string;
   currentTokenId?: string;
   status: 'available' | 'assigned' | 'lost' | 'damaged';
   assignedAt?: Date;
@@ -518,18 +518,18 @@ export interface CreateTokenRequest {
   amountPaid: number;
   paymentVerified: boolean;
   issuedBy: string;
-  nfcCardUid?: string; // Mandatory in NFC_CARD mode (determined by backend configs), optional in EMAIL_QR
+  BarCardUid?: string; // Mandatory in Bar_CARD mode (determined by backend configs), optional in EMAIL_QR
 }
 
 export interface CreateTokenResponse {
   token: Token;
-  card?: Card; // Nullable, only returned in NFC_CARD mode
+  card?: Card; // Nullable, only returned in Bar_CARD mode
 }
 
-export type PresentationType = 'NFC_TAP' | 'QR_SCAN';
+export type PresentationType = 'Bar_TAP' | 'QR_SCAN';
 
 export interface RedemptionRequest {
-  payload: string; // Plain tokenNumber for NFC_TAP (e.g. "BAR-YMD-SEQ") or Signed Token JWT for QR_SCAN
+  payload: string; // Plain tokenNumber for Bar_TAP (e.g. "BAR-YMD-SEQ") or Signed Token JWT for QR_SCAN
   presentationType: PresentationType;
   bartenderId: string;
 }
@@ -826,7 +826,7 @@ export interface VerifyQRResponse {
 #### POST `/api/tokens/create`
 *Note: The active token delivery mode is dynamically resolved by the server querying `system_configs.token_delivery_mode` at runtime. The client request does not supply `deliveryMode`. Validation checks (mandatory email or mandatory card UID) are applied based on the server's resolved configuration.*
 
-**Request Body (When system is in NFC_CARD mode):**
+**Request Body (When system is in Bar_CARD mode):**
 ```json
 {
   "phoneNumber": "+919876543210",
@@ -838,7 +838,7 @@ export interface VerifyQRResponse {
   "amountPaid": 4800,
   "paymentVerified": true,
   "issuedBy": "550e8400-e29b-41d4-a716-446655440000",
-  "nfcCardUid": "04:12:34:56:78:90:AB"
+  "BarCardUid": "04:12:34:56:78:90:AB"
 }
 ```
 
@@ -854,11 +854,11 @@ export interface VerifyQRResponse {
   "amountPaid": 4800,
   "paymentVerified": true,
   "issuedBy": "550e8400-e29b-41d4-a716-446655440000",
-  "nfcCardUid": null
+  "BarCardUid": null
 }
 ```
 
-**Response Body (201 Created - NFC_CARD mode):**
+**Response Body (201 Created - Bar_CARD mode):**
 ```json
 {
   "success": true,
@@ -888,16 +888,16 @@ export interface VerifyQRResponse {
       "totalRedemptionsAllowed": 12,
       "redemptionsUsed": 0,
       "status": "active",
-      "deliveryMode": "NFC_CARD",
+      "deliveryMode": "Bar_CARD",
       "emailSent": false
     },
     "card": {
       "id": "card-789",
-      "nfcUid": "04:12:34:56:78:90:AB",
+      "BarUid": "04:12:34:56:78:90:AB",
       "status": "assigned"
     }
   },
-  "message": "Token created and NFC card issued successfully"
+  "message": "Token created and Bar card issued successfully"
 }
 ```
 
@@ -1041,7 +1041,7 @@ export interface VerifyQRResponse {
       }
     },
     "card": {
-      "nfcUid": "04:12:34:56:78:90:AB",
+      "BarUid": "04:12:34:56:78:90:AB",
       "status": "available",
       "erased": true
     },
@@ -1096,13 +1096,13 @@ export interface VerifyQRResponse {
 ### Redemption Endpoints
 
 #### POST `/api/redemptions`
-*Note: A single unified redemption endpoint handles both NFC card taps and Email QR code scans. The presentationType parameter determines whether the server validates a plain token number (for NFC card) or verifies a signed cryptographic token payload (for QR scan).*
+*Note: A single unified redemption endpoint handles both Bar card taps and Email QR code scans. The presentationType parameter determines whether the server validates a plain token number (for Bar card) or verifies a signed cryptographic token payload (for QR scan).*
 
-**Request Body (NFC Card Tap):**
+**Request Body (Bar Card Tap):**
 ```json
 {
   "payload": "BAR-250115-00042",
-  "presentationType": "NFC_TAP",
+  "presentationType": "Bar_TAP",
   "bartenderId": "bartender-001"
 }
 ```
@@ -1267,13 +1267,13 @@ export interface VerifyQRResponse {
     "cards": [
       {
         "id": "card-001",
-        "nfcUid": "04:12:34:56:78:90:AB",
+        "BarUid": "04:12:34:56:78:90:AB",
         "status": "available",
         "writeCycles": 45
       },
       {
         "id": "card-002",
-        "nfcUid": "04:AB:CD:EF:12:34:56",
+        "BarUid": "04:AB:CD:EF:12:34:56",
         "status": "available",
         "writeCycles": 12
       }
@@ -1287,7 +1287,7 @@ export interface VerifyQRResponse {
 **Request Body:**
 ```json
 {
-  "nfcUid": "04:12:34:56:78:90:AB",
+  "BarUid": "04:12:34:56:78:90:AB",
   "status": "available"
 }
 ```
@@ -1298,7 +1298,7 @@ export interface VerifyQRResponse {
   "success": true,
   "data": {
     "id": "card-001",
-    "nfcUid": "04:12:34:56:78:90:AB",
+    "BarUid": "04:12:34:56:78:90:AB",
     "status": "available",
     "writeCycles": 0
   },
@@ -1321,7 +1321,7 @@ export interface VerifyQRResponse {
   "success": true,
   "data": {
     "id": "card-001",
-    "nfcUid": "04:12:34:56:78:90:AB",
+    "BarUid": "04:12:34:56:78:90:AB",
     "status": "lost",
     "updatedAt": "2025-01-15T12:00:00Z"
   },
@@ -1556,7 +1556,7 @@ export interface VerifyQRResponse {
 |-------------|-----|-------------|
 | `token:{tokenNumber}` | 24h | Token details cache |
 | `token:{tokenNumber}:redemptions` | 1h | Redemption count cache |
-| `token:active:{cardUid}` | 24h | Active token by card UID (NFC_CARD mode only) |
+| `token:active:{cardUid}` | 24h | Active token by card UID (Bar_CARD mode only) |
 | `rate:{placeTypeId}` | 1h | Rate card data |
 | `table:{tableId}:status` | 5min | Table occupancy status |
 | `table:available:{placeTypeId}` | 5min | Available tables list |
@@ -1573,7 +1573,7 @@ export interface VerifyQRResponse {
 -- Updated tables including Table Management and Email QR configuration
 
 -- Enums for Token Delivery and Email Status
-CREATE TYPE delivery_mode AS ENUM ('NFC_CARD', 'EMAIL_QR');
+CREATE TYPE delivery_mode AS ENUM ('Bar_CARD', 'EMAIL_QR');
 CREATE TYPE email_status AS ENUM ('PENDING', 'SENT', 'FAILED');
 
 -- System config table (Global Configurations)
@@ -1586,7 +1586,7 @@ CREATE TABLE system_configs (
 );
 
 -- Seed default configuration
-INSERT INTO system_configs (config_key, config_value) VALUES ('token_delivery_mode', 'NFC_CARD');
+INSERT INTO system_configs (config_key, config_value) VALUES ('token_delivery_mode', 'Bar_CARD');
 
 -- Customers table
 CREATE TABLE customers (
@@ -1649,8 +1649,8 @@ CREATE TABLE tokens (
     issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     closed_at TIMESTAMP,
     closed_by UUID REFERENCES users(id),
-    card_id UUID REFERENCES cards(id), -- Nullable, used in NFC_CARD mode
-    delivery_mode delivery_mode NOT NULL DEFAULT 'NFC_CARD',
+    card_id UUID REFERENCES cards(id), -- Nullable, used in Bar_CARD mode
+    delivery_mode delivery_mode NOT NULL DEFAULT 'Bar_CARD',
     email_sent BOOLEAN DEFAULT FALSE,
     email_sent_at TIMESTAMP,
     email_delivery_status email_status,
@@ -1678,7 +1678,7 @@ CREATE TABLE redemptions (
 -- Cards inventory
 CREATE TABLE cards (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    nfc_uid VARCHAR(50) UNIQUE NOT NULL,
+    Bar_uid VARCHAR(50) UNIQUE NOT NULL,
     current_token_id UUID NULL REFERENCES tokens(id),
     status VARCHAR(20) DEFAULT 'available' CHECK (status IN ('available', 'assigned', 'lost', 'damaged')),
     assigned_at TIMESTAMP,
@@ -1686,7 +1686,7 @@ CREATE TABLE cards (
     write_cycles INT DEFAULT 0,
     last_written_at TIMESTAMP,
     INDEX idx_card_status (status),
-    INDEX idx_card_uid (nfc_uid)
+    INDEX idx_card_uid (Bar_uid)
 );
 
 -- Token extensions log
@@ -1998,7 +1998,7 @@ export class RedemptionService {
     }
   }
 
-  // Single shared validation and redemption processing pipeline for both NFC tap and QR scan
+  // Single shared validation and redemption processing pipeline for both Bar tap and QR scan
   async processRedemption(
     payload: string,
     presentationType: PresentationType,
@@ -2039,10 +2039,10 @@ export class RedemptionService {
 
         // 3. Ensure the presentation type matches the token's original delivery mode to support config switching
         if (presentationType === 'QR_SCAN' && token.deliveryMode !== 'EMAIL_QR') {
-          throw new Error('NFC token cannot be redeemed via QR scan.');
+          throw new Error('Bar token cannot be redeemed via QR scan.');
         }
-        if (presentationType === 'NFC_TAP' && token.deliveryMode !== 'NFC_CARD') {
-          throw new Error('Email QR token cannot be redeemed via NFC tap.');
+        if (presentationType === 'Bar_TAP' && token.deliveryMode !== 'Bar_CARD') {
+          throw new Error('Email QR token cannot be redeemed via Bar tap.');
         }
 
         // Validate token status
@@ -2153,7 +2153,7 @@ export class TokenService {
       where: { configKey: 'token_delivery_mode' }
     });
 
-    const mode = (configRecord?.configValue || 'NFC_CARD') as DeliveryMode;
+    const mode = (configRecord?.configValue || 'Bar_CARD') as DeliveryMode;
     await this.redis.setex('config:token_delivery_mode', 86400, mode);
     return mode;
   }
@@ -2188,8 +2188,8 @@ export class TokenService {
     if (deliveryMode === 'EMAIL_QR' && !request.email) {
       throw new Error('Email is mandatory when system operates in EMAIL_QR mode.');
     }
-    if (deliveryMode === 'NFC_CARD' && !request.nfcCardUid) {
-      throw new Error('NFC Card UID is mandatory when system operates in NFC_CARD mode.');
+    if (deliveryMode === 'Bar_CARD' && !request.BarCardUid) {
+      throw new Error('Bar Card UID is mandatory when system operates in Bar_CARD mode.');
     }
 
     const tokenNumber = await this.generateTokenNumber();
@@ -2248,11 +2248,11 @@ export class TokenService {
       // Calculate total redemptions
       const totalRedemptionsAllowed = request.personsCount * placeType.redemptionsPerPerson;
 
-      // Card verification for NFC Card Mode
+      // Card verification for Bar Card Mode
       let cardId: string | null = null;
-      if (deliveryMode === 'NFC_CARD' && request.nfcCardUid) {
+      if (deliveryMode === 'Bar_CARD' && request.BarCardUid) {
         const card = await tx.card.findUnique({
-          where: { nfcUid: request.nfcCardUid }
+          where: { BarUid: request.BarCardUid }
         });
         if (!card || card.status !== 'available') {
           throw new Error('Selected card is not available');
@@ -2286,8 +2286,8 @@ export class TokenService {
         }
       });
 
-      // Update card status if NFC mode
-      if (deliveryMode === 'NFC_CARD' && cardId) {
+      // Update card status if Bar mode
+      if (deliveryMode === 'Bar_CARD' && cardId) {
         await tx.card.update({
           where: { id: cardId },
           data: {
@@ -2427,8 +2427,8 @@ export class TokenService {
         }
       });
 
-      // Update card status if requested and system is in NFC_CARD mode
-      if (token.deliveryMode === 'NFC_CARD' && token.card && eraseCard) {
+      // Update card status if requested and system is in Bar_CARD mode
+      if (token.deliveryMode === 'Bar_CARD' && token.card && eraseCard) {
         await tx.card.update({
           where: { id: token.card.id },
           data: {
@@ -2619,10 +2619,10 @@ router.post(
           error: { code: 'VAL_001', message: 'Email address is mandatory in EMAIL_QR delivery mode.' }
         });
       }
-      if (deliveryMode === 'NFC_CARD' && (!req.body.nfcCardUid || req.body.nfcCardUid.trim() === '')) {
+      if (deliveryMode === 'Bar_CARD' && (!req.body.BarCardUid || req.body.BarCardUid.trim() === '')) {
         return res.status(400).json({
           success: false,
-          error: { code: 'VAL_002', message: 'NFC Card UID is mandatory in NFC_CARD delivery mode.' }
+          error: { code: 'VAL_002', message: 'Bar Card UID is mandatory in Bar_CARD delivery mode.' }
         });
       }
 
@@ -2636,16 +2636,16 @@ router.post(
       }
 
       let card = null;
-      if (deliveryMode === 'NFC_CARD' && req.body.nfcCardUid) {
+      if (deliveryMode === 'Bar_CARD' && req.body.BarCardUid) {
         // Verify card is available
         card = await prisma.card.findUnique({
-          where: { nfcUid: req.body.nfcCardUid }
+          where: { BarUid: req.body.BarCardUid }
         });
         
         if (!card || card.status !== 'available') {
           return res.status(400).json({
             success: false,
-            error: { code: 'CARD_001', message: 'NFC card is not available' }
+            error: { code: 'CARD_001', message: 'Bar card is not available' }
           });
         }
       }
@@ -2659,8 +2659,8 @@ router.post(
       // Assign table to token
       await tableService.assignTableToToken(req.body.tableId, token.id);
 
-      // Update card status if in NFC mode
-      if (deliveryMode === 'NFC_CARD' && card) {
+      // Update card status if in Bar mode
+      if (deliveryMode === 'Bar_CARD' && card) {
         await prisma.card.update({
           where: { id: card.id },
           data: {
@@ -2674,8 +2674,8 @@ router.post(
       return res.status(201).json({
         success: true,
         data: { token, card },
-        message: deliveryMode === 'NFC_CARD' 
-          ? 'Token created and NFC card issued successfully' 
+        message: deliveryMode === 'Bar_CARD' 
+          ? 'Token created and Bar card issued successfully' 
           : 'Token created and Email QR code sent successfully'
       });
     } catch (error: any) {
@@ -2912,14 +2912,14 @@ router.post(
   }
 );
 
-// Process Unified Redemption Endpoint (Handles both NFC_TAP and QR_SCAN)
+// Process Unified Redemption Endpoint (Handles both Bar_TAP and QR_SCAN)
 router.post(
   '/redemptions',
   authenticate,
   authorize(['bartender']),
   [
     body('payload').isString().notEmpty(),
-    body('presentationType').isIn(['NFC_TAP', 'QR_SCAN']).notEmpty(),
+    body('presentationType').isIn(['Bar_TAP', 'QR_SCAN']).notEmpty(),
     body('bartenderId').isUUID()
   ],
   async (req: Request, res: Response) => {
@@ -2951,37 +2951,37 @@ export default router;
 
 ---
 
-## 9. React Native NFC Integration (TypeScript)
+## 9. React Native Bar Integration (TypeScript)
 
 ```typescript
-// src/services/nfc/nfcManager.ts
+// src/services/Bar/BarManager.ts
 
-import NfcManager, { NfcTech, Ndef } from 'react-native-nfc-manager';
+import BarManager, { BarTech, Ndef } from 'react-native-Bar-manager';
 import { Platform } from 'react-native';
 
-export class NFCService {
-  private static instance: NFCService;
+export class BarService {
+  private static instance: BarService;
   private isInitialized: boolean = false;
 
   private constructor() {}
 
-  static getInstance(): NFCService {
-    if (!NFCService.instance) {
-      NFCService.instance = new NFCService();
+  static getInstance(): BarService {
+    if (!BarService.instance) {
+      BarService.instance = new BarService();
     }
-    return NFCService.instance;
+    return BarService.instance;
   }
 
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
     
-    await NfcManager.start();
+    await BarManager.start();
     this.isInitialized = true;
   }
 
   async writeToCard(tokenNumber: string): Promise<boolean> {
     try {
-      await NfcManager.requestTechnology(NfcTech.Ndef);
+      await BarManager.requestTechnology(BarTech.Ndef);
       
       const bytes = Ndef.encodeMessage([
         Ndef.uriRecord(tokenNumber),
@@ -2989,23 +2989,23 @@ export class NFCService {
       ]);
       
       if (bytes) {
-        await NfcManager.ndefHandler.writeNdefMessage(bytes);
+        await BarManager.ndefHandler.writeNdefMessage(bytes);
         return true;
       }
       return false;
     } catch (error) {
-      console.error('NFC write error:', error);
+      console.error('Bar write error:', error);
       throw error;
     } finally {
-      await NfcManager.cancelTechnologyRequest();
+      await BarManager.cancelTechnologyRequest();
     }
   }
 
   async readFromCard(): Promise<string | null> {
     try {
-      await NfcManager.requestTechnology(NfcTech.Ndef);
+      await BarManager.requestTechnology(BarTech.Ndef);
       
-      const tag = await NfcManager.ndefHandler.getNdefMessage();
+      const tag = await BarManager.ndefHandler.getNdefMessage();
       
       if (tag && tag.ndefMessage && tag.ndefMessage.length > 0) {
         const record = tag.ndefMessage[0];
@@ -3018,28 +3018,28 @@ export class NFCService {
       }
       return null;
     } catch (error) {
-      console.error('NFC read error:', error);
+      console.error('Bar read error:', error);
       throw error;
     } finally {
-      await NfcManager.cancelTechnologyRequest();
+      await BarManager.cancelTechnologyRequest();
     }
   }
 
   async eraseCard(): Promise<boolean> {
     try {
-      await NfcManager.requestTechnology(NfcTech.Ndef);
-      await NfcManager.ndefHandler.writeNdefMessage(null);
+      await BarManager.requestTechnology(BarTech.Ndef);
+      await BarManager.ndefHandler.writeNdefMessage(null);
       return true;
     } catch (error) {
-      console.error('NFC erase error:', error);
+      console.error('Bar erase error:', error);
       return false;
     } finally {
-      await NfcManager.cancelTechnologyRequest();
+      await BarManager.cancelTechnologyRequest();
     }
   }
 
   async cleanup(): Promise<void> {
-    await NfcManager.stop();
+    await BarManager.stop();
     this.isInitialized = false;
   }
 }
@@ -3146,8 +3146,8 @@ The system relies on the following environment variables and database-backed con
 ### 11.1 Environment Variables
 ```env
 # System Delivery Mode Configuration
-# Options: NFC_CARD / EMAIL_QR
-TOKEN_DELIVERY_MODE=NFC_CARD
+# Options: Bar_CARD / EMAIL_QR
+TOKEN_DELIVERY_MODE=Bar_CARD
 
 # Cryptographic Signatures
 GLOBAL_SIGNING_KEY=d7aef14f9d0c2e399583c21a4f009bde283921ea8974a62174fde34c9c1b3f9b
@@ -3163,7 +3163,7 @@ SMTP_PASS=SuperSecureSmtpPassword123!
 ```sql
 -- Global configuration parameters
 INSERT INTO system_configs (config_key, config_value) 
-VALUES ('token_delivery_mode', 'NFC_CARD')
+VALUES ('token_delivery_mode', 'Bar_CARD')
 ON CONFLICT (config_key) DO NOTHING;
 ```
 
@@ -3186,7 +3186,7 @@ sequenceDiagram
 
     Note over Receptionist, Customer: EMAIL_QR Mode Active
     Receptionist->>MobileApp: Input customer data (Name, Phone, Email mandatory)
-    MobileApp->>Backend: POST /api/tokens/create (payload with Email, no NFC UID)
+    MobileApp->>Backend: POST /api/tokens/create (payload with Email, no Bar UID)
     
     activate Backend
     Backend->>DB: Check global config: token_delivery_mode
@@ -3268,17 +3268,17 @@ sequenceDiagram
 The system supports offline workflows under specific guidelines for each delivery mode when connection to the backend or the primary database is lost.
 
 ### 13.1 Offline Check-in & Token Generation
-* **NFC_CARD Mode (Offline Supported)**:
-  * Receptionists can write token data directly onto new NFC cards. The mobile app buffers the check-in data in a local SQLite storage.
+* **Bar_CARD Mode (Offline Supported)**:
+  * Receptionists can write token data directly onto new Bar cards. The mobile app buffers the check-in data in a local SQLite storage.
   * When online status is restored, the buffered records are synced sequentially to the backend.
 * **EMAIL_QR Mode (Online Only)**:
   * Check-in **cannot** be completed offline. Token generation requires secure QR payload signing, HTML rendering, and instant dispatch via the SMTP gateway.
   * Attempting to check in a customer in `EMAIL_QR` mode while offline will result in a connection error, blocking token creation.
 
 ### 13.2 Offline Redemption
-* **With Internet Connectivity**: Both NFC Card taps and Email QR scans are verified online against the Postgres database and synchronized via the Redis distributed lock mechanism to ensure real-time concurrency control.
+* **With Internet Connectivity**: Both Bar Card taps and Email QR scans are verified online against the Postgres database and synchronized via the Redis distributed lock mechanism to ensure real-time concurrency control.
 * **Without Internet Connectivity (Offline Mode - Max 30 mins)**:
-  * **NFC Card Tap**: The mobile app reads the card token number directly and performs local validation checks (checking its local SQLite cache of active sessions).
+  * **Bar Card Tap**: The mobile app reads the card token number directly and performs local validation checks (checking its local SQLite cache of active sessions).
   * **Email QR Scan**: The mobile app performs cryptographic signature verification locally using the global secret key cached securely in the mobile application's keychain.
   * **Local Buffering**: Under both modes, the mobile app creates a local redemption record inside its SQLite database and displays a visual warning flag notifying the bartender of "Offline Verification Mode."
   * **Reconciliation Sync**: Once online connection is restored, the app syncs the buffered redemptions to the backend. The backend executes a transaction check:
@@ -3293,7 +3293,7 @@ To ensure absolute consistency, zero code duplication, and strict runtime safety
 ```mermaid
 flowchart TD
     A[Bartender Scan/Tap Input] --> B{Presentation Type?}
-    B -->|NFC_TAP| C[Read raw token number payload]
+    B -->|Bar_TAP| C[Read raw token number payload]
     B -->|QR_SCAN| D[Decode payload & Verify Cryptographic Signature]
     C --> E[Fetch Token details from Database/Redis]
     D --> E
@@ -3310,7 +3310,7 @@ flowchart TD
 ```
 
 ### 14.1 Key Implementation Invariants
-1. **Decryption vs. Execution**: The presentation method (NFC card tap vs Email QR scanner) only dictates the decryption/decoding step. Once a plain token number is resolved, the system runs the exact same execution code.
+1. **Decryption vs. Execution**: The presentation method (Bar card tap vs Email QR scanner) only dictates the decryption/decoding step. Once a plain token number is resolved, the system runs the exact same execution code.
 2. **Double-Scan Protection**: Every redemption request, regardless of mode, must obtain the exact same Redis lock key (`lock:redemption:{tokenNumber}`) to prevent multi-bartender race conditions.
 3. **Database Constraints**: The `redemptions` table retains a unique database index on `(token_id, redemption_sequence)` which guarantees that even if locks fail, the database transaction rejects duplicate writes.
 4. **Consistency**: Reporting services, table occupancy calculations, and remaining drink counters read from the shared tables (`tokens`, `redemptions`, `tables`), making the business logic 100% agnostic to the delivery mode.

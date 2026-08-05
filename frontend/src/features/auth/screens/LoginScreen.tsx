@@ -4,14 +4,14 @@ import {
   Platform, KeyboardAvoidingView, ActivityIndicator, StatusBar
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNfcBar } from '../../../context/NfcBarContext';
+import { useBar } from '../../../context/BarContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { AppIcon } from '../../../components/common/AppIcon';
 
 import { useResponsive } from '../../../utils/responsive';
 
 export const LoginScreen: React.FC = () => {
-  const { login, setScreen } = useNfcBar();
+  const { login, setScreen } = useBar();
   const insets = useSafeAreaInsets();
   const { isSmallPhone, height } = useResponsive();
   const numpadHeight = isSmallPhone || height < 700 ? 44 : 54;
@@ -421,3 +421,4 @@ export const LoginScreen: React.FC = () => {
 };
 
 export default LoginScreen;
+

@@ -1,7 +1,7 @@
-# Hybrid NFC Card & Email QR Bar Management System
+# Hybrid QR Card & Email QR Bar Management System
 ## Complete End-to-End Functional Workflow Guide
 
-This document serves as the official end-to-end functional workflow and system architecture guide for the NFC & QR Bar Management System. It is structured to help managers, QA engineers, developers, and onboarding personnel fully understand the business logic, state flows, UI pages, database transactions, API routes, and edge-case exceptions.
+This document serves as the official end-to-end functional workflow and system architecture guide for the QR & QR Bar Management System. It is structured to help managers, QA engineers, developers, and onboarding personnel fully understand the business logic, state flows, UI pages, database transactions, API routes, and edge-case exceptions.
 
 ---
 
@@ -21,7 +21,7 @@ Login Screen
 │       └── Close Session / Checkout modal (if Occupied)
 │
 ├── Customer Check-in Wizard (Check-in start page - Staff/Admin)
-│   ├── NFC Card mode flow
+│   ├── QR Card mode flow
 │   └── Email QR Code mode flow
 │
 ├── Active Sessions Log list (Admin/Manager)
@@ -154,9 +154,9 @@ stateDiagram-v2
 flowchart TD
     A[Start Check-in Wizard] --> B[Enter Customer Name, Phone, Pax]
     B --> C{Choose Mode}
-    C -- Option A: NFC Card --> D[Select vacant Green Table]
+    C -- Option A: QR Card --> D[Select vacant Green Table]
     D --> E[Review Bill & Collect Payment]
-    E --> F[Scan/Program blank NFC Card]
+    E --> F[Scan/Program blank QR Card]
     F --> G[Session ACTIVE in DB & Table Occupied]
     
     C -- Option B: Email QR --> H[Enter Mandatory Email]
@@ -170,10 +170,10 @@ flowchart TD
 * **Input Fields**:
   * `fullName` (text, mandatory)
   * `phone` (10-digit number, starts with 6-9, mandatory)
-  * `email` (text, valid email format, optional for NFC, mandatory for Email QR)
+  * `email` (text, valid email format, optional for QR, mandatory for Email QR)
   * `paxCount` (numerical counter, mandatory)
   * `placeType` (Standing Bar / Premium Lounge / VIP Lounge selector)
-  * `deliveryMode` (NFC_CARD or EMAIL_QR selector)
+  * `deliveryMode` (QR_CARD or EMAIL_QR selector)
 * **Validations**:
   * Names cannot be blank.
   * Emails must follow `user@domain.com` standard format. No active sessions can have duplicate emails.
@@ -183,14 +183,14 @@ flowchart TD
 * **Backend APIs involved**:
   * `POST /api/check-in/pending` (Registers temporary QR session)
   * `POST /api/check-in/activate` (Transition to active table session on payment)
-  * `POST /api/tokens/create` (Direct NFC session creation)
+  * `POST /api/tokens/create` (Direct QR session creation)
 * **Database Interactions**:
   * Creates record in `SessionToken` and logs active table allocations.
 
 #### Tanglish Workflow
 > Receptionist counter-la customer vana udanae **Check-in wizard** step-by-step fill pannanum.
 > Customer details (Name, Phone, Pax, Area) enter panni, payment vanganum.
-> NFC option select panna, card scanner back-la card vechu touch panna code save aagi table green to amber state occupied aagum.
+> QR option select panna, card scanner back-la card vechu touch panna code save aagi table green to amber state occupied aagum.
 > Email option select panna, customer email mandatory-ah typ pannanum. Confirm panna pending status email QR code poirum, customer approm counter-la QR scan panni payment confirm panna table active occupied-ah maarum.
 
 ---
@@ -211,7 +211,7 @@ sequenceDiagram
     participant API as Backend Server
     participant DB as PostgreSQL DB
 
-    Bartender->>App: Tap NFC Card or Scan Email QR
+    Bartender->>App: Tap QR Card or Scan Email QR
     App->>API: GET /api/token/validate/:identifier
     API->>DB: Query session (active & paid)
     DB-->>API: Return session details & coupon balance
@@ -226,7 +226,7 @@ sequenceDiagram
 * **Validations & Guardrails**:
   * Tapping/scanning checks if `endTime` is in the future. Expired sessions are rejected with a red alert screen.
   * Checks if `paymentVerified` is true. Unpaid sessions cannot redeem drinks.
-  * Checks if `deliveryMode` matches. If an NFC token is scanned via QR, or vice versa, the transaction is blocked.
+  * Checks if `deliveryMode` matches. If an QR token is scanned via QR, or vice versa, the transaction is blocked.
   * If coupon count is 0, the serving button is disabled.
 * **Backend APIs involved**:
   * `GET /api/token/validate/:cardUidOrToken`
@@ -247,7 +247,7 @@ sequenceDiagram
 * **Purpose**: Finalizes billing and releases resources (wipes physical cards).
 * **User Roles**: Staff / Admin.
 * **Entry Point**: Seating Bottom sheet > **Close Session** or Active Sessions list.
-* **UI Components**: Return Card Modal, checkout pricing summaries, cash/card payment toggles, NFC scanner loader, final success tick mark.
+* **UI Components**: Return Card Modal, checkout pricing summaries, cash/card payment toggles, QR scanner loader, final success tick mark.
 * **Validations**:
   * Ensures physical card is cleared (returns success code from scanner write action) before table status changes to `AVAILABLE` in the database.
 * **Backend APIs involved**:
@@ -260,7 +260,7 @@ sequenceDiagram
 #### Tanglish Workflow
 > Customer check-out panna, customer card scanner counter-la vanganum.
 > **Close Session** modal-la bill settlement screen varum. payment confirm pannittu **Confirm & Close Session** tap pannanum.
-> NFC card memory clear aagum, table and card dynamic status direct-ah green free state-ku register aagidum.
+> QR card memory clear aagum, table and card dynamic status direct-ah green free state-ku register aagidum.
 
 ---
 
@@ -309,7 +309,7 @@ sequenceDiagram
 #### Tanglish Workflow
 > **Admin Portal** sub-tabs-la rates and global system settings select pannalam.
 > Lounge or Standing bar price update panna, rate edit panni save pannanum.
-> Delivery setting-la (NFC card or Email QR) toggles check or uncheck panni global configuration restrict or open pannalaam. New check-ins-ku update automatic-ah apply aagum.
+> Delivery setting-la (QR card or Email QR) toggles check or uncheck panni global configuration restrict or open pannalaam. New check-ins-ku update automatic-ah apply aagum.
 
 ---
 
@@ -338,7 +338,7 @@ sequenceDiagram
 | Rule Domain | Business Constraint | Database Implementation |
 | :--- | :--- | :--- |
 | **Table Occupancy** | A table cannot be assigned to more than one active session. | Unique constraint on `tableId` where `SessionToken.status == 'ACTIVE'` |
-| **NFC Card Binding** | A physical card UID cannot be linked to more than one active session. | Unique constraint on `cardUid` where `SessionToken.status == 'ACTIVE'` |
+| **QR Card Binding** | A physical card UID cannot be linked to more than one active session. | Unique constraint on `cardUid` where `SessionToken.status == 'ACTIVE'` |
 | **Email QR Mode** | Email field is mandatory and must not already have an active check-in. | Email validation regex check; query `SessionToken` for active status prior to pending registration. |
 | **Session Expiration** | Session transition from occupied (amber) to expiring (red) at 15 minutes remaining. | React frontend timer ticks; server rejects redemptions if check timestamp > `endTime`. |
 | **Manager Permission** | Managers can view all tables, sessions, and reports, but cannot perform check-ins/checkout. | API middleware checks JWT payload claims and blocks POST/PUT operations. |
@@ -397,7 +397,7 @@ journey
       Pay Extension fee: 5: Customer, Receptionist
       Timer Incremented: 5: Receptionist
     section Departure
-      Return NFC Card / Present checkout QR: 5: Customer
+      Return QR Card / Present checkout QR: 5: Customer
       Wipe Card / Terminate session: 5: Receptionist
       Table Released to Green: 5: Receptionist
 ```
@@ -417,10 +417,10 @@ flowchart TD
     Billing --> Activate[POST /api/check-in/activate]
     
     ScanCheck -- No Booking --> FillForm[Enter Guest Name, Phone, Pax]
-    FillForm --> TableSelNFC[Select vacant table in grid]
-    TableSelNFC --> BillingNFC[Calculate Bill & Collect Payment]
-    BillingNFC --> ProgramNFC[Program blank card UID via scanner]
-    ProgramNFC --> ActiveNFC[Deliver card to guest]
+    FillForm --> TableSelQR[Select vacant table in grid]
+    TableSelQR --> BillingQR[Calculate Bill & Collect Payment]
+    BillingQR --> ProgramQR[Program blank card UID via scanner]
+    ProgramQR --> ActiveQR[Deliver card to guest]
 ```
 
 ---
@@ -431,7 +431,7 @@ flowchart TD
 flowchart TD
     Login[Log in as Bartender] --> ScanPortal[Open Scan Redemption screen]
     ScanPortal --> WaitCustomer[Wait for customer presentation]
-    WaitCustomer --> ScanInput[Scan Customer QR or Tap NFC Card]
+    WaitCustomer --> ScanInput[Scan Customer QR or Tap QR Card]
     ScanInput --> APIValidate[GET /api/token/validate/:identifier]
     
     APIValidate -- Invalid / Expired --> ErrorAlert[Flash Red Alert - Access Denied]
@@ -462,8 +462,8 @@ flowchart TD
 
 ## 7. Common FAQs & Troubleshooting Guide
 
-### Q1: The physical card scanner says "Write failed" or "NFC not supported".
-* **Solution**: Ensure your mobile/tablet has NFC enabled in system settings. Keep the physical card touching the back of the device until the success tick mark animation is fully displayed.
+### Q1: The physical card scanner says "Write failed" or "QR not supported".
+* **Solution**: Ensure your mobile/tablet has QR enabled in system settings. Keep the physical card touching the back of the device until the success tick mark animation is fully displayed.
 
 ### Q2: What is a "Ghost Session" and how do I fix it?
 * **Solution**: A Ghost Session happens when a customer session is active in the database but the card was lost, damaged, or not cleared at checkout. An Admin can go to the **Customer Sessions** sub-tab in the Admin Portal, find the session, click "End Session", and select the **Force Release (Ghost/Orphan Override)** option. This forces the table and card to return to `'AVAILABLE'` status directly.
@@ -475,7 +475,7 @@ flowchart TD
 
 ## 8. Glossary of Business Terms
 
-* **NFC Card Mode**: Standalone delivery method where customer session data is programmed onto a physical high-frequency smart card.
+* **QR Card Mode**: Standalone delivery method where customer session data is programmed onto a physical high-frequency smart card.
 * **Email QR Mode**: Delivery method where a secure signed QR code is emailed to the customer, which they present at check-in, checkout, and the bar.
 * **EAS Update**: Expo Application Services OTA update system, used to deliver code changes (styling, UI layouts) directly to installed apps over the internet.
 * **Pax**: The number of persons in a customer group session.
@@ -518,7 +518,7 @@ The application enforces a custom state-based prioritized back button navigation
 ```
 
 ### Key Constraints & Rules
-1. **Critical Operation Protection**: Ignored during active NFC Card programming (`isNfcWriting`), payment processing, or checkout database commits to prevent transaction corruption.
+1. **Critical Operation Protection**: Ignored during active QR Card programming (`isQRWriting`), payment processing, or checkout database commits to prevent transaction corruption.
 2. **Unsaved Form Protection**: Step 1 forms (Check-in details) and Admin form overlays (Add Table, Add Staff, Edit Rates) perform a dirty check. If modifications are present, prompts a confirmation Alert asking to discard or continue editing.
 3. **Throttling Lock**: Ignores rapid multiple back presses within 350ms to ensure transitions and layout animations complete before processing the next event.
 4. **Role-Aware Home Tab**: Navigates back to the default tab dynamically based on the authenticated user's role:
