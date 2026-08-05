@@ -88,14 +88,14 @@ export const RateManagement: React.FC = () => {
                   <span className="font-bold text-text-main text-base">{r.name || r.placeType}</span>
                   <button
                     onClick={() => openEditModal(r)}
-                    className="p-2 rounded-xl bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] transition-all"
+                    className="p-2 rounded-xl bg-[#8D6CE5]/15 hover:bg-[#8D6CE5]/25 text-[#8D6CE5] transition-all"
                     title="Edit Rate Card"
                   >
                     <Edit3 size={16} />
                   </button>
                 </div>
 
-                <p className="text-3xl font-black text-[#D4AF37]">₹{r.ratePerPerson} <span className="text-xs font-normal text-text-muted">/ person</span></p>
+                <p className="text-3xl font-black text-[#8D6CE5]">₹{r.ratePerPerson} <span className="text-xs font-normal text-text-muted">/ person</span></p>
 
                 <div className="mt-4 pt-4 border-t border-border-main text-xs text-text-muted space-y-2">
                   <p className="flex items-center justify-between">
@@ -124,7 +124,7 @@ export const RateManagement: React.FC = () => {
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-2 text-[#D4AF37] font-bold text-sm">
+            <div className="flex items-center gap-2 text-[#8D6CE5] font-bold text-sm">
               <DollarSign size={18} /> Edit Rate Card ({editingRate.name || editingRate.placeType})
             </div>
 
@@ -136,7 +136,7 @@ export const RateManagement: React.FC = () => {
                   value={ratePerPerson}
                   onChange={e => setRatePerPerson(e.target.value)}
                   min={0}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
                   required
                 />
               </div>
@@ -150,7 +150,7 @@ export const RateManagement: React.FC = () => {
                   onChange={e => setDurationHours(e.target.value)}
                   min={0.5}
                   max={24}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
                   required
                 />
               </div>
@@ -163,7 +163,7 @@ export const RateManagement: React.FC = () => {
                   onChange={e => setDrinkAllowance(e.target.value)}
                   min={0}
                   max={50}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
                   required
                 />
               </div>
@@ -179,7 +179,7 @@ export const RateManagement: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmitting || !isFormValid}
-                  className="flex-1 py-2.5 rounded-xl gold-gradient-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
+                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
                 >
                   {isSubmitting ? 'Saving...' : 'Update Pricing'}
                 </button>
@@ -191,3 +191,4 @@ export const RateManagement: React.FC = () => {
     </div>
   );
 };
+
