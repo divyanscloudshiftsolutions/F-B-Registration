@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Grid3X3, RefreshCw, X, CheckCircle2, Users, ArrowRight, Search, UserPlus } from 'lucide-react';
 import { api } from '../services/api';
 import type { Table } from '../types';
@@ -13,19 +13,30 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
   const { showToast, setPreselectedTable } = useAuth();
   const { tables, tokens, isLoading, refreshTables, refreshTokens } = useData();
   const [placeZone, setPlaceZoneState] = useState<'STANDING_BAR' | 'PREMIUM_LOUNGE'>(() => {
-    return (localStorage.getItem('nfc_web_tables_zone') as 'STANDING_BAR' | 'PREMIUM_LOUNGE') || 'STANDING_BAR';
+    return (localStorage.getItem('bar_web_tables_zone') as 'STANDING_BAR' | 'PREMIUM_LOUNGE') || 'STANDING_BAR';
   });
   const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     setPlaceZoneState(zone);
-    localStorage.setItem('nfc_web_tables_zone', zone);
+    localStorage.setItem('bar_web_tables_zone', zone);
   };
   const [filter, setFilterState] = useState<string>(() => {
-    return localStorage.getItem('nfc_web_tables_filter') || 'all';
+    return localStorage.getItem('bar_web_tables_filter') || 'all';
   });
   const setFilter = (val: string) => {
     setFilterState(val);
-    localStorage.setItem('nfc_web_tables_filter', val);
+    localStorage.setItem('bar_web_tables_filter', val);
   };
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const storedFilter = localStorage.getItem('bar_web_tables_filter');
+      if (storedFilter && storedFilter !== filter) {
+        setFilterState(storedFilter);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [filter]);
 
   // Assign Modal State
   const [assigningTable, setAssigningTable] = useState<Table | null>(null);
@@ -50,6 +61,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
   const filteredTables = zoneFilteredTables.filter(t => {
     if (filter === 'available') return t.status === 'available';
     if (filter === 'occupied') return t.status === 'occupied';
+    if (filter === 'reserved') return t.status === 'reserved';
     return true;
   });
 
@@ -116,7 +128,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
               onClick={() => setPlaceZone('STANDING_BAR')}
               className={`px-5 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider border whitespace-nowrap transition-all cursor-pointer ${
                 placeZone === 'STANDING_BAR'
-                  ? 'bg-[#D4AF37] text-black border-[#D4AF37] shadow-xl shadow-[#D4AF37]/20 font-black'
+                  ? 'bg-[#8D6CE5] text-black border-[#8D6CE5] shadow-xl shadow-[#8D6CE5]/20 font-black'
                   : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
               }`}
             >
@@ -127,7 +139,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
               onClick={() => setPlaceZone('PREMIUM_LOUNGE')}
               className={`px-5 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider border whitespace-nowrap transition-all cursor-pointer ${
                 placeZone === 'PREMIUM_LOUNGE'
-                  ? 'bg-[#D4AF37] text-black border-[#D4AF37] shadow-xl shadow-[#D4AF37]/20 font-black'
+                  ? 'bg-[#8D6CE5] text-black border-[#8D6CE5] shadow-xl shadow-[#8D6CE5]/20 font-black'
                   : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
               }`}
             >
@@ -144,7 +156,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1">Status Filter:</span>
-            {['all', 'available', 'occupied'].map(f => (
+            {['all', 'available', 'occupied', 'reserved'].map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -190,13 +202,13 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                 className={`p-6 rounded-3xl border transition-all cursor-pointer relative overflow-hidden grid grid-rows-[auto_1fr_auto] gap-4 h-72 ${
                   isOccupied
                     ? 'bg-bg-surface/50 border-amber-500/20 opacity-75 shadow-lg shadow-black/40'
-                    : 'bg-bg-surface border-emerald-500/25 hover:border-[#D4AF37]/50 hover:shadow-xl hover:shadow-[#D4AF37]/5 shadow-md'
+                    : 'bg-bg-surface border-emerald-500/25 hover:border-[#8D6CE5]/50 hover:shadow-xl hover:shadow-[#8D6CE5]/5 shadow-md'
                 }`}
               >
                 {/* Row 1: Header - Table Number & Status Pill */}
                 <div className="grid grid-cols-2 items-center justify-between">
                   <div>
-                    <span className="font-mono text-[#D4AF37] font-black text-2xl tracking-wide">{tb.tableNumber}</span>
+                    <span className="font-mono text-[#8D6CE5] font-black text-2xl tracking-wide">{tb.tableNumber}</span>
                     <p className="text-[10px] text-text-muted font-semibold uppercase tracking-wider block mt-0.5">
                       {placeZone === 'STANDING_BAR' ? 'Standard Zone' : 'Premium Zone'}
                     </p>
@@ -205,13 +217,17 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                   <div className="flex justify-end">
                     <span
                       className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
-                        isOccupied 
-                          ? 'dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 border border-amber-500/30' 
+                        tb.status === 'occupied'
+                          ? 'dark:bg-primary-light/15 bg-primary-light dark:text-primary text-[#8D6CE5] border border-primary/30'
+                          : tb.status === 'reserved'
+                          ? 'dark:bg-orange-light/15 bg-orange-light dark:text-orange text-[#F19307] border border-orange/30'
+                          : tb.status === 'maintenance'
+                          ? 'dark:bg-zinc-800/50 bg-zinc-200/50 text-text-muted border border-border-main'
                           : 'dark:bg-emerald-500/15 bg-emerald-500/10 dark:text-emerald-400 text-emerald-700 border border-emerald-500/30'
                       }`}
                     >
-                      {isOccupied ? <Users size={12} /> : <CheckCircle2 size={12} />}
-                      <span>{isOccupied ? 'Occupied' : 'Available'}</span>
+                      {tb.status === 'occupied' ? <Users size={12} /> : <CheckCircle2 size={12} />}
+                      <span className="capitalize">{tb.status}</span>
                     </span>
                   </div>
                 </div>
@@ -247,7 +263,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
 
                     {/* Central table plate */}
                     <div className={`px-4 py-0.5 bg-bg-primary border rounded text-[9px] font-mono font-black tracking-wider shadow ${
-                      isOccupied ? 'dark:text-amber-400 text-amber-700 border-amber-500/30' : 'text-[#D4AF37] border-border-main'
+                      isOccupied ? 'dark:text-amber-400 text-amber-700 border-amber-500/30' : 'text-[#8D6CE5] border-border-main'
                     }`}>
                       {tb.tableNumber}
                     </div>
@@ -274,7 +290,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                   {assignedToken && (
                     <div className="flex items-center justify-between text-[10px] border-t border-border-main pt-1 text-text-muted">
                       <span className="font-semibold truncate max-w-[80px]">👤 {assignedToken.customer?.name || 'Guest'}</span>
-                      <span className="font-mono text-[#D4AF37] font-bold">{assignedToken.tokenNumber}</span>
+                      <span className="font-mono text-[#8D6CE5] font-bold">{assignedToken.tokenNumber}</span>
                     </div>
                   )}
                 </div>
@@ -298,7 +314,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                           e.stopPropagation();
                           handleRedirectToCheckIn(tb);
                         }}
-                        className="flex-1 py-2.5 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                        className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow cursor-pointer"
                       >
                         <UserPlus size={14} /> Assign
                       </button>
@@ -338,7 +354,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
               
               {/* Header */}
               <div className="flex items-center justify-between pb-3 border-b border-border-main">
-                <div className="flex items-center gap-2 text-[#D4AF37] font-bold text-base">
+                <div className="flex items-center gap-2 text-[#8D6CE5] font-bold text-base">
                   <Grid3X3 size={20} /> Table {inspectingTable.tableNumber} Inspection Dialog
                 </div>
                 <button 
@@ -374,8 +390,8 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                   </div>
 
                   {/* Table Surface */}
-                  <div className="px-8 py-3 rounded-2xl bg-bg-surface border-2 border-[#D4AF37] text-center min-w-[180px] shadow-lg">
-                    <p className="font-mono text-[#D4AF37] font-black text-lg">{inspectingTable.tableNumber}</p>
+                  <div className="px-8 py-3 rounded-2xl bg-bg-surface border-2 border-[#8D6CE5] text-center min-w-[180px] shadow-lg">
+                    <p className="font-mono text-[#8D6CE5] font-black text-lg">{inspectingTable.tableNumber}</p>
                     <p className="text-[10px] text-text-muted font-semibold">{placeZone === 'STANDING_BAR' ? 'Standard Zone' : 'Premium Zone'}</p>
                   </div>
 
@@ -421,7 +437,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-muted">Token Pass:</span>
-                    <span className="font-mono text-[#D4AF37] font-bold">{inspectingToken.tokenNumber}</span>
+                    <span className="font-mono text-[#8D6CE5] font-bold">{inspectingToken.tokenNumber}</span>
                   </div>
                 </div>
               )}
@@ -448,7 +464,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                   <button
                     type="button"
                     onClick={() => handleRedirectToCheckIn(inspectingTable)}
-                    className="flex-1 py-3 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg cursor-pointer"
+                    className="flex-1 py-3 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg cursor-pointer"
                   >
                     <span>Assign Guest & Check-In</span>
                     <ArrowRight size={16} />
@@ -471,7 +487,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-2 text-[#D4AF37] font-bold text-sm">
+            <div className="flex items-center gap-2 text-[#8D6CE5] font-bold text-sm">
               <Grid3X3 size={18} /> Assign Table {assigningTable.tableNumber}
             </div>
 
@@ -484,7 +500,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                   <select
                     value={selectedTokenId}
                     onChange={e => setSelectedTokenId(e.target.value)}
-                    className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#D4AF37]"
+                    className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
                     required
                   >
                     <option value="">Select Token Pass...</option>
@@ -508,7 +524,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
                 <button
                   type="submit"
                   disabled={isSubmittingAssign || !selectedTokenId}
-                  className="flex-1 py-2.5 rounded-xl gold-gradient-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
                 >
                   {isSubmittingAssign ? 'Assigning...' : 'Confirm Seating'}
                 </button>
@@ -521,3 +537,5 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn }) =
     </div>
   );
 };
+
+

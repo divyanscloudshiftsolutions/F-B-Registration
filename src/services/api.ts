@@ -37,7 +37,7 @@ class ApiService {
   }
 
   public getToken(): string | null {
-    return localStorage.getItem('nfc_web_token');
+    return localStorage.getItem('bar_web_token');
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -58,8 +58,8 @@ class ApiService {
     });
 
     if (response.status === 401 || response.status === 403) {
-      localStorage.removeItem('nfc_web_token');
-      localStorage.removeItem('nfc_web_user');
+      localStorage.removeItem('bar_web_token');
+      localStorage.removeItem('bar_web_user');
       window.location.reload();
       throw new Error('Session expired. Please log in again.');
     }
@@ -107,8 +107,8 @@ class ApiService {
     });
 
     if (res.token) {
-      localStorage.setItem('nfc_web_token', res.token);
-      localStorage.setItem('nfc_web_user', JSON.stringify(res.user));
+      localStorage.setItem('bar_web_token', res.token);
+      localStorage.setItem('bar_web_user', JSON.stringify(res.user));
     }
 
     return res;
@@ -120,8 +120,8 @@ class ApiService {
     } catch {
       // Ignore network errors on logout
     } finally {
-      localStorage.removeItem('nfc_web_token');
-      localStorage.removeItem('nfc_web_user');
+      localStorage.removeItem('bar_web_token');
+      localStorage.removeItem('bar_web_user');
     }
   }
 
@@ -239,7 +239,7 @@ class ApiService {
         personsCount: t.personsCount || t.persons || 1,
         redemptionsUsed: t.redemptionsUsed || t.redemptionCount || 0,
         totalRedemptionsAllowed: t.totalRedemptionsAllowed || t.maxDrinks || 2,
-        deliveryMode: t.deliveryMode || 'NFC_CARD',
+        deliveryMode: t.deliveryMode || 'EMAIL_QR',
         amountPaid: t.amountPaid || t.amount || 0,
         status: (t.status || 'active').toLowerCase() as any,
         customer: {
@@ -263,8 +263,7 @@ class ApiService {
     email?: string;
     personsCount: number;
     placeTypeId: string;
-    deliveryMode: 'NFC_CARD' | 'EMAIL_QR';
-    cardUid?: string;
+    deliveryMode?: 'EMAIL_QR';
   }) {
     return this.request<{ success: boolean; token: Token; customer: any }>('/check-in', {
       method: 'POST',
@@ -433,42 +432,6 @@ class ApiService {
     });
   }
 
-  // Delivery Config APIs
-  async getDeliveryMode(): Promise<string> {
-    const res = await this.request<{ success: boolean; mode?: string; deliveryMode?: string }>('/config/delivery-mode');
-    return res.deliveryMode || res.mode || 'EMAIL_QR';
-  }
-
-  async setDeliveryMode(mode: 'NFC_CARD' | 'EMAIL_QR' | 'BOTH'): Promise<void> {
-    await this.request('/config/delivery-mode', {
-      method: 'PUT',
-      body: JSON.stringify({ mode }),
-    });
-  }
-
-  // Smart Cards Inventory APIs
-  async getCards(): Promise<any[]> {
-    try {
-      const res = await this.request<any>('/cards');
-      const rawList = Array.isArray(res) ? res : (res?.cards || res?.data?.cards || res?.data || []);
-      return rawList.map((c: any) => ({
-        id: c.id || c.cardUid || c.uid,
-        cardUid: c.cardUid || c.uid,
-        status: (c.status || 'AVAILABLE').toUpperCase(),
-        assignedTokenNumber: c.assignedTokenNumber || c.tokenNumber || null,
-        updatedAt: c.updatedAt || c.createdAt || new Date().toISOString(),
-      }));
-    } catch {
-      return [];
-    }
-  }
-
-  async updateCardStatus(cardUid: string, status: string) {
-    return this.request<{ success: boolean }>(`/cards/${cardUid}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
-  }
 
   // Rate Cards Management APIs
   async getRates(): Promise<any[]> {
@@ -526,3 +489,4 @@ class ApiService {
 }
 
 export const api = new ApiService();
+

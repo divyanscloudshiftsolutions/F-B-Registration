@@ -190,7 +190,7 @@ export const BartenderPage: React.FC = () => {
         
         {/* Left Workstation Panel: Scanner & Search */}
         <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-6">
-          <h3 className="text-sm font-bold uppercase text-[#D4AF37] tracking-wider">1. Pass Verification Terminal</h3>
+          <h3 className="text-sm font-bold uppercase text-[#8D6CE5] tracking-wider">1. Pass Verification Terminal</h3>
 
           {/* Camera View / Reticle Box */}
           <div className={`relative rounded-2xl overflow-hidden border border-border-main aspect-video flex flex-col items-center justify-center ${
@@ -206,8 +206,8 @@ export const BartenderPage: React.FC = () => {
                   className="w-full h-full object-cover" 
                 />
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-48 h-48 border-2 border-[#D4AF37] rounded-3xl animate-pulse flex items-center justify-center">
-                    <span className="text-[10px] text-[#D4AF37] font-extrabold uppercase tracking-widest bg-black/60 px-2 py-1 rounded-md">Align QR Code</span>
+                  <div className="w-48 h-48 border-2 border-[#8D6CE5] rounded-3xl animate-pulse flex items-center justify-center">
+                    <span className="text-[10px] text-[#8D6CE5] font-extrabold uppercase tracking-widest bg-black/60 px-2 py-1 rounded-md">Align QR Code</span>
                   </div>
                 </div>
               </>
@@ -233,14 +233,14 @@ export const BartenderPage: React.FC = () => {
                   value={tokenInput}
                   onChange={e => setTokenInput(e.target.value.toUpperCase())}
                   placeholder="e.g. TK-108"
-                  className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5]"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={isVerifying || !tokenInput.trim()}
-                className="px-6 py-2.5 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 shadow-lg"
+                className="px-6 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 shadow-lg"
               >
                 {isVerifying ? 'Verifying...' : 'Verify Pass'}
               </button>
@@ -250,7 +250,7 @@ export const BartenderPage: React.FC = () => {
 
         {/* Right Workstation Panel: Verified Pass Details Card */}
         <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-6">
-          <h3 className="text-sm font-bold uppercase text-[#D4AF37] tracking-wider">2. Verified Guest Pass Summary</h3>
+          <h3 className="text-sm font-bold uppercase text-[#8D6CE5] tracking-wider">2. Verified Guest Pass Summary</h3>
 
           {!scannedToken ? (
             <div className="py-20 text-center text-text-muted text-xs space-y-2">
@@ -265,7 +265,7 @@ export const BartenderPage: React.FC = () => {
               <div className="p-4 rounded-2xl bg-bg-primary border border-border-main flex items-center justify-between">
                 <div>
                   <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block">Token Pass</span>
-                  <span className="font-mono text-2xl font-black text-[#D4AF37]">{scannedToken.tokenNumber}</span>
+                  <span className="font-mono text-2xl font-black text-[#8D6CE5]">{scannedToken.tokenNumber}</span>
                 </div>
 
                 <span
@@ -322,7 +322,7 @@ export const BartenderPage: React.FC = () => {
                 <button
                   onClick={handleRedeem}
                   disabled={isRedeeming || isQuotaDepleted}
-                  className="w-full py-3.5 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl disabled:opacity-50"
+                  className="w-full py-3.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl disabled:opacity-50"
                 >
                   <Wine size={18} />
                   <span>{isRedeeming ? 'Dispensing Drink...' : 'Dispense 1 Drink'}</span>
@@ -348,3 +348,4 @@ export const BartenderPage: React.FC = () => {
     </div>
   );
 };
+

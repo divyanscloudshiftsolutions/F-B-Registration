@@ -42,7 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [token, setToken] = useState<string | null>(api.getToken());
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isDark, setIsDark] = useState<boolean>(() => {
-    const savedTheme = localStorage.getItem('nfc_web_theme');
+    const savedTheme = localStorage.getItem('bar_web_theme');
     return savedTheme !== 'light'; // Default to true (dark theme)
   });
   const [systemMode] = useState<'online' | 'offline' | 'syncing'>('online');
@@ -51,7 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Notifications state loaded from localStorage
   const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
-    const saved = localStorage.getItem('nfc_web_notifications');
+    const saved = localStorage.getItem('bar_web_notifications');
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -83,16 +83,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Sync notifications to localStorage
   useEffect(() => {
-    localStorage.setItem('nfc_web_notifications', JSON.stringify(notifications));
+    localStorage.setItem('bar_web_notifications', JSON.stringify(notifications));
   }, [notifications]);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('nfc_web_user');
+    const savedUser = localStorage.getItem('bar_web_user');
     if (savedUser && token) {
       try {
         setUser(JSON.parse(savedUser));
       } catch {
-        localStorage.removeItem('nfc_web_user');
+        localStorage.removeItem('bar_web_user');
       }
     }
     setIsLoading(false);
@@ -101,7 +101,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const toggleTheme = () => {
     setIsDark(prev => {
       const next = !prev;
-      localStorage.setItem('nfc_web_theme', next ? 'dark' : 'light');
+      localStorage.setItem('bar_web_theme', next ? 'dark' : 'light');
       return next;
     });
   };
@@ -124,7 +124,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (res.user && res.token) {
         setUser(res.user);
         setToken(res.token);
-        localStorage.setItem('nfc_web_user', JSON.stringify(res.user));
+        localStorage.setItem('bar_web_user', JSON.stringify(res.user));
         showToast(`Welcome back, ${res.user.fullName}!`, 'success');
         
         // Log receptionist/admin login notification
@@ -151,7 +151,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await api.logout();
     setUser(null);
     setToken(null);
-    localStorage.removeItem('nfc_web_user');
+    localStorage.removeItem('bar_web_user');
     showToast('Logged out successfully.', 'info');
   };
 
@@ -209,3 +209,4 @@ export const useAuth = () => {
   }
   return context;
 };
+

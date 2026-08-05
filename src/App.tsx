@@ -14,11 +14,11 @@ import { AdminPage } from './pages/AdminPage';
 const AppContent: React.FC = () => {
   const { user, toasts, dismissToast } = useAuth();
   const [activeTab, setActiveTabState] = useState<string>(() => {
-    return localStorage.getItem('nfc_web_active_tab') || 'dashboard';
+    return localStorage.getItem('bar_web_active_tab') || 'dashboard';
   });
   const setActiveTab = (tab: string) => {
     setActiveTabState(tab);
-    localStorage.setItem('nfc_web_active_tab', tab);
+    localStorage.setItem('bar_web_active_tab', tab);
   };
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
@@ -29,7 +29,17 @@ const AppContent: React.FC = () => {
   const renderTabContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardPage />;
+        return (
+          <DashboardPage 
+            onNavigate={(tabId, adminSubtab) => {
+              if (adminSubtab) {
+                localStorage.setItem('bar_web_admin_subtab', adminSubtab);
+                window.dispatchEvent(new Event('storage'));
+              }
+              setActiveTab(tabId);
+            }} 
+          />
+        );
       case 'checkin':
         return <CheckInPage />;
       case 'quick_attendance':
@@ -41,7 +51,17 @@ const AppContent: React.FC = () => {
       case 'admin':
         return <AdminPage />;
       default:
-        return <DashboardPage />;
+        return (
+          <DashboardPage 
+            onNavigate={(tabId, adminSubtab) => {
+              if (adminSubtab) {
+                localStorage.setItem('bar_web_admin_subtab', adminSubtab);
+                window.dispatchEvent(new Event('storage'));
+              }
+              setActiveTab(tabId);
+            }} 
+          />
+        );
     }
   };
 
@@ -53,12 +73,16 @@ const AppContent: React.FC = () => {
       case 'bartender': return 'Bartender Drink Service Station';
       case 'tables': return 'Live Seating Floor Plan & Tables';
       case 'admin': return 'System Administration & Staff Portal';
-      default: return 'NFC Bar Management System';
+      default: return 'Bar Management System';
     }
   };
 
   return (
-    <div className="flex min-h-screen bg-bg-primary text-text-main font-sans">
+    <div className="flex h-screen bg-bg-primary text-text-primary font-sans overflow-hidden relative">
+      {/* Ambient background orbs for glassmorphism */}
+      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[60%] dark:bg-primary/5 bg-primary/10 rounded-full blur-[140px] pointer-events-none z-0" />
+      <div className="absolute bottom-[-10%] left-[20%] w-[40%] h-[55%] dark:bg-mint/5 bg-mint/8 rounded-full blur-[140px] pointer-events-none z-0" />
+
       {/* Navigation Sidebar */}
       <Sidebar
         activeTab={activeTab}
@@ -68,7 +92,7 @@ const AppContent: React.FC = () => {
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative z-10">
         <Header title={getTabTitle()} />
         
         <main className="p-6 flex-1 overflow-y-auto">
@@ -81,12 +105,12 @@ const AppContent: React.FC = () => {
         {toasts.map(toast => (
           <div
             key={toast.id}
-            className={`pointer-events-auto p-4 rounded-xl shadow-2xl flex items-center justify-between border backdrop-blur-md transition-all animate-bounce-short ${
+            className={`pointer-events-auto p-4 rounded-xl shadow-lg flex items-center justify-between border backdrop-blur-md transition-all ${
               toast.type === 'success'
-                ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200'
+                ? 'bg-status-success-bg border-status-success-border text-status-success'
                 : toast.type === 'danger'
-                ? 'bg-red-950/90 border-red-500/50 text-red-200'
-                : 'bg-blue-950/90 border-blue-500/50 text-blue-200'
+                ? 'bg-status-danger-bg border-status-danger-border text-status-danger'
+                : 'bg-status-info-bg border-status-info-border text-status-info'
             }`}
           >
             <span className="text-xs font-semibold">{toast.message}</span>

@@ -85,7 +85,7 @@ export const CustomerSessionsManager: React.FC = () => {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by Token Number, Customer Name, or Phone..."
-            className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
+            className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5]"
           />
         </div>
 
@@ -96,7 +96,7 @@ export const CustomerSessionsManager: React.FC = () => {
               onClick={() => setStatusFilter(f)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${
                 statusFilter === f
-                  ? 'bg-[#D4AF37] text-black border-[#D4AF37]'
+                  ? 'bg-[#8D6CE5] text-black border-[#8D6CE5]'
                   : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
               }`}
             >
@@ -137,7 +137,7 @@ export const CustomerSessionsManager: React.FC = () => {
               <tbody className="divide-y divide-border-main">
                 {filteredTokens.map(tk => (
                   <tr key={tk.id} className="hover:bg-bg-primary transition-colors">
-                    <td className="py-3 px-3 font-mono font-bold text-[#D4AF37]">{tk.tokenNumber}</td>
+                    <td className="py-3 px-3 font-mono font-bold text-[#8D6CE5]">{tk.tokenNumber}</td>
                     <td className="py-3 px-3 font-semibold text-text-main">{tk.customer?.name || 'Walk-in Guest'}</td>
                     <td className="py-3 px-3 font-mono text-text-muted">{tk.customer?.phoneNumber || 'N/A'}</td>
                     <td className="py-3 px-3 font-semibold text-text-main">{tk.personsCount} Guests</td>
@@ -193,7 +193,7 @@ export const CustomerSessionsManager: React.FC = () => {
             </div>
 
             <p className="text-xs text-text-muted">
-              Token Number: <span className="font-mono font-bold text-[#D4AF37]">{extendingToken.tokenNumber}</span> ({extendingToken.customer?.name})
+              Token Number: <span className="font-mono font-bold text-[#8D6CE5]">{extendingToken.tokenNumber}</span> ({extendingToken.customer?.name})
             </p>
 
             <form onSubmit={handleExtendSubmit} className="space-y-4">
@@ -202,7 +202,7 @@ export const CustomerSessionsManager: React.FC = () => {
                 <select
                   value={extraMinutes}
                   onChange={e => setExtraMinutes(Number(e.target.value))}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
                 >
                   <option value={30}>30 Minutes</option>
                   <option value={60}>60 Minutes (1 Hour)</option>
@@ -217,7 +217,7 @@ export const CustomerSessionsManager: React.FC = () => {
                   type="number"
                   value={additionalAmount}
                   onChange={e => setAdditionalAmount(Number(e.target.value))}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
                   required
                 />
               </div>
@@ -233,7 +233,7 @@ export const CustomerSessionsManager: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmittingExtend}
-                  className="flex-1 py-2.5 rounded-xl gold-gradient-btn text-xs font-bold uppercase tracking-wider"
+                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider"
                 >
                   {isSubmittingExtend ? 'Extending...' : 'Confirm Extension'}
                 </button>
@@ -259,7 +259,7 @@ export const CustomerSessionsManager: React.FC = () => {
             </div>
 
             <p className="text-xs text-text-muted">
-              Token Number: <span className="font-mono font-bold text-[#D4AF37]">{deactivatingToken.tokenNumber}</span> ({deactivatingToken.customer?.name})
+              Token Number: <span className="font-mono font-bold text-[#8D6CE5]">{deactivatingToken.tokenNumber}</span> ({deactivatingToken.customer?.name})
             </p>
 
             <form onSubmit={handleDeactivateSubmit} className="space-y-4">
@@ -299,3 +299,4 @@ export const CustomerSessionsManager: React.FC = () => {
     </div>
   );
 };
+

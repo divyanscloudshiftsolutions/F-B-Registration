@@ -173,7 +173,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
             )}
 
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-bg-primary border border-border-main text-[10px] font-semibold text-text-muted">
-              <Shield size={12} className="text-[#D4AF37]" />
+              <Shield size={12} className="text-[#8D6CE5]" />
               <span>FaceMark AI</span>
             </div>
           </div>
@@ -201,7 +201,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
               <button
                 type="button"
                 onClick={startCamera}
-                className="px-5 py-2 rounded-xl gold-gradient-btn text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 shadow-lg cursor-pointer"
+                className="px-5 py-2 rounded-xl primary-btn text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 shadow-lg cursor-pointer"
               >
                 <Video size={14} /> Enable Camera
               </button>
@@ -214,7 +214,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
           {/* Scanning Reticle Frame Overlay */}
           {!attendanceResult && !errorMessage && cameraActive && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-48 h-48 border-2 border-dashed border-[#D4AF37]/60 rounded-full animate-pulse flex items-center justify-center">
+              <div className="w-48 h-48 border-2 border-dashed border-[#8D6CE5]/60 rounded-full animate-pulse flex items-center justify-center">
                 <div className="w-40 h-40 border border-white/20 rounded-full" />
               </div>
             </div>
@@ -240,14 +240,14 @@ export const QuickAttendanceWebPage: React.FC = () => {
               </div>
 
               {attendanceResult.confidence && (
-                <div className="text-[10px] font-semibold text-[#D4AF37] bg-bg-primary px-2.5 py-0.5 rounded-full border border-border-main">
+                <div className="text-[10px] font-semibold text-[#8D6CE5] bg-bg-primary px-2.5 py-0.5 rounded-full border border-border-main">
                   Confidence Score: {(attendanceResult.confidence * 100).toFixed(1)}%
                 </div>
               )}
 
               <button
                 onClick={handleReset}
-                className="mt-2 px-6 py-2 rounded-xl gold-gradient-btn text-[10px] uppercase font-bold tracking-wider cursor-pointer"
+                className="mt-2 px-6 py-2 rounded-xl primary-btn text-[10px] uppercase font-bold tracking-wider cursor-pointer"
               >
                 Scan Next Employee
               </button>
@@ -283,7 +283,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 value={employeeCode}
                 onChange={e => setEmployeeCode(e.target.value)}
                 placeholder="Optional Employee ID (e.g. EMP-99)"
-                className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
+                className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5]"
               />
             </div>
 
@@ -311,7 +311,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
               <button
                 onClick={handleCaptureAndSubmit}
                 disabled={isSubmitting || !cameraActive}
-                className="flex-1 md:flex-initial px-6 py-2.5 rounded-xl gold-gradient-btn flex items-center justify-center gap-1.5 text-xs uppercase font-black tracking-wider disabled:opacity-40 disabled:cursor-not-allowed shadow-xl cursor-pointer"
+                className="flex-1 md:flex-initial px-6 py-2.5 rounded-xl primary-btn flex items-center justify-center gap-1.5 text-xs uppercase font-black tracking-wider disabled:opacity-40 disabled:cursor-not-allowed shadow-xl cursor-pointer"
               >
                 <Camera size={16} />
                 <span>{isSubmitting ? 'Verifying...' : 'Capture & Verify'}</span>
@@ -323,3 +323,4 @@ export const QuickAttendanceWebPage: React.FC = () => {
     </div>
   );
 };
+

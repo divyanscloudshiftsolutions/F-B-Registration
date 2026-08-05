@@ -69,22 +69,22 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-bg-primary flex items-center justify-center p-4 lg:p-12 relative overflow-hidden text-text-main">
+    <div className="min-h-screen bg-bg-primary flex items-center justify-center p-4 lg:p-12 relative overflow-hidden text-text-primary">
       {/* Ambient Backdrop Orbs */}
-      <div className="absolute -top-40 -left-40 w-[500px] h-[500px] bg-[#D4AF37]/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute -bottom-40 -right-40 w-[500px] h-[500px] bg-[#10B981]/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute -top-40 -left-40 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute -bottom-40 -right-40 w-[500px] h-[500px] bg-mint/10 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Split Screen Container */}
-      <div className="w-full max-w-5xl bg-bg-surface border border-border-main rounded-3xl shadow-2xl overflow-hidden grid grid-cols-1 lg:grid-cols-2 relative z-10">
+      <div className="w-full max-w-5xl bg-bg-surface border border-border rounded-3xl shadow-2xl overflow-hidden grid grid-cols-1 lg:grid-cols-2 relative z-10">
         
         {/* Left Panel: Venue Branding Showcase (Hidden on Mobile) */}
-        <div className="hidden lg:flex flex-col justify-between p-10 bg-gradient-to-br from-bg-surface to-bg-primary border-r border-border-main relative">
+        <div className="hidden lg:flex flex-col justify-between p-10 bg-gradient-to-br from-bg-surface to-bg-primary border-r border-border relative">
           <div>
-            <div className="w-14 h-14 rounded-2xl gold-gradient-btn flex items-center justify-center text-black text-2xl font-black mb-6 shadow-xl shadow-[#D4AF37]/20">
+            <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center text-text-inverse text-2xl font-bold mb-6 shadow-xl shadow-primary/20">
               🍸
             </div>
-            <h1 className="text-3xl font-black text-text-main tracking-wider uppercase">NFC BAR SYSTEM</h1>
-            <p className="text-xs text-[#D4AF37] font-semibold mt-1 uppercase tracking-widest">Enterprise Terminal Gateway</p>
+            <h1 className="text-3xl font-black text-text-primary tracking-wider uppercase">BAR MANAGEMENT SYSTEM</h1>
+            <p className="text-xs text-primary font-semibold mt-1 uppercase tracking-widest">Enterprise Terminal Gateway</p>
             
             <p className="text-xs text-text-muted mt-6 leading-relaxed">
               Unified venue check-in, real-time seating map, beverage redemption station, and executive management portal.
@@ -92,10 +92,10 @@ export const LoginPage: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            <div className="p-4 rounded-2xl bg-bg-primary border border-border-main flex items-center gap-3">
-              <ShieldCheck className="dark:text-emerald-400 text-emerald-700" size={20} />
+            <div className="p-4 rounded-2xl bg-bg-primary border border-border flex items-center gap-3">
+              <ShieldCheck className="text-status-success" size={20} />
               <div>
-                <p className="text-xs font-bold text-text-main">Secure Terminal Access</p>
+                <p className="text-xs font-bold text-text-primary">Secure Terminal Access</p>
                 <p className="text-[10px] text-text-muted">Authorized Shift Staff Terminal Only</p>
               </div>
             </div>
@@ -107,13 +107,13 @@ export const LoginPage: React.FC = () => {
           
           {/* Header */}
           <div>
-            <h2 className="text-xl font-bold text-text-main tracking-wide">Staff Terminal Login</h2>
+            <h2 className="text-xl font-bold text-text-primary tracking-wide">Staff Terminal Login</h2>
             <p className="text-xs text-text-muted mt-1">Select your shift role and enter credentials</p>
           </div>
 
           {/* Error Banner */}
           {errorMsg && (
-            <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold flex items-center gap-2">
+            <div className="p-3.5 rounded-xl bg-status-danger-bg border border-status-danger-border text-status-danger text-xs font-bold flex items-center gap-2">
               <span>⚠️</span>
               <span>{errorMsg}</span>
             </div>
@@ -122,7 +122,7 @@ export const LoginPage: React.FC = () => {
           {/* Role Selection Tabs */}
           <div>
             <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2">1. Select Shift Role</label>
-            <div className="grid grid-cols-4 gap-2 p-1.5 rounded-xl bg-bg-primary border border-border-main">
+            <div className="grid grid-cols-4 gap-2 p-1.5 rounded-xl bg-bg-primary border border-border">
               {(['REC', 'BAR', 'ADM', 'MGR'] as const).map(r => {
                 const isSel = selectedRole === r;
                 const labels = { REC: 'Recep', BAR: 'Bar', ADM: 'Admin', MGR: 'Mngr' };
@@ -131,10 +131,10 @@ export const LoginPage: React.FC = () => {
                     key={r}
                     type="button"
                     onClick={() => handleRoleSelect(r)}
-                    className={`py-2 text-xs font-extrabold uppercase rounded-lg transition-all cursor-pointer ${
+                    className={`py-2 text-xs font-bold uppercase rounded-lg transition-all cursor-pointer ${
                       isSel
-                        ? 'gold-gradient-btn text-black shadow-md shadow-[#D4AF37]/20 font-black'
-                        : 'text-text-muted hover:text-text-main dark:hover:bg-white/5 hover:bg-black/5'
+                        ? 'bg-primary text-text-inverse shadow-md shadow-primary/20 font-extrabold'
+                        : 'text-text-muted hover:text-text-primary dark:hover:bg-white/5 hover:bg-black/5'
                     }`}
                   >
                     {labels[r]}
@@ -159,7 +159,7 @@ export const LoginPage: React.FC = () => {
                     setErrorMsg('');
                   }}
                   placeholder="e.g. ADM-03"
-                  className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-text-muted focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 transition-all"
+                  className="w-full bg-bg-primary border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-primary font-mono placeholder-text-placeholder focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                   required
                 />
               </div>
@@ -178,7 +178,7 @@ export const LoginPage: React.FC = () => {
                     setErrorMsg('');
                   }}
                   placeholder="••••"
-                  className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-text-muted focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 transition-all"
+                  className="w-full bg-bg-primary border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-primary font-mono placeholder-text-placeholder focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                   required
                 />
               </div>
@@ -189,7 +189,7 @@ export const LoginPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowPosNumpad(!showPosNumpad)}
-                className="text-xs text-[#D4AF37] font-semibold hover:underline flex items-center gap-1.5 cursor-pointer"
+                className="text-xs text-primary font-semibold hover:underline flex items-center gap-1.5 cursor-pointer"
               >
                 <Grid3X3 size={14} />
                 <span>{showPosNumpad ? 'Hide Touch POS Numpad' : 'Show Touch POS Numpad'}</span>
@@ -198,7 +198,7 @@ export const LoginPage: React.FC = () => {
 
             {/* Touch POS Onscreen Keypad Overlay */}
             {showPosNumpad && (
-              <div className="p-3 rounded-2xl bg-bg-primary border border-border-main space-y-2 animate-fadeIn">
+              <div className="p-3 rounded-2xl bg-bg-primary border border-border space-y-2 animate-fadeIn">
                 <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider text-center mb-1">
                   Editing {activeField === 'username' ? 'Employee Code' : 'PIN'}
                 </p>
@@ -212,7 +212,7 @@ export const LoginPage: React.FC = () => {
                         else if (key === '⌫') handleNumpadBackspace();
                         else handleNumpadKey(key);
                       }}
-                      className="py-3 rounded-xl bg-bg-surface hover:bg-bg-card text-text-main font-bold text-sm border border-border-main active:scale-95 transition-all text-center cursor-pointer"
+                      className="py-3 rounded-xl bg-bg-surface hover:bg-bg-card text-text-primary font-bold text-sm border border-border active:scale-95 transition-all text-center cursor-pointer"
                     >
                       {key}
                     </button>
@@ -225,7 +225,7 @@ export const LoginPage: React.FC = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-[#D4AF37]/20 disabled:opacity-50 transition-all mt-4 cursor-pointer"
+              className="w-full py-3 rounded-xl bg-primary hover:bg-primary-hover text-text-inverse text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-primary/20 disabled:opacity-50 transition-all mt-4 cursor-pointer"
             >
               {isSubmitting ? (
                 <span>Authenticating Terminal...</span>
@@ -237,7 +237,6 @@ export const LoginPage: React.FC = () => {
               )}
             </button>
           </form>
-
         </div>
       </div>
     </div>

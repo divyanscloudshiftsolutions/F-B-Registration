@@ -3,9 +3,7 @@ import {
   Grid3X3, 
   Users, 
   BarChart3, 
-  CreditCard, 
   DollarSign, 
-  Settings, 
   Clock 
 } from 'lucide-react';
 
@@ -13,9 +11,7 @@ export type AdminSubTab =
   | 'tables' 
   | 'staff' 
   | 'chart' 
-  | 'cards' 
   | 'rates' 
-  | 'settings' 
   | 'customers';
 
 interface AdminNavTabsProps {
@@ -28,14 +24,12 @@ export const AdminNavTabs: React.FC<AdminNavTabsProps> = ({ activeTab, setActive
     { id: 'tables', label: 'Tables Floor Plan', icon: Grid3X3 },
     { id: 'staff', label: 'Staff Directory', icon: Users },
     { id: 'chart', label: 'Revenue Analytics', icon: BarChart3 },
-    { id: 'cards', label: 'Smart Cards', icon: CreditCard },
     { id: 'rates', label: 'Rate Cards', icon: DollarSign },
     { id: 'customers', label: 'Customer Sessions', icon: Clock },
-    { id: 'settings', label: 'System Settings', icon: Settings },
   ];
 
   return (
-    <div className="glass-panel p-2 rounded-2xl border border-border-main flex flex-wrap gap-2">
+    <div className="glass-panel p-2 rounded-2xl flex flex-wrap gap-2">
       {tabs.map(t => {
         const Icon = t.icon;
         const isSel = activeTab === t.id;
@@ -43,13 +37,13 @@ export const AdminNavTabs: React.FC<AdminNavTabsProps> = ({ activeTab, setActive
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all group ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all group ${
               isSel
-                ? 'bg-gradient-to-r from-[#D4AF37] to-[#F5E08B] text-black shadow-lg shadow-[#D4AF37]/20 font-black'
-                : 'text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5'
+                ? 'bg-primary text-text-inverse shadow-md shadow-primary/25'
+                : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
             }`}
           >
-            <Icon size={16} className={isSel ? 'text-black' : 'text-text-muted group-hover:text-text-main'} />
+            <Icon size={16} className={isSel ? 'text-text-inverse' : 'text-text-muted group-hover:text-text-primary'} />
             <span>{t.label}</span>
           </button>
         );
