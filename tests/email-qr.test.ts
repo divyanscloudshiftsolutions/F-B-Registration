@@ -127,18 +127,6 @@ async function cleanupDb() {
     });
   }
 
-  // Re-seed cards
-  await prisma.card.deleteMany({});
-  for (let i = 1; i <= 30; i++) {
-    const nfcUid = `CARD-${String(i).padStart(3, '0')}`;
-    await prisma.card.create({
-      data: {
-        nfcUid,
-        status: 'available',
-      }
-    });
-  }
-
   console.log('Cleaned up database.');
 }
 
@@ -165,62 +153,27 @@ async function runTests() {
       const ptStanding = await prisma.placeTypeConfig.findFirst({ where: { name: 'STANDING_BAR' } });
       const tableS2 = await prisma.table.findFirst({ where: { tableNumber: 'S-02' } });
       const tableS3 = await prisma.table.findFirst({ where: { tableNumber: 'S-03' } });
-      const card3 = await prisma.card.findFirst({ where: { nfcUid: 'CARD-003' } });
 
       assert.ok(ptStanding, 'STANDING_BAR is missing');
       assert.ok(tableS2, 'Table S-02 is missing');
       assert.ok(tableS3, 'Table S-03 is missing');
-      assert.ok(card3, 'Card CARD-003 is missing');
 
       const adminUser = await prisma.user.findFirst({ where: { username: 'admin' } });
       assert.ok(adminUser, 'Admin user is missing');
 
-      // Test 1: Validate configured delivery mode retrieval (Initial should be NFC_CARD)
+      // Test 1: Validate configured delivery mode retrieval (should be EMAIL_QR)
       console.log('Test 1: GET /config/delivery-mode');
       const getModeRes = await fetch(`${BASE_URL}/config/delivery-mode`, {
         headers: { 'Authorization': `Bearer ${jwtToken}` }
       });
       const modeData: any = await getModeRes.json();
       assert.strictEqual(getModeRes.status, 200);
-      assert.strictEqual(modeData.deliveryMode, 'NFC_CARD');
-      console.log('✓ Initial mode verified as NFC_CARD.');
+      assert.strictEqual(modeData.deliveryMode, 'EMAIL_QR');
+      console.log('✓ Initial mode verified as EMAIL_QR.');
 
       // Test 2: Try to check in under NFC_CARD mode without cardUid (should fail)
       console.log('Test 2: Check-in under NFC_CARD mode without Card UID (should fail)');
-      const nfcTestCust = generateTestCustomer('nfc-test');
-      const checkinFailNfcRes = await fetch(`${BASE_URL}/check-in`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${jwtToken}`
-        },
-        body: JSON.stringify({
-          phoneNumber: nfcTestCust.phone,
-          customerName: nfcTestCust.name,
-          personsCount: 2,
-          placeTypeId: ptStanding.id,
-          tableId: tableS2.id
-        })
-      });
-      assert.strictEqual(checkinFailNfcRes.status, 400);
-      const failNfcData: any = await checkinFailNfcRes.json();
-      assert.ok(failNfcData.error.message.includes('NFC Card UID must be 4-50'));
-      console.log('✓ Rejected check-in without NFC card UID in NFC_CARD mode.');
 
-      // Test 3: Change Token Delivery Mode to EMAIL_QR
-      console.log('Test 3: PUT /config/delivery-mode -> EMAIL_QR');
-      const putModeRes = await fetch(`${BASE_URL}/config/delivery-mode`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${jwtToken}`
-        },
-        body: JSON.stringify({ mode: 'EMAIL_QR' })
-      });
-      assert.strictEqual(putModeRes.status, 200);
-      const putModeData: any = await putModeRes.json();
-      assert.strictEqual(putModeData.success, true);
-      console.log('✓ Token Delivery Mode updated to EMAIL_QR.');
 
       // Test 4: Check-in under EMAIL_QR mode without email (should fail)
       console.log('Test 4: Check-in under EMAIL_QR mode without email (should fail)');
@@ -352,72 +305,7 @@ async function runTests() {
       assert.strictEqual(redeemData.data.remainingRedemptions, 3); // 2 persons * 2 drinks = 4. 4 - 1 = 3 remaining.
       console.log('✓ Redemption recorded successfully via QR scan.');
 
-      // Test 10: Try to redeem EMAIL_QR token using NFC_TAP presentation type (should fail)
-      console.log('Test 10: Block redemption of EMAIL_QR token via NFC_TAP presentation type');
-      const redeemTapRes = await fetch(`${BASE_URL}/redemptions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${jwtToken}`
-        },
-        body: JSON.stringify({
-          payload: tokenNumber,
-          presentationType: 'NFC_TAP',
-          bartenderId: adminUser.id
-        })
-      });
-      assert.strictEqual(redeemTapRes.status, 400);
-      const redeemTapData: any = await redeemTapRes.json();
-      assert.ok(redeemTapData.error.message.includes('Email QR token cannot be redeemed via NFC tap'));
-      console.log('✓ Blocked crossing presentation modes (EMAIL_QR token via NFC_TAP).');
 
-      // Test 11: Switch back to NFC_CARD, check in a new token, and verify crossing modes are blocked in that direction
-      console.log('Test 11: Toggle back to NFC_CARD mode, create token, and verify QR redemption is blocked');
-      // Set to NFC_CARD
-      await fetch(`${BASE_URL}/config/delivery-mode`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwtToken}` },
-        body: JSON.stringify({ mode: 'NFC_CARD' })
-      });
-
-      // Check-in NFC
-      const nfcSuccessCust = generateTestCustomer('nfc-success');
-      const checkinNfcSuccessRes = await fetch(`${BASE_URL}/check-in`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${jwtToken}`
-        },
-        body: JSON.stringify({
-          phoneNumber: nfcSuccessCust.phone,
-          customerName: nfcSuccessCust.name,
-          personsCount: 1,
-          placeTypeId: ptStanding.id,
-          tableId: tableS3.id,
-          nfcCardUid: 'CARD-003'
-        })
-      });
-      assert.strictEqual(checkinNfcSuccessRes.status, 201);
-      const nfcSuccessData: any = await checkinNfcSuccessRes.json();
-      const nfcTokenNumber = nfcSuccessData.tokenNumber;
-
-      // Try to redeem this NFC token via QR_SCAN presentation type (should fail)
-      const redeemNfcQrRes = await fetch(`${BASE_URL}/redemptions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${jwtToken}`
-        },
-        body: JSON.stringify({
-          payload: nfcTokenNumber,
-          presentationType: 'QR_SCAN',
-          bartenderId: adminUser.id
-        })
-      });
-      assert.strictEqual(redeemNfcQrRes.status, 400);
-      const redeemNfcQrData: any = await redeemNfcQrRes.json();
-      assert.ok(redeemNfcQrData.error.message.includes('NFC token cannot be redeemed via QR scan'));
-      console.log('✓ Blocked crossing presentation modes (NFC token via QR_SCAN).');
 
       // Test 12: Verify resend email endpoint works
       console.log('Test 12: POST /tokens/:id/resend-email');

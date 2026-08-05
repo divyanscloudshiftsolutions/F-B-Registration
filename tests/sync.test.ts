@@ -69,11 +69,7 @@ async function cleanupDb() {
       }
     }
   });
-  
-  // Reset all cards to available
-  await prisma.card.updateMany({
-    data: { status: 'available' }
-  });
+
 
   // Re-seed place types
   const placeTypeSpecs = [
@@ -160,13 +156,8 @@ async function runTests() {
       // Get seeded static IDs
       const ptStanding = await prisma.placeTypeConfig.findFirst({ where: { name: 'STANDING_BAR' } });
       const tableS1 = await prisma.table.findFirst({ where: { tableNumber: 'S-01', placeTypeId: ptStanding!.id } });
-      const card1 = await prisma.card.findFirst({ where: { nfcUid: 'CARD-001' } });
-      const card2 = await prisma.card.findFirst({ where: { nfcUid: 'CARD-002' } });
-
       assert.ok(ptStanding, 'STANDING_BAR place type is missing');
       assert.ok(tableS1, 'Table S-01 is missing');
-      assert.ok(card1, 'Card CARD-001 is missing');
-      assert.ok(card2, 'Card CARD-002 is missing');
 
       const adminUser = await prisma.user.findFirst({ where: { username: 'admin' } });
       const bartenderUser = await prisma.user.findFirst({ where: { username: 'bartender' } });
@@ -197,8 +188,7 @@ async function runTests() {
                 tableId: tableS1!.id,
                 amountPaid: 1000,
                 paymentVerified: true,
-                issuedBy: adminUser!.id,
-                nfcCardUid: card1!.nfcUid
+                issuedBy: adminUser!.id
               }
             }
           ]
@@ -308,8 +298,7 @@ async function runTests() {
                 tableId: tableS1!.id,
                 amountPaid: 1000,
                 paymentVerified: true,
-                issuedBy: adminUser!.id,
-                nfcCardUid: card1!.nfcUid
+                issuedBy: adminUser!.id
               }
             }
           ]
@@ -347,8 +336,7 @@ async function runTests() {
                 tableId: tableS1!.id, // Occupied S-01 table
                 amountPaid: 1000,
                 paymentVerified: true,
-                issuedBy: adminUser!.id,
-                nfcCardUid: card2!.nfcUid
+                issuedBy: adminUser!.id
               }
             }
           ]
@@ -535,8 +523,7 @@ async function runTests() {
                 tableId: tableS1!.id,
                 amountPaid: 1000,
                 paymentVerified: true,
-                issuedBy: adminUser!.id,
-                nfcCardUid: card2!.nfcUid
+                issuedBy: adminUser!.id
               }
             }
           ]
@@ -762,148 +749,6 @@ async function runTests() {
       assert.strictEqual(blockedLoginRes.status, 403, 'Deactivated user should return 403 on login');
       assert.strictEqual(blockedLoginData.error.code, 'AUTH_005', 'Deactivated user error code mismatch');
       console.log('✓ Staff Management E2E workflows successfully verified.');
-
-      // 10. Test Card Inventory Management (BRD FR6.3)
-      console.log('\nTest Case 10: Card Inventory Management (BRD FR6.3)...');
-      
-      // 10.1 List all cards
-      console.log('  10.1 Verifying GET /api/cards (Admin Only)...');
-      const listCardsRes = await fetch(`${BASE_URL}/cards`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const listCardsData: any = await listCardsRes.json();
-      assert.strictEqual(listCardsRes.status, 200, 'Listing cards failed');
-      assert.ok(Array.isArray(listCardsData), 'Expected cards list to be an array');
-      assert.ok(listCardsData.length > 0, 'Expected at least one card in DB');
-      
-      // 10.2 Block assigned -> available
-      console.log('  10.2 Verifying assigned cards cannot be marked available...');
-      const card001Uid = card1!.nfcUid;
-      await prisma.card.update({
-        where: { nfcUid: card001Uid },
-        data: { status: 'assigned' }
-      });
-      const updateAssignedRes = await fetch(`${BASE_URL}/cards/${card001Uid}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: 'available' })
-      });
-      const updateAssignedData: any = await updateAssignedRes.json();
-      assert.strictEqual(updateAssignedRes.status, 400, 'Assigned card status change to available should be blocked');
-      assert.strictEqual(updateAssignedData.error.code, 'CONFLICT_CARD_ASSIGNED', 'Error code mismatch');
-      
-      // 10.3 Test available -> lost -> reuse block
-      console.log('  10.3 Verifying available -> lost transition and lost block rules...');
-      const card002Uid = card2!.nfcUid;
-      // Mark available card as lost
-      const markLostRes = await fetch(`${BASE_URL}/cards/${card002Uid}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: 'lost' })
-      });
-      assert.strictEqual(markLostRes.status, 200, 'Marking card lost failed');
-      
-      // Try to mark lost card as assigned (block)
-      const reuseLostAssignedRes = await fetch(`${BASE_URL}/cards/${card002Uid}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: 'assigned' })
-      });
-      const reuseLostAssignedData: any = await reuseLostAssignedRes.json();
-      assert.strictEqual(reuseLostAssignedRes.status, 400, 'Lost card should not be reusable as assigned');
-      assert.strictEqual(reuseLostAssignedData.error.code, 'CONFLICT_CARD_LOST');
-
-      // Recover lost card to available (should succeed)
-      const recoverLostRes = await fetch(`${BASE_URL}/cards/${card002Uid}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: 'available' })
-      });
-      assert.strictEqual(recoverLostRes.status, 200, 'Recovering lost card to available failed');
-
-      // 10.4 Test available -> damaged -> reuse block
-      console.log('  10.4 Verifying available -> damaged transition and damaged block rules...');
-      
-      // Mark available card as damaged
-      const markDamagedRes = await fetch(`${BASE_URL}/cards/${card002Uid}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: 'damaged' })
-      });
-      assert.strictEqual(markDamagedRes.status, 200, 'Marking card damaged failed');
-
-      // Try to mark damaged card as assigned (block)
-      const reuseDamagedAssignedRes = await fetch(`${BASE_URL}/cards/${card002Uid}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: 'assigned' })
-      });
-      const reuseDamagedAssignedData: any = await reuseDamagedAssignedRes.json();
-      assert.strictEqual(reuseDamagedAssignedRes.status, 400, 'Damaged card should not be reusable as assigned');
-      assert.strictEqual(reuseDamagedAssignedData.error.code, 'CONFLICT_CARD_DAMAGED');
-
-      // Recover damaged card to available (should succeed)
-      const recoverDamagedRes = await fetch(`${BASE_URL}/cards/${card002Uid}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: 'available' })
-      });
-      assert.strictEqual(recoverDamagedRes.status, 200, 'Recovering damaged card to available failed');
-
-      // 10.5 Test inactive <-> available transitions
-      console.log('  10.5 Verifying inactive/active transition rules...');
-      // Reset card2 back to available in prisma directly to test inactive logic
-      await prisma.card.update({
-        where: { nfcUid: card002Uid },
-        data: { status: 'available' }
-      });
-
-      // Mark available card as inactive
-      const markInactiveRes = await fetch(`${BASE_URL}/cards/${card002Uid}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: 'inactive' })
-      });
-      assert.strictEqual(markInactiveRes.status, 200, 'Marking card inactive failed');
-
-      // Mark inactive card back to available (allowed)
-      const markActiveRes = await fetch(`${BASE_URL}/cards/${card002Uid}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: 'available' })
-      });
-      assert.strictEqual(markActiveRes.status, 200, 'Activating card failed');
-      const updatedCard2 = await prisma.card.findUnique({ where: { nfcUid: card002Uid } });
-      assert.strictEqual(updatedCard2!.status, 'available', 'Card status should be available after reactivation');
-
-      console.log('✓ Card Inventory Management E2E workflows successfully verified.');
 
       // 11. Test Rate Card Management (BRD FR6.4)
       console.log('\nTest Case 11: Rate Card Management (BRD FR6.4)...');

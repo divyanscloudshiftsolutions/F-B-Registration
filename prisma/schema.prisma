@@ -82,8 +82,7 @@ model Token {
   closedBy                String?             @map("closed_by")
   closeReason             CloseReason?        @map("close_reason")
   closer                  User?               @relation("TokenClosedBy", fields: [closedBy], references: [id])
-  card                    Card?               @relation("CardCurrentToken")
-  deliveryMode            String              @default("NFC_CARD") @map("delivery_mode") // NFC_CARD, EMAIL_QR
+  deliveryMode            String              @default("EMAIL_QR") @map("delivery_mode") // EMAIL_QR
   emailSent               Boolean             @default(false) @map("email_sent")
   emailSentAt             DateTime?           @map("email_sent_at")
   emailDeliveryStatus     String?             @map("email_delivery_status") // PENDING, SENT, FAILED
@@ -116,20 +115,6 @@ model Redemption {
 
   @@unique([tokenId, redemptionSequence])
   @@map("redemptions")
-}
-
-model Card {
-  id             String    @id @default(uuid())
-  nfcUid         String    @unique @map("nfc_uid")
-  status         String    @default("available") @map("status") // available, assigned, lost, damaged
-  assignedAt     DateTime? @map("assigned_at")
-  returnedAt     DateTime? @map("returned_at")
-  writeCycles    Int       @default(0) @map("write_cycles")
-  lastWrittenAt  DateTime? @map("last_written_at")
-  currentTokenId String?   @unique @map("current_token_id")
-  currentToken   Token?    @relation("CardCurrentToken", fields: [currentTokenId], references: [id])
-
-  @@map("cards")
 }
 
 model TokenExtension {
@@ -264,7 +249,6 @@ enum TokenStatus {
 
 enum ActivationMethod {
   EMAIL_QR
-  NFC
 }
 
 enum CancelReason {

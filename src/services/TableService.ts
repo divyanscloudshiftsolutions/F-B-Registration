@@ -173,8 +173,7 @@ export class TableService {
         tokens: {
           where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.EXPIRED] } },
           include: {
-            customer: true,
-            card: true
+            customer: true
           },
           orderBy: { startTime: 'desc' },
           take: 1
@@ -218,7 +217,7 @@ export class TableService {
             remainingDrinks: Math.max(0, currentToken.totalRedemptionsAllowed - currentToken.redemptionsUsed),
             sessionStartTime: currentToken.startTime,
             sessionEndTime: currentToken.endTime,
-            cardUid: currentToken.card?.nfcUid || '',
+            cardUid: '',
             status: currentToken.status
           } : null
         });

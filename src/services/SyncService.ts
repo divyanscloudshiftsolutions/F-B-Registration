@@ -18,7 +18,7 @@ const prisma = new PrismaClient();
 
 export interface SyncOperation {
   operationId: string;
-  operationType: 'CHECK_IN' | 'DRINK_REDEMPTION' | 'DRINK_UNDO' | 'TIME_EXTENSION' | 'SESSION_CLOSE' | 'CARD_STATUS_UPDATE';
+  operationType: 'CHECK_IN' | 'DRINK_REDEMPTION' | 'DRINK_UNDO' | 'TIME_EXTENSION' | 'SESSION_CLOSE';
   timestamp: string;
   payload: any;
 }
@@ -80,7 +80,7 @@ export class SyncService {
         const result = await this.processOperation(operationType, payload, timestamp, deviceId, operationId);
         results.push(result);
 
-        // Upload sync log audit record to S3/MinIO (nfc.md compliant)
+        // Upload sync log audit record to S3/MinIO (system_details.md compliant)
         try {
           const log = await prisma.syncLog.findUnique({ where: { operationId } });
           if (log) {
@@ -111,20 +111,12 @@ export class SyncService {
     const opTime = new Date(timestamp);
 
     // Resolve token helper (aligned to new current_token_id Card schema relation)
-    const resolveTokenNumber = async (tokenNumber?: string, cardUid?: string): Promise<any | null> => {
+    const resolveTokenNumber = async (tokenNumber?: string): Promise<any | null> => {
       if (tokenNumber) {
         return await prisma.token.findUnique({
           where: { tokenNumber },
-          include: { customer: true, card: true, table: true }
+          include: { customer: true, table: true }
         });
-      }
-      if (cardUid) {
-        const card = await prisma.card.findUnique({
-          where: { nfcUid: cardUid },
-          include: { currentToken: { include: { customer: true, card: true, table: true } } }
-        });
-        if (!card) return null;
-        return card.currentToken;
       }
       return null;
     };
@@ -140,9 +132,7 @@ export class SyncService {
           tableId,
           amountPaid,
           paymentVerified,
-          issuedBy,
-          nfcCardUid,
-          cardId
+          issuedBy
         } = payload;
 
         if (payload.placeType && payload.placeType !== 'STANDING_BAR' && payload.placeType !== 'PREMIUM_LOUNGE') {
@@ -200,17 +190,6 @@ export class SyncService {
           return await this.logConflict(operationId, deviceId, type, payload, 'CONFLICT_TABLE_OCCUPIED', `Table ${table.tableNumber} is already occupied`);
         }
 
-        // Conflict 3: Check Card assignment
-        const card = cardId 
-          ? await prisma.card.findUnique({ where: { id: cardId } })
-          : await prisma.card.findUnique({ where: { nfcUid: nfcCardUid } });
-        if (!card) {
-          return await this.logConflict(operationId, deviceId, type, payload, 'CONFLICT_CARD_NOT_FOUND', 'NFC card is not registered');
-        }
-        if (card.status !== 'available') {
-          return await this.logConflict(operationId, deviceId, type, payload, 'CONFLICT_CARD_ASSIGNED', 'NFC card is already assigned');
-        }
-
         // Conflict 4: Group size vs Table capacity
         if (personsCount > table.capacity) {
           return await this.logConflict(operationId, deviceId, type, payload, 'CONFLICT_CAPACITY_EXCEEDED', `Group size of ${personsCount} exceeds table capacity of ${table.capacity}`);
@@ -227,10 +206,8 @@ export class SyncService {
           amountPaid: new Decimal(amountPaid),
           paymentVerified: paymentVerified !== undefined ? paymentVerified : true,
           issuedBy,
-          nfcCardUid: nfcCardUid || card.nfcUid,
-          cardId: card.id,
           startTime: opTime,
-          deliveryMode: (payload as any).deliveryMode
+          deliveryMode: 'EMAIL_QR'
         });
 
         await prisma.syncLog.create({
@@ -252,9 +229,9 @@ export class SyncService {
       }
 
       case 'DRINK_REDEMPTION': {
-        const { tokenNumber, cardUid, bartenderId } = payload;
+        const { tokenNumber, bartenderId } = payload;
         
-        const token = await resolveTokenNumber(tokenNumber, cardUid);
+        const token = await resolveTokenNumber(tokenNumber);
         if (!token) {
           return await this.logConflict(operationId, deviceId, type, payload, 'CONFLICT_SESSION_NOT_FOUND', 'Session not found');
         }
@@ -278,8 +255,7 @@ export class SyncService {
         }
 
         // Apply redemption
-        const presentationType = token.deliveryMode === 'EMAIL_QR' ? 'QR_SCAN' : 'NFC_TAP';
-        const result = await redemptionService.processRedemption(token.tokenNumber, bartenderId, opTime, presentationType);
+        const result = await redemptionService.processRedemption(token.tokenNumber, bartenderId, opTime, 'QR_SCAN');
 
         await prisma.syncLog.create({
           data: {
@@ -300,9 +276,9 @@ export class SyncService {
       }
 
       case 'DRINK_UNDO': {
-        const { tokenNumber, cardUid } = payload;
+        const { tokenNumber } = payload;
 
-        const token = await resolveTokenNumber(tokenNumber, cardUid);
+        const token = await resolveTokenNumber(tokenNumber);
         if (!token) {
           return await this.logConflict(operationId, deviceId, type, payload, 'CONFLICT_SESSION_NOT_FOUND', 'Session not found');
         }
@@ -332,9 +308,9 @@ export class SyncService {
       }
 
       case 'TIME_EXTENSION': {
-        const { tokenNumber, cardUid, extraMinutes, additionalAmount, approvedBy, additionalPersons } = payload;
+        const { tokenNumber, extraMinutes, additionalAmount, approvedBy, additionalPersons } = payload;
 
-        const token = await resolveTokenNumber(tokenNumber, cardUid);
+        const token = await resolveTokenNumber(tokenNumber);
         if (!token) {
           return await this.logConflict(operationId, deviceId, type, payload, 'CONFLICT_SESSION_NOT_FOUND', 'Session not found');
         }
@@ -370,9 +346,9 @@ export class SyncService {
       }
 
       case 'SESSION_CLOSE': {
-        const { tokenNumber, cardUid, closedBy, eraseCard } = payload;
+        const { tokenNumber, closedBy } = payload;
 
-        const token = await resolveTokenNumber(tokenNumber, cardUid);
+        const token = await resolveTokenNumber(tokenNumber);
         if (!token) {
           return await this.logConflict(operationId, deviceId, type, payload, 'CONFLICT_SESSION_NOT_FOUND', 'Session not found');
         }
@@ -388,8 +364,7 @@ export class SyncService {
 
         const summary = await tokenService.closeToken(
           token.tokenNumber,
-          closedBy,
-          eraseCard !== undefined ? eraseCard : true
+          closedBy
         );
 
         await prisma.syncLog.create({
@@ -408,39 +383,6 @@ export class SyncService {
           status: 'SUCCESS',
           data: { closedAt: summary.token.closedAt }
         };
-      }
-
-      case 'CARD_STATUS_UPDATE': {
-        const { cardUid, status } = payload;
-
-        return await prisma.$transaction(async (tx) => {
-          const card = await tx.card.findUnique({ where: { nfcUid: cardUid } });
-          if (!card) {
-            throw new Error('Card not found');
-          }
-
-          const updatedCard = await tx.card.update({
-            where: { nfcUid: cardUid },
-            data: { status: status.toLowerCase() }
-          });
-
-          await tx.syncLog.create({
-            data: {
-              operationId,
-              deviceId,
-              operationType: type,
-              payload: { status: updatedCard.status },
-              status: 'SUCCESS',
-              processedAt: new Date()
-            }
-          });
-
-          return {
-            operationId,
-            status: 'SUCCESS',
-            data: { status: updatedCard.status }
-          };
-        });
       }
 
       default:
