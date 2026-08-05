@@ -9,8 +9,8 @@ import { AlertModal } from '../../components/common/AlertModal';
 import { EmptyState } from '../../components/common/EmptyState';
 import { ANIMATIONS } from '../../theme/animations';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNfcBar } from '../../context/NfcBarContext';
-import { UserRole } from '../../types/nfc_bar';
+import { useBar } from '../../context/BarContext';
+import { UserRole } from '../../types/bar_types';
 import { SplashScreen } from '../../features/auth/screens/SplashScreen';
 import { LoginScreen } from '../../features/auth/screens/LoginScreen';
 import { CheckInWizard } from '../../features/checkin/screens/CheckInWizard';
@@ -20,14 +20,14 @@ import { AdminPortal } from '../../features/admin/screens/AdminPortal';
 import { QuickAttendanceScreen } from '../../features/checkin/screens/QuickAttendanceScreen';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { SystemHeader } from '../../components/common/SystemHeader';
-import { ReturnCardModal } from '../../components/modals/ReturnCardModal';
+import { CloseSessionModal } from '../../components/modals/CloseSessionModal';
 import { AppIcon } from '../../components/common/AppIcon';
 import { useTheme } from '../../context/ThemeContext';
 import { useResponsive } from '../../utils/responsive';
 
 export const MainAppShell: React.FC = () => {
   const { colors, isDark } = useTheme();
-  const { currentScreen, activeTab, toasts, notifications, user, logout, setTab, markNotificationsAsRead, isOverlayActive, swipeLocked, fetchLatestState, showToast, dismissToast, setScreen } = useNfcBar();
+  const { currentScreen, activeTab, toasts, notifications, user, logout, setTab, markNotificationsAsRead, isOverlayActive, swipeLocked, fetchLatestState, showToast, dismissToast, setScreen } = useBar();
   const { isTablet, isLargeScreen } = useResponsive();
   const isCentered = isTablet || isLargeScreen;
   const { width } = useWindowDimensions();
@@ -435,7 +435,7 @@ export const MainAppShell: React.FC = () => {
 
       {/* FLOATING RETURN CARD WORKFLOW SHEET */}
       {isReturnModalOpen && (
-        <ReturnCardModal onClose={() => setIsReturnModalOpen(false)} />
+        <CloseSessionModal onClose={() => setIsReturnModalOpen(false)} />
       )}
     </View>
   );
@@ -444,3 +444,4 @@ export const MainAppShell: React.FC = () => {
 const styles = StyleSheet.create({});
 
 export default MainAppShell;
+

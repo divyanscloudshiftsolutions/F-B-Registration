@@ -7,13 +7,11 @@ interface DataContextType {
   tokens: Token[];
   tables: Table[];
   rates: any[];
-  cards: any[];
   users: any[];
   isLoading: boolean;
   refreshTokens: () => Promise<void>;
   refreshTables: () => Promise<void>;
   refreshRates: () => Promise<void>;
-  refreshCards: () => Promise<void>;
   refreshUsers: () => Promise<void>;
   refreshAll: () => Promise<void>;
 }
@@ -25,7 +23,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [tokens, setTokens] = useState<Token[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
   const [rates, setRates] = useState<any[]>([]);
-  const [cards, setCards] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -70,15 +67,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const refreshCards = async () => {
-    if (user?.role?.toLowerCase() !== 'admin') return;
-    try {
-      const data = await deduplicate('cards', () => api.getCards());
-      setCards(data);
-    } catch (err) {
-      console.warn('Failed to background refresh cards cache:', err);
-    }
-  };
 
   const refreshUsers = async () => {
     if (user?.role?.toLowerCase() !== 'admin') return;
@@ -99,7 +87,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       refreshTokens(),
       refreshTables(),
       refreshRates(),
-      refreshCards(),
       refreshUsers(),
     ]);
     setIsLoading(false);
@@ -114,7 +101,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setTokens([]);
       setTables([]);
       setRates([]);
-      setCards([]);
       setUsers([]);
     }
   }, [user]);
@@ -125,13 +111,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         tokens,
         tables,
         rates,
-        cards,
         users,
         isLoading,
         refreshTokens,
         refreshTables,
         refreshRates,
-        refreshCards,
         refreshUsers,
         refreshAll,
       }}

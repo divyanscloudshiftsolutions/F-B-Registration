@@ -2,13 +2,13 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import { 
   User, Table, SessionToken, NotificationItem, SalesRecord, RateCard, ToastItem,
   UserRole, TableStatus, TokenStatus, PlaceType, StaffMember, InventoryCard
-} from '../types/nfc_bar';
-import { isTableExpiring } from './nfc_bar_utils';
+} from '../types/bar_types';
+import { isTableExpiring } from './bar_utils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { Platform } from 'react-native';
 
-interface NfcBarContextType {
+interface BarContextType {
   // Authentication & Screen States
   user: User | null;
   currentScreen: 'splash' | 'login' | 'app' | 'logout_camera' | 'quick_attendance';
@@ -144,7 +144,7 @@ interface NfcBarContextType {
   clearLocalCache: () => Promise<void>;
 }
 
-const NfcBarContext = createContext<NfcBarContextType | undefined>(undefined);
+const BarContext = createContext<BarContextType | undefined>(undefined);
 
 const generateUUID = () => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -244,7 +244,7 @@ export const getFriendlyErrorMessage = (errData: any, fallback: string): string 
   return fallback;
 };
 
-export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const BarProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userToken, setUserToken] = useState<string | null>(null);
   const [offlineQueue, setOfflineQueue] = useState<any[]>([]);
@@ -272,9 +272,9 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [systemMode, setSystemMode] = useState<'online' | 'syncing' | 'offline'>('online');
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
   const [lastSyncTime, setLastSyncTime] = useState<string>('21:00');
-  const [nfcEnabled, setNfcEnabled] = useState<boolean>(true);
-  const [emailQrEnabled, setEmailQrEnabled] = useState<boolean>(true);
-  const tokenType = emailQrEnabled && !nfcEnabled ? 'email' : 'nfc';
+  const nfcEnabled = false;
+  const emailQrEnabled = true;
+  const tokenType = 'email';
   
   const [activeReturnCardStep, setReturnCardStep] = useState<'idle' | 'scanning' | 'summary' | 'success'>('idle');
   const [activeReturnCardUid, setReturnCardUid] = useState<string | null>(null);
@@ -313,7 +313,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       if (hasUpdates) {
         setSessions(updatedSessions);
-        AsyncStorage.setItem('nfc_bar_cached_sessions', JSON.stringify(updatedSessions)).catch(() => {});
+        AsyncStorage.setItem('bar_cached_sessions', JSON.stringify(updatedSessions)).catch(() => {});
       }
     };
 
@@ -341,8 +341,8 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setCurrentScreen('login');
     }, 100);
     showToast('Your session has expired. Please log in again.', 'warning', 4000);
-    await AsyncStorage.removeItem('nfc_bar_user');
-    await AsyncStorage.removeItem('nfc_bar_user_token');
+    await AsyncStorage.removeItem('bar_user');
+    await AsyncStorage.removeItem('bar_user_token');
   };
 
   // Global HTTP interceptor for 403 AUTH_002 redirection
@@ -433,11 +433,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       ]);
 
       if (configRes && configRes.ok) {
-        const configData = await configRes.json().catch(() => null);
-        if (configData && configData.success) {
-          if (typeof configData.nfcEnabled === 'boolean') setNfcEnabled(configData.nfcEnabled);
-          if (typeof configData.emailQrEnabled === 'boolean') setEmailQrEnabled(configData.emailQrEnabled);
-        }
+        // config loading placeholder
       }
 
       if (ratesRes && ratesRes.ok) {
@@ -451,7 +447,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             maxDrinks: r.redemptionsPerPerson
           }));
           setRates(formattedRates);
-          await AsyncStorage.setItem('nfc_bar_cached_rates', JSON.stringify(formattedRates)).catch(() => {});
+          await AsyncStorage.setItem('bar_cached_rates', JSON.stringify(formattedRates)).catch(() => {});
         }
       }
     } catch (err) {
@@ -502,7 +498,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           });
 
           setTables(fetchedTables);
-          await AsyncStorage.setItem('nfc_bar_cached_tables', JSON.stringify(fetchedTables)).catch(() => {});
+          await AsyncStorage.setItem('bar_cached_tables', JSON.stringify(fetchedTables)).catch(() => {});
         }
       }
 
@@ -511,7 +507,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const fetchedSessions: SessionToken[] = tokensData.map(mapBackendToken);
 
         setSessions(fetchedSessions);
-        await AsyncStorage.setItem('nfc_bar_cached_sessions', JSON.stringify(fetchedSessions)).catch(() => {});
+        await AsyncStorage.setItem('bar_cached_sessions', JSON.stringify(fetchedSessions)).catch(() => {});
       }
       await fetchPendingSessions();
     } catch (err) {
@@ -534,7 +530,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const newQueue = [...offlineQueue, op];
     setOfflineQueue(newQueue);
     setPendingSyncCount(newQueue.length);
-    await AsyncStorage.setItem('nfc_bar_offline_queue', JSON.stringify(newQueue));
+    await AsyncStorage.setItem('bar_offline_queue', JSON.stringify(newQueue));
     
     if (systemMode !== 'offline') {
       await syncQueuedOperations(newQueue);
@@ -547,7 +543,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const currentQueue = queueToSync || offlineQueue;
     if (currentQueue.length === 0) return;
     
-    const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+    const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
     if (!activeToken) {
       console.log('Sync postponed: staff user token missing');
       return;
@@ -599,7 +595,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         // Clear queue upon completion (or keep failed errors/conflicts for analysis, but since it is conflict resolved, we clear queue)
         setOfflineQueue([]);
         setPendingSyncCount(0);
-        await AsyncStorage.removeItem('nfc_bar_offline_queue');
+        await AsyncStorage.removeItem('bar_offline_queue');
         setSystemMode('online');
 
         // Fetch latest backend state to override local state
@@ -626,40 +622,40 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Load persisted user and queue
     const initializeApp = async () => {
       try {
-        const savedUser = await AsyncStorage.getItem('nfc_bar_user');
+        const savedUser = await AsyncStorage.getItem('bar_user');
         if (savedUser) {
           setUser(JSON.parse(savedUser));
           setCurrentScreen('app');
         }
-        const savedToken = await AsyncStorage.getItem('nfc_bar_user_token');
+        const savedToken = await AsyncStorage.getItem('bar_user_token');
         if (savedToken) {
           setUserToken(savedToken);
           fetchLatestState(savedToken);
           fetchSystemConfig(savedToken);
         }
-        const queueStr = await AsyncStorage.getItem('nfc_bar_offline_queue');
+        const queueStr = await AsyncStorage.getItem('bar_offline_queue');
         if (queueStr) {
           const q = JSON.parse(queueStr);
           setOfflineQueue(q);
           setPendingSyncCount(q.length);
         }
 
-        const savedTables = await AsyncStorage.getItem('nfc_bar_cached_tables');
+        const savedTables = await AsyncStorage.getItem('bar_cached_tables');
         if (savedTables) {
           setTables(JSON.parse(savedTables));
         }
 
-        const savedSessions = await AsyncStorage.getItem('nfc_bar_cached_sessions');
+        const savedSessions = await AsyncStorage.getItem('bar_cached_sessions');
         if (savedSessions) {
           setSessions(JSON.parse(savedSessions));
         }
 
-        const savedRates = await AsyncStorage.getItem('nfc_bar_cached_rates');
+        const savedRates = await AsyncStorage.getItem('bar_cached_rates');
         if (savedRates) {
           setRates(JSON.parse(savedRates));
         }
 
-        const savedNotifications = await AsyncStorage.getItem('nfc_bar_cached_notifications');
+        const savedNotifications = await AsyncStorage.getItem('bar_cached_notifications');
         if (savedNotifications) {
           setNotifications(JSON.parse(savedNotifications));
         }
@@ -669,16 +665,9 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       
       // Fetch config from backend
       try {
-        const configRes = await fetch(`${BACKEND_URL}/config`).catch(() => null);
-        if (configRes && configRes.ok) {
-          const configData = await configRes.json();
-          if (configData && configData.success) {
-            if (typeof configData.nfcEnabled === 'boolean') setNfcEnabled(configData.nfcEnabled);
-            if (typeof configData.emailQrEnabled === 'boolean') setEmailQrEnabled(configData.emailQrEnabled);
-          }
-        }
+        await fetch(`${BACKEND_URL}/config`).catch(() => null);
       } catch (configErr) {
-        console.log('Failed to fetch config, defaulting to nfc:', configErr);
+        console.log('Failed to fetch config:', configErr);
       }
     };
     initializeApp();
@@ -700,7 +689,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       if (isOnline) {
         setSystemMode('online');
-        AsyncStorage.getItem('nfc_bar_user_token').then(tok => {
+        AsyncStorage.getItem('bar_user_token').then(tok => {
           if (tok && tok.startsWith('offline-mock-')) {
             forceLogoutForExpiredSession();
             showToast('Connection restored. Please log in to continue.', 'info', 5000);
@@ -800,8 +789,8 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           };
           setUser(loggedUser);
           setUserToken(data.token || data.accessToken);
-          await AsyncStorage.setItem('nfc_bar_user', JSON.stringify(loggedUser));
-          await AsyncStorage.setItem('nfc_bar_user_token', data.token || data.accessToken);
+          await AsyncStorage.setItem('bar_user', JSON.stringify(loggedUser));
+          await AsyncStorage.setItem('bar_user_token', data.token || data.accessToken);
           setCurrentScreen('app');
           showToast(`Welcome back, ${loggedUser.name}!`, 'success');
           
@@ -842,7 +831,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const netState = await NetInfo.fetch();
       const isOffline = netState.isConnected === false || netState.isInternetReachable === false;
       if (isOffline) {
-        const savedUserStr = await AsyncStorage.getItem('nfc_bar_user');
+        const savedUserStr = await AsyncStorage.getItem('bar_user');
         if (savedUserStr) {
           const savedUser = JSON.parse(savedUserStr);
           if (savedUser && savedUser.id.toLowerCase() === id.toLowerCase() && savedUser.pin === pin) {
@@ -850,8 +839,8 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             const offlineToken = `offline-mock-${savedUser.id}`;
             setUserToken(offlineToken);
             setSystemMode('offline');
-            await AsyncStorage.setItem('nfc_bar_user', JSON.stringify(savedUser));
-            await AsyncStorage.setItem('nfc_bar_user_token', offlineToken);
+            await AsyncStorage.setItem('bar_user', JSON.stringify(savedUser));
+            await AsyncStorage.setItem('bar_user_token', offlineToken);
             setCurrentScreen('app');
             showToast(`Welcome back, ${savedUser.name} (Offline Mode)!`, 'success');
             
@@ -894,8 +883,8 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           setReturnCardStep('idle');
           setReturnCardUid(null);
           showToast('You have been logged out successfully.', 'success');
-          await AsyncStorage.removeItem('nfc_bar_user');
-          await AsyncStorage.removeItem('nfc_bar_user_token');
+          await AsyncStorage.removeItem('bar_user');
+          await AsyncStorage.removeItem('bar_user_token');
           return true;
         } else {
           try {
@@ -918,8 +907,8 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setReturnCardStep('idle');
     setReturnCardUid(null);
     showToast('Logged out (Local cache cleared).', 'success');
-    await AsyncStorage.removeItem('nfc_bar_user');
-    await AsyncStorage.removeItem('nfc_bar_user_token');
+    await AsyncStorage.removeItem('bar_user');
+    await AsyncStorage.removeItem('bar_user_token');
     return true;
   };
 
@@ -999,34 +988,8 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const updateDeliveryAvailability = async (nfc: boolean, emailQr: boolean): Promise<boolean> => {
-    if (systemMode === 'offline') {
-      showToast('This action requires an active network connection.', 'danger');
-      return false;
-    }
-    try {
-      const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
-      const res = await fetch(`${BACKEND_URL}/config/delivery-methods`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${activeToken}`
-        },
-        body: JSON.stringify({ nfcEnabled: nfc, emailQrEnabled: emailQr })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setNfcEnabled(data.nfcEnabled);
-        setEmailQrEnabled(data.emailQrEnabled);
-        showToast('Configuration saved successfully.', 'success');
-        return true;
-      } else {
-        const data = await res.json().catch(() => null);
-        showToast(getFriendlyErrorMessage(data, 'Unable to save settings. Please try again.'), 'danger');
-      }
-    } catch (err: any) {
-      showToast('Unable to save settings. Please check your network connection.', 'danger');
-    }
-    return false;
+    showToast('Configuration saved successfully.', 'success');
+    return true;
   };
 
   // CHECK-IN ACTION
@@ -1035,7 +998,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // 1. Direct online path
     if (systemMode !== 'offline') {
       try {
-        const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+        const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
         const rateCard = rates.find(r => r.placeType === guestData.placeType);
         const tableIndex = tables.findIndex(t => t.number === guestData.tableNumber);
         const tableObj = tableIndex !== -1 ? tables[tableIndex] : null;
@@ -1058,8 +1021,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             amountPaid: guestData.amountPaid,
             paymentVerified: true,
             issuedBy: user?.id || 'staff-uuid',
-            nfcCardUid: guestData.cardUid,
-            deliveryMode: guestData.deliveryMode
+            deliveryMode: 'EMAIL_QR'
           })
         });
 
@@ -1128,7 +1090,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       redemptionLimit: guestData.redemptionLimit,
       redemptionCount: 0,
       status: TokenStatus.ACTIVE,
-      cardUid: guestData.cardUid,
+      cardUid: null,
       paymentVerified: true,
       createdAt: now.toISOString(),
     };
@@ -1142,7 +1104,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } : t));
     setSessions(prev => {
       const updated = [newSession, ...prev];
-      AsyncStorage.setItem('nfc_bar_cached_sessions', JSON.stringify(updated)).catch(() => {});
+      AsyncStorage.setItem('bar_cached_sessions', JSON.stringify(updated)).catch(() => {});
       return updated;
     });
 
@@ -1160,8 +1122,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       amountPaid: guestData.amountPaid,
       paymentVerified: true,
       issuedBy: user?.id || 'staff-uuid',
-      nfcCardUid: guestData.cardUid,
-      deliveryMode: guestData.deliveryMode
+      deliveryMode: 'EMAIL_QR'
     });
 
     showToast('Customer checked in successfully.', 'success');
@@ -1181,7 +1142,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     deliveryMode?: 'NFC_CARD' | 'EMAIL_QR';
   }): Promise<SessionToken | null> => {
     try {
-      const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+      const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
       const res = await fetch(`${BACKEND_URL}/check-in/pending`, {
         method: 'POST',
         headers: {
@@ -1220,7 +1181,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const verifyQrCode = async (tokenNumber: string): Promise<SessionToken | null> => {
     try {
-      const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+      const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
       const res = await fetch(`${BACKEND_URL}/check-in/verify-qr/${tokenNumber}`, {
         method: 'GET',
         headers: {
@@ -1247,7 +1208,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     amountPaid: number
   ): Promise<SessionToken | null> => {
     try {
-      const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+      const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
       const res = await fetch(`${BACKEND_URL}/check-in/activate`, {
         method: 'POST',
         headers: {
@@ -1301,7 +1262,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const cancelPendingSession = async (tokenNumber: string, reason = 'PAYMENT_CANCELLED'): Promise<boolean> => {
     try {
-      const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+      const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
       const res = await fetch(`${BACKEND_URL}/check-in/cancel`, {
         method: 'POST',
         headers: {
@@ -1334,15 +1295,15 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // REDEEM DRINK ACTION
-  const redeemDrinkForCard = async (cardUidOrToken: string): Promise<{ success: boolean; remaining?: number; error?: string }> => {
+  const redeemDrinkForCard = async (tokenNumber: string): Promise<{ success: boolean; remaining?: number; error?: string }> => {
     const sessionIndex = sessions.findIndex(s => 
-      (s.cardUid === cardUidOrToken || s.tokenNumber === cardUidOrToken) && 
+      s.tokenNumber === tokenNumber && 
       s.status === TokenStatus.ACTIVE &&
       s.paymentVerified === true
     );
     if (sessionIndex === -1) {
-      showToast('No active session was found for this card or code.', 'danger');
-      return { success: false, error: 'Invalid card or token' };
+      showToast('No active session was found for this code.', 'danger');
+      return { success: false, error: 'Invalid token' };
     }
 
     const session = sessions[sessionIndex];
@@ -1360,7 +1321,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (systemMode !== 'offline') {
       try {
-        const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+        const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
         const res = await fetch(`${BACKEND_URL}/token/redeem`, {
           method: 'POST',
           headers: {
@@ -1369,7 +1330,6 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           },
           body: JSON.stringify({
             tokenNumber: session.tokenNumber,
-            cardUid: session.cardUid || null,
             bartenderId: user?.id || 'staff-uuid'
           })
         });
@@ -1405,7 +1365,6 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     queueOperation('DRINK_REDEMPTION', {
       tokenNumber: session.tokenNumber,
-      cardUid: session.cardUid || null,
       bartenderId: user?.id || 'staff-uuid'
     });
 
@@ -1414,14 +1373,14 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // UNDO REDEEM DRINK ACTION
-  const undoDrinkRedemption = async (cardUidOrToken: string): Promise<{ success: boolean; remaining?: number; error?: string }> => {
+  const undoDrinkRedemption = async (tokenNumber: string): Promise<{ success: boolean; remaining?: number; error?: string }> => {
     const sessionIndex = sessions.findIndex(s => 
-      (s.cardUid === cardUidOrToken || s.tokenNumber === cardUidOrToken) && 
+      s.tokenNumber === tokenNumber && 
       s.status === TokenStatus.ACTIVE
     );
     if (sessionIndex === -1) {
-      showToast('No active session was found for this card or code.', 'danger');
-      return { success: false, error: 'Invalid card or token' };
+      showToast('No active session was found for this code.', 'danger');
+      return { success: false, error: 'Invalid token' };
     }
 
     const session = sessions[sessionIndex];
@@ -1432,7 +1391,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (systemMode !== 'offline') {
       try {
-        const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+        const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
         const res = await fetch(`${BACKEND_URL}/token/redeem/undo`, {
           method: 'POST',
           headers: {
@@ -1440,8 +1399,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             'Authorization': `Bearer ${activeToken}`
           },
           body: JSON.stringify({
-            tokenNumber: session.tokenNumber,
-            cardUid: session.cardUid || null
+            tokenNumber: session.tokenNumber
           })
         });
 
@@ -1475,8 +1433,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setAdminSessions(prev => prev.map(s => s.id === session.id ? { ...s, redemptionCount: newCount } : s));
 
     queueOperation('DRINK_UNDO', {
-      tokenNumber: session.tokenNumber,
-      cardUid: session.cardUid || null
+      tokenNumber: session.tokenNumber
     });
 
     showToast('Drink redemption undone.', 'success');
@@ -1502,7 +1459,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (systemMode !== 'offline') {
       try {
-        const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+        const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
         const res = await fetch(`${BACKEND_URL}/tokens/${tokenNumber}/extend`, {
           method: 'PUT',
           headers: {
@@ -1597,7 +1554,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (systemMode !== 'offline') {
       try {
-        const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+        const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
         const res = await fetch(`${BACKEND_URL}/tokens/${tokenNumber}/close`, {
           method: 'PUT',
           headers: {
@@ -1605,9 +1562,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             'Authorization': `Bearer ${activeToken}`
           },
           body: JSON.stringify({
-            cardUid: session.cardUid || null,
-            closedBy: user?.id || 'staff-uuid',
-            eraseCard: true
+            closedBy: user?.id || 'staff-uuid'
           })
         });
 
@@ -1644,7 +1599,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Close token (Optimistic UI)
     setSessions(prev => {
       const updated = prev.map(s => s.id === session.id ? { ...s, status: TokenStatus.CLOSED } : s);
-      AsyncStorage.setItem('nfc_bar_cached_sessions', JSON.stringify(updated)).catch(() => {});
+      AsyncStorage.setItem('bar_cached_sessions', JSON.stringify(updated)).catch(() => {});
       return updated;
     });
     setAdminSessions(prev => prev.map(s => s.id === session.id ? { ...s, status: TokenStatus.CLOSED } : s));
@@ -1660,9 +1615,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Queue operation
     queueOperation('SESSION_CLOSE', {
       tokenNumber: session.tokenNumber,
-      cardUid: session.cardUid || null,
-      closedBy: user?.id || 'staff-uuid',
-      eraseCard: true
+      closedBy: user?.id || 'staff-uuid'
     });
 
     showToast('Session closed successfully.', 'success');
@@ -1847,7 +1800,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const fetchUsers = async (): Promise<boolean> => {
     if (systemMode === 'offline') return false;
-    const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+    const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
     if (!activeToken) return false;
 
     try {
@@ -1925,7 +1878,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             role: role.toLowerCase() as UserRole
           };
           setUser(updatedLoggedUser);
-          await AsyncStorage.setItem('nfc_bar_user', JSON.stringify(updatedLoggedUser));
+          await AsyncStorage.setItem('bar_user', JSON.stringify(updatedLoggedUser));
         }
         return true;
       } else {
@@ -1971,29 +1924,13 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const fetchCards = async (): Promise<boolean> => {
-    if (systemMode === 'offline') return false;
-    const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
-    if (!activeToken) return false;
-
-    try {
-      const res = await fetch(`${BACKEND_URL}/cards`, {
-        headers: { 'Authorization': `Bearer ${activeToken}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setCards(data);
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.log('Failed to fetch cards:', err);
-      return false;
-    }
+    setCards([]);
+    return true;
   };
 
   const fetchAdminSessions = async (): Promise<boolean> => {
     if (systemMode === 'offline') return false;
-    const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+    const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
     if (!activeToken) return false;
 
     try {
@@ -2015,7 +1952,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const fetchPendingSessions = async (): Promise<boolean> => {
     if (systemMode === 'offline') return false;
-    const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+    const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
     if (!activeToken) return false;
 
     try {
@@ -2037,8 +1974,8 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const clearLocalCache = async (): Promise<void> => {
     try {
-      await AsyncStorage.removeItem('nfc_bar_cached_sessions');
-      await AsyncStorage.removeItem('nfc_bar_cached_tables');
+      await AsyncStorage.removeItem('bar_cached_sessions');
+      await AsyncStorage.removeItem('bar_cached_tables');
       setSessions([]);
       setTables([]);
       await fetchLatestState();
@@ -2053,7 +1990,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       showToast('Exporting data requires an active network connection.', 'danger');
       return null;
     }
-    const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+    const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
     if (!activeToken) return null;
 
     try {
@@ -2076,7 +2013,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       showToast('This action requires an active network connection.', 'danger');
       return false;
     }
-    const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+    const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
     if (!activeToken) return false;
 
     try {
@@ -2124,39 +2061,12 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const updateCardStatus = async (cardUid: string, status: string): Promise<boolean> => {
-    if (systemMode === 'offline') {
-      showToast('This action requires an active network connection.', 'danger');
-      return false;
-    }
-
-    try {
-      const res = await fetch(`${BACKEND_URL}/cards/${cardUid}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userToken}`
-        },
-        body: JSON.stringify({ status })
-      });
-
-      if (res.ok) {
-        showToast('Card status updated successfully.', 'success');
-        await fetchCards();
-        return true;
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        showToast(getFriendlyErrorMessage(errData, 'Unable to update the card. Please try again.'), 'danger');
-        return false;
-      }
-    } catch (err: any) {
-      showToast('Unable to update card status. Please check your network connection.', 'danger');
-      return false;
-    }
+    return true;
   };
 
   const fetchRates = async (): Promise<boolean> => {
     if (systemMode === 'offline') return false;
-    const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+    const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
     if (!activeToken) return false;
 
     try {
@@ -2252,7 +2162,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (systemMode === 'offline') return false;
     
     try {
-      const activeToken = userToken || await AsyncStorage.getItem('nfc_bar_user_token');
+      const activeToken = userToken || await AsyncStorage.getItem('bar_user_token');
       if (!activeToken) return false;
 
       const params = new URLSearchParams();
@@ -2289,7 +2199,7 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   return (
-    <NfcBarContext.Provider value={{
+    <BarContext.Provider value={{
       user, currentScreen, activeTab, notifications, toasts,
       tables, sessions, adminSessions, users, cards, rates, systemMode, pendingSyncCount, lastSyncTime, tokenType,
       nfcEnabled, emailQrEnabled,
@@ -2311,12 +2221,13 @@ export const NfcBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       pendingSessions, fetchPendingSessions, clearLocalCache
     }}>
       {children}
-    </NfcBarContext.Provider>
+    </BarContext.Provider>
   );
 };
 
-export const useNfcBar = () => {
-  const context = useContext(NfcBarContext);
-  if (!context) throw new Error('useNfcBar must be used within NfcBarProvider');
+export const useBar = () => {
+  const context = useContext(BarContext);
+  if (!context) throw new Error('useBar must be used within BarProvider');
   return context;
 };
+

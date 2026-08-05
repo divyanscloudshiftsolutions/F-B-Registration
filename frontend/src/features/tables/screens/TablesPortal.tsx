@@ -4,17 +4,17 @@ import {
   Platform, Modal, ActivityIndicator, Image
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNfcBar } from '../../../context/NfcBarContext';
+import { useBar } from '../../../context/BarContext';
 import { useTheme } from '../../../context/ThemeContext';
-import { Table, SessionToken, PlaceType, TableStatus, TokenStatus, UserRole } from '../../../types/nfc_bar';
-import { isTableExpiring } from '../../../context/nfc_bar_utils';
+import { Table, SessionToken, PlaceType, TableStatus, TokenStatus, UserRole } from '../../../types/bar_types';
+import { isTableExpiring } from '../../../context/bar_utils';
 import { AppIcon } from '../../../components/common/AppIcon';
 import { useResponsive } from '../../../utils/responsive';
 import { AlertModal } from '../../../components/common/AlertModal';
 import { useActionProgress } from '../../../utils/actionProgress';
 
 export const TablesPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
-  const { tables, sessions, extendSessionTime, closeGuestSession, user, setOverlayActive, setPreselectedTableNumber, setTab, rates, setSwipeLocked } = useNfcBar();
+  const { tables, sessions, extendSessionTime, closeGuestSession, user, setOverlayActive, setPreselectedTableNumber, setTab, rates, setSwipeLocked } = useBar();
   const { loadingAction, secondsLeft, startAction, stopAction, isProcessing } = useActionProgress();
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -881,3 +881,4 @@ export const TablesPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true
     </View>
   );
 };
+

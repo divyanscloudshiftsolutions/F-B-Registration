@@ -1,30 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AdminNavTabs, type AdminSubTab } from '../components/admin/AdminNavTabs';
 import { TableManagement } from '../components/admin/TableManagement';
 import { StaffManagement } from '../components/admin/StaffManagement';
 import { RevenueAnalyticsChart } from '../components/admin/RevenueAnalyticsChart';
-import { SmartCardInventory } from '../components/admin/SmartCardInventory';
 import { RateManagement } from '../components/admin/RateManagement';
-import { SystemSettingsConfig } from '../components/admin/SystemSettingsConfig';
 import { CustomerSessionsManager } from '../components/admin/CustomerSessionsManager';
 
 export const AdminPage: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTabState] = useState<AdminSubTab>(() => {
-    return (localStorage.getItem('nfc_web_admin_subtab') as AdminSubTab) || 'tables';
+    return (localStorage.getItem('bar_web_admin_subtab') as AdminSubTab) || 'tables';
   });
   const setActiveTab = (tab: AdminSubTab) => {
     setActiveTabState(tab);
-    localStorage.setItem('nfc_web_admin_subtab', tab);
+    localStorage.setItem('bar_web_admin_subtab', tab);
   };
 
-  // Role Security Check matching NfcBarContext.tsx
-  const userRole = user?.role ? user.role.toLowerCase() : '';
-  const isAdmin = userRole === 'admin';
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const subtab = localStorage.getItem('bar_web_admin_subtab') as AdminSubTab;
+      if (subtab && subtab !== activeTab) {
+        setActiveTabState(subtab);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [activeTab]);
 
-  if (!isAdmin) {
+  // Role Security Check matching BarContext.tsx
+  const userRole = user?.role ? user.role.toLowerCase() : '';
+  const isAuthorized = userRole === 'admin' || userRole === 'manager';
+
+  if (!isAuthorized) {
     return (
       <div className="glass-panel p-8 rounded-3xl border border-red-500/30 text-center space-y-4 max-w-md mx-auto my-12">
         <div className="w-16 h-16 rounded-full dark:bg-red-500/20 bg-red-500/10 dark:text-red-400 text-red-700 border border-red-500/40 flex items-center justify-center mx-auto text-2xl">
@@ -32,7 +41,7 @@ export const AdminPage: React.FC = () => {
         </div>
         <h3 className="text-xl font-bold dark:text-red-400 text-red-700">Access Restricted</h3>
         <p className="text-xs text-text-muted">
-          The System Administration & Staff Portal is restricted strictly to Administrator shift accounts.
+          The System Administration & Staff Portal is restricted strictly to Administrator and Manager shift accounts.
         </p>
       </div>
     );
@@ -46,14 +55,10 @@ export const AdminPage: React.FC = () => {
         return <StaffManagement />;
       case 'chart':
         return <RevenueAnalyticsChart />;
-      case 'cards':
-        return <SmartCardInventory />;
       case 'rates':
         return <RateManagement />;
       case 'customers':
         return <CustomerSessionsManager />;
-      case 'settings':
-        return <SystemSettingsConfig />;
       default:
         return <TableManagement />;
     }

@@ -1,7 +1,7 @@
 # End-to-End Technical & Functional Documentation
-## NFC QR Bar Management System
+## Bar Management System
 
-This document serves as the primary technical and functional reference for developers, testers, project managers, and future maintainers of the NFC QR Bar Management System.
+This document serves as the primary technical and functional reference for developers, testers, project managers, and future maintainers of the Bar Management System.
 
 ---
 
@@ -11,14 +11,14 @@ This document serves as the primary technical and functional reference for devel
 Modern high-volume bars, clubs, lounges, and event spaces face operational bottlenecks at two main points: check-in (entry processing, age verification, table allocation) and drink redemptions/bartender processing. Cash, physical tickets, or legacy billing systems slow down service speed, introduce manual reconciliation errors, and prevent managers from obtaining real-time insights into bar occupancy and bartender performance.
 
 ### Objectives
-- **Accelerate Guest Flow**: Streamline customer intake with automated check-in wizards (supporting both physical high-frequency NFC cards and digital QR code ticketing).
+- **Accelerate Guest Flow**: Streamline customer intake with automated check-in wizards (supporting digital QR code ticketing).
 - **Secure Transaction Auditing**: Enforce cryptographically signed/verified session lifecycles for table occupancies and drink allowances.
 - **Provide Live Operational Metrics**: Empower supervisors with real-time statistics on active patrons, seating maps, hourly revenue, and bartender productivity.
 - **Enable Resilient Offline Capability**: Ensure the system handles local network instability smoothly by queuing operations locally on the React Native client and sync-logging them to a central server when connection is restored.
 
 ### Key Features
 - **Role-Based Access Control (RBAC)**: Distinct interfaces for Admin, Receptionist, Bartender, and Manager.
-- **Hybrid Delivery Modes**: Custom NFC card programming (Ndef sector writes) and signed Email QR code templates.
+- **QR Code Delivery Modes**: Signed Email QR code templates generated dynamically upon guest check-in.
 - **Dynamic Seating Management**: Interactive map showing seating vs standing status, capacity alerts, and manual overrides.
 - **Session Lifespans & Extensions**: Multi-step extension checkout modals with live calculations.
 - **Robust Hardware Controls**: Customized Android back-gesture priority stacks to prevent app exit during transactions.
@@ -34,8 +34,7 @@ Modern high-volume bars, clubs, lounges, and event spaces face operational bottl
 flowchart TD
     subgraph Client [React Native Expo App]
         RN[App Shell] --> Nav[Navigation Context]
-        RN --> State[NFC Bar Context State Engine]
-        RN --> NFC[NFC Manager Ndef API]
+        RN --> State[Bar Context State Engine]
         RN --> Cam[Expo Camera QR scanner]
         RN --> OfflineQueue[AsyncStorage Offline Queue]
     end
@@ -90,8 +89,8 @@ sequenceDiagram
 
 ### Role-Based Access Control (RBAC) Mapping
 * **Admin**: Access to all panels, including raw database stats, table/staff/rate management configurations, deactivation overrides, and system logs.
-* **Receptionist**: Dedicated check-in workflow wizard, customer queue, table selections, and card assignments.
-* **Bartender**: Interactive orders grid, quick drink redemptions by scanning NFC cards, and drink status updates.
+* **Receptionist**: Dedicated check-in workflow wizard, customer queue, table selections, and QR code bindings.
+* **Bartender**: Interactive orders grid, quick drink redemptions by scanning QR codes, and drink status updates.
 * **Manager**: Live seating map access, session extensions, manual table releases, and live metrics.
 
 ### Session Expiration & Logout
@@ -111,13 +110,13 @@ The Dashboard acts as the real-time operational command center. It aggregates ke
 * **Hourly Revenue Trend**: Rolling aggregation of `amountPaid` from active session creations and extensions.
 
 ### Live Updates & Permissions
-The screen calls `fetchLatestState` inside the `NfcBarContext` to pull the latest snapshots. Only users with Roles `admin`, `manager`, or `receptionist` have access to the full dashboard dashboard layouts.
+The screen calls `fetchLatestState` inside the `BarContext` to pull the latest snapshots. Only users with Roles `admin`, `manager`, or `receptionist` have access to the full dashboard layout.
 
 ---
 
 ## 4. Check-In Module
 
-The check-in module registers the customer, validates their profile, allocates a table/standing spot, collects payment, and binds the physical NFC card or digital QR code.
+The check-in module registers the customer, validates their profile, allocates a table/standing spot, collects payment, and binds the digital QR code.
 
 ```mermaid
 flowchart TD
@@ -133,21 +132,15 @@ flowchart TD
     AutoAllocate --> Step3[Step 3: Verification & Bind]
     MapSelect --> Step3
     
-    Step3 --> SelectMode{Delivery Mode}
-    SelectMode -- NFC Card --> ScanNfc[Hold NFC Card to Device]
-    ScanNfc --> NdefWrite[Write Token Info to Sector NDEF]
-    NdefWrite --> CreateSession[Save Token & Session DB Records]
-    
-    SelectMode -- Email QR --> EmailGen[Generate Crypto Signed QR Code]
+    Step3 --> EmailGen[Generate Crypto Signed QR Code]
     EmailGen --> SendEmail[Dispatch Email via Server SES/SendGrid]
-    SendEmail --> CreateSession
+    SendEmail --> CreateSession[Save Token & Session DB Records]
     
     CreateSession --> Success([Print Receipt / Finish Check-in])
 ```
 
 ### Business Validation Rules
 * **Capacity Safeguard**: The guest count input cannot exceed the selected table's seating capacity.
-* **Unique Card Binding**: An NFC card cannot be assigned if its database status is already `'assigned'` or `'lost'`.
 * **Active Check-In Check**: The backend rejects any check-in request if the phone number matches an already active session.
 
 ---
@@ -177,34 +170,10 @@ stateDiagram-v2
 
 ---
 
-## 6. NFC Card Management
-
-The system interfaces with physical Mifare Ultralight or NTAG Smart Cards using the mobile device's high-frequency transceiver.
-
-```
-NFC Card Sector Memory Map Layout:
-┌──────────────────────────────┬──────────────────────────────┐
-│ Sector Block Index           │ Content Stored               │
-├──────────────────────────────┼──────────────────────────────┤
-│ Block 0 (Metadata)           │ NDEF Signature String        │
-│ Block 1 (Token identifier)   │ Secure UUID (Session ID)     │
-│ Block 2 (Customer details)   │ Name, pax count, place type  │
-│ Block 3 (Transaction checks) │ Write cycle count, expiry TS │
-└──────────────────────────────┴──────────────────────────────┘
-```
-
-### Card Return & Sanitization Workflow
-1. **Scanning**: The card is scanned at the checkout desk.
-2. **Payment Auditing**: The system retrieves the current bill. If there is a pending payment, checkout is blocked.
-3. **NDEF Wiping**: Once checkout completes, the device performs a secure NDEF overwrite, writing an empty state signature (`"NFC_BAR_EMPTY"`) onto the card.
-4. **Status Release**: The card status in the PostgreSQL `cards` table resets to `'available'`, increasing its `writeCycles` counter.
-
----
-
-## 7. QR Management
+## 6. QR Management
 
 ### Cryptographic Signatures
-For customers choosing `EMAIL_QR` delivery mode, the system generates a signed QR code payload containing:
+For customer sessions, the system generates a signed QR code payload containing:
 $$\text{Payload} = \{ \text{tokenNumber}, \text{customerId}, \text{endTimeStamp}, \text{signature} \}$$
 
 The signature is generated on the server using HMAC-SHA256:
@@ -212,9 +181,14 @@ $$\text{Signature} = \text{HMAC-SHA256}(\text{tokenNumber} + \text{endTimeStamp}
 
 This design prevents customers from modifying their expiration timestamps or drink counts, as any changes will fail cryptographic signature verification checks.
 
+### Guest Checkout & Sanitization Workflow
+1. **Scanning**: The guest QR code is scanned or chosen at the checkout desk.
+2. **Payment Auditing**: The system retrieves the current bill. If there is a pending payment, checkout is blocked.
+3. **Session Release**: Once checkout completes, the database session transitions to `CLOSED` and the table status resets to `'available'`.
+
 ---
 
-## 8. Session Management
+## 7. Session Management
 
 A session represents the contract between the venue and the customer.
 
@@ -222,8 +196,8 @@ A session represents the contract between the venue and the customer.
 * `PENDING_PAYMENT`: Session details filled, waiting for payment confirmation before active use.
 * `ACTIVE`: Session is running. Customer can redeem drinks.
 * `EXTENDED`: Extra duration has been purchased and appended.
-* `CLOSED`: Customer checked out, card returned, session closed.
-* `CANCELLED`: Check-in aborted before card writing or payment finalized.
+* `CLOSED`: Customer checked out, session closed.
+* `CANCELLED`: Check-in aborted before payment finalized.
 
 ### Auto Timeout Logic
 A background cron job runs on the server every 60 seconds:
@@ -233,7 +207,7 @@ A background cron job runs on the server every 60 seconds:
 
 ---
 
-## 9. Payment Module
+## 8. Payment Module
 
 ### Billing Calculation Formula
 The total fee is calculated as:
@@ -249,13 +223,13 @@ Where the Base Rate is defined in `PlaceTypeConfig` for the selected zone.
 
 ---
 
-## 10. Bartender Module
+## 9. Bartender Module
 
 The Bartender Portal features a live grid displaying active patrons and drink redemptions.
 
 ```mermaid
 flowchart LR
-    ScanCard[Scan Customer NFC Card / QR] --> ValidateSession{Session Active?}
+    ScanCard[Scan Customer QR Code] --> ValidateSession{Session Active?}
     ValidateSession -- No (Expired/Closed) --> Reject[Show Red Warning Screen]
     ValidateSession -- Yes --> CheckDrinks{Redemptions Remaining?}
     
@@ -270,28 +244,28 @@ flowchart LR
 
 ---
 
-## 11. Admin Module
+## 10. Admin Module
 
 The Admin Portal is restricted to users with administrative roles and contains the following subsections:
 
 ### Subsections
 * **Staff Management**: Create, edit, and toggle active status for staff accounts.
 * **Table Configurations**: Manage physical table mappings and capacities.
-* **System Settings**: Global toggles to enable or disable specific features (e.g., NFC Card Mode vs. Email QR Mode).
+* **Rates & Configurations**: Manage seat pricing rates and drink allowances per seating type.
 * **Audit Logs & Reports**: View live logs of rate edits, session overrides, and system activity.
 
 ---
 
-## 12. Notification Module
+## 11. Notification Module
 
-### Push Notifications & Alerts
+### Alerts & Push Messages
 - **Local Expiry Alerts**: Triggers a local background notification on the client app when a session is within 15 minutes of expiration.
 - **Urgent Payment Reminders**: Alerts managers of sessions in the `PENDING_PAYMENT` state that require immediate attention.
 - **Dynamic HUD Toasts**: In-app popups displaying toast messages for quick confirmation of actions.
 
 ---
 
-## 13. API Documentation
+## 12. API Documentation
 
 | Endpoint | Method | Headers | Request Payload | Response (Success) | Error Codes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -302,7 +276,7 @@ The Admin Portal is restricted to users with administrative roles and contains t
 
 ---
 
-## 14. Database Documentation
+## 13. Database Documentation
 
 ```mermaid
 erDiagram
@@ -312,7 +286,6 @@ erDiagram
     place_types ||--o{ rate_logs : logs
     tables ||--o{ tokens : assigns
     tables ||--o{ table_occupancy_logs : logs
-    tokens ||--|| cards : binds
     tokens ||--o{ redemptions : triggers
     tokens ||--o{ token_extensions : extends
     users ||--o{ tokens : issues
@@ -358,18 +331,18 @@ erDiagram
 
 ---
 
-## 15. Application State Management
+## 14. Application State Management
 
-The client state is managed through the centralized `NfcBarContext` state engine:
+The client state is managed through the centralized `BarContext` state engine:
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│                   NfcBarProvider                       │
+│                     BarProvider                        │
 │                                                        │
 │  State slices:                                         │
 │  - currentScreen ('splash' | 'login' | 'app')          │
 │  - activeTab ('checkin' | 'bartender' | 'tables')      │
-│  - sessions / tables / cards datasets                  │
+│  - sessions / tables datasets                          │
 │                                                        │
 │  Operations exposed:                                   │
 │  - checkInGuest()                                      │
@@ -381,7 +354,7 @@ The client state is managed through the centralized `NfcBarContext` state engine
 
 ---
 
-## 16. Navigation System
+## 15. Navigation System
 
 The navigation architecture is state-driven, using global context variables rather than standard stack library bindings to ensure strict screen flow control.
 
@@ -403,7 +376,7 @@ stateDiagram-v2
 ```
 
 ### Android Hardware Back Button Rules
-1. **Critical Operation Protection**: Ignored during active NFC card programming (`isNfcWriting`), payment processing, or checkout database commits to prevent transaction corruption.
+1. **Critical Operation Protection**: Ignored during active payment processing or checkout database commits to prevent transaction corruption.
 2. **Unsaved Form Protection**: Step 1 forms (Check-in details) and Admin form overlays (Add Table, Add Staff, Edit Rates) perform a dirty check. If modifications are present, prompts a confirmation Alert asking to discard or continue editing.
 3. **Throttling Lock**: Ignores rapid multiple back presses within 350ms to ensure transitions and layout animations complete before processing the next event.
 4. **Role-Aware Home Tab**: Navigates back to the default tab dynamically based on the authenticated user's role:
@@ -414,7 +387,7 @@ stateDiagram-v2
 
 ---
 
-## 17. OTA Update Workflow
+## 16. OTA Update Workflow
 
 The system utilizes Expo updates to deliver over-the-air (OTA) javascript bundles to devices without requiring a full APK rebuild or manual reinstallation.
 
@@ -436,28 +409,27 @@ flowchart TD
 
 ---
 
-## 18. APK Build Workflow
+## 17. APK Build Workflow
 
 EAS Build configurations manage native code compilation.
 
 ### Build Profiles (`eas.json`)
 * **`development`**: Enables remote debugging and uses the Expo Go development client.
-* **`preview`**: Compiles a standalone `.apk` package using the internal distribution model for direct QA testing.
+* **`preview`**: Compiles a standalone `.apk` package using the internal distribution model for QA testing.
 * **`production`**: Produces a Play Store-compatible `.aab` package with strict release signatures.
 
 ---
 
-## 19. Security
+## 18. Security
 
 - **Authentication**: JWT signature validation using HS256. Passwords hashed using bcrypt.
 - **Authorization**: Endpoint access verified via role IDs and permissions maps.
 - **QR Security**: Cryptographically signed HMAC-SHA256 signatures prevent tampering.
-- **NFC Security**: Customized memory maps prevent unauthorized reading.
 - **API Security**: CORS restrictions, SQL injection protection via Prisma parameter queries, and API rate limiting.
 
 ---
 
-## 20. Error Handling
+## 19. Error Handling
 
 ### Offline Recovery & Resilience
 1. **Network Interceptor**: Intercepts failed API calls. If the error is network-related, the app caches the payload locally in AsyncStorage.
@@ -467,24 +439,24 @@ EAS Build configurations manage native code compilation.
 
 ---
 
-## 21. Testing Strategy
+## 20. Testing Strategy
 
 - **Unit Testing**: Isolated logic validation using Jest.
 - **Integration Testing**: API endpoint testing with SuperTest and a clean database.
-- **Manual Verification**: End-to-end flow checks using physical NFC cards and printed test QR codes.
+- **Manual Verification**: End-to-end flow checks using printed test QR codes.
 - **Edge Cases**:
-  - Scanning an empty or unassigned card (must trigger an invalid card error).
+  - Scanning an invalid or corrupted QR code (must trigger an invalid token error).
   - Attempting to check in a phone number that is already active (must block check-in).
 
 ---
 
-## 22. Deployment Guide
+## 21. Deployment Guide
 
 ### Backend Deployment
 Deploy the backend using a Docker runtime:
 ```bash
-docker build -t nfc-bar-backend .
-docker run -d -p 3000:3000 --env-file .env nfc-bar-backend
+docker build -t bar-backend .
+docker run -d -p 3000:3000 --env-file .env bar-backend
 ```
 
 ### Frontend OTA Release
@@ -496,7 +468,7 @@ eas update --branch preview --message "Release message details"
 
 ---
 
-## 23. Maintenance Guide
+## 22. Maintenance Guide
 
 ### Publishing OTA Updates
 Ensure the `runtimeVersion` configuration matches before publishing updates. Publish using the EAS updates command.
@@ -509,11 +481,11 @@ eas build --platform android --profile preview
 
 ---
 
-## 24. Troubleshooting Guide
+## 23. Troubleshooting Guide
 
-### Issue: NFC Write Operation Failures
-- **Possible Cause**: The card was removed from the device's sensor area before writing finished.
-- **Resolution**: Prompt the user to hold the card flat against the back of the device until the success animation is displayed.
+### Issue: Camera / QR Code Scan Failures
+- **Possible Cause**: Camera permission denied or poor lighting on the physical device.
+- **Resolution**: Ensure camera permission is granted in Android system settings, clean the camera lens, and ensure the QR code is held within the scanning viewport in adequate lighting.
 
 ### Issue: Table Lock Conflicts
 - **Possible Cause**: A session ended abruptly without clearing the table's state.
@@ -521,7 +493,7 @@ eas build --platform android --profile preview
 
 ---
 
-## 25. Appendix
+## 24. Appendix
 
 ### Folder Structure
 ```
@@ -535,7 +507,7 @@ eas build --platform android --profile preview
 │   ├── src/
 │   │   ├── app/            # MainAppShell entry point
 │   │   ├── components/     # UI components
-│   │   ├── context/        # NfcBarContext state engine
+│   │   ├── context/        # BarContext state engine
 │   │   └── features/       # Feature-specific screens
 │   ├── app.json            # Expo configuration
 │   └── eas.json            # EAS build profiles

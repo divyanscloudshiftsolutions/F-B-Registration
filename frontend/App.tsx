@@ -4,7 +4,7 @@ import * as Updates from 'expo-updates';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider } from './src/context/ThemeContext';
-import { NfcBarProvider } from './src/context/NfcBarContext';
+import { BarProvider } from './src/context/BarContext';
 import MainAppShell from './src/app/navigation/MainAppShell';
 import './global.css';
 
@@ -30,9 +30,9 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="light" />
       <ThemeProvider>
-        <NfcBarProvider>
+        <BarProvider>
           <MainAppShell />
-        </NfcBarProvider>
+        </BarProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

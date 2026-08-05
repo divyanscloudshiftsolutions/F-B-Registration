@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Platform, Alert, ActivityIndicator, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNfcBar } from '../../context/NfcBarContext';
+import { useBar } from '../../context/BarContext';
 import { useTheme } from '../../context/ThemeContext';
 import { AppIcon } from './AppIcon';
 import { BUILD_TIME } from '../../utils/buildTime';
@@ -11,7 +11,7 @@ interface SystemHeaderProps {
 }
 
 export const SystemHeader: React.FC<SystemHeaderProps> = ({ onOpenNotifs }) => {
-  const { systemMode, pendingSyncCount, lastSyncTime, notifications, setMode, user, fetchLatestState, showToast, setScreen } = useNfcBar();
+  const { systemMode, pendingSyncCount, lastSyncTime, notifications, setMode, user, fetchLatestState, showToast, setScreen } = useBar();
   const { colors, isDark, toggleTheme } = useTheme();
   const insets = useSafeAreaInsets();
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -161,3 +161,4 @@ export const SystemHeader: React.FC<SystemHeaderProps> = ({ onOpenNotifs }) => {
 };
 
 export default SystemHeader;
+

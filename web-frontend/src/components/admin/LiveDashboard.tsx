@@ -38,7 +38,7 @@ export const LiveDashboard: React.FC = () => {
     <div className="space-y-6">
       {/* Live Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="glass-panel p-5 rounded-2xl border-l-4 border-l-[#D4AF37] flex items-center justify-between">
+        <div className="glass-panel p-5 rounded-2xl border-l-4 border-l-[#8D6CE5] flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Sales Revenue</p>
             <h3 className="text-2xl font-black text-white mt-1">₹{totalCollections.toLocaleString()}</h3>
@@ -46,7 +46,7 @@ export const LiveDashboard: React.FC = () => {
               <TrendingUp size={12} /> Live Verified Collections
             </p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-[#D4AF37]/15 text-[#D4AF37] flex items-center justify-center font-bold">
+          <div className="w-12 h-12 rounded-xl bg-[#8D6CE5]/15 text-[#8D6CE5] flex items-center justify-center font-bold">
             <DollarSign size={24} />
           </div>
         </div>
@@ -103,7 +103,7 @@ export const LiveDashboard: React.FC = () => {
             {tokens.slice(0, 6).map(tk => (
               <div key={tk.id} className="p-4 rounded-xl bg-bg-primary border border-border-main flex justify-between items-center">
                 <div>
-                  <span className="font-mono text-[#D4AF37] font-bold text-sm">{tk.tokenNumber}</span>
+                  <span className="font-mono text-[#8D6CE5] font-bold text-sm">{tk.tokenNumber}</span>
                   <p className="text-xs font-semibold text-text-main mt-0.5">{tk.customer?.name || 'Walk-in Guest'}</p>
                   <p className="text-[10px] text-text-muted">{tk.personsCount} Guests • {tk.deliveryMode}</p>
                 </div>
@@ -119,3 +119,4 @@ export const LiveDashboard: React.FC = () => {
     </div>
   );
 };
+

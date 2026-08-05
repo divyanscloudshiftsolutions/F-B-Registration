@@ -32,7 +32,7 @@ export const CheckInPage: React.FC = () => {
   const [customerName, setCustomerName] = useState('');
   const [email, setEmail] = useState('');
   const [personsCount, setPersonsCount] = useState<number | ''>(2);
-  const [deliveryMode, setDeliveryMode] = useState<'NFC_CARD' | 'EMAIL_QR'>('EMAIL_QR');
+  const deliveryMode = 'EMAIL_QR';
   const [selectedPlaceTypeId, setSelectedPlaceTypeId] = useState('standing_bar');
 
   // Stage 2: Seating State
@@ -51,7 +51,6 @@ export const CheckInPage: React.FC = () => {
 
   // Stage 4: Payment Details State
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'UPI'>('CASH');
-  const [cardUid, setCardUid] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Stage 5: Output Pass Ticket
@@ -59,9 +58,6 @@ export const CheckInPage: React.FC = () => {
 
   // Pre-registered flow state
   const [activePendingToken, setActivePendingToken] = useState<Token | null>(null);
-  const [systemDeliveryMode, setSystemDeliveryMode] = useState<'NFC_CARD' | 'EMAIL_QR' | 'BOTH'>('BOTH');
-
-  // Delivery mode defaults to EMAIL_QR always, operator switches manually if needed
 
   // EXACT VALIDATION REGEXES MATCHING REACT NATIVE SOURCE OF TRUTH
   const isValidName = (name: string): boolean => {
@@ -96,9 +92,7 @@ export const CheckInPage: React.FC = () => {
   // React Native exact step validation booleans
   const isNameOk = isValidName(customerName);
   const isPhoneOk = isValidPhone(phoneNumber) && !isPhoneActive;
-  const isEmailOk = deliveryMode === 'EMAIL_QR'
-    ? (email.trim().length > 0 && isValidEmail(email) && !isEmailActive)
-    : (isValidEmail(email) && !isEmailActive);
+  const isEmailOk = email.trim().length > 0 && isValidEmail(email) && !isEmailActive;
 
   const selectedTableObj = tables.find(t => t.id === selectedTableId);
   
@@ -137,21 +131,7 @@ export const CheckInPage: React.FC = () => {
     }
   }, [rates, standardId]);
 
-  // Load system delivery mode on initialization
-  useEffect(() => {
-    const fetchDeliveryConfig = async () => {
-      try {
-        const mode = await api.getDeliveryMode();
-        setSystemDeliveryMode(mode as any);
-        if (mode === 'EMAIL_QR' || mode === 'NFC_CARD') {
-          setDeliveryMode(mode);
-        }
-      } catch (err) {
-        console.error('Failed to load system delivery mode config:', err);
-      }
-    };
-    fetchDeliveryConfig();
-  }, []);
+
 
   // Auto-adjust selected place category type if headcount exceeds the maximum capacity of the standard zone
   useEffect(() => {
@@ -342,8 +322,7 @@ export const CheckInPage: React.FC = () => {
           email: email.trim() || undefined,
           personsCount,
           placeTypeId: selectedPlaceTypeId,
-          deliveryMode,
-          cardUid: deliveryMode === 'NFC_CARD' ? (cardUid.trim() || `NFC-${Date.now().toString(36).toUpperCase()}`) : undefined,
+          deliveryMode
         });
       }
 
@@ -373,9 +352,7 @@ export const CheckInPage: React.FC = () => {
     setCustomerName('');
     setEmail('');
     setPersonsCount(2);
-    setDeliveryMode('EMAIL_QR');
     setSelectedTableId('');
-    setCardUid('');
     setCreatedToken(null);
     setPreselectedTable(null);
     setActivePendingToken(null);
@@ -401,7 +378,7 @@ export const CheckInPage: React.FC = () => {
         
         {/* Progress fill line */}
         <div 
-          className="absolute left-[6%] top-1/2 -translate-y-1/2 h-[2px] bg-[#D4AF37] transition-all duration-500 ease-out -z-10"
+          className="absolute left-[6%] top-1/2 -translate-y-1/2 h-[2px] bg-[#8D6CE5] transition-all duration-500 ease-out -z-10"
           style={{ width: `${((stage - 1) / 4) * 88}%` }}
         />
 
@@ -422,14 +399,14 @@ export const CheckInPage: React.FC = () => {
                     isCompleted 
                       ? 'bg-emerald-500 text-black font-black shadow-lg shadow-emerald-500/20' 
                       : isActive 
-                      ? 'bg-[#D4AF37] text-black font-black shadow-lg shadow-[#D4AF37]/35 ring-4 ring-[#D4AF37]/20 scale-110' 
+                      ? 'dark:bg-amber-300 bg-amber-700 dark:text-black text-white font-black shadow-[0_0_8px_rgba(180,83,9,0.15)] dark:shadow-[0_0_8px_rgba(252,211,77,0.15)] ring-2 ring-amber-700/10 dark:ring-amber-300/10 scale-110' 
                       : 'bg-bg-primary text-text-muted border border-border-main'
                   }`}
                 >
                   {isCompleted ? '✓' : step.num}
                 </div>
                 <span className={`text-[10px] uppercase tracking-wider font-extrabold transition-all hidden md:block ${
-                  isActive ? 'text-[#D4AF37]' : isCompleted ? 'dark:text-emerald-400 text-emerald-700' : 'text-text-muted'
+                  isActive ? 'text-[#8D6CE5]' : isCompleted ? 'dark:text-emerald-400 text-emerald-700' : 'text-text-muted'
                 }`}>
                   {step.label}
                 </span>
@@ -439,7 +416,7 @@ export const CheckInPage: React.FC = () => {
         </div>
 
         {/* Mobile-only status text tracker */}
-        <div className="text-center mt-4 text-[10px] uppercase tracking-widest font-black text-[#D4AF37] md:hidden">
+        <div className="text-center mt-4 text-[10px] uppercase tracking-widest font-black text-[#8D6CE5] md:hidden">
           Step {stage} of 5: {[
             'Customer Info',
             'Table Seating',
@@ -471,53 +448,13 @@ export const CheckInPage: React.FC = () => {
 
               <form onSubmit={handleStage1Next} className="space-y-5">
                 
-                {/* 1. PASS DELIVERY CHANNEL SELECTOR MATCHING REACT NATIVE STEP 1 */}
-                <div>
-                  <label className="block text-xs font-bold text-[#D4AF37] uppercase tracking-wider mb-2">
-                    📦 Select Delivery Channel <span className="dark:text-red-400 text-red-700">*</span>
-                  </label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {(systemDeliveryMode === 'EMAIL_QR' || systemDeliveryMode === 'BOTH') && (
-                      <div
-                        onClick={() => setDeliveryMode('EMAIL_QR')}
-                        className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center gap-3 ${
-                          deliveryMode === 'EMAIL_QR'
-                            ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-text-main shadow-lg shadow-[#D4AF37]/10'
-                            : 'bg-bg-primary border-border-main text-text-muted hover:bg-bg-card'
-                        }`}
-                      >
-                        <QrCode size={24} className={deliveryMode === 'EMAIL_QR' ? 'text-[#D4AF37]' : ''} />
-                        <div>
-                          <p className="text-xs font-bold text-text-main">Digital Email QR Pass</p>
-                          <p className="text-[10px] text-text-muted">Sent instantly to guest email & phone</p>
-                        </div>
-                      </div>
-                    )}
 
-                    {(systemDeliveryMode === 'NFC_CARD' || systemDeliveryMode === 'BOTH') && (
-                      <div
-                        onClick={() => setDeliveryMode('NFC_CARD')}
-                        className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center gap-3 ${
-                          deliveryMode === 'NFC_CARD'
-                            ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-text-main shadow-lg shadow-[#D4AF37]/10'
-                            : 'bg-bg-primary border-border-main text-text-muted hover:bg-bg-card'
-                        }`}
-                      >
-                        <CreditCard size={24} className={deliveryMode === 'NFC_CARD' ? 'text-[#D4AF37]' : ''} />
-                        <div>
-                          <p className="text-xs font-bold text-text-main">NFC Smart Card</p>
-                          <p className="text-[10px] text-text-muted">Physical smart card UID pairing</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
 
                 {/* 2. CUSTOMER INPUT FIELDS WITH INLINE REAL-TIME VALIDATION */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   <div>
                     <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
-                      <Phone size={14} className="text-[#D4AF37]" /> Phone Number <span className="dark:text-red-400 text-red-700">*</span>
+                      <Phone size={14} className="text-[#8D6CE5]" /> Phone Number <span className="dark:text-red-400 text-red-700">*</span>
                     </label>
                     <input
                       type="tel"
@@ -527,7 +464,7 @@ export const CheckInPage: React.FC = () => {
                       className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-sm text-text-main focus:outline-none transition-all ${
                         phoneNumber.trim().length > 0 && !isValidPhone(phoneNumber)
                           ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-                          : 'border-border-main focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20'
+                          : 'border-border-main focus:border-[#8D6CE5] focus:ring-2 focus:ring-[#8D6CE5]/20'
                       }`}
                       required
                     />
@@ -547,7 +484,7 @@ export const CheckInPage: React.FC = () => {
 
                   <div>
                     <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
-                      <User size={14} className="text-[#D4AF37]" /> Customer Full Name <span className="dark:text-red-400 text-red-700">*</span>
+                      <User size={14} className="text-[#8D6CE5]" /> Customer Full Name <span className="dark:text-red-400 text-red-700">*</span>
                     </label>
                     <input
                       type="text"
@@ -557,7 +494,7 @@ export const CheckInPage: React.FC = () => {
                       className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-sm text-text-main focus:outline-none transition-all ${
                         customerName.trim().length > 0 && !isNameOk
                           ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-                          : 'border-border-main focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20'
+                          : 'border-border-main focus:border-[#8D6CE5] focus:ring-2 focus:ring-[#8D6CE5]/20'
                       }`}
                       required
                     />
@@ -574,12 +511,10 @@ export const CheckInPage: React.FC = () => {
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-xs font-semibold text-text-muted flex items-center gap-1.5">
-                        <Mail size={14} className="text-[#D4AF37]" /> Email Address
+                        <Mail size={14} className="text-[#8D6CE5]" /> Email Address
                       </label>
-                      <span className={`text-[10px] font-extrabold uppercase tracking-wider ${
-                        deliveryMode === 'EMAIL_QR' ? 'dark:text-red-400 text-red-700' : 'text-text-muted'
-                      }`}>
-                        {deliveryMode === 'EMAIL_QR' ? 'REQUIRED' : 'OPTIONAL'}
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider dark:text-red-400 text-red-700">
+                        REQUIRED
                       </span>
                     </div>
                     <input
@@ -588,12 +523,12 @@ export const CheckInPage: React.FC = () => {
                       onChange={e => setEmail(e.target.value)}
                       placeholder="e.g. rahul@gmail.com"
                       className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-sm text-text-main focus:outline-none transition-all ${
-                        (deliveryMode === 'EMAIL_QR' && email.trim().length === 0) || (email.trim().length > 0 && !isValidEmail(email))
+                        email.trim().length === 0 || !isValidEmail(email)
                           ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-                          : 'border-border-main focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20'
+                          : 'border-border-main focus:border-[#8D6CE5] focus:ring-2 focus:ring-[#8D6CE5]/20'
                       }`}
                     />
-                    {deliveryMode === 'EMAIL_QR' && email.trim().length === 0 && (
+                    {email.trim().length === 0 && (
                       <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
                         <AlertTriangle size={14} className="shrink-0" />
                         <span>Email address is strictly required for Digital Email QR Pass delivery.</span>
@@ -615,14 +550,14 @@ export const CheckInPage: React.FC = () => {
 
                   <div>
                     <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
-                      <Users size={14} className="text-[#D4AF37]" /> Guest Headcount (Persons)
+                      <Users size={14} className="text-[#8D6CE5]" /> Guest Headcount (Persons)
                     </label>
                     
                     {/* Custom Increment/Decrement and Editable Input Control */}
                     <div className={`flex items-center justify-between mb-3 bg-bg-primary border rounded-xl p-1 w-full max-w-[160px] transition-all duration-200 ${
                       personsCount !== '' && !isCapacityOk
                         ? 'border-red-500/80 focus-within:border-red-500 focus-within:ring-2 focus-within:ring-red-500/20'
-                        : 'border-border-main focus-within:border-[#D4AF37] focus-within:ring-2 focus-within:ring-[#D4AF37]/20'
+                        : 'border-border-main focus-within:border-[#8D6CE5] focus-within:ring-2 focus-within:ring-[#8D6CE5]/20'
                     }`}>
                       <button
                         type="button"
@@ -692,7 +627,7 @@ export const CheckInPage: React.FC = () => {
                           }}
                           className={`px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-all ${
                             personsCount === count
-                              ? 'bg-[#D4AF37] text-black border-[#D4AF37] font-black shadow-lg shadow-[#D4AF37]/20'
+                              ? 'bg-[#8D6CE5] text-black border-[#8D6CE5] font-black shadow-lg shadow-[#8D6CE5]/20'
                               : count > maxCapacity 
                               ? 'bg-bg-primary text-gray-600 border-border-main line-through opacity-50 cursor-not-allowed'
                               : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
@@ -724,7 +659,7 @@ export const CheckInPage: React.FC = () => {
                     disabled={!isStep1Valid}
                     className={`px-8 py-3.5 rounded-xl flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl transition-all ${
                       isStep1Valid
-                        ? 'gold-gradient-btn opacity-100 cursor-pointer'
+                        ? 'primary-btn opacity-100 cursor-pointer'
                         : 'bg-bg-card text-text-muted border border-border-main opacity-40 cursor-not-allowed pointer-events-none'
                     }`}
                   >
@@ -776,7 +711,7 @@ export const CheckInPage: React.FC = () => {
                           !isAvailable
                             ? 'bg-bg-primary/40 border-border-main/50 opacity-40 cursor-not-allowed'
                             : isSel
-                            ? 'bg-[#D4AF37]/15 border-[#D4AF37] shadow-xl shadow-[#D4AF37]/10 cursor-pointer'
+                            ? 'bg-[#8D6CE5]/15 border-[#8D6CE5] shadow-xl shadow-[#8D6CE5]/10 cursor-pointer'
                             : 'bg-bg-primary border-border-main hover:bg-bg-card cursor-pointer'
                         }`}
                       >
@@ -787,11 +722,11 @@ export const CheckInPage: React.FC = () => {
                               Unavailable
                             </span>
                           ) : isSel ? (
-                            <CheckCircle2 size={18} className="text-[#D4AF37]" />
+                            <CheckCircle2 size={18} className="text-[#8D6CE5]" />
                           ) : null}
                         </div>
                         <div>
-                          <p className="text-2xl font-black text-[#D4AF37]">₹{rc.ratePerPerson} <span className="text-xs text-text-muted font-normal">/ person</span></p>
+                          <p className="text-2xl font-black text-[#8D6CE5]">₹{rc.ratePerPerson} <span className="text-xs text-text-muted font-normal">/ person</span></p>
                           <p className="text-[11px] dark:text-amber-300 text-amber-700 mt-1 font-semibold">
                             {rc.redemptionsPerPerson || 2} Drinks Included • {Math.round((rc.baseTimeMinutes || 120) / 60)} Hours
                           </p>
@@ -842,7 +777,7 @@ export const CheckInPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleStage2Next}
-                  className="px-8 py-3.5 rounded-xl gold-gradient-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl"
+                  className="px-8 py-3.5 rounded-xl primary-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl"
                 >
                   <span>Proceed to Payment</span>
                   <ChevronRight size={16} />
@@ -880,8 +815,8 @@ export const CheckInPage: React.FC = () => {
                     <div className="absolute left-[15%] right-[15%] h-[2px] bg-red-500 top-1/2 -translate-y-1/2 z-20 shadow-[0_0_8px_#EF4444] animate-pulse" />
                     
                     {/* Golden target guide frame overlay */}
-                    <div className="absolute w-44 h-44 border-2 border-[#D4AF37] rounded-3xl z-10 flex items-center justify-center bg-black/10 shadow-[0_0_15px_rgba(212,175,55,0.25)]">
-                      <span className="text-[9px] text-[#D4AF37] font-black uppercase tracking-wider bg-black/60 px-2 py-0.5 rounded-md">Viewfinder</span>
+                    <div className="absolute w-44 h-44 border-2 border-[#8D6CE5] rounded-3xl z-10 flex items-center justify-center bg-black/10 shadow-[0_0_15px_rgba(212,175,55,0.25)]">
+                      <span className="text-[9px] text-[#8D6CE5] font-black uppercase tracking-wider bg-black/60 px-2 py-0.5 rounded-md">Viewfinder</span>
                     </div>
 
                     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 px-4 py-1.5 rounded-full border border-border-main z-30">
@@ -941,13 +876,13 @@ export const CheckInPage: React.FC = () => {
                       setQrVerificationError(null);
                     }}
                     placeholder="e.g. BAR-20260728-1"
-                    className="flex-1 bg-bg-primary border border-border-main rounded-xl px-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20"
+                    className="flex-1 bg-bg-primary border border-border-main rounded-xl px-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5] focus:ring-2 focus:ring-[#8D6CE5]/20"
                   />
                   <button
                     type="button"
                     disabled={isVerifyingQr || !qrCodeInput.trim()}
                     onClick={() => handleVerifyQR(qrCodeInput)}
-                    className="px-6 py-2.5 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider disabled:opacity-40 transition-all cursor-pointer shadow-md"
+                    className="px-6 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider disabled:opacity-40 transition-all cursor-pointer shadow-md"
                   >
                     {isVerifyingQr ? 'Verifying...' : 'Verify Token'}
                   </button>
@@ -991,7 +926,7 @@ export const CheckInPage: React.FC = () => {
                     stopCamera();
                     setStage(4); // Manual proceed to Payment
                   }}
-                  className="px-8 py-3.5 rounded-xl gold-gradient-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl cursor-pointer"
+                  className="px-8 py-3.5 rounded-xl primary-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl cursor-pointer"
                 >
                   <span>Proceed to Payment</span>
                   <ChevronRight size={16} />
@@ -1014,18 +949,6 @@ export const CheckInPage: React.FC = () => {
               </div>
 
               <form onSubmit={handleFinalCheckInSubmit} className="space-y-6">
-                {deliveryMode === 'NFC_CARD' && (
-                  <div>
-                    <label className="block text-xs font-semibold text-text-muted mb-1.5">NFC Smart Card UID</label>
-                    <input
-                      type="text"
-                      value={cardUid}
-                      onChange={e => setCardUid(e.target.value)}
-                      placeholder="e.g. NFC-883921"
-                      className="w-full bg-bg-primary border border-border-main rounded-xl px-4 py-3 text-sm text-text-main font-mono focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20"
-                    />
-                  </div>
-                )}
 
                 <div>
                   <label className="block text-xs font-semibold text-text-muted mb-2">Payment Method</label>
@@ -1035,7 +958,7 @@ export const CheckInPage: React.FC = () => {
                       onClick={() => setPaymentMode('CASH')}
                       className={`py-3.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                         paymentMode === 'CASH'
-                          ? 'bg-[#D4AF37] text-black border-[#D4AF37] font-black shadow-lg shadow-[#D4AF37]/20'
+                          ? 'bg-[#8D6CE5] text-black border-[#8D6CE5] font-black shadow-lg shadow-[#8D6CE5]/20'
                           : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
                       }`}
                     >
@@ -1046,7 +969,7 @@ export const CheckInPage: React.FC = () => {
                       onClick={() => setPaymentMode('UPI')}
                       className={`py-3.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                         paymentMode === 'UPI'
-                          ? 'bg-[#D4AF37] text-black border-[#D4AF37] font-black shadow-lg shadow-[#D4AF37]/20'
+                          ? 'bg-[#8D6CE5] text-black border-[#8D6CE5] font-black shadow-lg shadow-[#8D6CE5]/20'
                           : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
                       }`}
                     >
@@ -1067,7 +990,7 @@ export const CheckInPage: React.FC = () => {
                   <button
                     type="submit"
                     disabled={isSubmitting || !isStep1Valid}
-                    className="px-8 py-3.5 rounded-xl gold-gradient-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    className="px-8 py-3.5 rounded-xl primary-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {isSubmitting ? (
                       <span>Issuing Pass...</span>
@@ -1097,7 +1020,7 @@ export const CheckInPage: React.FC = () => {
               <div className="glass-panel p-6 rounded-2xl border border-border-main text-left space-y-3 font-mono text-xs max-w-md mx-auto">
                 <div className="flex justify-between border-b border-border-main pb-2">
                   <span className="text-text-muted">Token Number:</span>
-                  <span className="font-bold text-[#D4AF37]">{createdToken.tokenNumber}</span>
+                  <span className="font-bold text-[#8D6CE5]">{createdToken.tokenNumber}</span>
                 </div>
                 <div className="flex justify-between border-b border-border-main pb-2">
                   <span className="text-text-muted">Customer Phone:</span>
@@ -1116,7 +1039,7 @@ export const CheckInPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleResetWizard}
-                className="px-8 py-3.5 rounded-xl gold-gradient-btn text-xs font-black uppercase tracking-wider shadow-xl inline-flex items-center gap-2 cursor-pointer"
+                className="px-8 py-3.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider shadow-xl inline-flex items-center gap-2 cursor-pointer"
               >
                 <RotateCcw size={16} /> Check In Next Guest
               </button>
@@ -1129,7 +1052,7 @@ export const CheckInPage: React.FC = () => {
           {/* Header Card */}
           <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-5 shadow-xl">
             <div className="flex items-center gap-2.5 pb-3.5 border-b border-border-main">
-              <Receipt size={18} className="text-[#D4AF37]" />
+              <Receipt size={18} className="text-[#8D6CE5]" />
               <h4 className="text-xs font-black text-text-main uppercase tracking-wider font-sans">
                 {selectedTableId ? 'Live Check-In Receipt' : 'Live Rate Comparison'}
               </h4>
@@ -1152,7 +1075,7 @@ export const CheckInPage: React.FC = () => {
                   <div className="flex justify-between items-center text-text-muted">
                     <span>Channel:</span>
                     <span className="font-bold dark:text-emerald-400 text-emerald-700 text-right">
-                      {deliveryMode === 'EMAIL_QR' ? '📩 Digital Email QR' : '💳 NFC Smart Card'}
+                      📩 Digital Email QR
                     </span>
                   </div>
                 </div>
@@ -1162,7 +1085,7 @@ export const CheckInPage: React.FC = () => {
                   <p className="text-[9px] font-black uppercase text-text-muted tracking-widest">Seating Assignment</p>
                   <div className="flex justify-between items-center text-text-muted">
                     <span>Selected Area:</span>
-                    <span className="font-bold text-[#D4AF37] text-right">{currentRateCard.name}</span>
+                    <span className="font-bold text-[#8D6CE5] text-right">{currentRateCard.name}</span>
                   </div>
                   <div className="flex justify-between items-center text-text-muted">
                     <span>Assigned Table:</span>
@@ -1210,7 +1133,7 @@ export const CheckInPage: React.FC = () => {
                     <p className="text-[10px] text-text-muted mt-0.5">Includes entry cover & drinks</p>
                   </div>
                   <div className="text-right">
-                    <span className="text-2xl font-black text-[#D4AF37]">₹{calculatedTotal}</span>
+                    <span className="text-2xl font-black text-[#8D6CE5]">₹{calculatedTotal}</span>
                   </div>
                 </div>
               </div>
@@ -1278,7 +1201,7 @@ export const CheckInPage: React.FC = () => {
                         )}
                         <div className="flex justify-between items-baseline pt-1.5 border-t border-border-main/50 mt-1">
                           <span className="font-bold text-text-main">Estimated Cost:</span>
-                          <span className="text-base font-black text-[#D4AF37]">₹{standardTotal}</span>
+                          <span className="text-base font-black text-[#8D6CE5]">₹{standardTotal}</span>
                         </div>
                       </div>
                     </div>
@@ -1342,7 +1265,7 @@ export const CheckInPage: React.FC = () => {
                         )}
                         <div className="flex justify-between items-baseline pt-1.5 border-t border-border-main/50 mt-1">
                           <span className="font-bold text-text-main">Estimated Cost:</span>
-                          <span className="text-base font-black text-[#D4AF37]">₹{premiumTotal}</span>
+                          <span className="text-base font-black text-[#8D6CE5]">₹{premiumTotal}</span>
                         </div>
                       </div>
                     </div>
@@ -1361,3 +1284,4 @@ export const CheckInPage: React.FC = () => {
     </div>
   );
 };
+

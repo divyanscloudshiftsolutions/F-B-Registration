@@ -1,16 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Platform, ScrollView, BackHandler } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNfcBar, getBackendUrl } from '../../context/NfcBarContext';
+import { useBar, getBackendUrl } from '../../context/BarContext';
 import { useTheme } from '../../context/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SessionToken, TokenStatus } from '../../types/nfc_bar';
-import { AppIcon } from '../common/AppIcon';
-import nfcService from '../../services/nfc/nfcManager';
+import { SessionToken, TokenStatus } from '../../types/bar_types';
 import { useResponsive } from '../../utils/responsive';
 import { useActionProgress } from '../../utils/actionProgress';
 import { AlertModal } from '../common/AlertModal';
-import { ProgressOverlay } from '../common/ProgressOverlay';
 
 const formatRedemptionTime = (timestampStr: string) => {
   const date = new Date(timestampStr);
@@ -26,40 +23,32 @@ const formatRedemptionTime = (timestampStr: string) => {
   return `${strHours}:${strMinutes}:${strSeconds} ${ampm}`;
 };
 
-interface ReturnCardModalProps {
+interface CloseSessionModalProps {
   onClose: () => void;
 }
 
-export const ReturnCardModal: React.FC<ReturnCardModalProps> = ({ onClose }) => {
-  const { sessions, closeGuestSession, showToast, tokenType, nfcEnabled, emailQrEnabled } = useNfcBar();
+export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({ onClose }) => {
+  const { sessions, closeGuestSession, showToast } = useBar();
   const { loadingAction, secondsLeft, startAction, stopAction, isProcessing } = useActionProgress();
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { isTablet, isLargeScreen } = useResponsive();
   const isCentered = isTablet || isLargeScreen;
   const [returnStep, setReturnStep] = useState<number>(1);
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   
   // Scanned Session details
   const [sessionDetails, setSessionDetails] = useState<SessionToken | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
-  const [isSanitizing, setIsSanitizing] = useState(false);
   const [redemptionsHistory, setRedemptionsHistory] = useState<any[]>([]);
 
   useEffect(() => {
     const handleReturnBack = () => {
-      // 1. Block back press if checkout is sanitizing/wiping card
-      if (isSanitizing) {
-        return true;
-      }
-
-      // 2. Go back one step in ReturnCardModal
+      // Go back one step in ReturnCardModal
       if (returnStep > 1) {
         setReturnStep(returnStep - 1);
         return true;
       }
 
-      // 3. Otherwise close the checkout flow modal
+      // Otherwise close the checkout flow modal
       onClose();
       return true;
     };
@@ -73,13 +62,13 @@ export const ReturnCardModal: React.FC<ReturnCardModalProps> = ({ onClose }) => 
         subscription.remove();
       }
     };
-  }, [returnStep, isSanitizing, onClose]);
+  }, [returnStep, onClose]);
 
   const BACKEND_URL = getBackendUrl();
 
   const fetchRedemptionsHistory = async (tokenNum: string) => {
     try {
-      const token = await AsyncStorage.getItem('nfc_bar_user_token');
+      const token = await AsyncStorage.getItem('bar_user_token');
       if (!token) return;
       const res = await fetch(`${BACKEND_URL}/tokens/${tokenNum}/redemptions`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -101,88 +90,15 @@ export const ReturnCardModal: React.FC<ReturnCardModalProps> = ({ onClose }) => 
     }
   }, [sessionDetails]);
 
-  const handlePhysicalScan = async () => {
-    setIsScanning(true);
-    setSelectedCardId(null);
-    
-    try {
-      await nfcService.initialize();
-      const details = await nfcService.readCardDetails();
-      if (!details || !details.nfcUid) {
-        throw new Error('Failed to read Card details from NFC.');
-      }
-
-      const cardUid = details.nfcUid;
-      const tokenNumber = details.tokenNumber;
-      setSelectedCardId(cardUid);
-
-      // Search by cardUid or tokenNumber
-      const activeSession = sessions.find(s => 
-        (cardUid && s.cardUid === cardUid && s.status === TokenStatus.ACTIVE) ||
-        (tokenNumber && s.tokenNumber === tokenNumber && s.status === TokenStatus.ACTIVE)
-      );
-
-      if (activeSession) {
-        setSessionDetails(activeSession);
-        setReturnStep(2);
-      } else {
-        showToast('No active check-in session was found for this card.', 'danger');
-      }
-    } catch (error: any) {
-      console.error('Return Card NFC Scan error:', error);
-      showToast('The card scan failed. Please reposition the card and try again.', 'danger');
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const handleSimulateScan = (cardId: string) => {
-    setIsScanning(true);
-    setSelectedCardId(cardId);
-    
-    // Immediate simulation transition
-    setIsScanning(false);
-    const activeSession = sessions.find(s => s.cardUid === cardId && s.status === TokenStatus.ACTIVE);
-    if (activeSession) {
-      setSessionDetails(activeSession);
-      setReturnStep(2);
-    } else {
-      showToast('No active check-in session was found for this card.', 'danger');
-      setSelectedCardId(null);
-    }
-  };
-
   const handleConfirmClosure = async () => {
     if (!sessionDetails) return;
     if (!startAction('close_session')) return;
     
     try {
-      if (sessionDetails.deliveryMode === 'EMAIL_QR') {
-        const success = await closeGuestSession(sessionDetails.tokenNumber);
-        stopAction();
-        if (success) {
-          onClose();
-        }
-        return;
-      }
-
-      setIsSanitizing(true);
-      try {
-        await nfcService.initialize();
-        const eraseSuccess = await nfcService.eraseCard();
-        if (!eraseSuccess) {
-          showToast('The card could not be cleared, but the check-in session has been closed successfully.', 'warning');
-        }
-      } catch (err) {
-        console.error('NFC erase error on checkout:', err);
-      } finally {
-        setIsSanitizing(false);
-      }
-
       const success = await closeGuestSession(sessionDetails.tokenNumber);
       stopAction();
       if (success) {
-        onClose();
+        setReturnStep(3);
       }
     } catch (e) {
       stopAction();
@@ -200,73 +116,24 @@ export const ReturnCardModal: React.FC<ReturnCardModalProps> = ({ onClose }) => 
       <AlertModal
         visible={true}
         onClose={onClose}
-        title="Return Smart Card"
+        title="Guest Checkout / Close Session"
       >
         <View>
-          {/* STEP 1: SELECT SESSION OR SCAN NFC */}
+          {/* STEP 1: SELECT SESSION */}
           {returnStep === 1 && (
             <View className="py-2">
-              {!nfcEnabled ? (
-                <View className="flex-col justify-start">
-                  <Text className="text-[10px] font-bold uppercase tracking-wider mb-2 px-1" style={{ color: colors.muted }}>Select Guest to Check Out:</Text>
-                  <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 300 }}>
-                    {sessions.filter(s => s.status === TokenStatus.ACTIVE).length === 0 ? (
-                      <View className="py-8 items-center">
-                        <Text style={{ color: colors.muted, fontSize: 12 }}>No active guest sessions found.</Text>
-                      </View>
-                    ) : (
-                      sessions.filter(s => s.status === TokenStatus.ACTIVE).map(s => (
-                        <TouchableOpacity
-                          key={s.id}
-                          className="rounded-xl p-4 mb-2 flex-row justify-between items-center border"
-                          style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1.5 }}
-                          onPress={() => {
-                            setSessionDetails(s);
-                            setReturnStep(2);
-                          }}
-                        >
-                          <View>
-                            <Text className="text-xs font-bold" style={{ color: colors.text }}>{s.customerName}</Text>
-                            <Text className="text-[9px] font-mono mt-0.5" style={{ color: colors.muted }}>{s.tokenNumber}</Text>
-                          </View>
-                          <View className="items-end">
-                            <Text className="text-[10px] font-extrabold uppercase" style={{ color: colors.gold }}>Table {s.tableNumber}</Text>
-                            <Text className="text-[9px] mt-0.5" style={{ color: colors.muted }}>Drinks: {s.redemptionCount}/{s.redemptionLimit}</Text>
-                          </View>
-                        </TouchableOpacity>
-                      ))
-                    )}
-                  </ScrollView>
-                </View>
-              ) : (
-                <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
-                  <TouchableOpacity 
-                    className="items-center justify-center mb-4 border rounded-2xl w-full py-6"
-                    style={{ backgroundColor: colors.secondarySurface, borderColor: colors.border, borderWidth: 1.5 }}
-                    onPress={handlePhysicalScan}
-                    activeOpacity={0.8}
-                  >
-                    <Text className="text-4xl mb-2" style={{ color: colors.gold }}>💳</Text>
-                    <Text className="text-[11px] font-bold tracking-widest uppercase" style={{ color: colors.gold }}>START NFC SCAN</Text>
-                    <Text className="text-[9px] text-center max-w-[80%] mt-1.5 leading-4" style={{ color: colors.muted }}>
-                      Position Client Smart Card on reader to check invoice details.
-                    </Text>
-                  </TouchableOpacity>
-
-                  {/* Also show active sessions lookup list for hybrid checkout */}
-                  <Text className="text-[10px] font-bold uppercase tracking-wider mb-2 mt-2 px-1" style={{ color: colors.muted }}>Or Select Guest Session:</Text>
+              <View className="flex-col justify-start">
+                <Text className="text-[10px] font-bold uppercase tracking-wider mb-2 px-1" style={{ color: colors.muted }}>Select Guest to Check Out:</Text>
+                <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 300 }}>
                   {sessions.filter(s => s.status === TokenStatus.ACTIVE).length === 0 ? (
-                    <View 
-                      className="py-4 items-center rounded-xl border"
-                      style={{ backgroundColor: colors.secondarySurface, borderColor: colors.border, borderWidth: 1.5 }}
-                    >
-                      <Text className="text-[11px]" style={{ color: colors.muted }}>No active guest sessions found.</Text>
+                    <View className="py-8 items-center">
+                      <Text style={{ color: colors.muted, fontSize: 12 }}>No active guest sessions found.</Text>
                     </View>
                   ) : (
                     sessions.filter(s => s.status === TokenStatus.ACTIVE).map(s => (
                       <TouchableOpacity
                         key={s.id}
-                        className="rounded-xl p-3 mb-2 flex-row justify-between items-center border"
+                        className="rounded-xl p-4 mb-2 flex-row justify-between items-center border"
                         style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1.5 }}
                         onPress={() => {
                           setSessionDetails(s);
@@ -285,7 +152,7 @@ export const ReturnCardModal: React.FC<ReturnCardModalProps> = ({ onClose }) => 
                     ))
                   )}
                 </ScrollView>
-              )}
+              </View>
             </View>
           )}
 
@@ -294,7 +161,7 @@ export const ReturnCardModal: React.FC<ReturnCardModalProps> = ({ onClose }) => 
             <View className="py-2">
               <Text className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: colors.gold }}>Session Summary Log</Text>
               
-              {/* Itemized Scannable Invoice Grid */}
+              {/* Itemized Invoice Grid */}
               <View 
                 className="rounded-xl p-4 border mb-4"
                 style={{ backgroundColor: colors.secondarySurface, borderColor: colors.border, borderWidth: 1.5 }}
@@ -336,7 +203,7 @@ export const ReturnCardModal: React.FC<ReturnCardModalProps> = ({ onClose }) => 
               )}
 
               <Text className="text-red text-center text-[10px] leading-4 mb-4 font-semibold" style={{ color: colors.red }}>
-                Confirm closure: This will mark table {sessionDetails.tableNumber} as available, clear all card data, and return card ID {selectedCardId || 'N/A'} back to stock.
+                Confirm closure: This will mark table {sessionDetails.tableNumber} as available and close the check-in session.
               </Text>
 
               <View className="flex-row gap-3">
@@ -382,7 +249,7 @@ export const ReturnCardModal: React.FC<ReturnCardModalProps> = ({ onClose }) => 
               </View>
               <Text className="text-base font-bold mb-2 text-center" style={{ color: colors.text }}>Session Closed Successfully</Text>
               <Text className="text-[11px] text-center leading-4 max-w-[85%] mb-6" style={{ color: colors.muted }}>
-                Table seating freed. Card formatted and returned back to the active stock.
+                Table seating freed and check-in session marked as closed.
               </Text>
               <TouchableOpacity 
                 className="py-3.5 rounded-xl w-full items-center justify-center min-h-[48px] border" 
@@ -395,12 +262,9 @@ export const ReturnCardModal: React.FC<ReturnCardModalProps> = ({ onClose }) => 
           )}
         </View>
       </AlertModal>
-
-      {/* Progress Blockers */}
-      <ProgressOverlay visible={isScanning} message="Interfacing Card Chip..." />
-      <ProgressOverlay visible={isSanitizing} message="Sanitizing Card Block..." />
     </>
   );
 };
 
-export default ReturnCardModal;
+export default CloseSessionModal;
+

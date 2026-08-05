@@ -87,7 +87,7 @@ export const StaffManagement: React.FC = () => {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search staff members by name, code or role..."
-            className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#D4AF37]"
+            className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5]"
           />
         </div>
 
@@ -101,7 +101,7 @@ export const StaffManagement: React.FC = () => {
 
           <button
             onClick={() => setIsModalOpen(true)}
-            className="px-4 py-2 rounded-xl gold-gradient-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg"
+            className="px-4 py-2 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg"
           >
             <UserPlus size={16} /> Add New Staff Member
           </button>
@@ -130,7 +130,7 @@ export const StaffManagement: React.FC = () => {
               <tbody className="divide-y divide-border-main">
                 {filteredUsers.map(u => (
                   <tr key={u.id} className="hover:bg-bg-primary transition-colors">
-                    <td className="py-3 px-3 font-mono font-bold text-[#D4AF37]">{u.username}</td>
+                    <td className="py-3 px-3 font-mono font-bold text-[#8D6CE5]">{u.username}</td>
                     <td className="py-3 px-3 font-semibold text-text-main">{u.fullName}</td>
                     <td className="py-3 px-3">
                       <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
@@ -183,7 +183,7 @@ export const StaffManagement: React.FC = () => {
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-2 text-[#D4AF37] font-bold text-sm">
+            <div className="flex items-center gap-2 text-[#8D6CE5] font-bold text-sm">
               <UserPlus size={18} /> Register New Staff Member
             </div>
 
@@ -193,7 +193,7 @@ export const StaffManagement: React.FC = () => {
                 <select
                   value={role}
                   onChange={e => setRole(e.target.value as UserRole)}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
                 >
                   <option value="receptionist">Receptionist (REC)</option>
                   <option value="bartender">Bartender (BAR)</option>
@@ -209,7 +209,7 @@ export const StaffManagement: React.FC = () => {
                   value={fullName}
                   onChange={e => setFullName(e.target.value)}
                   placeholder="e.g. Divyansh Saxena"
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
                   required
                 />
               </div>
@@ -223,7 +223,7 @@ export const StaffManagement: React.FC = () => {
                   value={username}
                   onChange={e => setUsername(e.target.value.toUpperCase())}
                   placeholder={`e.g. ${expectedPrefix}-01`}
-                  className={`w-full bg-bg-primary border rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37] ${
+                  className={`w-full bg-bg-primary border rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5] ${
                     username.trim() && (!isUsernameValid || isDuplicate) ? 'border-red-500/50 focus:border-red-500' : 'border-border-main'
                   }`}
                   required
@@ -255,7 +255,7 @@ export const StaffManagement: React.FC = () => {
                   onChange={e => setPin(e.target.value)}
                   maxLength={4}
                   placeholder="e.g. 1234"
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
                   required
                 />
               </div>
@@ -271,7 +271,7 @@ export const StaffManagement: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmitting || !isFormValid}
-                  className="flex-1 py-2.5 rounded-xl gold-gradient-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
+                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
                 >
                   {isSubmitting ? 'Registering...' : 'Confirm Registration'}
                 </button>
@@ -283,3 +283,4 @@ export const StaffManagement: React.FC = () => {
     </div>
   );
 };
+

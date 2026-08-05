@@ -24,7 +24,7 @@ import multer from 'multer';
 
 const prisma = new PrismaClient();
 const upload = multer();
-const jwtSecret = process.env.JWT_SECRET || 'REDACTED_JWT_SECRET';
+const jwtSecret = process.env.JWT_SECRET || 'bar_super_secret_key_123!';
 const authApiUrl = process.env.AUTH_API_URL || 'https://authapi.cloudshiftsolutions.in';
 const configuredTenantId = process.env.TENANT_ID;
 const configuredTenantCode = process.env.TENANT_CODE;
@@ -375,7 +375,7 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       } else {
         return res.status(403).json({
           success: false,
-          error: { code: 'AUTH_006', message: 'Access Denied: User is not authorized for the NFC Bar application' }
+          error: { code: 'AUTH_006', message: 'Access Denied: User is not authorized for the Bar Management System' }
         });
       }
     }
@@ -1504,28 +1504,9 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
     tableId,
     amountPaid,
     paymentVerified,
-    cardUid,
-    nfcCardUid,
-    deliveryMode: reqDeliveryMode,
   } = req.body;
 
-  const { nfcEnabled, emailQrEnabled } = await tokenService.getConfiguredDeliveryAvailability();
-  const deliveryMode = reqDeliveryMode || (nfcEnabled ? 'NFC_CARD' : 'EMAIL_QR');
-
-  if (deliveryMode === 'NFC_CARD' && !nfcEnabled) {
-    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'NFC Card delivery method is currently disabled by administrator.' } });
-  }
-  if (deliveryMode === 'EMAIL_QR' && !emailQrEnabled) {
-    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Email QR delivery method is currently disabled by administrator.' } });
-  }
-
-  const finalCardUid = nfcCardUid || cardUid;
-  if (deliveryMode === 'NFC_CARD') {
-    const cardUidRegex = /^[A-Z0-9-]{4,50}$/;
-    if (!finalCardUid || !cardUidRegex.test(finalCardUid)) {
-      return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'NFC Card UID must be 4-50 uppercase alphanumeric characters or hyphens.' } });
-    }
-  }
+  const deliveryMode = 'EMAIL_QR';
 
   const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
   if (!phoneNumber || !phoneRegex.test(phoneNumber)) {
@@ -1539,18 +1520,14 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
   }
   const finalCustomerName = customerName;
 
-  if (deliveryMode === 'EMAIL_QR') {
-    if (!email || !email.trim()) {
-      return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Email address is mandatory when system operates in EMAIL_QR mode.' } });
-    }
+  if (!email || !email.trim()) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Email address is mandatory when system operates in EMAIL_QR mode.' } });
   }
 
-  if (email && email.trim()) {
-    if (!validateEmail(email)) {
-      return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Please enter a valid Gmail address using only lowercase letters, numbers, and dots.' } });
-    }
+  if (!validateEmail(email)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Please enter a valid Gmail address using only lowercase letters, numbers, and dots.' } });
   }
-  let finalEmail = email ? email.trim().toLowerCase() : null;
+  let finalEmail = email.trim().toLowerCase();
 
   const finalPersonsCount = parseInt(personsCount || persons || '1', 10);
   if (isNaN(finalPersonsCount) || finalPersonsCount < 1) {
@@ -1571,14 +1548,8 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
     return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid tableId UUID format.' } });
   }
 
-  if (deliveryMode === 'NFC_CARD') {
-    if (!finalPhoneNumber || !finalCustomerName || !finalPersonsCount || !finalCardUid || (!tableNumber && !tableId) || (!placeType && !placeTypeId)) {
-      return res.status(400).json({ success: false, error: { code: 'VAL_008', message: 'Check-in details are incomplete. Please fill out all required fields.' } });
-    }
-  } else {
-    if (!finalPhoneNumber || !finalCustomerName || !finalPersonsCount || !email || (!tableNumber && !tableId) || (!placeType && !placeTypeId)) {
-      return res.status(400).json({ success: false, error: { code: 'VAL_008', message: 'Check-in details are incomplete. Please fill out all required fields.' } });
-    }
+  if (!finalPhoneNumber || !finalCustomerName || !finalPersonsCount || !email || (!tableNumber && !tableId) || (!placeType && !placeTypeId)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_008', message: 'Check-in details are incomplete. Please fill out all required fields.' } });
   }
 
   try {
@@ -1619,18 +1590,6 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(400).json({ success: false, error: { code: 'TABLE_ERR', message: `Group size of ${finalPersonsCount} exceeds table capacity of ${tableObj.capacity}.` } });
     }
 
-    // Find card if in NFC mode
-    let card = null;
-    if (deliveryMode === 'NFC_CARD') {
-      card = await prisma.card.findUnique({ where: { nfcUid: finalCardUid } });
-      if (!card) {
-        return res.status(400).json({ success: false, error: { code: 'CARD_001', message: 'NFC card is not registered' } });
-      }
-      if (card.status !== 'available') {
-        return res.status(400).json({ success: false, error: { code: 'CARD_002', message: `NFC card cannot be assigned. Card status is currently '${card.status}'.` } });
-      }
-    }
-
     // Find place type config
     const ptConfig = await prisma.placeTypeConfig.findUnique({ where: { id: finalPlaceTypeId } });
     if (!ptConfig) {
@@ -1663,8 +1622,6 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
       amountPaid: finalAmountPaid,
       paymentVerified: paymentVerified !== undefined ? paymentVerified : true,
       issuedBy: finalIssuedBy,
-      nfcCardUid: deliveryMode === 'NFC_CARD' ? finalCardUid : undefined,
-      cardId: card ? card.id : undefined,
     });
 
     // Match the old format that the React Native client expects
@@ -1685,13 +1642,12 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
       redemptionLimit: token.totalRedemptionsAllowed,
       redemptionCount: token.redemptionsUsed,
       status: token.status.toUpperCase(),
-      cardUid: deliveryMode === 'NFC_CARD' ? finalCardUid : null,
+      cardUid: null,
       createdAt: token.issuedAt.toISOString(),
     };
 
     await redisService.del('tokens:active').catch(() => {});
     await redisService.del('tables:all').catch(() => {});
-    await redisService.del('cards:all').catch(() => {});
 
     return res.status(201).json(responseData);
   } catch (err: any) {
@@ -2096,7 +2052,6 @@ const activateSessionHandler = async (req: AuthenticatedRequest, res: Response) 
 
     await redisService.del('tokens:active').catch(() => {});
     await redisService.del('tables:all').catch(() => {});
-    await redisService.del('cards:all').catch(() => {});
 
     return res.status(200).json(responseData);
   } catch (err: any) {
@@ -2117,7 +2072,6 @@ const cancelSessionHandler = async (req: AuthenticatedRequest, res: Response) =>
     const updatedToken = await tokenService.cancelPendingSession(tokenNumber, cancelledBy, cancelEnum);
     await redisService.del('tokens:active').catch(() => {});
     await redisService.del('tables:all').catch(() => {});
-    await redisService.del('cards:all').catch(() => {});
 
     return res.status(200).json({ success: true, message: 'Session cancelled successfully.', data: updatedToken });
   } catch (err: any) {
@@ -2265,8 +2219,8 @@ router.post('/redemptions', authenticate, authorize(['bartender', 'admin']), asy
     return res.status(400).json({ success: false, error: { message: 'payload is required.' } });
   }
 
-  const finalPresentationType = presentationType || 'NFC_TAP';
-  if (finalPresentationType !== 'NFC_TAP' && finalPresentationType !== 'QR_SCAN') {
+  const finalPresentationType = presentationType || 'QR_SCAN';
+  if (finalPresentationType !== 'QR_SCAN') {
     return res.status(400).json({ success: false, error: { message: 'Invalid presentationType.' } });
   }
 
@@ -2295,88 +2249,24 @@ router.post('/redemptions', authenticate, authorize(['bartender', 'admin']), asy
 
 // Admin update configurations
 router.put('/config/delivery-methods', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
-  const { nfcEnabled, emailQrEnabled } = req.body;
-  if (typeof nfcEnabled !== 'boolean' || typeof emailQrEnabled !== 'boolean') {
-    return res.status(400).json({ success: false, error: { message: 'Invalid values. nfcEnabled and emailQrEnabled must be boolean values.' } });
-  }
-  if (!nfcEnabled && !emailQrEnabled) {
-    return res.status(400).json({ success: false, error: { message: 'At least one delivery method must be enabled.' } });
-  }
-
-  try {
-    await prisma.systemConfig.upsert({
-      where: { configKey: 'nfc_card_enabled' },
-      update: { configValue: nfcEnabled ? 'true' : 'false' },
-      create: { configKey: 'nfc_card_enabled', configValue: nfcEnabled ? 'true' : 'false' }
-    });
-
-    await prisma.systemConfig.upsert({
-      where: { configKey: 'email_qr_enabled' },
-      update: { configValue: emailQrEnabled ? 'true' : 'false' },
-      create: { configKey: 'email_qr_enabled', configValue: emailQrEnabled ? 'true' : 'false' }
-    });
-
-    await redisService.setex('config:nfc_card_enabled', 86400, nfcEnabled ? 'true' : 'false');
-    await redisService.setex('config:email_qr_enabled', 86400, emailQrEnabled ? 'true' : 'false');
-
-    return res.json({
-      success: true,
-      nfcEnabled,
-      emailQrEnabled
-    });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, error: { message: error.message } });
-  }
+  return res.json({
+    success: true,
+    emailQrEnabled: true
+  });
 });
 
 // Admin get current configurations
 router.get('/config/delivery-methods', authenticate, async (req: Request, res: Response) => {
-  try {
-    const { nfcEnabled, emailQrEnabled } = await tokenService.getConfiguredDeliveryAvailability();
-    return res.json({ success: true, nfcEnabled, emailQrEnabled });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, error: { message: error.message } });
-  }
+  return res.json({ success: true, emailQrEnabled: true });
 });
 
 // Legacy Compatibility Aliases
 router.get('/config/delivery-mode', authenticate, async (req: Request, res: Response) => {
-  try {
-    const deliveryMode = await tokenService.getConfiguredDeliveryMode();
-    return res.json({ success: true, deliveryMode });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, error: { message: error.message } });
-  }
+  return res.json({ success: true, deliveryMode: 'EMAIL_QR' });
 });
 
 router.put('/config/delivery-mode', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
-  const { mode } = req.body;
-  if (mode !== 'NFC_CARD' && mode !== 'EMAIL_QR') {
-    return res.status(400).json({ success: false, error: { message: 'Invalid mode. Must be NFC_CARD or EMAIL_QR.' } });
-  }
-  try {
-    const nfcEnabled = mode === 'NFC_CARD';
-    const emailQrEnabled = mode === 'EMAIL_QR';
-
-    await prisma.systemConfig.upsert({
-      where: { configKey: 'nfc_card_enabled' },
-      update: { configValue: nfcEnabled ? 'true' : 'false' },
-      create: { configKey: 'nfc_card_enabled', configValue: nfcEnabled ? 'true' : 'false' }
-    });
-
-    await prisma.systemConfig.upsert({
-      where: { configKey: 'email_qr_enabled' },
-      update: { configValue: emailQrEnabled ? 'true' : 'false' },
-      create: { configKey: 'email_qr_enabled', configValue: emailQrEnabled ? 'true' : 'false' }
-    });
-
-    await redisService.setex('config:nfc_card_enabled', 86400, nfcEnabled ? 'true' : 'false');
-    await redisService.setex('config:email_qr_enabled', 86400, emailQrEnabled ? 'true' : 'false');
-
-    return res.json({ success: true, message: `Token Delivery Mode updated to ${mode}` });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, error: { message: error.message } });
-  }
+  return res.json({ success: true, message: 'Token Delivery Mode updated to EMAIL_QR' });
 });
 
 // Get active tokens (list)
@@ -2395,7 +2285,7 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
     await tokenService.reconcileSystemState();
     const activeTokens = await prisma.token.findMany({
       where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] } },
-      include: { customer: true, placeType: true, table: true, card: true },
+      include: { customer: true, placeType: true, table: true },
       orderBy: { startTime: 'desc' },
     });
     
@@ -2417,7 +2307,7 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
       redemptionLimit: t.totalRedemptionsAllowed,
       redemptionCount: t.redemptionsUsed,
       status: t.status.toUpperCase(),
-      cardUid: t.card?.nfcUid,
+      cardUid: null,
       createdAt: t.issuedAt.toISOString(),
       deliveryMode: t.deliveryMode,
       table: t.table ? {
@@ -2483,7 +2373,6 @@ router.get('/admin/sessions', authenticate, authorize(['admin', 'manager']), asy
         customer: true, 
         placeType: true, 
         table: true, 
-        card: true,
         redemptions: { include: { bartender: true } },
         extensions: { include: { approver: true } },
         creator: true,
@@ -2509,7 +2398,7 @@ router.get('/admin/sessions', authenticate, authorize(['admin', 'manager']), asy
       redemptionLimit: t.totalRedemptionsAllowed,
       redemptionCount: t.redemptionsUsed,
       status: t.status.toLowerCase(),
-      cardUid: t.card?.nfcUid || null,
+      cardUid: null,
       createdAt: t.issuedAt.toISOString(),
       deliveryMode: t.deliveryMode,
       table: t.table ? {
@@ -2551,22 +2440,16 @@ router.get('/admin/sessions', authenticate, authorize(['admin', 'manager']), asy
   }
 });
 
-// Get specific token by identifier (token number or card UID)
+// Get specific token by identifier (token number)
 const getTokenByIdentifier = async (req: Request, res: Response) => {
   const { identifier } = req.params;
   try {
-    let token = await prisma.token.findFirst({
-      where: {
-        OR: [
-          { tokenNumber: identifier },
-          { card: { nfcUid: identifier } },
-        ],
-      },
+    let token = await prisma.token.findUnique({
+      where: { tokenNumber: identifier },
       include: {
         customer: true,
         placeType: true,
         table: true,
-        card: true,
         redemptions: {
           include: {
             bartender: true
@@ -2602,7 +2485,7 @@ const getTokenByIdentifier = async (req: Request, res: Response) => {
       redemptionCount: token.redemptionsUsed,
       redemptionsRemaining,
       status: token.status.toUpperCase(),
-      cardUid: token.card?.nfcUid,
+      cardUid: null,
       createdAt: token.issuedAt.toISOString(),
       deliveryMode: token.deliveryMode,
       table: token.table ? {
@@ -2633,38 +2516,16 @@ router.get('/tokens/:tokenNumber', authenticate, async (req, res) => {
 
 // Extend Session
 const extendSessionHandler = async (req: AuthenticatedRequest, res: Response) => {
-  const { tokenNumber, cardUid, additionalHours, extraMinutes, additionalAmount, approvedBy, additionalPersons } = req.body;
+  const { tokenNumber, additionalHours, extraMinutes, additionalAmount, approvedBy, additionalPersons } = req.body;
   const paramTokenNumber = req.params.tokenNumber;
 
   let finalTokenNumber = paramTokenNumber || tokenNumber;
   const finalMinutes = extraMinutes ? parseInt(extraMinutes, 10) : (parseFloat(additionalHours || '0') * 60);
-  
-  // Resolve token number first to compute finalAmount if needed
-  if (!finalTokenNumber && cardUid) {
-    const cachedActive = await redisService.get(`token:active:${cardUid}`);
-    if (cachedActive) {
-      finalTokenNumber = JSON.parse(cachedActive).tokenNumber;
-    } else {
-      const cardObj = await prisma.card.findUnique({
-        where: { nfcUid: cardUid },
-        include: { currentToken: true }
-      });
-      if (cardObj && cardObj.currentToken) {
-        finalTokenNumber = cardObj.currentToken.tokenNumber;
-      }
-    }
-  }
 
   if (finalTokenNumber) {
     const tokenRegex = /^BAR-\d{8}-\d{5}$/;
     if (!tokenRegex.test(finalTokenNumber) || finalTokenNumber.length !== 18) {
       return res.status(400).json({ error: 'Token number must be exactly 18 characters in format BAR-YYYYMMDD-XXXXX.' });
-    }
-  }
-  if (cardUid) {
-    const cardUidRegex = /^[A-Z0-9-]{4,50}$/;
-    if (!cardUidRegex.test(cardUid)) {
-      return res.status(400).json({ error: 'Invalid card UID format.' });
     }
   }
   if (approvedBy && !isValidUUID(approvedBy)) {
@@ -2694,7 +2555,7 @@ const extendSessionHandler = async (req: AuthenticatedRequest, res: Response) =>
 
   try {
     if (!finalTokenNumber) {
-      return res.status(400).json({ error: 'Token number or card UID is required' });
+      return res.status(400).json({ error: 'Token number is required' });
     }
 
     const updated = await tokenService.extendToken(
@@ -2739,7 +2600,7 @@ router.put('/tokens/:tokenNumber/extend', authenticate, authorize(['receptionist
 
 // Checkout Session
 const checkoutSessionHandler = async (req: AuthenticatedRequest, res: Response) => {
-  const { tokenNumber, cardUid, eraseCard } = req.body;
+  const { tokenNumber } = req.body;
   const paramTokenNumber = req.params.tokenNumber;
 
   let finalTokenNumber = paramTokenNumber || tokenNumber;
@@ -2750,38 +2611,16 @@ const checkoutSessionHandler = async (req: AuthenticatedRequest, res: Response) 
       return res.status(400).json({ error: 'Token number must be exactly 18 characters in format BAR-YYYYMMDD-XXXXX.' });
     }
   }
-  if (cardUid) {
-    const cardUidRegex = /^[A-Z0-9-]{4,50}$/;
-    if (!cardUidRegex.test(cardUid)) {
-      return res.status(400).json({ error: 'Invalid card UID format.' });
-    }
-  }
 
   try {
-    if (!finalTokenNumber && cardUid) {
-      const cachedActive = await redisService.get(`token:active:${cardUid}`);
-      if (cachedActive) {
-        finalTokenNumber = JSON.parse(cachedActive).tokenNumber;
-      } else {
-        const cardObj = await prisma.card.findUnique({
-          where: { nfcUid: cardUid },
-          include: { currentToken: true }
-        });
-        if (cardObj && cardObj.currentToken) {
-          finalTokenNumber = cardObj.currentToken.tokenNumber;
-        }
-      }
-    }
-
     if (!finalTokenNumber) {
-      return res.status(400).json({ error: 'Token number or card UID is required' });
+      return res.status(400).json({ error: 'Token number is required' });
     }
 
     const summary = await tokenService.closeSession(
       finalTokenNumber,
       req.user?.id || '',
-      CloseReason.CHECKOUT,
-      eraseCard !== undefined ? eraseCard : true
+      CloseReason.CHECKOUT
     );
 
     // Format return
@@ -2801,7 +2640,6 @@ const checkoutSessionHandler = async (req: AuthenticatedRequest, res: Response) 
 
     await redisService.del('tokens:active').catch(() => {});
     await redisService.del('tables:all').catch(() => {});
-    await redisService.del('cards:all').catch(() => {});
 
     return res.json(responseData);
   } catch (err: any) {
@@ -2819,7 +2657,7 @@ router.put('/tokens/:tokenNumber/close', authenticate, authorize(['receptionist'
 // Manual Close Section Route
 router.post('/sessions/:tokenNumber/close', authenticate, authorize(['admin', 'receptionist', 'bartender']), async (req: AuthenticatedRequest, res: Response) => {
   const { tokenNumber } = req.params;
-  const { eraseCard, force } = req.body;
+  const { force } = req.body;
 
   const tokenRegex = /^BAR-\d{8}-\d{5}$/;
   if (!tokenNumber || !tokenRegex.test(tokenNumber) || tokenNumber.length !== 18) {
@@ -2831,13 +2669,11 @@ router.post('/sessions/:tokenNumber/close', authenticate, authorize(['admin', 'r
       tokenNumber,
       req.user?.id || '',
       CloseReason.MANUAL,
-      eraseCard !== undefined ? eraseCard : true,
       force === true
     );
 
     await redisService.del('tokens:active').catch(() => {});
     await redisService.del('tables:all').catch(() => {});
-    await redisService.del('cards:all').catch(() => {});
 
     return res.json({
       success: true,
@@ -2864,7 +2700,7 @@ router.post('/sessions/:tokenNumber/close', authenticate, authorize(['admin', 'r
 
 // QR Code Assisted Close Section Route
 router.post('/sessions/close-by-qr', authenticate, authorize(['admin', 'receptionist', 'bartender']), async (req: AuthenticatedRequest, res: Response) => {
-  const { qrData, eraseCard } = req.body;
+  const { qrData } = req.body;
 
   if (!qrData) {
     return res.status(400).json({ error: 'QR data is required.' });
@@ -2911,13 +2747,11 @@ router.post('/sessions/close-by-qr', authenticate, authorize(['admin', 'receptio
     const summary = await tokenService.closeSession(
       tokenNumber,
       req.user?.id || '',
-      CloseReason.QR_SCAN,
-      eraseCard !== undefined ? eraseCard : true
+      CloseReason.QR_SCAN
     );
 
     await redisService.del('tokens:active').catch(() => {});
     await redisService.del('tables:all').catch(() => {});
-    await redisService.del('cards:all').catch(() => {});
 
     return res.json({
       success: true,
@@ -2946,117 +2780,26 @@ router.post('/sessions/close-by-qr', authenticate, authorize(['admin', 'receptio
 // 4. BARTENDER / REDEMPTION ENDPOINTS
 // ==========================================
 
-// Validate Token Card (GET)
-router.get('/token/validate/:cardUid', authenticate, authorize(['bartender', 'admin']), async (req: Request, res: Response) => {
-  const { cardUid } = req.params;
-  try {
-    const token = await prisma.token.findFirst({
-      where: { card: { nfcUid: cardUid }, status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] } },
-      include: { table: true, customer: true, placeType: true }
-    }) as any;
-
-    if (!token) {
-      return res.status(404).json({ error: 'No active session token found for this card' });
-    }
-
-    // Validate expiration
-    const now = new Date();
-    if (now > token.endTime) {
-      return res.status(400).json({
-        error: 'Token session has expired',
-        expiredAt: token.endTime,
-        token: {
-          tokenNumber: token.tokenNumber,
-          customerName: token.customer.name,
-        }
-      });
-    }
-
-    // Validate redemption limits
-    if (token.redemptionsUsed >= token.totalRedemptionsAllowed) {
-      return res.status(400).json({
-        error: 'Redemption limit has been reached',
-        limit: token.totalRedemptionsAllowed,
-        token: {
-          tokenNumber: token.tokenNumber,
-          customerName: token.customer.name,
-        }
-      });
-    }
-
-    // Match the old shape that React Native expect
-    const compatToken = {
-      id: token.id,
-      tokenNumber: token.tokenNumber,
-      phoneNumber: token.customer.phoneNumber,
-      customerName: token.customer.name,
-      persons: token.personsCount,
-      placeType: token.placeType.name,
-      tableId: token.tableId,
-      tableNumber: token.table?.tableNumber || null,
-      amountPaid: token.amountPaid,
-      startTime: token.startTime.toISOString(),
-      endTime: token.endTime.toISOString(),
-      redemptionLimit: token.totalRedemptionsAllowed,
-      redemptionCount: token.redemptionsUsed,
-      status: token.status.toUpperCase(),
-      cardUid,
-    };
-
-    return res.json({
-      valid: true,
-      remaining: token.totalRedemptionsAllowed - token.redemptionsUsed,
-      token: compatToken,
-    });
-  } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to validate card' });
-  }
-});
-
 // Process Redemption
 const redeemHandler = async (req: AuthenticatedRequest, res: Response) => {
-  const { tokenNumber, cardUid } = req.body;
+  const { tokenNumber } = req.body;
   if (tokenNumber) {
     const tokenRegex = /^BAR-\d{8}-\d{5}$/;
     if (!tokenRegex.test(tokenNumber) || tokenNumber.length !== 18) {
       return res.status(400).json({ error: 'Token number must be exactly 18 characters in format BAR-YYYYMMDD-XXXXX.' });
     }
   }
-  if (cardUid) {
-    const cardUidRegex = /^[A-Z0-9-]{4,50}$/;
-    if (!cardUidRegex.test(cardUid)) {
-      return res.status(400).json({ error: 'Invalid card UID format.' });
-    }
-  }
 
-  let finalTokenNumber = tokenNumber;
   try {
-    if (!finalTokenNumber && cardUid) {
-      const cachedActive = await redisService.get(`token:active:${cardUid}`);
-      if (cachedActive) {
-        finalTokenNumber = JSON.parse(cachedActive).tokenNumber;
-      } else {
-        const cardObj = await prisma.card.findUnique({
-          where: { nfcUid: cardUid },
-          include: { currentToken: true }
-        });
-        if (cardObj && cardObj.currentToken) {
-          finalTokenNumber = cardObj.currentToken.tokenNumber;
-        }
-      }
-    }
-
-    if (!finalTokenNumber) {
-      return res.status(404).json({ error: 'No active session found' });
+    if (!tokenNumber) {
+      return res.status(400).json({ error: 'Token number is required' });
     }
 
     const bartenderId = req.user?.id || req.body.bartenderId || '';
     if (bartenderId && !isValidUUID(bartenderId)) {
       return res.status(400).json({ error: 'Invalid bartenderId UUID format.' });
     }
-    const tokenRecord = await prisma.token.findUnique({ where: { tokenNumber: finalTokenNumber } });
-    const presentationType = tokenRecord && tokenRecord.deliveryMode === 'EMAIL_QR' ? 'QR_SCAN' : 'NFC_TAP';
-    const result = await redemptionService.processRedemption(finalTokenNumber, bartenderId, undefined, presentationType);
+    const result = await redemptionService.processRedemption(tokenNumber, bartenderId, undefined, 'QR_SCAN');
 
     // compat old return shape
     return res.json({
@@ -3073,42 +2816,20 @@ const redeemHandler = async (req: AuthenticatedRequest, res: Response) => {
 };
 
 const undoRedeemHandler = async (req: AuthenticatedRequest, res: Response) => {
-  const { tokenNumber, cardUid } = req.body;
+  const { tokenNumber } = req.body;
   if (tokenNumber) {
     const tokenRegex = /^BAR-\d{8}-\d{5}$/;
     if (!tokenRegex.test(tokenNumber) || tokenNumber.length !== 18) {
       return res.status(400).json({ error: 'Token number must be exactly 18 characters in format BAR-YYYYMMDD-XXXXX.' });
     }
   }
-  if (cardUid) {
-    const cardUidRegex = /^[A-Z0-9-]{4,50}$/;
-    if (!cardUidRegex.test(cardUid)) {
-      return res.status(400).json({ error: 'Invalid card UID format.' });
-    }
-  }
 
-  let finalTokenNumber = tokenNumber;
   try {
-    if (!finalTokenNumber && cardUid) {
-      const cachedActive = await redisService.get(`token:active:${cardUid}`);
-      if (cachedActive) {
-        finalTokenNumber = JSON.parse(cachedActive).tokenNumber;
-      } else {
-        const cardObj = await prisma.card.findUnique({
-          where: { nfcUid: cardUid },
-          include: { currentToken: true }
-        });
-        if (cardObj && cardObj.currentToken) {
-          finalTokenNumber = cardObj.currentToken.tokenNumber;
-        }
-      }
+    if (!tokenNumber) {
+      return res.status(400).json({ error: 'Token number is required' });
     }
 
-    if (!finalTokenNumber) {
-      return res.status(404).json({ error: 'No active session found' });
-    }
-
-    const result = await redemptionService.undoRedemption(finalTokenNumber);
+    const result = await redemptionService.undoRedemption(tokenNumber);
 
     return res.json({
       success: true,
@@ -3124,9 +2845,7 @@ const undoRedeemHandler = async (req: AuthenticatedRequest, res: Response) => {
 };
 
 router.post('/token/redeem', authenticate, authorize(['bartender', 'admin']), redeemHandler);
-router.post('/redemptions/tap', authenticate, authorize(['bartender', 'admin']), redeemHandler);
 router.post('/token/redeem/undo', authenticate, authorize(['bartender', 'admin']), undoRedeemHandler);
-router.post('/redemptions/tap/undo', authenticate, authorize(['bartender', 'admin']), undoRedeemHandler);
 
 // Get redemptions
 router.get('/tokens/:tokenNumber/redemptions', authenticate, async (req: Request, res: Response) => {
@@ -3153,158 +2872,9 @@ router.get('/tokens/:tokenNumber/redemptions', authenticate, async (req: Request
   }
 });
 
-// ==========================================
-// 5. CARD INVENTORY ENDPOINTS
-// ==========================================
 
-// Get all cards (Admin Only)
-router.get('/cards', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
-  try {
-    const cacheKey = 'cards:all';
-    const cachedData = await redisService.get(cacheKey);
-    if (cachedData) {
-      try {
-        return res.json(JSON.parse(cachedData));
-      } catch (parseErr) {
-        console.warn('[Redis] Failed to parse cached cards:', parseErr);
-      }
-    }
 
-    const cards = await prisma.card.findMany({
-      orderBy: { nfcUid: 'asc' }
-    });
-    const formatted = cards.map(c => ({
-      id: c.id,
-      cardUid: c.nfcUid,
-      status: c.status.toLowerCase(),
-      writeCycles: c.writeCycles,
-      lastWrittenAt: c.lastWrittenAt,
-      assignedAt: c.assignedAt
-    }));
 
-    await redisService.setex(cacheKey, 3600, JSON.stringify(formatted));
-
-    return res.json(formatted);
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-// Get available cards
-router.get('/cards/available', authenticate, async (req: Request, res: Response) => {
-  try {
-    const cards = await prisma.card.findMany({
-      where: { status: 'available' }
-    });
-    return res.json(cards.map(c => ({
-      id: c.id,
-      cardUid: c.nfcUid,
-      status: c.status.toUpperCase(),
-    })));
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-// Register Card
-router.post('/cards/register', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
-  const { nfcUid, status } = req.body;
-  try {
-    const card = await prisma.card.create({
-      data: {
-        nfcUid,
-        status: status || 'available',
-      }
-    });
-    await redisService.del('cards:all').catch(() => {});
-    return res.status(201).json(card);
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-// Update card status (e.g. mark lost) - PUT /api/cards/:cardUid
-const updateCardStatusHandler = async (req: Request, res: Response) => {
-  const { cardUid } = req.params;
-  const { status } = req.body;
-
-  if (!status) {
-    return res.status(400).json({ error: { code: 'VAL_ERR', message: 'Status is required' } });
-  }
-
-  const requestedStatus = status.toLowerCase();
-  const allowedStatuses = ['available', 'assigned', 'lost', 'damaged', 'inactive'];
-  if (!allowedStatuses.includes(requestedStatus)) {
-    return res.status(400).json({
-      error: {
-        code: 'VAL_ERR',
-        message: 'Invalid status. Allowed statuses are available, assigned, lost, damaged, inactive.'
-      }
-    });
-  }
-
-  try {
-    const existingCard = await prisma.card.findUnique({
-      where: { nfcUid: cardUid }
-    });
-
-    if (!existingCard) {
-      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Card not found' } });
-    }
-
-    const currentStatus = existingCard.status.toLowerCase();
-
-    // Rule 1: Assigned cards cannot be marked available without checkout
-    if (currentStatus === 'assigned' && requestedStatus === 'available') {
-      return res.status(400).json({
-        error: {
-          code: 'CONFLICT_CARD_ASSIGNED',
-          message: 'Assigned cards cannot be marked available directly without closing the session.'
-        }
-      });
-    }
-
-    // Rule 2: Lost cards cannot be assigned directly
-    if (currentStatus === 'lost' && requestedStatus === 'assigned') {
-      return res.status(400).json({
-        error: {
-          code: 'CONFLICT_CARD_LOST',
-          message: 'Lost cards cannot be assigned directly without marking them available first.'
-        }
-      });
-    }
-
-    // Rule 3: Damaged cards cannot be assigned directly
-    if (currentStatus === 'damaged' && requestedStatus === 'assigned') {
-      return res.status(400).json({
-        error: {
-          code: 'CONFLICT_CARD_DAMAGED',
-          message: 'Damaged cards cannot be assigned directly without marking them available first.'
-        }
-      });
-    }
-
-    const card = await prisma.card.update({
-      where: { nfcUid: cardUid },
-      data: { status: requestedStatus }
-    });
-
-    await redisService.del('table:available:all');
-    await redisService.del(`card:${cardUid}:status`);
-    await redisService.del('cards:all').catch(() => {});
-
-    return res.json({
-      id: card.id,
-      cardUid: card.nfcUid,
-      status: card.status.toUpperCase()
-    });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-};
-
-router.put('/cards/:cardUid', authenticate, authorize(['admin']), updateCardStatusHandler);
-router.put('/cards/:cardUid/status', authenticate, authorize(['admin']), updateCardStatusHandler);
 
 // ==========================================
 // 6. CUSTOMERS ENDPOINTS
@@ -3882,32 +3452,7 @@ router.get('/reports/peak-hours', authenticate, authorize(['admin', 'manager']),
   }
 });
 
-// Cards inventory report (Admin/Manager allowed)
-router.get('/reports/cards', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
-  try {
-    const cards = await prisma.card.findMany();
-    const activeCount = cards.filter(c => c.status === 'available').length;
-    const assignedCount = cards.filter(c => c.status === 'assigned').length;
-    const lostCount = cards.filter(c => c.status === 'lost').length;
-    const damagedCount = cards.filter(c => c.status === 'damaged').length;
 
-    return res.json({
-      success: true,
-      total: cards.length,
-      active: activeCount,
-      assigned: assignedCount,
-      lost: lostCount,
-      damaged: damagedCount,
-      cards: cards.map(c => ({
-        id: c.id,
-        cardUid: c.nfcUid,
-        status: c.status.toUpperCase(),
-      })),
-    });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
 
 // GET /reports/daily (Admin/Manager allowed)
 router.get('/reports/daily', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
@@ -4243,21 +3788,18 @@ router.post('/sync', authenticate, async (req: Request, res: Response) => {
 // GET /api/config (Exposes tokenType config)
 router.get('/config', async (req: Request, res: Response) => {
   try {
-    const { nfcEnabled, emailQrEnabled } = await tokenService.getConfiguredDeliveryAvailability();
-    const tokenType = emailQrEnabled && !nfcEnabled ? 'email' : 'nfc';
+    const { emailQrEnabled } = await tokenService.getConfiguredDeliveryAvailability();
+    const tokenType = 'email';
     return res.json({
       success: true,
-      nfcEnabled,
       emailQrEnabled,
       tokenType
     });
   } catch (err: any) {
-    const tokenType = (process.env.TOKEN_TYPE || 'nfc').toLowerCase();
     return res.json({
       success: true,
-      nfcEnabled: true,
       emailQrEnabled: true,
-      tokenType
+      tokenType: 'email'
     });
   }
 });

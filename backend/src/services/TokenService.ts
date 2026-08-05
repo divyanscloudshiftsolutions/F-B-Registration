@@ -27,8 +27,6 @@ export interface CreateTokenRequest {
   amountPaid: Decimal | number;
   paymentVerified: boolean;
   issuedBy: string;
-  nfcCardUid?: string;
-  cardId?: string;
   startTime?: Date | string;
   deliveryMode?: string;
 }
@@ -45,37 +43,12 @@ export interface SessionSummary {
 }
 
 export class TokenService {
-  async getConfiguredDeliveryAvailability(): Promise<{ nfcEnabled: boolean; emailQrEnabled: boolean }> {
-    const cachedNfc = await redisService.get('config:nfc_card_enabled');
-    const cachedEmail = await redisService.get('config:email_qr_enabled');
-
-    let nfcEnabled = cachedNfc === 'true';
-    let emailQrEnabled = cachedEmail === 'true';
-
-    if (cachedNfc === null || cachedEmail === null) {
-      const configs = await prisma.systemConfig.findMany({
-        where: {
-          configKey: {
-            in: ['nfc_card_enabled', 'email_qr_enabled']
-          }
-        }
-      });
-      const nfcRecord = configs.find(c => c.configKey === 'nfc_card_enabled');
-      const emailRecord = configs.find(c => c.configKey === 'email_qr_enabled');
-
-      nfcEnabled = nfcRecord ? nfcRecord.configValue === 'true' : true;
-      emailQrEnabled = emailRecord ? emailRecord.configValue === 'true' : true;
-
-      await redisService.setex('config:nfc_card_enabled', 86400, nfcEnabled ? 'true' : 'false');
-      await redisService.setex('config:email_qr_enabled', 86400, emailQrEnabled ? 'true' : 'false');
-    }
-
-    return { nfcEnabled, emailQrEnabled };
+  async getConfiguredDeliveryAvailability(): Promise<{ emailQrEnabled: boolean }> {
+    return { emailQrEnabled: true };
   }
 
   async getConfiguredDeliveryMode(): Promise<string> {
-    const { nfcEnabled, emailQrEnabled } = await this.getConfiguredDeliveryAvailability();
-    return emailQrEnabled && !nfcEnabled ? 'EMAIL_QR' : 'NFC_CARD';
+    return 'EMAIL_QR';
   }
 
   generateQRTokenPayload(tokenNumber: string): string {
@@ -84,7 +57,7 @@ export class TokenService {
 
   async generateTokenNumber(): Promise<string> {
     const today = new Date();
-    // Format: YYYYMMDD (8-digit date format required by nfc.md)
+    // Format: YYYYMMDD (8-digit date format required by system_details.md)
     const yy = today.getFullYear().toString();
     const mm = (today.getMonth() + 1).toString().padStart(2, '0');
     const dd = today.getDate().toString().padStart(2, '0');
@@ -117,7 +90,6 @@ export class TokenService {
         customer: true,
         placeType: true,
         table: true,
-        card: true,
         redemptions: {
           include: {
             bartender: true
@@ -133,13 +105,10 @@ export class TokenService {
   }
 
   async createToken(request: CreateTokenRequest): Promise<any> {
-    const deliveryMode = request.deliveryMode || await this.getConfiguredDeliveryMode();
+    const deliveryMode = 'EMAIL_QR';
 
-    if (deliveryMode === 'EMAIL_QR' && (!request.email || !request.email.trim())) {
+    if (!request.email || !request.email.trim()) {
       throw new Error('Email address is mandatory when system operates in EMAIL_QR mode.');
-    }
-    if (deliveryMode === 'NFC_CARD' && (!request.nfcCardUid && !request.cardId)) {
-      throw new Error('NFC Card UID is mandatory when system operates in NFC_CARD mode.');
     }
 
     // Reconcile chronologically expired sessions first
@@ -249,20 +218,6 @@ export class TokenService {
       // Calculate total redemptions
       const totalRedemptionsAllowed = (request.personsCount * placeType.redemptionsPerPerson) + carriedForwardBalance;
 
-      // Find Card and validate status (only in NFC mode or if provided)
-      let cardId = request.cardId;
-      const finalCardUid = request.nfcCardUid;
-      if (deliveryMode === 'NFC_CARD' && (cardId || finalCardUid)) {
-        const card = cardId 
-          ? await tx.card.findUnique({ where: { id: cardId } })
-          : await tx.card.findUnique({ where: { nfcUid: finalCardUid } });
-        if (!card) throw new Error('NFC card not registered');
-        if (card.status !== 'available') {
-          throw new Error(`NFC card cannot be assigned. Card status is currently '${card.status}'.`);
-        }
-        cardId = card.id;
-      }
-
       // Server-side pricing calculation using Decimal math to preserve precision
       const ratePerPerson = placeType.ratePerPerson; // Decimal
       const amountPaid = ratePerPerson.mul(request.personsCount); // Single source of truth (Decimal)
@@ -285,7 +240,7 @@ export class TokenService {
           issuedBy: request.issuedBy,
           deliveryMode: deliveryMode,
           emailSent: false,
-          emailDeliveryStatus: deliveryMode === 'EMAIL_QR' ? 'PENDING' : null
+          emailDeliveryStatus: 'PENDING'
         },
         include: {
           customer: true,
@@ -293,18 +248,6 @@ export class TokenService {
           table: true
         }
       });
-
-      // Update Card status to assigned and set current_token_id (1-to-1 schema relation)
-      if (deliveryMode === 'NFC_CARD' && cardId) {
-        await tx.card.update({
-          where: { id: cardId },
-          data: {
-            status: 'assigned',
-            assignedAt: new Date(),
-            currentTokenId: token.id
-          }
-        });
-      }
 
       // Note: Table status and occupancy logs are updated automatically by trigger in PostgreSQL!
       // Invalidate caches manually to keep in sync
@@ -318,15 +261,6 @@ export class TokenService {
         86400,
         JSON.stringify(token)
       );
-
-      // Cache card active token mapping if in NFC Mode
-      if (deliveryMode === 'NFC_CARD' && request.nfcCardUid) {
-        await redisService.setex(
-          `token:active:${request.nfcCardUid}`,
-          86400,
-          JSON.stringify({ tokenId: token.id, tokenNumber })
-        );
-      }
 
       await redisService.setex(
         `customer:active:${request.phoneNumber}`,
@@ -420,8 +354,7 @@ export class TokenService {
         include: {
           customer: true,
           placeType: true,
-          table: true,
-          card: true
+          table: true
         }
       });
 
@@ -445,10 +378,6 @@ export class TokenService {
         86400,
         JSON.stringify(updatedToken)
       );
-
-      if (updatedToken.card?.nfcUid) {
-        await redisService.del(`token:active:${updatedToken.card.nfcUid}`);
-      }
 
       return updatedToken;
     }, { timeout: 15000 });
@@ -610,8 +539,7 @@ export class TokenService {
       where: {
         status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] },
         endTime: { lte: now }
-      },
-      include: { card: true }
+      }
     });
 
     if (expiredActiveTokens.length > 0) {
@@ -658,9 +586,6 @@ export class TokenService {
             }
 
             await redisService.del(`token:${token.tokenNumber}`);
-            if (token.card?.nfcUid) {
-              await redisService.del(`token:active:${token.card.nfcUid}`);
-            }
           }
         }
       }, { timeout: 15000 });
@@ -678,7 +603,6 @@ export class TokenService {
     tokenNumber: string,
     closedBy: string,
     closeReason: CloseReason,
-    eraseCard: boolean,
     force: boolean = false
   ): Promise<SessionSummary> {
     const now = new Date();
@@ -728,7 +652,6 @@ export class TokenService {
           customer: true,
           placeType: true,
           table: true,
-          card: true,
           redemptions: true,
           extensions: true
         }
@@ -787,25 +710,9 @@ export class TokenService {
         data: { vacatedAt: now }
       });
 
-      // Update card status if requested
-      if (fullToken.card && eraseCard) {
-        await tx.card.update({
-          where: { id: fullToken.card.id },
-          data: {
-            status: 'available',
-            returnedAt: now,
-            writeCycles: { increment: 1 },
-            currentTokenId: null
-          }
-        });
-      }
-
       // Invalidate caches
       await redisService.del(`token:${tokenNumber}`);
       await redisService.del(`customer:active:${fullToken.customer.phoneNumber}`);
-      if (fullToken.card) {
-        await redisService.del(`token:active:${fullToken.card.nfcUid}`);
-      }
       await redisService.del(`table:available:${token.placeTypeId}`);
       await redisService.del('table:available:all');
       await redisService.del(`table:${token.tableId}:status`);
@@ -825,10 +732,9 @@ export class TokenService {
 
   async closeToken(
     tokenNumber: string,
-    closedBy: string,
-    eraseCard: boolean
+    closedBy: string
   ): Promise<SessionSummary> {
-    return this.closeSession(tokenNumber, closedBy, CloseReason.CHECKOUT, eraseCard);
+    return this.closeSession(tokenNumber, closedBy, CloseReason.CHECKOUT);
   }
 
   async createPendingToken(request: {

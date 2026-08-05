@@ -13,9 +13,9 @@ const LEVEL_PRIORITY: Record<LogLevel, number> = {
 };
 
 const configuredLevel = ((process.env.LOG_LEVEL || 'INFO').toUpperCase() as LogLevel);
-const SERVICE_NAME = process.env.SERVICE_NAME || 'nfc-qr-backend';
+const SERVICE_NAME = process.env.SERVICE_NAME || 'bar-backend';
 const SERVICE_VERSION = process.env.SERVICE_VERSION || process.env.npm_package_version || '1.0.0';
-const LOGGER_PREFIX = process.env.LOGGER_PREFIX || 'nfcqr';
+const LOGGER_PREFIX = process.env.LOGGER_PREFIX || 'bar';
 const TIMEZONE = 'Asia/Kolkata';
 
 export type LogContext = {

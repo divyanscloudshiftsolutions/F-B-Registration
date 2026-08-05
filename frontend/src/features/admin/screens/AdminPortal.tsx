@@ -4,8 +4,8 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useNfcBar, getBackendUrl } from '../../../context/NfcBarContext';
-import { Table, PlaceType, TableStatus, TokenStatus, StaffMember, InventoryCard, CardStatus, RateCard, SessionToken } from '../../../types/nfc_bar';
+import { useBar, getBackendUrl } from '../../../context/BarContext';
+import { Table, PlaceType, TableStatus, TokenStatus, StaffMember, InventoryCard, CardStatus, RateCard, SessionToken } from '../../../types/bar_types';
 import { AppIcon } from '../../../components/common/AppIcon';
 import { useTheme } from '../../../context/ThemeContext';
 import { AlertModal } from '../../../components/common/AlertModal';
@@ -18,14 +18,14 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
   const { colors, isDark } = useTheme();
   const { loadingAction, secondsLeft, startAction, stopAction, isProcessing } = useActionProgress();
   const { 
-    sessions, adminSessions, tables, users, cards, rates, user: loggedUser, addTable, editTable, updateTableStatus, deleteTable,
-    registerStaff, updateStaff, updateStaffStatus, fetchCards, updateCardStatus, fetchRates, updateRateCard, fetchUsers,
+    sessions, adminSessions, tables, users, rates, user: loggedUser, addTable, editTable, updateTableStatus, deleteTable,
+    registerStaff, updateStaff, updateStaffStatus, fetchRates, updateRateCard, fetchUsers,
     salesSummary, tableUtilization, hourlyBreakdown, fetchReports, showToast,
     nfcEnabled, emailQrEnabled, updateDeliveryAvailability,
     fetchAdminSessions, adminDeactivateSession, extendSessionTime, systemMode, exportSessionsCSV, setOverlayActive, setSwipeLocked,
     setTab, setResumingPendingSession, clearLocalCache
-  } = useNfcBar();
-  const [adminSubTab, setAdminSubTab] = useState<'live' | 'tables' | 'staff' | 'chart' | 'cards' | 'rates' | 'settings' | 'customers'>('tables');
+  } = useBar();
+  const [adminSubTab, setAdminSubTab] = useState<'live' | 'tables' | 'staff' | 'chart' | 'rates' | 'customers'>('tables');
   const [isTabLoading, setIsTabLoading] = useState(false);
 
   const kpiScrollRef = usePreventSwipeNavigation();
@@ -34,9 +34,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
   const statusScrollRef = usePreventSwipeNavigation();
   const sortScrollRef = usePreventSwipeNavigation();
 
-  // Card inventory search & filter state
-  const [cardSearch, setCardSearch] = useState('');
-  const [cardFilter, setCardFilter] = useState<'all' | 'available' | 'assigned' | 'lost' | 'damaged' | 'inactive'>('all');
+
 
   // Customer sessions tab state
   const [customerSearch, setCustomerSearch] = useState('');
@@ -70,15 +68,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
     }
   };
 
-  const handleUpdateCardStatus = async (cardUid: string, status: string) => {
-    if (!startAction(`card_status_${cardUid}`)) return;
-    showToast('Updating smart card status...', 'info');
-    try {
-      await updateCardStatus(cardUid, status);
-    } finally {
-      stopAction();
-    }
-  };
+
 
   const handleUpdateStaffStatus = async (staffId: string, isActive: boolean) => {
     if (!startAction(`staff_status_${staffId}`)) return;
@@ -153,9 +143,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
     const loadData = async () => {
       setIsTabLoading(true);
       try {
-        if (adminSubTab === 'cards') {
-          await fetchCards();
-        } else if (adminSubTab === 'rates') {
+        if (adminSubTab === 'rates') {
           await fetchRates();
         } else if (adminSubTab === 'chart') {
           await fetchReports(reportFilter, startDateStr || undefined, endDateStr || undefined);
@@ -183,9 +171,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
     if (systemMode === 'offline' || !isActive) return;
 
     const syncTimer = setInterval(() => {
-      if (adminSubTab === 'cards') {
-        fetchCards().catch(() => {});
-      } else if (adminSubTab === 'rates') {
+      if (adminSubTab === 'rates') {
         fetchRates().catch(() => {});
       } else if (adminSubTab === 'chart') {
         fetchReports(reportFilter, startDateStr || undefined, endDateStr || undefined).catch(() => {});
@@ -244,15 +230,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
   const [editStaffIsActive, setEditStaffIsActive] = useState(true);
   const [editStaffPassword, setEditStaffPassword] = useState('');
 
-  // Settings tab local states
-  const [localNfcEnabled, setLocalNfcEnabled] = useState(nfcEnabled);
-  const [localEmailQrEnabled, setLocalEmailQrEnabled] = useState(emailQrEnabled);
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
-  useEffect(() => {
-    setLocalNfcEnabled(nfcEnabled);
-    setLocalEmailQrEnabled(emailQrEnabled);
-  }, [nfcEnabled, emailQrEnabled]);
 
   const formatTimeRemaining = (timeDiff: number) => {
     if (timeDiff <= 0) return 'Expired';
@@ -429,11 +407,9 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
           >
             {[
               { tab: 'tables', label: 'Tables', icon: 'tables' },
-              { tab: 'cards', label: 'Cards', icon: 'credit-card' },
               { tab: 'rates', label: 'Rates', icon: 'zap' },
               { tab: 'staff', label: 'Staff', icon: 'users' },
               { tab: 'chart', label: 'Charts', icon: 'admin' },
-              { tab: 'settings', label: 'Settings', icon: 'settings' },
               { tab: 'customers', label: 'Customers', icon: 'user' },
             ].map((item) => {
               const isActive = adminSubTab === item.tab;
@@ -469,26 +445,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
           </ScrollView>
         </View>
 
-        {/* Full-width Search Bar fixed under tabs */}
-        {adminSubTab === 'cards' && (
-          <View style={{ flexDirection: 'row', backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, marginTop: 4, alignItems: 'center' }}>
-            <AppIcon name="search" label="Search cards" size={12} color={colors.muted} />             <TextInput
-              style={{ flex: 1, marginLeft: 6, color: colors.text, fontSize: 11, padding: 0 }}
-              placeholder="Search by card UID..."
-              placeholderTextColor={colors.placeholder}
-              value={cardSearch}
-              onChangeText={setCardSearch}
-              autoCapitalize="characters"
-              accessibilityLabel="Search by card UID input"
-              accessibilityRole="text"
-            />
-            {cardSearch ? (
-              <TouchableOpacity onPress={() => setCardSearch('')} accessibilityRole="button" accessibilityLabel="Clear card search">
-                <AppIcon name="x" label="Clear search" size={12} color={colors.muted} />
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        )}
+
 
         {adminSubTab === 'customers' && (
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
@@ -573,13 +530,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
               <Text className="text-themeText font-semibold text-xs" style={{ color: colors.text }}>Rate Card Management</Text>
               <Text style={{ backgroundColor: colors.input, borderColor: colors.border, borderWidth: 1, color: colors.gold, fontFamily: 'monospace', fontSize: 9, fontWeight: 'bold', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>{rates.length} Zones</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.divider }}
-              onPress={() => setAdminSubTab('cards')}
-            >
-              <Text className="text-themeText font-semibold text-xs" style={{ color: colors.text }}>Smart Card Inventory</Text>
-              <Text style={{ backgroundColor: colors.input, borderColor: colors.border, borderWidth: 1, color: colors.gold, fontFamily: 'monospace', fontSize: 9, fontWeight: 'bold', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>{cards.length} Cards</Text>
-            </TouchableOpacity>
+
             <TouchableOpacity 
               style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 }}
               onPress={() => setAdminSubTab('staff')}
@@ -589,180 +540,6 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
             </TouchableOpacity>
           </View>
         </ScrollView>
-      )}
-
-      {/* Cards Manager Sub-Tab */}
-      {adminSubTab === 'cards' && (
-        <View className="flex-1" style={{ backgroundColor: colors.bg }}>
-          {/* Card KPIs as Filter Buttons */}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4, marginBottom: 12 }}>
-            {[
-              { label: 'Total', filterVal: 'all' as const, count: cards.length, color: colors.text },
-              { label: 'Available', filterVal: 'available' as const, count: cards.filter(c => c.status.toLowerCase() === 'available').length, color: colors.success },
-              { label: 'Assigned', filterVal: 'assigned' as const, count: cards.filter(c => c.status.toLowerCase() === 'assigned').length, color: colors.gold },
-              { label: 'Lost', filterVal: 'lost' as const, count: cards.filter(c => c.status.toLowerCase() === 'lost').length, color: colors.red },
-              { label: 'Damaged', filterVal: 'damaged' as const, count: cards.filter(c => c.status.toLowerCase() === 'damaged').length, color: colors.muted },
-              { label: 'Inactive', filterVal: 'inactive' as const, count: cards.filter(c => c.status.toLowerCase() === 'inactive').length, color: '#a78bfa' },
-            ].map((stat) => {
-              const isActive = cardFilter === stat.filterVal;
-              return (
-                <View key={stat.label} style={{ width: '33.33%', padding: 4 }}>
-                  <TouchableOpacity
-                    style={{
-                      backgroundColor: isActive ? (isDark ? 'rgba(245, 166, 35, 0.12)' : 'rgba(212, 175, 55, 0.12)') : colors.card,
-                      borderWidth: 1.5,
-                      borderColor: isActive ? colors.gold : colors.border,
-                      paddingVertical: 10,
-                      borderRadius: 12,
-                      alignItems: 'center'
-                    }}
-                    onPress={() => setCardFilter(stat.filterVal)}
-                    activeOpacity={0.8}
-                  >
-                    <Text className="text-themeText text-[8px] font-bold uppercase tracking-wider" style={{ color: isActive ? colors.gold : colors.text }}>{stat.label}</Text>
-                    <Text className="font-mono text-sm font-extrabold mt-0.5" style={{ color: stat.color }}>{stat.count}</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })}
-          </View>
-
-          <ScrollView className="flex-grow" contentContainerStyle={{ paddingBottom: 80 }} showsVerticalScrollIndicator={false}>
-            {(() => {
-              if (isTabLoading) {
-                return <SkeletonLoader type="list-item" count={4} />;
-              }
-
-              const filteredCards = cards.filter(card => {
-                const matchesSearch = card.cardUid.toLowerCase().includes(cardSearch.toLowerCase());
-                const matchesFilter = cardFilter === 'all' || card.status.toLowerCase() === cardFilter.toLowerCase();
-                return matchesSearch && matchesFilter;
-              });
-
-              if (filteredCards.length === 0) {
-                return (
-                  <EmptyState 
-                    icon="info" 
-                    title="No Matching Cards" 
-                    description="No NFC cards found matching the selected filter." 
-                  />
-                );
-              }
-
-              return (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -5 }}>
-                  {filteredCards.map(card => {
-                    const statusLower = card.status.toLowerCase();
-                    let badgeStyle = { color: colors.gold, borderColor: isDark ? 'rgba(245,166,35,0.2)' : 'rgba(212,175,55,0.2)', backgroundColor: isDark ? 'rgba(245,166,35,0.05)' : 'rgba(212,175,55,0.05)' };
-                    if (statusLower === 'available') badgeStyle = { color: colors.success, borderColor: isDark ? 'rgba(34,197,94,0.2)' : 'rgba(34,197,94,0.1)', backgroundColor: isDark ? 'rgba(34,197,94,0.1)' : 'rgba(34,197,94,0.05)' };
-                    else if (statusLower === 'lost') badgeStyle = { color: colors.red, borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.1)', backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.05)' };
-                    else if (statusLower === 'damaged') badgeStyle = { color: colors.muted, borderColor: colors.border, backgroundColor: colors.themeInput };
-                    else if (statusLower === 'inactive') badgeStyle = { color: '#a78bfa', borderColor: 'rgba(167,139,250,0.2)', backgroundColor: 'rgba(167,139,250,0.05)' };
-
-                    const isAvailable = statusLower === 'available';
-                    const isAssigned = statusLower === 'assigned';
-                    const isLost = statusLower === 'lost';
-                    const isDamaged = statusLower === 'damaged';
-                    const isInactive = statusLower === 'inactive';
-
-                    return (
-                      <View key={card.id} style={{ width: '50%', padding: 5 }}>
-                        <View style={{ backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.border, borderRadius: 16, padding: 12, minHeight: 144, justifyContent: 'space-between' }}>
-                          {/* Header */}
-                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: isDark ? 'rgba(212, 175, 55, 0.15)' : '#FEF3C7', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.gold }}>
-                              <Text style={{ fontSize: 11 }}>💳</Text>
-                            </View>
-                            <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1.5, borderColor: badgeStyle.borderColor, backgroundColor: badgeStyle.backgroundColor }}>
-                              <Text style={{ fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', color: badgeStyle.color }}>{card.status}</Text>
-                            </View>
-                          </View>
-
-                          {/* Info */}
-                          <View style={{ marginVertical: 8 }}>
-                            <Text style={{ color: colors.text, fontFamily: 'monospace', fontWeight: 'bold', fontSize: 11 }} numberOfLines={1} ellipsizeMode="middle">{card.cardUid}</Text>
-                            <Text style={{ color: colors.muted, fontSize: 8.5, marginTop: 2 }}>
-                              Writes: <Text style={{ color: colors.text, fontWeight: 'bold' }}>{card.writeCycles}</Text>
-                            </Text>
-
-                            {/* Actions */}
-                            <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 8, marginTop: 8 }}>
-                              <View style={{ flexDirection: 'row', gap: 4, flexWrap: 'wrap' }}>
-                                {isAvailable && (
-                                  <>
-                                    <TouchableOpacity
-                                      style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: isDark ? 'rgba(167, 139, 250, 0.1)' : '#F5F3FF', borderWidth: 1.5, borderColor: isDark ? 'rgba(167, 139, 250, 0.35)' : '#D8B4FE', opacity: isProcessing ? 0.6 : 1 }}
-                                      disabled={isProcessing}
-                                      onPress={() => handleUpdateCardStatus(card.cardUid, 'inactive')}
-                                    >
-                                      <Text style={{ color: '#A78BFA', fontSize: 8.5, fontWeight: 'bold' }}>Deact</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                      style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2', borderWidth: 1.5, borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#FCA5A5', opacity: isProcessing ? 0.6 : 1 }}
-                                      disabled={isProcessing}
-                                      onPress={() => handleUpdateCardStatus(card.cardUid, 'lost')}
-                                    >
-                                      <Text style={{ color: colors.red, fontSize: 8.5, fontWeight: 'bold' }}>Lost</Text>
-                                    </TouchableOpacity>
-                                  </>
-                                )}
-                                {isAssigned && (
-                                  <>
-                                    <TouchableOpacity
-                                      style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2', borderWidth: 1.5, borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#FCA5A5', opacity: isProcessing ? 0.6 : 1 }}
-                                      disabled={isProcessing}
-                                      onPress={() => handleUpdateCardStatus(card.cardUid, 'lost')}
-                                    >
-                                      <Text style={{ color: colors.red, fontSize: 8.5, fontWeight: 'bold' }}>Lost</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                      style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: colors.secondarySurface, borderWidth: 1.5, borderColor: colors.border, opacity: isProcessing ? 0.6 : 1 }}
-                                      disabled={isProcessing}
-                                      onPress={() => handleUpdateCardStatus(card.cardUid, 'damaged')}
-                                    >
-                                      <Text style={{ color: colors.text, fontSize: 8.5, fontWeight: 'bold' }}>Dmg</Text>
-                                    </TouchableOpacity>
-                                  </>
-                                )}
-                                {isInactive && (
-                                  <>
-                                    <TouchableOpacity
-                                      style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: isDark ? 'rgba(34, 197, 94, 0.12)' : '#F0FDF4', borderWidth: 1.5, borderColor: isDark ? 'rgba(34, 197, 94, 0.35)' : '#86EFAC', opacity: isProcessing ? 0.6 : 1 }}
-                                      disabled={isProcessing}
-                                      onPress={() => handleUpdateCardStatus(card.cardUid, 'available')}
-                                    >
-                                      <Text style={{ color: colors.success, fontSize: 8.5, fontWeight: 'bold' }}>Activ</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                      style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2', borderWidth: 1.5, borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#FCA5A5', opacity: isProcessing ? 0.6 : 1 }}
-                                      disabled={isProcessing}
-                                      onPress={() => handleUpdateCardStatus(card.cardUid, 'lost')}
-                                    >
-                                      <Text style={{ color: colors.red, fontSize: 8.5, fontWeight: 'bold' }}>Lost</Text>
-                                    </TouchableOpacity>
-                                  </>
-                                )}
-                                {(isLost || isDamaged) && (
-                                  <TouchableOpacity
-                                    style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: isDark ? 'rgba(34, 197, 94, 0.12)' : '#F0FDF4', borderWidth: 1.5, borderColor: isDark ? 'rgba(34, 197, 94, 0.35)' : '#86EFAC', opacity: isProcessing ? 0.6 : 1 }}
-                                    disabled={isProcessing}
-                                    onPress={() => handleUpdateCardStatus(card.cardUid, 'available')}
-                                  >
-                                    <Text style={{ color: colors.success, fontSize: 8.5, fontWeight: 'bold' }}>Available</Text>
-                                  </TouchableOpacity>
-                                )}
-                              </View>
-                            </View>
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              );
-            })()}
-          </ScrollView>
-        </View>
       )}
 
       {/* Rates Manager Sub-Tab */}
@@ -1594,146 +1371,6 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
           )}
         </ScrollView>
       )}
-
-      {/* Settings Sub-Tab */}
-      {adminSubTab === 'settings' && (
-        <ScrollView className="flex-grow" contentContainerStyle={{ paddingBottom: 80 }} showsVerticalScrollIndicator={false}>
-          <Text className="text-[11px] font-bold text-muted uppercase tracking-wider mb-4">System Settings</Text>
-          
-          <View style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1.5, borderRadius: 16, padding: 20, marginBottom: 24 }}>
-            <View className="flex-row items-center mb-3">
-              <Text className="text-gold text-lg mr-2">⚙️</Text>
-              <Text className="text-themeText text-sm font-bold" style={{ color: colors.text }}>Token Delivery Methods</Text>
-            </View>
-            <Text className="text-muted text-xs leading-5 mb-5" style={{ color: colors.muted }}>
-              Configure which customer delivery methods are active in the system. Receptionists select the delivery method for each new customer session during registration.
-            </Text>
-
-            {/* NFC Card Toggle */}
-            <View className="flex-row justify-between items-center py-4 border-b" style={{ borderBottomColor: colors.divider }}>
-              <View style={{ flex: 1, paddingRight: 16 }}>
-                <Text className="text-themeText text-xs font-bold" style={{ color: colors.text }}>NFC Card Registration</Text>
-                <Text className="text-muted text-[10px] mt-1" style={{ color: colors.muted }}>
-                  Allow receptionists to allocate and write tokens to physical NFC smart cards.
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={{
-                  paddingHorizontal: 14,
-                  paddingVertical: 7,
-                  borderRadius: 10,
-                  borderWidth: 1.5,
-                  borderColor: localNfcEnabled ? colors.success : colors.border,
-                  backgroundColor: localNfcEnabled ? (isDark ? 'rgba(34,197,94,0.1)' : 'rgba(34,197,94,0.05)') : colors.input
-                }}
-                onPress={() => {
-                  if (localNfcEnabled && !localEmailQrEnabled) {
-                    showToast('At least one token delivery method must remain active.', 'warning');
-                    return;
-                  }
-                  setLocalNfcEnabled(!localNfcEnabled);
-                }}
-              >
-                <Text style={{ fontSize: 10, fontWeight: 'bold', color: localNfcEnabled ? colors.success : colors.muted }}>
-                  {localNfcEnabled ? 'ENABLED' : 'DISABLED'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Email QR Toggle */}
-            <View className="flex-row justify-between items-center py-4">
-              <View style={{ flex: 1, paddingRight: 16 }}>
-                <Text className="text-themeText text-xs font-bold" style={{ color: colors.text }}>Email QR Code Delivery</Text>
-                <Text className="text-muted text-[10px] mt-1" style={{ color: colors.muted }}>
-                  Allow sessions to run cardless and email token barcodes/QRs to customer phones.
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={{
-                  paddingHorizontal: 14,
-                  paddingVertical: 7,
-                  borderRadius: 10,
-                  borderWidth: 1.5,
-                  borderColor: localEmailQrEnabled ? colors.success : colors.border,
-                  backgroundColor: localEmailQrEnabled ? (isDark ? 'rgba(34,197,94,0.1)' : 'rgba(34,197,94,0.05)') : colors.input
-                }}
-                onPress={() => {
-                  if (localEmailQrEnabled && !localNfcEnabled) {
-                    showToast('At least one token delivery method must remain active.', 'warning');
-                    return;
-                  }
-                  setLocalEmailQrEnabled(!localEmailQrEnabled);
-                }}
-              >
-                <Text style={{ fontSize: 10, fontWeight: 'bold', color: localEmailQrEnabled ? colors.success : colors.muted }}>
-                  {localEmailQrEnabled ? 'ENABLED' : 'DISABLED'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Save Button */}
-          <TouchableOpacity
-            style={{
-              width: '100%',
-              paddingVertical: 14,
-              borderRadius: 12,
-              alignItems: 'center',
-              justifyContent: 'center',
-              minHeight: 50,
-              borderWidth: 1.5,
-              borderColor: (isSavingSettings || isProcessing) ? colors.border : colors.gold,
-              backgroundColor: (isSavingSettings || isProcessing) ? colors.input : colors.gold,
-              opacity: (isSavingSettings || isProcessing) ? 0.65 : 1
-            }}
-            disabled={isSavingSettings || isProcessing}
-            onPress={async () => {
-              if (!startAction('save_settings')) return;
-              setIsSavingSettings(true);
-              try {
-                const success = await updateDeliveryAvailability(localNfcEnabled, localEmailQrEnabled);
-                stopAction();
-                setIsSavingSettings(false);
-              } catch (e) {
-                stopAction();
-                setIsSavingSettings(false);
-              }
-            }}
-          >
-            <Text className="font-extrabold text-sm" style={{ color: (isSavingSettings || isProcessing) ? colors.muted : colors.primaryButtonText }}>
-              {loadingAction === 'save_settings' ? `Saving Settings... (${secondsLeft}s)` : 'Save Configurations'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Local Cache Management */}
-          <View style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1.5, borderRadius: 16, padding: 20, marginTop: 20 }}>
-            <View className="flex-row items-center mb-3">
-              <Text className="text-gold text-lg mr-2">🧹</Text>
-              <Text className="text-themeText text-sm font-bold" style={{ color: colors.text }}>Local Cache Management</Text>
-            </View>
-            <Text className="text-muted text-xs leading-5 mb-5" style={{ color: colors.muted }}>
-              If your device is displaying out-of-sync or cached session status data, clear the local cache and force-sync from the server database.
-            </Text>
-            <TouchableOpacity
-              style={{
-                width: '100%',
-                paddingVertical: 14,
-                borderRadius: 12,
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderWidth: 1.5,
-                borderColor: colors.border,
-                backgroundColor: colors.input
-              }}
-              onPress={() => clearLocalCache()}
-            >
-              <Text className="font-bold text-xs" style={{ color: colors.text }}>Clear Cache & Re-Sync</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      )}
-
-
 
       {adminSubTab === 'customers' && (
         <ScrollView className="flex-grow" contentContainerStyle={{ paddingBottom: 80 }} showsVerticalScrollIndicator={false}>
@@ -3030,3 +2667,4 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
 };
 
 const styles = StyleSheet.create({});
+

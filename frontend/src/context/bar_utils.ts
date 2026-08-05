@@ -1,4 +1,4 @@
-import { SessionToken, TokenStatus } from '../types/nfc_bar';
+import { SessionToken, TokenStatus } from '../types/bar_types';
 
 /**
  * Determines if a table session is expiring within the next hour (60 minutes).
@@ -12,3 +12,4 @@ export const isTableExpiring = (tableNumber: string, sessions: SessionToken[]): 
   const diff = new Date(session.endTime).getTime() - new Date().getTime();
   return diff > 0 && diff < 60 * 60 * 1000; // Less than 1 hour
 };
+
