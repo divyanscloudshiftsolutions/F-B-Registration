@@ -151,24 +151,16 @@ export const QuickAttendanceWebPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Camera Toggle Action Buttons */}
-            {cameraActive ? (
+            {cameraActive && (
               <button
                 type="button"
                 onClick={stopCamera}
-                className="px-3.5 py-1.5 rounded-lg dark:bg-red-500/15 bg-red-500/10 hover:bg-red-500/25 dark:text-red-400 text-red-700 border border-red-500/30 text-[10px] font-extrabold flex items-center gap-1.5 transition-all shadow-lg cursor-pointer"
+                className="px-4 py-2 rounded-xl premium-btn-secondary text-red-400 border-red-500/30 bg-red-500/5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
               >
-                <VideoOff size={14} />
+                <div className="nav-icon-badge">
+                  <VideoOff size={14} />
+                </div>
                 <span>Disable Camera</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={startCamera}
-                className="px-3.5 py-1.5 rounded-lg dark:bg-emerald-500/15 bg-emerald-500/10 hover:bg-emerald-500/25 dark:text-emerald-400 text-emerald-700 border border-emerald-500/30 text-[10px] font-extrabold flex items-center gap-1.5 transition-all shadow-lg cursor-pointer"
-              >
-                <Video size={14} />
-                <span>Enable Camera</span>
               </button>
             )}
 
@@ -197,14 +189,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 <VideoOff size={24} />
               </div>
               <p className="text-xs font-bold text-text-main">Camera is currently disabled</p>
-              <p className="text-[10px] text-text-muted max-w-xs">Click the "Enable Camera" button above to turn on webcam for biometric attendance.</p>
-              <button
-                type="button"
-                onClick={startCamera}
-                className="px-5 py-2 rounded-xl primary-btn text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 shadow-lg cursor-pointer"
-              >
-                <Video size={14} /> Enable Camera
-              </button>
+              <p className="text-[10px] text-text-muted max-w-xs">Click the "Enable Camera" button below to turn on webcam for biometric attendance.</p>
             </div>
           )}
 
@@ -292,18 +277,22 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={startCamera}
-                  className="w-full md:w-auto px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-text-main flex items-center justify-center gap-1.5 text-xs uppercase font-black tracking-wider shadow-xl transition-all cursor-pointer"
+                  className="w-full md:w-auto px-6 py-2.5 rounded-xl primary-btn bg-emerald-500 text-text-main flex items-center justify-center gap-1.5 text-xs uppercase font-black tracking-wider shadow-xl transition-all cursor-pointer"
                 >
-                  <Video size={16} />
+                  <div className="nav-icon-badge">
+                    <Video size={14} />
+                  </div>
                   <span>Enable Camera</span>
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={stopCamera}
-                  className="px-4 py-2.5 rounded-xl dark:bg-red-500/20 bg-red-500/10 hover:bg-red-500/30 dark:text-red-400 text-red-700 border border-red-500/30 flex items-center justify-center gap-1.5 text-xs uppercase font-bold tracking-wider transition-all cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl premium-btn-secondary text-red-400 border-red-500/30 bg-red-500/5 flex items-center justify-center gap-1.5 text-xs uppercase font-bold tracking-wider transition-all cursor-pointer"
                 >
-                  <VideoOff size={16} />
+                  <div className="nav-icon-badge">
+                    <VideoOff size={14} />
+                  </div>
                   <span>Disable Camera</span>
                 </button>
               )}
@@ -311,9 +300,12 @@ export const QuickAttendanceWebPage: React.FC = () => {
               <button
                 onClick={handleCaptureAndSubmit}
                 disabled={isSubmitting || !cameraActive}
+                title={isSubmitting ? "Verifying..." : !cameraActive ? "Enable camera first" : undefined}
                 className="flex-1 md:flex-initial px-6 py-2.5 rounded-xl primary-btn flex items-center justify-center gap-1.5 text-xs uppercase font-black tracking-wider disabled:opacity-40 disabled:cursor-not-allowed shadow-xl cursor-pointer"
               >
-                <Camera size={16} />
+                <div className="nav-icon-badge">
+                  <Camera size={14} />
+                </div>
                 <span>{isSubmitting ? 'Verifying...' : 'Capture & Verify'}</span>
               </button>
             </div>

@@ -225,7 +225,8 @@ export const LoginPage: React.FC = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 rounded-xl bg-primary hover:bg-primary-hover text-text-inverse text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-primary/20 disabled:opacity-50 transition-all mt-4 cursor-pointer"
+              title={isSubmitting ? "Authenticating..." : undefined}
+              className="w-full py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all mt-4"
             >
               {isSubmitting ? (
                 <span>Authenticating Terminal...</span>

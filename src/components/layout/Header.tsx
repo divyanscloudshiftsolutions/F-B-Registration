@@ -107,10 +107,10 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
           <button
             onClick={onRefresh}
             disabled={isRefreshing}
-            className="p-2 rounded-xl bg-bg-hover border border-border text-text-muted hover:text-text-primary hover:bg-bg-hover/80 transition-all disabled:opacity-50 cursor-pointer"
-            title="Refresh Data"
+            className="w-9 h-9 rounded-full transition-all disabled:opacity-50 premium-btn-secondary active flex items-center justify-center cursor-pointer"
+            title={isRefreshing ? "Refresh in progress" : "Refresh Data"}
           >
-            <RefreshCw size={16} className={isRefreshing ? 'animate-spin text-primary' : ''} />
+            <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
           </button>
         )}
 
@@ -118,12 +118,12 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
         <div ref={popoverRef} className="relative">
           <button 
             onClick={handleTogglePanel}
-            className="p-2 rounded-xl bg-bg-hover border border-border text-text-muted hover:text-text-primary hover:bg-bg-hover/80 transition-all relative cursor-pointer"
+            className="w-9 h-9 rounded-full transition-all relative premium-btn-secondary flex items-center justify-center cursor-pointer"
             title="Notifications"
           >
-            <Bell size={16} />
+            <Bell size={18} />
             {unreadNotifications > 0 && (
-              <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-primary" />
+              <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-bg-surface" />
             )}
           </button>
 
@@ -192,7 +192,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
         {/* Theme Toggle Button */}
         <button
           onClick={toggleThemeWithWave}
-          className="p-2 rounded-xl bg-bg-hover border border-border text-text-muted hover:text-text-primary hover:bg-bg-hover/80 transition-all cursor-pointer"
+          className="p-2 transition-all premium-btn-secondary"
           title="Toggle Color Theme"
         >
           {isDark ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} />}

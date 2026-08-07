@@ -70,9 +70,12 @@ export const RateManagement: React.FC = () => {
 
         <button
           onClick={refreshRates}
-          className="px-3.5 py-2 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted border border-border-main flex items-center gap-1.5 transition-all"
+          className="px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary active"
         >
-          <RefreshCw size={14} /> Refresh Rates
+          <div className="nav-icon-badge">
+            <RefreshCw size={12} />
+          </div>
+          <span>Refresh Rates</span>
         </button>
       </div>
 
@@ -88,10 +91,12 @@ export const RateManagement: React.FC = () => {
                   <span className="font-bold text-text-main text-base">{r.name || r.placeType}</span>
                   <button
                     onClick={() => openEditModal(r)}
-                    className="p-2 rounded-xl bg-[#8D6CE5]/15 hover:bg-[#8D6CE5]/25 text-[#8D6CE5] transition-all"
+                    className="p-2 transition-all premium-btn-secondary active flex items-center justify-center"
                     title="Edit Rate Card"
                   >
-                    <Edit3 size={16} />
+                    <div className="nav-icon-badge m-0">
+                      <Edit3 size={12} />
+                    </div>
                   </button>
                 </div>
 
@@ -172,13 +177,14 @@ export const RateManagement: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setEditingRate(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted"
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting || !isFormValid}
+                  title={isSubmitting ? "Saving..." : !isFormValid ? "Fill all fields" : undefined}
                   className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
                 >
                   {isSubmitting ? 'Saving...' : 'Update Pricing'}

@@ -94,16 +94,22 @@ export const StaffManagement: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={refreshUsers}
-            className="px-3.5 py-2 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted border border-border-main flex items-center gap-1.5 transition-all"
+            className="px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary active"
           >
-            <RefreshCw size={14} /> Refresh
+            <div className="nav-icon-badge">
+              <RefreshCw size={12} />
+            </div>
+            <span>Refresh</span>
           </button>
 
           <button
             onClick={() => setIsModalOpen(true)}
             className="px-4 py-2 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg"
           >
-            <UserPlus size={16} /> Add New Staff Member
+            <div className="nav-icon-badge">
+              <UserPlus size={14} />
+            </div>
+            <span>Add New Staff Member</span>
           </button>
         </div>
       </div>
@@ -264,13 +270,14 @@ export const StaffManagement: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted"
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting || !isFormValid}
+                  title={isSubmitting ? "Registering..." : !isFormValid ? "Fill all fields" : undefined}
                   className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
                 >
                   {isSubmitting ? 'Registering...' : 'Confirm Registration'}

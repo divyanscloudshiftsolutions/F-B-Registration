@@ -567,7 +567,7 @@ export const CheckInPage: React.FC = () => {
                         }}
                         disabled={personsCountNum <= 1}
                         className="w-7 h-7 rounded-lg bg-bg-card hover:bg-bg-primary text-text-main flex items-center justify-center disabled:opacity-30 disabled:hover:bg-bg-card transition-all cursor-pointer border border-border-main/40 shrink-0"
-                        title="Decrease headcount"
+                        title={personsCountNum <= 1 ? "Minimum 1 guest" : "Decrease headcount"}
                       >
                         <Minus size={10} className="stroke-[3]" />
                       </button>
@@ -606,7 +606,7 @@ export const CheckInPage: React.FC = () => {
                         }}
                         disabled={personsCountNum >= maxCapacity}
                         className="w-7 h-7 rounded-lg bg-bg-card hover:bg-bg-primary text-text-main flex items-center justify-center disabled:opacity-30 disabled:hover:bg-bg-card transition-all cursor-pointer border border-border-main/40 shrink-0"
-                        title="Increase headcount"
+                        title={personsCountNum >= maxCapacity ? "Maximum seats reached" : "Increase headcount"}
                       >
                         <Plus size={10} className="stroke-[3]" />
                       </button>
@@ -625,12 +625,12 @@ export const CheckInPage: React.FC = () => {
                               setPersonsCount(count);
                             }
                           }}
-                          className={`px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-all ${
+                          className={`px-3.5 py-2.5 text-xs font-bold transition-all ${
                             personsCount === count
-                              ? 'bg-[#8D6CE5] text-black border-[#8D6CE5] font-black shadow-lg shadow-[#8D6CE5]/20'
+                              ? 'premium-tab-secondary active'
                               : count > maxCapacity 
                               ? 'bg-bg-primary text-gray-600 border-border-main line-through opacity-50 cursor-not-allowed'
-                              : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
+                              : 'premium-tab-secondary'
                           }`}
                         >
                           {count} {count === 1 ? 'Guest' : 'Guests'}
@@ -657,11 +657,8 @@ export const CheckInPage: React.FC = () => {
                   <button
                     type="submit"
                     disabled={!isStep1Valid}
-                    className={`px-8 py-3.5 rounded-xl flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl transition-all ${
-                      isStep1Valid
-                        ? 'primary-btn opacity-100 cursor-pointer'
-                        : 'bg-bg-card text-text-muted border border-border-main opacity-40 cursor-not-allowed pointer-events-none'
-                    }`}
+                    title={!isStep1Valid ? "Fill required details" : undefined}
+                    className="px-8 py-3.5 rounded-xl primary-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl transition-all"
                   >
                     <span>Proceed to Seating Plan</span>
                     <ChevronRight size={16} />
@@ -769,7 +766,7 @@ export const CheckInPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setStage(1)}
-                  className="px-6 py-3 rounded-xl bg-bg-primary hover:bg-bg-card text-text-muted text-xs font-bold flex items-center gap-2"
+                  className="px-6 py-3 rounded-xl text-xs font-bold flex items-center gap-2 transition-all premium-btn-secondary"
                 >
                   <ChevronLeft size={16} /> Back
                 </button>
@@ -881,6 +878,7 @@ export const CheckInPage: React.FC = () => {
                   <button
                     type="button"
                     disabled={isVerifyingQr || !qrCodeInput.trim()}
+                    title={isVerifyingQr ? "Verification in progress" : !qrCodeInput.trim() ? "Enter QR Code" : undefined}
                     onClick={() => handleVerifyQR(qrCodeInput)}
                     className="px-6 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider disabled:opacity-40 transition-all cursor-pointer shadow-md"
                   >
@@ -915,7 +913,7 @@ export const CheckInPage: React.FC = () => {
                       setStage(2);
                     }
                   }}
-                  className="px-6 py-3 rounded-xl bg-bg-primary hover:bg-bg-card text-text-muted text-xs font-bold flex items-center gap-2 cursor-pointer transition-all"
+                  className="px-6 py-3 rounded-xl text-xs font-bold flex items-center gap-2 transition-all premium-btn-secondary"
                 >
                   <ChevronLeft size={16} /> Back
                 </button>
@@ -982,7 +980,7 @@ export const CheckInPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setStage(3)}
-                    className="px-6 py-3 rounded-xl bg-bg-primary hover:bg-bg-card text-text-muted text-xs font-bold flex items-center gap-2 cursor-pointer transition-all"
+                    className="px-6 py-3 rounded-xl text-xs font-bold flex items-center gap-2 transition-all premium-btn-secondary"
                   >
                     <ChevronLeft size={16} /> Back
                   </button>
@@ -990,6 +988,7 @@ export const CheckInPage: React.FC = () => {
                   <button
                     type="submit"
                     disabled={isSubmitting || !isStep1Valid}
+                    title={isSubmitting ? "Check-in in progress" : !isStep1Valid ? "Verify token first" : undefined}
                     className="px-8 py-3.5 rounded-xl primary-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {isSubmitting ? (
