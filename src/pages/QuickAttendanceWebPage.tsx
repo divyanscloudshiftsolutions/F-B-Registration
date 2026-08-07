@@ -9,6 +9,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
+  const cameraRequestIdRef = useRef(0);
   const [employeeCode, setEmployeeCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [attendanceResult, setAttendanceResult] = useState<any | null>(null);
@@ -16,27 +17,28 @@ export const QuickAttendanceWebPage: React.FC = () => {
   const [cameraActive, setCameraActive] = useState(false);
 
   const stopCameraInternal = () => {
+    cameraRequestIdRef.current++;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => {
         try {
-          track.stop();
           track.enabled = false;
+          track.stop();
         } catch {}
       });
       streamRef.current = null;
     }
 
     if (videoRef.current && videoRef.current.srcObject) {
-      const srcObj = videoRef.current.srcObject as MediaStream;
-      if (srcObj && srcObj.getTracks) {
-        srcObj.getTracks().forEach(track => {
-          try {
-            track.stop();
-            track.enabled = false;
-          } catch {}
-        });
-      }
       try {
+        const srcObj = videoRef.current.srcObject as MediaStream;
+        if (srcObj && srcObj.getTracks) {
+          srcObj.getTracks().forEach(track => {
+            try {
+              track.enabled = false;
+              track.stop();
+            } catch {}
+          });
+        }
         videoRef.current.pause();
         videoRef.current.srcObject = null;
       } catch {}
@@ -48,11 +50,21 @@ export const QuickAttendanceWebPage: React.FC = () => {
   const startCamera = async () => {
     stopCameraInternal();
     setErrorMessage(null);
+    const requestId = ++cameraRequestIdRef.current;
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
         audio: false,
       });
+      if (requestId !== cameraRequestIdRef.current) {
+        mediaStream.getTracks().forEach(track => {
+          try {
+            track.enabled = false;
+            track.stop();
+          } catch {}
+        });
+        return;
+      }
       streamRef.current = mediaStream;
       setCameraActive(true);
       if (videoRef.current) {
@@ -72,10 +84,52 @@ export const QuickAttendanceWebPage: React.FC = () => {
     showToast('Camera disabled.', 'info');
   };
 
-  // Component unmount cleanup ONLY (Do NOT auto-start camera on mount)
+  // Page visibility & window focus camera lifecycle management
+  const cameraActiveRef = useRef(cameraActive);
+  const shouldResumeRef = useRef(false);
+
   useEffect(() => {
+    cameraActiveRef.current = cameraActive;
+  }, [cameraActive]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (cameraActiveRef.current) {
+          shouldResumeRef.current = true;
+          stopCameraInternal();
+        }
+      } else {
+        if (shouldResumeRef.current) {
+          shouldResumeRef.current = false;
+          startCamera();
+        }
+      }
+    };
+
+    const handleWindowBlur = () => {
+      if (cameraActiveRef.current) {
+        shouldResumeRef.current = true;
+        stopCameraInternal();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      if (shouldResumeRef.current) {
+        shouldResumeRef.current = false;
+        startCamera();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
+
     return () => {
-      stopCameraInternal();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
+      stopCameraInternal(); // stops on unmount
     };
   }, []);
 

@@ -48,16 +48,16 @@ export const SeatingRow: React.FC<SeatingRowProps> = ({ capacity, tableCount, ch
   };
 
   return (
-    <div className="space-y-3 relative">
+    <div className="space-y-4 py-4 md:py-6 first:pt-0 border-b border-border-sidebar/30 last:border-b-0 relative">
       {/* Capacity Group Section Heading */}
-      <div className="flex items-center justify-between border-b border-border-main/50 pb-2 px-1">
+      <div className="flex items-center justify-between border-b border-border-sidebar/40 pb-2 px-1">
         <div className="flex items-center gap-2.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-[#8D6CE5] shadow-sm shadow-[#8D6CE5]/50" />
-          <h3 className="text-sm font-black text-text-main uppercase tracking-wider">
+          <div className="w-2 h-2 rounded-full bg-[#8D6CE5] shadow-[0_0_8px_#8D6CE5]" />
+          <h3 className="text-xs md:text-sm font-black text-text-primary uppercase tracking-widest leading-none">
             {capacity} {capacity === 1 ? 'Seat Table' : 'Seats Tables'}
           </h3>
         </div>
-        <span className="px-3 py-0.5 rounded-full bg-[#8D6CE5]/10 border border-[#8D6CE5]/30 text-[#8D6CE5] text-[10px] font-mono font-extrabold">
+        <span className="px-3 py-0.5 rounded-full bg-[#8D6CE5]/10 border border-[#8D6CE5]/30 text-[#8D6CE5] text-[10px] font-mono font-black">
           {tableCount} {tableCount === 1 ? 'Table' : 'Tables'}
         </span>
       </div>

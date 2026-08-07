@@ -283,7 +283,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
                           {assignedToken ? (
                             <div className="flex items-center justify-between text-[11px] border-t border-border-main/40 pt-1 text-text-muted">
                               <span className="font-semibold truncate max-w-[120px]">👤 {assignedToken.customer?.name || 'Guest'}</span>
-                              <span className="font-mono text-[#8D6CE5] font-bold">{assignedToken.tokenNumber}</span>
+                              <span className="font-mono text-text-main font-bold">{assignedToken.tokenNumber}</span>
                             </div>
                           ) : (
                             <div className="text-[10px] text-text-muted border-t border-border-main/30 pt-1 flex justify-between">
@@ -352,7 +352,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
               
               {/* Header */}
               <div className="flex items-center justify-between pb-3 border-b border-border-main">
-                <div className="flex items-center gap-2 text-[#8D6CE5] font-bold text-base">
+                <div className="flex items-center gap-2 text-text-main font-bold text-base">
                   <Grid3X3 size={20} /> Table {inspectingTable.tableNumber} Inspection Dialog
                 </div>
                 <button 
@@ -402,7 +402,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-muted">Token Pass:</span>
-                    <span className="font-mono text-[#8D6CE5] font-bold">{inspectingToken.tokenNumber}</span>
+                    <span className="font-mono text-text-main font-bold">{inspectingToken.tokenNumber}</span>
                   </div>
                 </div>
               )}
@@ -452,7 +452,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-2 text-[#8D6CE5] font-bold text-sm">
+            <div className="flex items-center gap-2 text-text-main font-bold text-sm">
               <Grid3X3 size={18} /> Assign Table {assigningTable.tableNumber}
             </div>
 

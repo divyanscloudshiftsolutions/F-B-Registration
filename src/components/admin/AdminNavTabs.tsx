@@ -37,12 +37,12 @@ export const AdminNavTabs: React.FC<AdminNavTabsProps> = ({ activeTab, setActive
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs transition-all premium-tab-secondary ${
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs transition-all premium-tab-secondary active:scale-95 ${
               isSel ? 'active' : ''
             }`}
           >
             <div className="nav-icon-badge">
-              <Icon size={12} className={isSel ? 'text-primary' : 'text-text-muted'} />
+              <Icon size={12} />
             </div>
             <span>{t.label}</span>
           </button>
