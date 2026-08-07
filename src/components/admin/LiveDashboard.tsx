@@ -103,9 +103,14 @@ export const LiveDashboard: React.FC = () => {
             {tokens.slice(0, 6).map(tk => (
               <div key={tk.id} className="p-4 rounded-xl bg-bg-primary border border-border-main flex justify-between items-center">
                 <div>
-                  <span className="font-mono text-[#8D6CE5] font-bold text-sm">{tk.tokenNumber}</span>
+                  <span className="font-mono text-text-main font-bold text-sm">{tk.tokenNumber}</span>
                   <p className="text-xs font-semibold text-text-main mt-0.5">{tk.customer?.name || 'Walk-in Guest'}</p>
-                  <p className="text-[10px] text-text-muted">{tk.personsCount} Guests • {tk.deliveryMode}</p>
+                  {tk.customer?.phoneNumber && (
+                    <p className="text-[10px] text-text-muted mt-0.5 font-mono truncate max-w-[200px]" title={`${tk.customer.phoneNumber} | ${tk.customer.email || ''}`}>
+                      {tk.customer.phoneNumber} {tk.customer.email ? ` | ${tk.customer.email}` : ''}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-text-muted mt-0.5">{tk.personsCount} Guests • {tk.deliveryMode}</p>
                 </div>
                 <div className="text-right">
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold badge-active">{tk.status}</span>

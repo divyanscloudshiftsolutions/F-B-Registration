@@ -70,7 +70,7 @@ export const RateManagement: React.FC = () => {
 
         <button
           onClick={refreshRates}
-          className="px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary active"
+          className="px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary"
         >
           <div className="nav-icon-badge">
             <RefreshCw size={12} />
@@ -91,7 +91,7 @@ export const RateManagement: React.FC = () => {
                   <span className="font-bold text-text-main text-base">{r.name || r.placeType}</span>
                   <button
                     onClick={() => openEditModal(r)}
-                    className="p-2 transition-all premium-btn-secondary active flex items-center justify-center"
+                    className="p-2 transition-all premium-btn-secondary flex items-center justify-center"
                     title="Edit Rate Card"
                   >
                     <div className="nav-icon-badge m-0">
@@ -129,7 +129,7 @@ export const RateManagement: React.FC = () => {
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-2 text-[#8D6CE5] font-bold text-sm">
+            <div className="flex items-center gap-2 text-text-main font-bold text-sm">
               <DollarSign size={18} /> Edit Rate Card ({editingRate.name || editingRate.placeType})
             </div>
 

@@ -70,6 +70,9 @@ export interface Token {
   deliveryMode: 'NFC_CARD' | 'EMAIL_QR';
   emailSent?: boolean;
   emailDeliveryStatus?: string;
+  tableNumber?: string;
+  createdAt?: string;
+  expiresAt?: string;
 }
 
 export interface Redemption {

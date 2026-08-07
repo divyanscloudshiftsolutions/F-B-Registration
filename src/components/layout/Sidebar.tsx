@@ -8,7 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Camera,
-  Settings,
   Martini
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -33,31 +32,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
     bartender: false,
     administration: false,
   });
+  const [prevCategory, setPrevCategory] = useState('');
 
   useEffect(() => {
-    if (activeTab.startsWith('tables')) {
-      setOpenGroups(prev => ({ ...prev, tables: true }));
-    } else if (activeTab.startsWith('bartender')) {
-      setOpenGroups(prev => ({ ...prev, bartender: true }));
-    } else if (activeTab.startsWith('admin')) {
-      setOpenGroups(prev => ({ ...prev, administration: true }));
+    const getCategory = (tab: string) => {
+      if (tab.startsWith('tables')) return 'tables';
+      if (tab.startsWith('bartender')) return 'bartender';
+      if (tab.startsWith('admin')) return 'administration';
+      return '';
+    };
+
+    const category = getCategory(activeTab);
+    if (category && category !== prevCategory) {
+      setOpenGroups({
+        tables: category === 'tables',
+        bartender: category === 'bartender',
+        administration: category === 'administration'
+      });
+      setPrevCategory(category);
+    } else if (!category && prevCategory) {
+      setOpenGroups({ tables: false, bartender: false, administration: false });
+      setPrevCategory('');
     }
-  }, [activeTab]);
+  }, [activeTab, prevCategory]);
 
   const toggleGroup = (group: string) => {
     setCollapsed(false);
     const isOpen = openGroups[group];
     
-    setOpenGroups(prev => ({
-      ...prev,
-      [group]: !isOpen
-    }));
+    setOpenGroups(prev => {
+      const nextGroups = { ...prev };
+      // If we are opening a group, collapse all others
+      if (!isOpen) {
+        Object.keys(nextGroups).forEach(k => {
+          nextGroups[k] = false;
+        });
+      }
+      nextGroups[group] = !isOpen;
+      return nextGroups;
+    });
 
     if (!isOpen) {
       if (group === 'tables') {
         setActiveTab('tables/layout');
       } else if (group === 'bartender') {
-        setActiveTab('bartender/orders');
+        setActiveTab('bartender/scan');
       } else if (group === 'administration') {
         setActiveTab('admin/tables');
       }
@@ -87,8 +106,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Wine,
       roles: [UserRole.ADMIN, UserRole.BARTENDER],
       subItems: [
-        { label: 'Orders', onClick: () => setActiveTab('bartender/orders'), active: activeTab === 'bartender/orders' },
-        { label: 'Queue', onClick: () => setActiveTab('bartender/queue'), active: activeTab === 'bartender/queue' }
+        { label: 'QR Scan', onClick: () => setActiveTab('bartender/scan'), active: activeTab === 'bartender/scan' },
+        { label: 'Check-ins', onClick: () => setActiveTab('bartender/checkins'), active: activeTab === 'bartender/checkins' }
       ]
     },
     {
@@ -189,8 +208,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside 
-      className={`h-[calc(100vh-2rem)] my-4 ml-4 bg-bg-sidebar border border-border-sidebar flex flex-col justify-between transition-all duration-300 z-30 rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] ${
-        collapsed ? 'w-20' : 'w-[280px]'
+      className={`h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] my-2 md:my-4 ml-2 md:ml-4 mr-1 md:mr-2 bg-bg-sidebar border border-border-sidebar flex flex-col justify-between transition-all duration-300 z-30 rounded-[20px] md:rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] ${
+        collapsed ? 'w-16 md:w-20' : 'w-[240px] md:w-[280px]'
       }`}
     >
       <div className="flex flex-col flex-1 min-h-0">
@@ -232,38 +251,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <nav className="px-4 py-2 space-y-1 overflow-y-auto flex-1 min-h-0">
-          {/* MAIN SECTION */}
-          {!collapsed && (
-            <div className="px-2 mb-2 mt-2 text-[10px] font-bold text-text-muted/70 tracking-widest uppercase">MAIN</div>
-          )}
-          
           {renderNavButton('dashboard', 'Dashboard', LayoutDashboard, [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST, UserRole.BARTENDER])}
           {renderNavButton('checkin', 'Reception', UserCheck, [UserRole.ADMIN, UserRole.RECEPTIONIST])}
           {renderGroup(groups.find(g => g.id === 'tables'))}
           {renderGroup(groups.find(g => g.id === 'bartender'))}
-          
-          {/* OTHER SECTION */}
-          {!collapsed && (
-            <div className="px-2 mb-2 mt-6 text-[10px] font-bold text-text-muted/70 tracking-widest uppercase">OTHER</div>
-          )}
-
           {renderNavButton('quick_attendance', 'Attendance', Camera, [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST])}
           {renderGroup(groups.find(g => g.id === 'administration'))}
-          
-          <button
-            onClick={() => {}}
-            className={`w-full flex items-center justify-between ${
-              collapsed ? 'justify-center px-0' : 'px-3'
-            } py-2 text-[13px] overflow-hidden premium-menu-item mt-1`}
-            title={collapsed ? 'Settings' : undefined}
-          >
-            <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} relative z-10`}>
-              <div className="nav-icon-badge">
-                <Settings size={16} strokeWidth={2} />
-              </div>
-              {!collapsed && <span>Settings</span>}
-            </div>
-          </button>
         </nav>
       </div>
 

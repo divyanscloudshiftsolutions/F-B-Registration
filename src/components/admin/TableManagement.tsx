@@ -88,7 +88,7 @@ export const TableManagement: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setSelectedPlace('STANDING_BAR')}
-            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary ${
+            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary active:scale-95 ${
               selectedPlace === 'STANDING_BAR' ? 'active' : ''
             }`}
           >
@@ -97,7 +97,7 @@ export const TableManagement: React.FC = () => {
 
           <button
             onClick={() => setSelectedPlace('PREMIUM_LOUNGE')}
-            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary ${
+            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary active:scale-95 ${
               selectedPlace === 'PREMIUM_LOUNGE' ? 'active' : ''
             }`}
           >
@@ -108,7 +108,7 @@ export const TableManagement: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => { refreshTables(); refreshTokens(); }}
-            className="px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary active"
+            className="px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary"
           >
             <div className="nav-icon-badge">
               <RefreshCw size={12} />
@@ -179,8 +179,8 @@ export const TableManagement: React.FC = () => {
                         {/* Header: Table Number & Semantic Status Pill */}
                         <div className="flex items-center justify-between">
                           <div>
-                            <span className="font-mono text-[#8D6CE5] font-black text-xl tracking-wide">{tb.tableNumber}</span>
-                            <p className="text-[10px] text-text-muted font-semibold uppercase tracking-wider block mt-0.5">
+                            <span className="font-mono text-[#8D6CE5] font-black text-xl tracking-wider">{tb.tableNumber}</span>
+                            <p className="text-[10px] text-text-muted/80 font-bold uppercase tracking-widest block mt-0.5">
                               {selectedPlace === 'STANDING_BAR' ? 'Standard Zone' : 'Premium Zone'}
                             </p>
                           </div>
@@ -206,7 +206,7 @@ export const TableManagement: React.FC = () => {
                         </div>
 
                         {/* Central Dynamic Table Diagram Container */}
-                        <div className="py-1 px-2 rounded-2xl bg-bg-primary/80 border border-border-main flex items-center justify-center h-28 relative">
+                        <div className="py-1 px-2 rounded-2xl bg-bg-primary/90 border border-border-sidebar/40 flex items-center justify-center h-28 relative">
                           <TableDiagram
                             capacity={capacity}
                             occupiedCount={occupiedCount}
@@ -218,15 +218,17 @@ export const TableManagement: React.FC = () => {
                         {/* Info Bar - Size, Capacity & Token Metadata */}
                         <div className="space-y-1 text-xs px-1">
                           <div className="flex items-center justify-between text-[11px] font-bold text-text-muted">
-                            <span className="uppercase text-[10px] tracking-wider">{sizeCategory} • {capacity} {capacity === 1 ? 'Person' : 'Persons'}</span>
+                            <span className="uppercase text-[9px] tracking-widest text-text-muted/90">
+                              {sizeCategory} • <span className="font-black text-text-primary text-[10px]">{capacity}</span> Pax
+                            </span>
                             <span className={
                               isFull
-                                ? 'dark:text-red-400 text-red-700 font-extrabold'
+                                ? 'dark:text-red-400 text-red-700 font-black text-[10px]'
                                 : isPartial
-                                ? 'dark:text-amber-400 text-amber-700 font-extrabold'
+                                ? 'dark:text-amber-400 text-amber-700 font-black text-[10px]'
                                 : tb.status === 'reserved'
-                                ? 'dark:text-blue-400 text-blue-700 font-extrabold'
-                                : 'dark:text-emerald-400 text-emerald-700 font-extrabold'
+                                ? 'dark:text-blue-400 text-blue-700 font-black text-[10px]'
+                                : 'dark:text-emerald-400 text-emerald-700 font-black text-[10px]'
                             }>
                               {occupiedCount} / {capacity} Seats
                             </span>
@@ -235,12 +237,12 @@ export const TableManagement: React.FC = () => {
                           {assignedToken ? (
                             <div className="flex items-center justify-between text-[11px] border-t border-border-main/40 pt-1 text-text-muted">
                               <span className="font-semibold truncate max-w-[120px]">👤 {assignedToken.customer?.name || 'Guest'}</span>
-                              <span className="font-mono text-[#8D6CE5] font-bold">{assignedToken.tokenNumber}</span>
+                              <span className="font-mono text-text-main font-black">{assignedToken.tokenNumber}</span>
                             </div>
                           ) : (
                             <div className="text-[10px] text-text-muted border-t border-border-main/30 pt-1 flex justify-between">
-                              <span>Rate Allowance:</span>
-                              <span className="font-mono font-bold text-text-main">₹500 / Session</span>
+                              <span className="text-text-muted/70 uppercase text-[9px] tracking-wider">Rate Allowance:</span>
+                              <span className="font-mono font-black text-[10.5px] text-text-primary">₹500 / Session</span>
                             </div>
                           )}
                         </div>
@@ -302,7 +304,7 @@ export const TableManagement: React.FC = () => {
               
               {/* Header */}
               <div className="flex items-center justify-between pb-3 border-b border-border-main">
-                <div className="flex items-center gap-2 text-[#8D6CE5] font-bold text-base">
+                <div className="flex items-center gap-2 text-text-main font-bold text-base">
                   <Grid3X3 size={20} /> Table {inspectingTable.tableNumber} Inspection Dialog
                 </div>
                 <button 
@@ -348,11 +350,21 @@ export const TableManagement: React.FC = () => {
                 <div className="p-4 rounded-2xl bg-bg-primary border border-border-main space-y-2 text-xs">
                   <div className="flex justify-between">
                     <span className="text-text-muted">Assigned Customer:</span>
-                    <span className="font-bold text-text-main">{inspectingToken.customer?.name || 'Guest'} ({inspectingToken.customer?.phoneNumber || '—'})</span>
+                    <span className="font-bold text-text-main">{inspectingToken.customer?.name || 'Guest'}</span>
                   </div>
                   <div className="flex justify-between">
+                    <span className="text-text-muted">Phone Number:</span>
+                    <span className="font-mono text-text-main">{inspectingToken.customer?.phoneNumber || '—'}</span>
+                  </div>
+                  {inspectingToken.customer?.email && (
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Email Address:</span>
+                      <span className="font-mono text-text-main">{inspectingToken.customer.email}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
                     <span className="text-text-muted">Token Pass:</span>
-                    <span className="font-mono text-[#8D6CE5] font-bold">{inspectingToken.tokenNumber}</span>
+                    <span className="font-mono text-text-main font-bold">{inspectingToken.tokenNumber}</span>
                   </div>
                 </div>
               )}
@@ -397,7 +409,7 @@ export const TableManagement: React.FC = () => {
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-2 text-[#8D6CE5] font-bold text-sm">
+            <div className="flex items-center gap-2 text-text-main font-bold text-sm">
               <Grid3X3 size={18} /> Add New Seating Table
             </div>
 
