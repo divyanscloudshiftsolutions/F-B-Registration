@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, KeyRound, ShieldCheck, Grid3X3, ArrowRight } from 'lucide-react';
+import { User, KeyRound, ShieldCheck, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export const LoginPage: React.FC = () => {
@@ -9,8 +9,6 @@ export const LoginPage: React.FC = () => {
   const [pin, setPin] = useState('1234');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [showPosNumpad, setShowPosNumpad] = useState(false);
-  const [activeField, setActiveField] = useState<'username' | 'pin'>('username');
 
   const handleRoleSelect = (role: 'REC' | 'BAR' | 'ADM' | 'MGR') => {
     setSelectedRole(role);
@@ -42,48 +40,40 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleNumpadKey = (val: string) => {
-    setErrorMsg('');
-    if (activeField === 'username') {
-      setUsername(prev => prev + val);
-    } else {
-      if (pin.length < 4) {
-        setPin(prev => prev + val);
-      }
-    }
-  };
-
-  const handleNumpadBackspace = () => {
-    setErrorMsg('');
-    if (activeField === 'pin') {
-      if (pin.length > 0) setPin(prev => prev.slice(0, -1));
-      else setActiveField('username');
-    } else {
-      setUsername(prev => prev.slice(0, -1));
-    }
-  };
-
-  const handleNumpadClear = () => {
-    setErrorMsg('');
-    setPin('');
-  };
-
   return (
-    <div className="min-h-screen bg-bg-primary flex items-center justify-center p-4 lg:p-12 relative overflow-hidden text-text-primary">
-      {/* Ambient Backdrop Orbs */}
-      <div className="absolute -top-40 -left-40 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute -bottom-40 -right-40 w-[500px] h-[500px] bg-mint/10 rounded-full blur-[120px] pointer-events-none" />
+    <div className="min-h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F8F9FA] via-[#E9ECEF] to-[#DEE2E6] flex items-center justify-center p-4 lg:p-12 relative overflow-hidden text-text-main">
+      {/* Ambient background layers matching App.tsx */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0">
+        {/* Orb 1: Warm Amber Top-Left/behind Sidebar */}
+        <div className="absolute -top-[15%] -left-[10%] w-[45%] h-[55%] dark:bg-[radial-gradient(circle,rgba(241,147,7,0.06)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(241,147,7,0.04)_0%,transparent_70%)] rounded-full blur-[130px] animate-ambient-slow-1" />
 
-      {/* Split Screen Container */}
-      <div className="w-full max-w-5xl bg-bg-surface border border-border rounded-3xl shadow-2xl overflow-hidden grid grid-cols-1 lg:grid-cols-2 relative z-10">
+        {/* Orb 2: Primary Brand Purple Header Glow */}
+        <div className="absolute -top-[20%] right-[15%] w-[50%] h-[60%] dark:bg-[radial-gradient(circle,rgba(141,108,229,0.16)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(141,108,229,0.12)_0%,transparent_70%)] rounded-full blur-[140px] animate-ambient-slow-2" />
+
+        {/* Orb 3: Deep Indigo Center-Right Depth */}
+        <div className="absolute top-[25%] right-[5%] w-[40%] h-[50%] dark:bg-[radial-gradient(circle,rgba(99,102,241,0.10)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(99,102,241,0.06)_0%,transparent_70%)] rounded-full blur-[150px] animate-ambient-slow-1" />
+
+        {/* Orb 4: Deep Indigo Bottom-Right Accent */}
+        <div className="absolute -bottom-[15%] right-[10%] w-[40%] h-[50%] dark:bg-[radial-gradient(circle,rgba(99,102,241,0.08)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(99,102,241,0.06)_0%,transparent_70%)] rounded-full blur-[140px] animate-ambient-slow-2" />
+
+        {/* Orb 5: Emerald Bottom-Left Accent */}
+        <div className="absolute -bottom-[10%] left-[10%] w-[35%] h-[45%] dark:bg-[radial-gradient(circle,rgba(16,185,129,0.08)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(16,185,129,0.06)_0%,transparent_70%)] rounded-full blur-[130px] animate-ambient-slow-1" />
+
+        {/* Ambient Vignette Overlay for edge depth */}
+        <div className="absolute inset-0 ambient-vignette-overlay" />
+      </div>
+
+      {/* Split Screen Container styled as Premium Glass card */}
+      <div className="w-full max-w-5xl glass-panel shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] border border-border-main rounded-3xl overflow-hidden grid grid-cols-1 lg:grid-cols-2 relative z-10">
         
         {/* Left Panel: Venue Branding Showcase (Hidden on Mobile) */}
-        <div className="hidden lg:flex flex-col justify-between p-10 bg-gradient-to-br from-bg-surface to-bg-primary border-r border-border relative">
+        <div className="hidden lg:flex flex-col justify-between p-10 bg-gradient-to-br from-primary/10 to-primary/5 border-r border-border-main relative">
           <div>
-            <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center text-text-inverse text-2xl font-bold mb-6 shadow-xl shadow-primary/20">
+            {/* Glowing Brand Logo element */}
+            <div className="w-14 h-14 rounded-2xl premium-logo-glow flex items-center justify-center text-text-inverse text-2xl font-bold mb-6">
               🍸
             </div>
-            <h1 className="text-3xl font-black text-text-primary tracking-wider uppercase">BAR MANAGEMENT SYSTEM</h1>
+            <h1 className="text-3xl font-black text-text-main tracking-wider uppercase">BAR MANAGEMENT SYSTEM</h1>
             <p className="text-xs text-primary font-semibold mt-1 uppercase tracking-widest">Enterprise Terminal Gateway</p>
             
             <p className="text-xs text-text-muted mt-6 leading-relaxed">
@@ -92,10 +82,10 @@ export const LoginPage: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            <div className="p-4 rounded-2xl bg-bg-primary border border-border flex items-center gap-3">
-              <ShieldCheck className="text-status-success" size={20} />
+            <div className="p-4 rounded-2xl bg-white/20 dark:bg-black/10 border border-border-main flex items-center gap-3">
+              <ShieldCheck className="text-emerald-400" size={20} />
               <div>
-                <p className="text-xs font-bold text-text-primary">Secure Terminal Access</p>
+                <p className="text-xs font-bold text-text-main">Secure Terminal Access</p>
                 <p className="text-[10px] text-text-muted">Authorized Shift Staff Terminal Only</p>
               </div>
             </div>
@@ -107,22 +97,22 @@ export const LoginPage: React.FC = () => {
           
           {/* Header */}
           <div>
-            <h2 className="text-xl font-bold text-text-primary tracking-wide">Staff Terminal Login</h2>
+            <h2 className="text-xl font-bold text-text-main tracking-wide">Staff Terminal Login</h2>
             <p className="text-xs text-text-muted mt-1">Select your shift role and enter credentials</p>
           </div>
 
           {/* Error Banner */}
           {errorMsg && (
-            <div className="p-3.5 rounded-xl bg-status-danger-bg border border-status-danger-border text-status-danger text-xs font-bold flex items-center gap-2">
+            <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold flex items-center gap-2">
               <span>⚠️</span>
               <span>{errorMsg}</span>
             </div>
           )}
 
-          {/* Role Selection Tabs */}
+          {/* Role Selection Tabs styled as standardized premium segmented controls */}
           <div>
             <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2">1. Select Shift Role</label>
-            <div className="grid grid-cols-4 gap-2 p-1.5 rounded-xl bg-bg-primary border border-border">
+            <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-white/5 dark:bg-black/10 border border-border-main">
               {(['REC', 'BAR', 'ADM', 'MGR'] as const).map(r => {
                 const isSel = selectedRole === r;
                 const labels = { REC: 'Recep', BAR: 'Bar', ADM: 'Admin', MGR: 'Mngr' };
@@ -131,10 +121,8 @@ export const LoginPage: React.FC = () => {
                     key={r}
                     type="button"
                     onClick={() => handleRoleSelect(r)}
-                    className={`py-2 text-xs font-bold uppercase rounded-lg transition-all cursor-pointer ${
-                      isSel
-                        ? 'bg-primary text-text-inverse shadow-md shadow-primary/20 font-extrabold'
-                        : 'text-text-muted hover:text-text-primary dark:hover:bg-white/5 hover:bg-black/5'
+                    className={`py-1.5 text-xs font-bold uppercase transition-all duration-200 active:scale-95 premium-tab-secondary ${
+                      isSel ? 'active' : ''
                     }`}
                   >
                     {labels[r]}
@@ -153,13 +141,12 @@ export const LoginPage: React.FC = () => {
                 <input
                   type="text"
                   value={username}
-                  onFocus={() => setActiveField('username')}
                   onChange={e => {
                     setUsername(e.target.value.toUpperCase());
                     setErrorMsg('');
                   }}
                   placeholder="e.g. ADM-03"
-                  className="w-full bg-bg-primary border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-primary font-mono placeholder-text-placeholder focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full bg-white/5 dark:bg-black/15 border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 backdrop-blur-sm transition-all"
                   required
                 />
               </div>
@@ -172,54 +159,16 @@ export const LoginPage: React.FC = () => {
                 <input
                   type="password"
                   value={pin}
-                  onFocus={() => setActiveField('pin')}
                   onChange={e => {
                     setPin(e.target.value);
                     setErrorMsg('');
                   }}
                   placeholder="••••"
-                  className="w-full bg-bg-primary border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-primary font-mono placeholder-text-placeholder focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full bg-white/5 dark:bg-black/15 border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 backdrop-blur-sm transition-all"
                   required
                 />
               </div>
             </div>
-
-            {/* Mode 2: Touch POS Onscreen Numpad Toggle */}
-            <div className="flex items-center justify-between pt-1">
-              <button
-                type="button"
-                onClick={() => setShowPosNumpad(!showPosNumpad)}
-                className="text-xs text-primary font-semibold hover:underline flex items-center gap-1.5 cursor-pointer"
-              >
-                <Grid3X3 size={14} />
-                <span>{showPosNumpad ? 'Hide Touch POS Numpad' : 'Show Touch POS Numpad'}</span>
-              </button>
-            </div>
-
-            {/* Touch POS Onscreen Keypad Overlay */}
-            {showPosNumpad && (
-              <div className="p-3 rounded-2xl bg-bg-primary border border-border space-y-2 animate-fadeIn">
-                <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider text-center mb-1">
-                  Editing {activeField === 'username' ? 'Employee Code' : 'PIN'}
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map(key => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => {
-                        if (key === 'C') handleNumpadClear();
-                        else if (key === '⌫') handleNumpadBackspace();
-                        else handleNumpadKey(key);
-                      }}
-                      className="py-3 rounded-xl bg-bg-surface hover:bg-bg-card text-text-primary font-bold text-sm border border-border active:scale-95 transition-all text-center cursor-pointer"
-                    >
-                      {key}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Submit Action */}
             <button

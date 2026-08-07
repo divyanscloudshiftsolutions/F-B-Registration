@@ -87,11 +87,11 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
   };
 
   return (
-    <header className="sticky top-0 z-20 bg-bg-sidebar/90 backdrop-blur-md border-b border-border px-6 py-3.5 flex items-center justify-between text-text-primary">
+    <header className="sticky top-0 z-20 bg-transparent border-b border-border-sidebar px-4 md:px-6 py-3.5 flex items-center justify-between text-text-primary shrink-0">
       {/* Title & Page Header */}
       <div>
-        <h2 className="text-lg font-bold text-text-primary tracking-wide">{title}</h2>
-        <p className="text-xs text-text-muted">Bar Management System</p>
+        <h2 className="text-xl md:text-2xl font-black text-text-primary dark:text-white tracking-wider uppercase leading-none">{title}</h2>
+        <p className="text-[10px] text-text-muted/90 font-bold mt-1.5 uppercase tracking-widest">Bar Management System</p>
       </div>
 
       {/* System Status & Actions */}
@@ -107,7 +107,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
           <button
             onClick={onRefresh}
             disabled={isRefreshing}
-            className="w-9 h-9 rounded-full transition-all disabled:opacity-50 premium-btn-secondary active flex items-center justify-center cursor-pointer"
+            className="w-9 h-9 rounded-full transition-all disabled:opacity-50 premium-btn-secondary flex items-center justify-center cursor-pointer"
             title={isRefreshing ? "Refresh in progress" : "Refresh Data"}
           >
             <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
@@ -137,7 +137,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
                 {notifications.length > 0 && (
                   <button 
                     onClick={handleClearAll}
-                    className="text-[10px] text-status-danger hover:text-status-danger/80 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                    className="px-2.5 py-1 text-[10px] font-bold flex items-center gap-1 transition-all premium-btn-secondary text-red-400 border-red-500/30 bg-red-500/5 active:scale-95 cursor-pointer"
                   >
                     <Trash2 size={11} /> Clear All
                   </button>
@@ -154,7 +154,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
                   </div>
                 ) : (
                   notifications.map(notif => (
-                    <div key={notif.id} className="p-4 hover:bg-bg-hover transition-all text-xs space-y-1">
+                    <div key={notif.id} className="p-4 bg-white/20 dark:bg-black/10 hover:bg-bg-hover transition-all text-xs space-y-1 border-b border-border/30 last:border-b-0">
                       <div className="flex justify-between items-start gap-2">
                         <p className="font-bold text-text-primary text-[11px]">{notif.title}</p>
                         <span className="text-[9px] text-text-muted font-mono">{notif.timestamp}</span>
@@ -178,7 +178,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
                     setIsOpen(false);
                     logout();
                   }}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-status-danger-bg hover:bg-status-danger-bg/80 text-status-danger border border-status-danger-border transition-all cursor-pointer"
+                  className="w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-primary border border-primary-hover text-white shadow-[0_0_20px_rgba(141,108,229,0.55)] hover:bg-[#7B59DD] hover:shadow-[0_0_24px_rgba(141,108,229,0.75)] transition-all duration-200 cursor-pointer active:scale-95 flex items-center justify-center gap-2"
                 >
                   <LogOut size={14} />
                   <span>Sign Out Shift Account</span>

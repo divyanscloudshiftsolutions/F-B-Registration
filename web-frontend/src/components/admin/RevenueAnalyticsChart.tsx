@@ -37,9 +37,9 @@ export const RevenueAnalyticsChart: React.FC = () => {
 
   const handleExportCSV = () => {
     try {
-      const headers = 'TokenNumber,CustomerName,PhoneNumber,Persons,RedemptionsUsed,TotalRedemptions,DeliveryMode,AmountPaid,Status\n';
+      const headers = 'TokenNumber,CustomerName,PhoneNumber,EmailAddress,Persons,RedemptionsUsed,TotalRedemptions,DeliveryMode,AmountPaid,Status\n';
       const rows = tokens.map(t => 
-        `"${t.tokenNumber}","${t.customer?.name || ''}","${t.customer?.phoneNumber || ''}",${t.personsCount},${t.redemptionsUsed},${t.totalRedemptionsAllowed},"${t.deliveryMode}",${t.amountPaid || 0},"${t.status}"`
+        `"${t.tokenNumber}","${t.customer?.name || ''}","${t.customer?.phoneNumber || ''}","${t.customer?.email || ''}",${t.personsCount},${t.redemptionsUsed},${t.totalRedemptionsAllowed},"${t.deliveryMode}",${t.amountPaid || 0},"${t.status}"`
       ).join('\n');
 
       const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
@@ -77,7 +77,7 @@ export const RevenueAnalyticsChart: React.FC = () => {
       {/* Hourly Sales Bar Chart Component */}
       <div className="glass-panel p-6 rounded-2xl border border-border-main space-y-6">
         <div className="flex items-center justify-between pb-3 border-b border-border-main">
-          <div className="flex items-center gap-2 text-[#8D6CE5] font-bold text-sm animate-fadeIn">
+          <div className="flex items-center gap-2 text-text-main font-bold text-sm animate-fadeIn">
             <BarChart3 size={18} /> Hourly Revenue Breakdown & Peak Collections
           </div>
           <span className="text-xs font-bold dark:text-emerald-400 text-emerald-700 flex items-center gap-1">

@@ -6,7 +6,8 @@
   --bg-primary: #F8F8F8;
   --bg-surface: #FFFFFF;
   --bg-secondary-surface: #F4F5F7;
-  --bg-sidebar: rgba(255, 255, 255, 0.25);
+  --bg-sidebar: rgba(255, 255, 255, 0.28);
+  --bg-workspace: rgba(255, 255, 255, 0.16);
   --border-sidebar: rgba(255, 255, 255, 0.35);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
   --glass-blur: 18px;
@@ -60,10 +61,11 @@
 
 .dark {
   /* Backgrounds */
-  --bg-primary: #141414;
+  --bg-primary: #0A0B10;
   --bg-surface: #1E1E1E;
   --bg-secondary-surface: #252525;
-  --bg-sidebar: rgba(255, 255, 255, 0.08);
+  --bg-sidebar: rgba(255, 255, 255, 0.09);
+  --bg-workspace: rgba(255, 255, 255, 0.04);
   --border-sidebar: rgba(255, 255, 255, 0.12);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
   --glass-blur: 18px;
@@ -121,6 +123,7 @@
   --color-bg-surface: var(--bg-surface);
   --color-bg-secondary-surface: var(--bg-secondary-surface);
   --color-bg-sidebar: var(--bg-sidebar);
+  --color-bg-workspace: var(--bg-workspace);
   --color-bg-header: var(--bg-header);
   --color-bg-card: var(--bg-card);
   --color-bg-modal: var(--bg-modal);
@@ -270,7 +273,7 @@ h1, h2, h3, h4, h5, h6 {
   border-color: rgba(var(--glow-rgb), 0.5) !important;
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(var(--glow-rgb), 0.3), 0 0 28px rgba(var(--glow-rgb), 0.45) !important;
 }
-.primary-btn:active, .premium-btn-primary:active {
+.primary-btn:active, .premium-btn-primary:active, .primary-btn.active:active, .premium-btn-primary.active:active, .primary-btn:hover:active, .premium-btn-primary:hover:active {
   transform: scale(0.97) translateY(0) !important;
   /* Pressed: matches Sidebar Pressed state */
   background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.95), rgba(var(--glow-rgb), 0.85)) !important;
@@ -362,20 +365,24 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* STATE 4: Pressed / Click — Vivid glass purple pill button with maximum glow */
-.premium-menu-item:active {
+.premium-menu-item:active, .premium-menu-item.active:active, .premium-menu-item:hover:active {
   background: linear-gradient(135deg, rgba(141, 108, 229, 0.95), rgba(115, 80, 215, 0.98)) !important;
   color: #FFFFFF !important;
   border-color: rgba(255, 255, 255, 0.7) !important;
   box-shadow: inset 0 1.5px 2px rgba(255, 255, 255, 0.6), 0 0 32px rgba(141, 108, 229, 0.8) !important;
   transform: scale(0.97) !important;
 }
-.premium-menu-item:active .nav-icon-badge {
+.premium-menu-item:active .nav-icon-badge, .premium-menu-item.active:active .nav-icon-badge, .premium-menu-item:hover:active .nav-icon-badge {
   background: rgba(255, 255, 255, 0.25) !important;
   border-color: rgba(255, 255, 255, 0.5) !important;
   color: #FFFFFF !important;
 }
 .premium-menu-item:active .lucide,
-.premium-menu-item:active span {
+.premium-menu-item:active span,
+.premium-menu-item.active:active .lucide,
+.premium-menu-item.active:active span,
+.premium-menu-item:hover:active .lucide,
+.premium-menu-item:hover:active span {
   color: #FFFFFF !important;
 }
 
@@ -412,7 +419,8 @@ h1, h2, h3, h4, h5, h6 {
   border-color: rgba(180, 160, 255, 0.5) !important;
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(141, 108, 229, 0.3), 0 0 28px rgba(141, 108, 229, 0.45) !important;
 }
-.glass-sub-menu-btn:active {
+omg_this_is_unused_class_but_we_keep_to_match_target { color: transparent; }
+.glass-sub-menu-btn:active, .glass-sub-menu-btn.active:active, .glass-sub-menu-btn:hover:active {
   background: linear-gradient(135deg, rgba(141, 108, 229, 0.95), rgba(115, 80, 215, 0.98)) !important;
   color: #FFFFFF !important;
   border-color: rgba(255, 255, 255, 0.7) !important;
@@ -476,7 +484,7 @@ h1, h2, h3, h4, h5, h6 {
   border-color: rgba(var(--glow-rgb), 0.5) !important;
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(var(--glow-rgb), 0.3), 0 0 28px rgba(var(--glow-rgb), 0.45) !important;
 }
-.premium-btn-secondary:active {
+.premium-btn-secondary:active, .premium-btn-secondary.active:active, .premium-btn-secondary:hover:active {
   transform: scale(0.97) translateY(0) !important;
   /* Pressed: matches Sidebar Pressed state */
   background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.95), rgba(var(--glow-rgb), 0.85)) !important;
@@ -518,7 +526,7 @@ h1, h2, h3, h4, h5, h6 {
   border-color: rgba(var(--glow-rgb), 0.5) !important;
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(var(--glow-rgb), 0.3), 0 0 28px rgba(var(--glow-rgb), 0.45) !important;
 }
-.premium-tab-primary:active {
+.premium-tab-primary:active, .premium-tab-primary.active:active, .premium-tab-primary:hover:active {
   /* Pressed: matches Sidebar Pressed state */
   background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.95), rgba(var(--glow-rgb), 0.85)) !important;
   color: #FFFFFF !important;
@@ -531,35 +539,37 @@ h1, h2, h3, h4, h5, h6 {
 .premium-tab-secondary {
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  color: var(--text-muted);
-  font-weight: 500;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-secondary) !important;
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  backdrop-filter: blur(8px);
 }
 .premium-tab-secondary:hover:not(.active) {
-  border-color: rgba(var(--glow-rgb), 0.2) !important;
-  background-color: rgba(var(--glow-rgb), 0.05) !important;
-  color: var(--text-secondary) !important;
-  box-shadow: 0 0 10px rgba(var(--glow-rgb), 0.1) !important;
+  border-color: rgba(var(--glow-rgb), 0.35) !important;
+  background: rgba(var(--glow-rgb), 0.1) !important;
+  color: var(--text-primary) !important;
+  box-shadow: 0 0 16px rgba(var(--glow-rgb), 0.2) !important;
+  transform: translateY(-1px) !important;
 }
 .premium-tab-secondary.active {
   /* Active / Selected: matches Sidebar Active state */
   background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.35), rgba(var(--glow-rgb), 0.2)) !important;
   color: #FFFFFF !important;
-  border-color: rgba(var(--glow-rgb), 0.6) !important;
+  border: 1px solid rgba(180, 160, 255, 0.6) !important;
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 0 15px rgba(var(--glow-rgb), 0.25), 0 0 24px rgba(var(--glow-rgb), 0.4) !important;
-  font-weight: 600;
+  font-weight: 700;
 }
 .dark .premium-tab-secondary.active {
-  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.3), rgba(var(--glow-rgb), 0.15)) !important;
-  border-color: rgba(var(--glow-rgb), 0.5) !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(var(--glow-rgb), 0.3), 0 0 28px rgba(var(--glow-rgb), 0.45) !important;
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.35), rgba(var(--glow-rgb), 0.2)) !important;
+  border-color: rgba(180, 160, 255, 0.6) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 0 15px rgba(var(--glow-rgb), 0.25), 0 0 24px rgba(var(--glow-rgb), 0.4) !important;
 }
-.premium-tab-secondary:active {
+.premium-tab-secondary:active, .premium-tab-secondary.active:active, .premium-tab-secondary:hover:active {
   /* Pressed: matches Sidebar Pressed state */
   background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.95), rgba(var(--glow-rgb), 0.85)) !important;
   color: #FFFFFF !important;
@@ -643,8 +653,9 @@ button[disabled]:hover {
   width: 24px !important;
   height: 24px !important;
   border-radius: 8px !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: var(--text-secondary) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -689,13 +700,48 @@ button[disabled]:hover {
 
 /* Pressed State for Icon badge */
 .primary-btn:active .nav-icon-badge, 
+.primary-btn.active:active .nav-icon-badge,
+.primary-btn:hover:active .nav-icon-badge,
 .premium-btn-primary:active .nav-icon-badge,
+.premium-btn-primary.active:active .nav-icon-badge,
+.premium-btn-primary:hover:active .nav-icon-badge,
 .premium-btn-secondary:active .nav-icon-badge, 
+.premium-btn-secondary.active:active .nav-icon-badge, 
+.premium-btn-secondary:hover:active .nav-icon-badge, 
 .premium-tab-primary:active .nav-icon-badge, 
-.premium-tab-secondary:active .nav-icon-badge {
+.premium-tab-primary.active:active .nav-icon-badge, 
+.premium-tab-primary:hover:active .nav-icon-badge, 
+.premium-tab-secondary:active .nav-icon-badge,
+.premium-tab-secondary.active:active .nav-icon-badge,
+.premium-tab-secondary:hover:active .nav-icon-badge {
   background: rgba(255, 255, 255, 0.25) !important;
   border-color: rgba(255, 255, 255, 0.5) !important;
   color: #FFFFFF !important;
+}
+
+/* Fast/instant tactile transition for physically pressed active clicks */
+.premium-menu-item:active,
+.premium-menu-item.active:active,
+.premium-menu-item:hover:active,
+.premium-tab-primary:active,
+.premium-tab-primary.active:active,
+.premium-tab-primary:hover:active,
+.premium-tab-secondary:active,
+.premium-tab-secondary.active:active,
+.premium-tab-secondary:hover:active,
+.premium-btn-secondary:active,
+.premium-btn-secondary.active:active,
+.premium-btn-secondary:hover:active,
+.primary-btn:active,
+.premium-btn-primary:active,
+.primary-btn.active:active,
+.premium-btn-primary.active:active,
+.primary-btn:hover:active,
+.premium-btn-primary:hover:active,
+.glass-sub-menu-btn:active,
+.glass-sub-menu-btn.active:active,
+.glass-sub-menu-btn:hover:active {
+  transition: transform 0.04s cubic-bezier(0.1, 0.9, 0.2, 1), background 0.04s cubic-bezier(0.1, 0.9, 0.2, 1), border-color 0.04s cubic-bezier(0.1, 0.9, 0.2, 1), box-shadow 0.04s cubic-bezier(0.1, 0.9, 0.2, 1) !important;
 }
 
 /* Hide scrollbar for Chrome, Safari, Edge, Firefox */
@@ -707,4 +753,45 @@ button[disabled]:hover {
 .no-scrollbar {
   -ms-overflow-style: none !important;
   scrollbar-width: none !important;
+}
+
+/* Ambient Background Layer Utilities */
+@keyframes ambient-float-slow-1 {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.10;
+  }
+  50% {
+    transform: translate3d(30px, -20px, 0) scale(1.08);
+    opacity: 0.16;
+  }
+}
+
+@keyframes ambient-float-slow-2 {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.08;
+  }
+  50% {
+    transform: translate3d(-25px, 25px, 0) scale(1.05);
+    opacity: 0.14;
+  }
+}
+
+.animate-ambient-slow-1 {
+  animation: ambient-float-slow-1 28s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.animate-ambient-slow-2 {
+  animation: ambient-float-slow-2 34s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.ambient-vignette-overlay {
+  background: radial-gradient(circle at 50% 50%, transparent 60%, rgba(0, 0, 0, 0.25) 100%);
+  pointer-events: none;
+}
+:root:not(.dark) .ambient-vignette-overlay {
+  background: radial-gradient(circle at 50% 50%, transparent 65%, rgba(0, 0, 0, 0.06) 100%);
 }

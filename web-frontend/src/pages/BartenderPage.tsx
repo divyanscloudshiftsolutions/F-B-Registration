@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Wine, Search, RotateCcw, Camera, CheckCircle2, AlertCircle, RefreshCw, VideoOff } from 'lucide-react';
+import { Wine, Search, RotateCcw, Camera, CheckCircle2, AlertCircle, RefreshCw, VideoOff, Clock, LogOut, Users, Mail, Phone, X, QrCode } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import type { Token } from '../types';
@@ -9,15 +9,31 @@ interface BartenderPageProps {
   setActiveTab: (tab: string) => void;
 }
 
-export const BartenderPage: React.FC<BartenderPageProps> = () => {
+export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActiveTab }) => {
   const { showToast } = useAuth();
   const [tokenInput, setTokenInput] = useState('');
   const [scannedToken, setScannedToken] = useState<Token | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isRedeeming, setIsRedeeming] = useState(false);
 
+  // Search Active Customer Sessions State
+  const [activeTokens, setActiveTokens] = useState<Token[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isLoadingTokens, setIsLoadingTokens] = useState(false);
+
+  // Modal States
+  const [extendingToken, setExtendingToken] = useState<Token | null>(null);
+  const [closingToken, setClosingToken] = useState<Token | null>(null);
+  const [extraMinutes, setExtraMinutes] = useState(60);
+  const [additionalAmount, setAdditionalAmount] = useState(500);
+  const [closeReason, setCloseReason] = useState('CHECKOUT');
+  const [isSubmittingExtend, setIsSubmittingExtend] = useState(false);
+  const [isSubmittingClose, setIsSubmittingClose] = useState(false);
+
   // Camera State
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const activeStreamRef = useRef<MediaStream | null>(null);
+  const cameraRequestIdRef = useRef(0);
   const [cameraActive, setCameraActive] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -25,9 +41,9 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
 
   const startCamera = async (mode: 'user' | 'environment' = facingMode) => {
     setCameraError(null);
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-    }
+    stopCamera();
+
+    const requestId = ++cameraRequestIdRef.current;
 
     try {
       let mediaStream: MediaStream;
@@ -44,6 +60,17 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
         });
       }
 
+      if (requestId !== cameraRequestIdRef.current) {
+        mediaStream.getTracks().forEach(track => {
+          try {
+            track.enabled = false;
+            track.stop();
+          } catch {}
+        });
+        return;
+      }
+
+      activeStreamRef.current = mediaStream;
       setStream(mediaStream);
       setCameraActive(true);
     } catch {
@@ -53,9 +80,39 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
   };
 
   const stopCamera = () => {
+    cameraRequestIdRef.current++;
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach(track => {
+        try {
+          track.enabled = false;
+          track.stop();
+        } catch {}
+      });
+      activeStreamRef.current = null;
+    }
     if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach(track => {
+        try {
+          track.enabled = false;
+          track.stop();
+        } catch {}
+      });
       setStream(null);
+    }
+    if (videoRef.current && videoRef.current.srcObject) {
+      try {
+        const srcObj = videoRef.current.srcObject as MediaStream;
+        if (srcObj && srcObj.getTracks) {
+          srcObj.getTracks().forEach(track => {
+            try {
+              track.enabled = false;
+              track.stop();
+            } catch {}
+          });
+        }
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      } catch {}
     }
     setCameraActive(false);
   };
@@ -76,10 +133,109 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
     }
   }, [cameraActive, stream]);
 
+  // Automatically handle camera state based on activeTab
   useEffect(() => {
+    if (activeTab === 'bartender/scan' && !scannedToken) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
     return () => {
       stopCamera();
     };
+  }, [activeTab, scannedToken]);
+
+  // Page visibility & window focus camera lifecycle management
+  const cameraActiveRef = useRef(cameraActive);
+  const shouldResumeRef = useRef(false);
+
+  useEffect(() => {
+    cameraActiveRef.current = cameraActive;
+  }, [cameraActive]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (cameraActiveRef.current) {
+          shouldResumeRef.current = true;
+          stopCamera();
+        }
+      } else {
+        if (shouldResumeRef.current) {
+          shouldResumeRef.current = false;
+          if (activeTab === 'bartender/scan' && !scannedToken) {
+            startCamera();
+          }
+        }
+      }
+    };
+
+    const handleWindowBlur = () => {
+      if (cameraActiveRef.current) {
+        shouldResumeRef.current = true;
+        stopCamera();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      if (shouldResumeRef.current) {
+        shouldResumeRef.current = false;
+        if (activeTab === 'bartender/scan' && !scannedToken) {
+          startCamera();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [activeTab, scannedToken]);
+
+  // Component unmount stream cleanup
+  useEffect(() => {
+    return () => {
+      cameraRequestIdRef.current++;
+      if (activeStreamRef.current) {
+        activeStreamRef.current.getTracks().forEach(track => {
+          try {
+            track.enabled = false;
+            track.stop();
+          } catch {}
+        });
+        activeStreamRef.current = null;
+      }
+      if (stream) {
+        stream.getTracks().forEach(track => {
+          try {
+            track.enabled = false;
+            track.stop();
+          } catch {}
+        });
+      }
+    };
+  }, []);
+
+  // Fetch active tokens on mount
+  const fetchActiveTokens = async () => {
+    setIsLoadingTokens(true);
+    try {
+      const tokensList = await api.getActiveTokens();
+      setActiveTokens(tokensList);
+    } catch (err) {
+      console.error('Failed to fetch active tokens:', err);
+    } finally {
+      setIsLoadingTokens(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchActiveTokens();
   }, []);
 
   const handleVerify = async (e?: React.FormEvent, customCode?: string) => {
@@ -95,6 +251,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
       if (res.success && res.token) {
         setScannedToken(res.token);
         showToast(`Token #${res.token.tokenNumber} verified successfully!`, 'success');
+        stopCamera(); // Stop camera once successfully verified
       } else {
         showToast('Token QR verification failed.', 'danger');
       }
@@ -117,6 +274,28 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
           ...prev, 
           redemptionsUsed: (prev.redemptionsUsed || 0) + 1 
         } : null);
+        fetchActiveTokens(); // Refresh background list
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Redemption failed. All drink quotas used or session closed.', 'danger');
+    } finally {
+      setIsRedeeming(false);
+    }
+  };
+
+  const handleRedeemForToken = async (token: Token) => {
+    setIsRedeeming(true);
+    try {
+      const res = await api.redeemDrink(token.id);
+      if (res.success) {
+        showToast(`Drink redemption recorded for ${token.customer?.name || 'Guest'}.`, 'success');
+        fetchActiveTokens(); // Refresh list
+        if (scannedToken?.id === token.id) {
+          setScannedToken(prev => prev ? { 
+            ...prev, 
+            redemptionsUsed: (prev.redemptionsUsed || 0) + 1 
+          } : null);
+        }
       }
     } catch (err: any) {
       showToast(err.message || 'Redemption failed. All drink quotas used or session closed.', 'danger');
@@ -135,12 +314,84 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
           ...prev, 
           redemptionsUsed: Math.max(0, (prev.redemptionsUsed || 0) - 1) 
         } : null);
+        fetchActiveTokens(); // Refresh background list
       }
     } catch (err: any) {
       showToast(err.message || 'Failed to revert drink redemption.', 'danger');
     }
   };
 
+  // Close/Checkout modal submit handler
+  const handleCloseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!closingToken) return;
+    setIsSubmittingClose(true);
+    try {
+      await api.closeToken(closingToken.tokenNumber, closeReason);
+      showToast(`Session ${closingToken.tokenNumber} checked out successfully.`, 'success');
+      setClosingToken(null);
+      fetchActiveTokens();
+      if (scannedToken?.tokenNumber === closingToken.tokenNumber) {
+        setScannedToken(null);
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Checkout failed.', 'danger');
+    } finally {
+      setIsSubmittingClose(false);
+    }
+  };
+
+  // Extend modal submit handler
+  const handleExtendSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!extendingToken) return;
+    setIsSubmittingExtend(true);
+    try {
+      await api.extendToken(extendingToken.tokenNumber, extraMinutes, additionalAmount);
+      showToast(`Session ${extendingToken.tokenNumber} extended by ${extraMinutes} mins.`, 'success');
+      setExtendingToken(null);
+      fetchActiveTokens();
+      if (scannedToken?.tokenNumber === extendingToken.tokenNumber) {
+        setScannedToken(prev => prev ? { 
+          ...prev, 
+          expiresAt: new Date(new Date(prev.expiresAt || prev.endTime).getTime() + extraMinutes * 60000).toISOString(),
+          endTime: new Date(new Date(prev.endTime).getTime() + extraMinutes * 60000).toISOString()
+        } : null);
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Extension failed.', 'danger');
+    } finally {
+      setIsSubmittingExtend(false);
+    }
+  };
+
+  // Filter Tokens list based on search query
+  const filteredTokens = searchQuery.trim() === '' 
+    ? activeTokens 
+    : activeTokens.filter(tk => {
+        const name = (tk.customer?.name || '').toLowerCase();
+        const phone = (tk.customer?.phoneNumber || '').toLowerCase();
+        const email = (tk.customer?.email || '').toLowerCase();
+        const tokenNum = (tk.tokenNumber || '').toLowerCase();
+        const q = searchQuery.toLowerCase();
+        return name.includes(q) || phone.includes(q) || email.includes(q) || tokenNum.includes(q);
+      });
+
+  const getSessionDuration = (createdAtStr: string) => {
+    const created = new Date(createdAtStr).getTime();
+    const now = new Date().getTime();
+    const diffMs = now - created;
+    if (diffMs < 0) return '0m';
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 60) return `${diffMins}m`;
+    const diffHours = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+    return `${diffHours}h ${mins}m`;
+  };
+
+  const isScanTab = activeTab !== 'bartender/checkins';
+
+  // Scanned Token redemptions helper
   const redemptionsUsed = scannedToken ? (scannedToken.redemptionsUsed || 0) : 0;
   const totalAllowed = scannedToken ? (scannedToken.totalRedemptionsAllowed || 2) : 2;
   const isQuotaDepleted = redemptionsUsed >= totalAllowed;
@@ -156,130 +407,146 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
           </div>
           <div>
             <h2 className="text-xl font-bold text-text-main tracking-wide">Bartender Service Station</h2>
-            <p className="text-xs text-text-muted">Scan guest QR pass or enter token number to verify and dispense drinks</p>
+            <p className="text-xs text-text-muted">
+              {isScanTab 
+                ? "Scan guest QR pass or enter token manually to verify and redeem drink quota" 
+                : "Manage and search active guest check-in sessions with quick action tools"}
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {cameraActive && (
-            <button
-              onClick={toggleFacingMode}
-              className="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all premium-btn-secondary active"
-              title="Switch Camera Source"
-            >
-              <div className="nav-icon-badge">
-                <RefreshCw size={12} />
-              </div>
-              <span>{facingMode === 'user' ? 'Laptop Webcam' : 'External Scanner'}</span>
-            </button>
-          )}
-
-          {!cameraActive ? (
-            <button
-              onClick={() => startCamera(facingMode)}
-              className="px-4 py-2 rounded-xl primary-btn bg-emerald-500 text-xs font-bold transition-all flex items-center gap-1.5"
-            >
-              <div className="nav-icon-badge">
-                <Camera size={14} />
-              </div>
-              <span>Enable Camera Scanner</span>
-            </button>
-          ) : (
-            <button
-              onClick={stopCamera}
-              className="px-4 py-2 rounded-xl premium-btn-secondary text-red-400 border-red-500/30 bg-red-500/5 text-xs font-bold transition-all flex items-center gap-1.5"
-            >
-              <div className="nav-icon-badge">
-                <VideoOff size={14} />
-              </div>
-              <span>Stop Camera Scanner</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Main Dual Workstation Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-        
-        {/* Left Workstation Panel: Scanner & Search */}
-        <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-6">
-          <h3 className="text-sm font-bold uppercase text-[#8D6CE5] tracking-wider">1. Pass Verification Terminal</h3>
-
-          {/* Camera View / Reticle Box */}
-          <div className={`relative rounded-2xl overflow-hidden border border-border-main aspect-video flex flex-col items-center justify-center ${
-            cameraActive ? 'bg-black' : 'bg-bg-primary'
-          }`}>
-            {cameraActive ? (
-              <>
-                <video 
-                  ref={videoRef} 
-                  autoPlay 
-                  playsInline 
-                  muted 
-                  className="w-full h-full object-cover" 
-                />
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-48 h-48 border-2 border-[#8D6CE5] rounded-3xl animate-pulse flex items-center justify-center">
-                    <span className="text-[10px] text-[#8D6CE5] font-extrabold uppercase tracking-widest bg-black/60 px-2 py-1 rounded-md">Align QR Code</span>
-                  </div>
+        {isScanTab && (
+          <div className="flex items-center gap-2">
+            {cameraActive && (
+              <button
+                onClick={toggleFacingMode}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all premium-btn-secondary"
+                title="Switch Camera Source"
+              >
+                <div className="nav-icon-badge">
+                  <RefreshCw size={12} />
                 </div>
-              </>
+                <span>{facingMode === 'user' ? 'Laptop Webcam' : 'External Scanner'}</span>
+              </button>
+            )}
+
+            {!cameraActive ? (
+              <button
+                onClick={() => startCamera(facingMode)}
+                className="px-4 py-2 rounded-xl primary-btn bg-emerald-500 text-xs font-bold transition-all flex items-center gap-1.5"
+              >
+                <div className="nav-icon-badge">
+                  <Camera size={14} />
+                </div>
+                <span>Enable Camera Scanner</span>
+              </button>
             ) : (
-              <div className="text-center p-6 space-y-3">
-                <Camera className="mx-auto text-text-muted" size={40} />
-                <p className="text-xs text-text-muted">Click &quot;Enable Camera Scanner&quot; above to activate live QR scanner</p>
-                {cameraError && (
-                  <p className="text-xs dark:text-amber-400 text-amber-700 font-semibold">{cameraError}</p>
-                )}
-              </div>
+              <button
+                onClick={stopCamera}
+                className="px-4 py-2 rounded-xl premium-btn-secondary text-red-400 border-red-500/30 bg-red-500/5 text-xs font-bold transition-all flex items-center gap-1.5"
+              >
+                <div className="nav-icon-badge">
+                  <VideoOff size={14} />
+                </div>
+                <span>Stop Camera Scanner</span>
+              </button>
             )}
           </div>
+        )}
 
-          {/* Manual Token Lookup Form */}
-          <form onSubmit={handleVerify} className="space-y-3 pt-2">
-            <label className="block text-xs font-semibold text-text-muted">Or Enter Token Code Manually</label>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3.5 top-3 text-text-muted" size={18} />
-                <input
-                  type="text"
-                  value={tokenInput}
-                  onChange={e => setTokenInput(e.target.value.toUpperCase())}
-                  placeholder="e.g. TK-108"
-                  className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5]"
-                />
+        {!isScanTab && (
+          <button 
+            onClick={fetchActiveTokens}
+            className="px-4 py-2 rounded-xl premium-btn-secondary text-xs font-bold transition-all flex items-center gap-1.5"
+          >
+            <RefreshCw size={14} className={isLoadingTokens ? 'animate-spin' : ''} />
+            <span>Sync Sessions ({activeTokens.length})</span>
+          </button>
+        )}
+      </div>
+
+      {/* ======================================================== */}
+      {/* 1. QR SCAN TAB */}
+      {/* ======================================================== */}
+      {isScanTab && (
+        <div className="max-w-xl mx-auto">
+          {!scannedToken ? (
+            /* Pass Verification Terminal Panel */
+            <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between pb-3 border-b border-border-main">
+                <h3 className="text-sm font-bold uppercase text-text-main tracking-wider">Pass Verification Terminal</h3>
+                <span className="text-[10px] text-text-muted font-mono uppercase tracking-wider">QR Code Reader</span>
               </div>
 
-              <button
-                type="submit"
-                disabled={isVerifying || !tokenInput.trim()}
-                title={isVerifying ? "Verifying..." : !tokenInput.trim() ? "Enter pass code" : undefined}
-                className="px-6 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 shadow-lg"
-              >
-                {isVerifying ? 'Verifying...' : 'Verify Pass'}
-              </button>
-            </div>
-          </form>
-        </div>
+              {/* Camera View / Reticle Box */}
+              <div className={`relative rounded-2xl overflow-hidden border border-border-main aspect-video flex flex-col items-center justify-center ${
+                cameraActive ? 'bg-black' : 'bg-bg-primary'
+              }`}>
+                {cameraActive ? (
+                  <>
+                    <video 
+                      ref={videoRef} 
+                      autoPlay 
+                      playsInline 
+                      muted 
+                      className="w-full h-full object-cover" 
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-48 h-48 border-2 border-[#8D6CE5] rounded-3xl animate-pulse flex items-center justify-center">
+                        <span className="text-[10px] text-[#8D6CE5] font-extrabold uppercase tracking-widest bg-black/60 px-2 py-1 rounded-md">Align QR Code</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center p-6 space-y-3">
+                    <Camera className="mx-auto text-text-muted" size={40} />
+                    <p className="text-xs text-text-muted">Click &quot;Enable Camera Scanner&quot; above to activate live QR scanner</p>
+                    {cameraError && (
+                      <p className="text-xs dark:text-amber-400 text-amber-700 font-semibold">{cameraError}</p>
+                    )}
+                  </div>
+                )}
+              </div>
 
-        {/* Right Workstation Panel: Verified Pass Details Card */}
-        <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-6">
-          <h3 className="text-sm font-bold uppercase text-[#8D6CE5] tracking-wider">2. Verified Guest Pass Summary</h3>
+              {/* Manual Token Lookup Form */}
+              <form onSubmit={handleVerify} className="space-y-3 pt-2">
+                <label className="block text-xs font-semibold text-text-muted">Or Enter Token Code Manually</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3.5 top-3 text-text-muted" size={18} />
+                    <input
+                      type="text"
+                      value={tokenInput}
+                      onChange={e => setTokenInput(e.target.value.toUpperCase())}
+                      placeholder="e.g. TKB-0104"
+                      className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5]"
+                    />
+                  </div>
 
-          {!scannedToken ? (
-            <div className="py-20 text-center text-text-muted text-xs space-y-2">
-              <Wine className="mx-auto text-gray-600" size={36} />
-              <p className="font-bold text-text-muted">No Guest Pass Verified Yet</p>
-              <p>Scan a guest QR pass or enter token code to verify drink quota</p>
+                  <button
+                    type="submit"
+                    disabled={isVerifying || !tokenInput.trim()}
+                    title={isVerifying ? "Verifying..." : !tokenInput.trim() ? "Enter pass code" : undefined}
+                    className="px-6 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 shadow-lg cursor-pointer"
+                  >
+                    {isVerifying ? 'Verifying...' : 'Verify Pass'}
+                  </button>
+                </div>
+              </form>
             </div>
           ) : (
-            <div className="space-y-6 animate-fadeIn">
-              
+            /* Verified Guest Pass Summary Panel */
+            <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between pb-3 border-b border-border-main">
+                <h3 className="text-sm font-bold uppercase text-text-main tracking-wider">Verified Guest Pass Summary</h3>
+                <span className="text-[10px] text-text-muted font-mono uppercase tracking-wider">Redemption Console</span>
+              </div>
+
               {/* Token Number & Status Header */}
               <div className="p-4 rounded-2xl bg-bg-primary border border-border-main flex items-center justify-between">
                 <div>
                   <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block">Token Pass</span>
-                  <span className="font-mono text-2xl font-black text-[#8D6CE5]">{scannedToken.tokenNumber}</span>
+                  <span className="font-mono text-2xl font-black text-text-main">{scannedToken.tokenNumber}</span>
                 </div>
 
                 <span
@@ -298,12 +565,17 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between p-3 rounded-xl bg-bg-primary border border-border-main">
                   <span className="text-text-muted">Guest Name:</span>
-                  <span className="font-bold text-text-main text-sm">{scannedToken.customer?.name || 'Guest'}</span>
+                  <span className="font-bold text-text-main text-sm">{scannedToken.customer?.name || 'Walk-in Guest'}</span>
                 </div>
 
                 <div className="flex justify-between p-3 rounded-xl bg-bg-primary border border-border-main">
                   <span className="text-text-muted">Phone Contact:</span>
                   <span className="font-mono text-text-muted">{scannedToken.customer?.phoneNumber || '—'}</span>
+                </div>
+
+                <div className="flex justify-between p-3 rounded-xl bg-bg-primary border border-border-main">
+                  <span className="text-text-muted">Email Contact:</span>
+                  <span className="font-mono text-text-muted truncate max-w-[200px]" title={scannedToken.customer?.email}>{scannedToken.customer?.email || '—'}</span>
                 </div>
 
                 <div className="flex justify-between p-3 rounded-xl bg-bg-primary border border-border-main">
@@ -316,7 +588,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
               <div className="p-4 rounded-2xl bg-bg-primary border border-border-main space-y-2">
                 <div className="flex justify-between text-xs font-bold">
                   <span className="text-text-muted">Drink Quota Allowance:</span>
-                  <span className={isQuotaDepleted ? 'dark:text-red-400 text-red-700' : 'dark:text-emerald-400 text-emerald-700'}>
+                  <span className={isQuotaDepleted ? 'dark:text-red-400 text-red-700 font-extrabold' : 'dark:text-emerald-400 text-emerald-700 font-extrabold'}>
                     {redemptionsUsed} / {totalAllowed} Drinks Used
                   </span>
                 </div>
@@ -324,7 +596,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
                 <div className="w-full h-3 rounded-full bg-bg-card overflow-hidden">
                   <div 
                     className={`h-full transition-all duration-500 ${
-                      isQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'
+                      isQuotaDepleted ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'
                     }`}
                     style={{ width: `${Math.min(100, (redemptionsUsed / totalAllowed) * 100)}%` }}
                   />
@@ -336,8 +608,8 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
                 <button
                   onClick={handleRedeem}
                   disabled={isRedeeming || isQuotaDepleted}
-                  title={isRedeeming ? "Dispensing..." : isQuotaDepleted ? "No quota left" : undefined}
-                  className="w-full py-3.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl disabled:opacity-50"
+                  title={isRedeeming ? "Dispensing..." : isQuotaDepleted ? "Drink quota limit reached for this session." : undefined}
+                  className="w-full py-3.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl disabled:opacity-50 cursor-pointer"
                 >
                   <div className="nav-icon-badge">
                     <Wine size={14} />
@@ -345,24 +617,329 @@ export const BartenderPage: React.FC<BartenderPageProps> = () => {
                   <span>{isRedeeming ? 'Dispensing Drink...' : 'Dispense 1 Drink'}</span>
                 </button>
 
-                {redemptionsUsed > 0 && (
+                <div className="flex gap-2">
+                  {redemptionsUsed > 0 && (
+                    <button
+                      onClick={handleUndo}
+                      className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-bold text-amber-300 border border-amber-500/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    >
+                      <RotateCcw size={14} /> Revert Last Drink
+                    </button>
+                  )}
                   <button
-                    onClick={handleUndo}
-                    className="w-full py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-bold text-amber-300 border border-amber-500/30 flex items-center justify-center gap-2 transition-all"
+                    onClick={() => {
+                      setScannedToken(null);
+                      setTokenInput('');
+                      startCamera();
+                    }}
+                    className="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all premium-btn-secondary flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <RotateCcw size={14} /> Revert Last Drink Redemption
+                    <Camera size={14} /> Scan Next
                   </button>
-                )}
+                </div>
               </div>
+            </div>
+          )}
+        </div>
+      )}
 
+      {/* ======================================================== */}
+      {/* 2. CHECK-INS TAB */}
+      {/* ======================================================== */}
+      {!isScanTab && (
+        <div className="space-y-6">
+          
+          {/* Global Search Bar */}
+          <div className="glass-panel p-6 rounded-3xl border border-border-main">
+            <div className="relative">
+              <Search className="absolute left-4 top-3.5 text-text-muted" size={20} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Global Session Search (Search by Guest Name, Phone Number, Email, or Token code...)"
+                className="w-full bg-bg-primary border border-border-main rounded-2xl pl-12 pr-4 py-3 text-sm text-text-main placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5] font-semibold"
+              />
+            </div>
+            {searchQuery.trim() !== '' && (
+              <p className="text-[10px] text-text-muted mt-2 pl-2">
+                Found {filteredTokens.length} matching guest sessions in database.
+              </p>
+            )}
+          </div>
+
+          {/* Active Checked-in Customers List */}
+          {isLoadingTokens ? (
+            <div className="glass-panel p-12 text-center text-text-muted text-sm rounded-3xl border border-border-main">
+              Loading active check-ins...
+            </div>
+          ) : filteredTokens.length === 0 ? (
+            <div className="glass-panel p-16 text-center text-text-muted text-sm rounded-3xl border border-border-main space-y-2">
+              <Users className="mx-auto text-gray-600" size={40} />
+              <p className="font-bold text-text-main">No Active Checked-In Guests</p>
+              <p className="text-xs">No guest matches the search queries, or no sessions are currently checked in.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredTokens.map(tk => {
+                const isTokenQuotaDepleted = tk.redemptionsUsed >= tk.totalRedemptionsAllowed;
+                return (
+                  <div 
+                    key={tk.id} 
+                    className="glass-panel p-6 rounded-3xl border border-border-main flex flex-col lg:flex-row lg:items-center justify-between gap-6 transition-all duration-300 hover:border-border-main/80 hover:shadow-lg relative overflow-hidden"
+                  >
+                    {/* Customer Info and Headcount Column */}
+                    <div className="space-y-2 flex-1 min-w-0">
+                      <div className="flex items-center gap-3">
+                        <h4 className="text-base font-black text-text-main truncate">
+                          {tk.customer?.name || 'Walk-in Guest'}
+                        </h4>
+                        
+                        {/* Token Code Badge (White text) */}
+                        <span className="px-2 py-0.5 rounded bg-bg-card border border-border-main/50 text-[10px] font-mono font-bold text-text-main">
+                          {tk.tokenNumber}
+                        </span>
+
+                        {/* Status Badges */}
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {tk.status}
+                        </span>
+
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-primary/10 text-[#8D6CE5] border border-[#8D6CE5]/20">
+                          {tk.deliveryMode || 'EMAIL_QR'}
+                        </span>
+                      </div>
+
+                      {/* Phone, Email, Table, and headcount grids */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-y-1 gap-x-4 text-xs text-text-muted">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Phone size={12} className="shrink-0 text-text-muted" />
+                          <span className="font-mono truncate">{tk.customer?.phoneNumber || 'N/A'}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Mail size={12} className="shrink-0 text-text-muted" />
+                          <span className="font-mono truncate" title={tk.customer?.email}>{tk.customer?.email || '—'}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Users size={12} className="shrink-0 text-text-muted" />
+                          <span>Party Size: <span className="font-bold text-text-main">{tk.personsCount} Guests</span></span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-y-1 gap-x-4 text-xs text-text-muted pt-1 border-t border-border-main/20">
+                        <div>
+                          Table/Zone: <span className="font-bold text-text-main">{tk.tableNumber || 'Walking / Bar'}</span>
+                        </div>
+                        <div>
+                          Checked In: <span className="font-bold text-text-main">{new Date(tk.createdAt || tk.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <div>
+                          Session Duration: <span className="font-bold text-text-main">{getSessionDuration(tk.createdAt || tk.startTime)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Pricing, Redemptions progress, and Actions layout */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center lg:justify-end gap-6 shrink-0 pt-4 lg:pt-0 border-t lg:border-t-0 border-border-main/30">
+                      
+                      {/* Drink Quota Status */}
+                      <div className="text-left sm:text-right space-y-1">
+                        <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Redemption Progress</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-sm font-black font-mono ${isTokenQuotaDepleted ? 'text-red-400' : 'text-emerald-400'}`}>
+                            {tk.redemptionsUsed} / {tk.totalRedemptionsAllowed}
+                          </span>
+                          <span className="text-[10px] text-text-muted font-semibold">Drinks Used</span>
+                        </div>
+                        <div className="w-24 h-1.5 rounded-full bg-bg-card overflow-hidden">
+                          <div 
+                            className={`h-full ${isTokenQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'}`}
+                            style={{ width: `${Math.min(100, (tk.redemptionsUsed / tk.totalRedemptionsAllowed) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Total Amount Paid */}
+                      <div className="text-left sm:text-right">
+                        <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Gate Payment</span>
+                        <span className="text-sm font-black text-text-main font-mono">₹{tk.amountPaid}</span>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleRedeemForToken(tk)}
+                          disabled={isRedeeming || isTokenQuotaDepleted}
+                          title={isTokenQuotaDepleted ? "Drink quota limit reached for this session." : "Dispense 1 Drink"}
+                          className="px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-600 text-emerald-200 hover:text-white text-xs font-bold uppercase tracking-wider border border-emerald-500/30 transition-all flex items-center gap-1 disabled:opacity-40 cursor-pointer"
+                        >
+                          <Wine size={12} /> Redeem
+                        </button>
+
+                        <button
+                          onClick={() => setExtendingToken(tk)}
+                          className="px-3 py-2 rounded-xl dark:bg-amber-500/10 bg-amber-500/5 hover:dark:bg-amber-500/20 hover:bg-amber-500/10 dark:text-amber-300 text-amber-700 text-xs font-bold border border-amber-500/30 transition-all flex items-center gap-1 cursor-pointer"
+                          title="Extend Session"
+                        >
+                          <Clock size={12} /> Extend
+                        </button>
+
+                        <button
+                          onClick={() => setClosingToken(tk)}
+                          className="px-3 py-2 rounded-xl dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 dark:text-red-400 text-red-700 text-xs font-bold border border-red-500/30 transition-all flex items-center gap-1 cursor-pointer"
+                          title="Checkout Session"
+                        >
+                          <LogOut size={12} /> Checkout
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setScannedToken(tk);
+                            setActiveTab('bartender/scan');
+                          }}
+                          className="px-3 py-2 rounded-xl text-xs font-bold transition-all premium-btn-secondary flex items-center gap-1 cursor-pointer"
+                          title="Enable Focused QR Scan View"
+                        >
+                          <QrCode size={12} /> Scan Mode
+                        </button>
+                      </div>
+
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
 
         </div>
+      )}
 
-      </div>
+      {/* ======================================================== */}
+      {/* MODALS */}
+      {/* ======================================================== */}
+
+      {/* 1. EXTEND SESSION MODAL */}
+      {extendingToken && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
+            <button 
+              onClick={() => setExtendingToken(null)}
+              className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-2 dark:text-amber-400 text-amber-700 font-bold text-sm">
+              <Clock size={18} /> Extend Customer Session
+            </div>
+
+            <p className="text-xs text-text-muted">
+              Token Number: <span className="font-mono font-bold text-text-main">{extendingToken.tokenNumber}</span> ({extendingToken.customer?.name})
+            </p>
+
+            <form onSubmit={handleExtendSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Additional Minutes</label>
+                <select
+                  value={extraMinutes}
+                  onChange={e => setExtraMinutes(Number(e.target.value))}
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
+                >
+                  <option value={30}>30 Minutes</option>
+                  <option value={60}>60 Minutes (1 Hour)</option>
+                  <option value={120}>120 Minutes (2 Hours)</option>
+                  <option value={180}>180 Minutes (3 Hours)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Additional Extension Fee (₹)</label>
+                <input
+                  type="number"
+                  value={additionalAmount}
+                  onChange={e => setAdditionalAmount(Number(e.target.value))}
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
+                  required
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setExtendingToken(null)}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingExtend}
+                  title={isSubmittingExtend ? "Request in progress" : undefined}
+                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  {isSubmittingExtend ? 'Extending...' : 'Confirm Extension'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 2. CLOSE / CHECKOUT SESSION MODAL */}
+      {closingToken && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
+            <button 
+              onClick={() => setClosingToken(null)}
+              className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-2 text-text-main font-bold text-sm">
+              <LogOut size={18} className="text-red-500" /> Checkout / Close Session
+            </div>
+
+            <p className="text-xs text-text-muted">
+              Token Number: <span className="font-mono font-bold text-text-main">{closingToken.tokenNumber}</span> ({closingToken.customer?.name})
+            </p>
+
+            <form onSubmit={handleCloseSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Select Close Reason</label>
+                <select
+                  value={closeReason}
+                  onChange={e => setCloseReason(e.target.value)}
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
+                >
+                  <option value="CHECKOUT">Standard Guest Checkout</option>
+                  <option value="EXPIRED">Session Time Expired</option>
+                  <option value="CANCELLED">Session Cancelled by Reception</option>
+                </select>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setClosingToken(null)}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingClose}
+                  title={isSubmittingClose ? "Request in progress" : undefined}
+                  className="flex-1 py-2.5 rounded-xl bg-red-500/20 hover:bg-red-600 text-red-200 dark:text-red-100 hover:text-white text-xs font-bold uppercase tracking-wider border border-red-500/30 transition-all cursor-pointer"
+                >
+                  {isSubmittingClose ? 'Closing...' : 'Close & Release Table'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
 };
-

@@ -40,6 +40,8 @@ export const CheckInPage: React.FC = () => {
 
   // Stage 3: Camera & QR Scanner State
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const activeStreamRef = useRef<MediaStream | null>(null);
+  const cameraRequestIdRef = useRef(0);
   const [cameraActive, setCameraActive] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -193,9 +195,9 @@ export const CheckInPage: React.FC = () => {
   // Camera & QR control methods
   const startCamera = async (mode: 'user' | 'environment' = facingMode) => {
     setCameraError(null);
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-    }
+    stopCamera();
+
+    const requestId = ++cameraRequestIdRef.current;
 
     try {
       let mediaStream: MediaStream;
@@ -211,6 +213,17 @@ export const CheckInPage: React.FC = () => {
         });
       }
 
+      if (requestId !== cameraRequestIdRef.current) {
+        mediaStream.getTracks().forEach(track => {
+          try {
+            track.enabled = false;
+            track.stop();
+          } catch {}
+        });
+        return;
+      }
+
+      activeStreamRef.current = mediaStream;
       setStream(mediaStream);
       setCameraActive(true);
     } catch {
@@ -220,9 +233,39 @@ export const CheckInPage: React.FC = () => {
   };
 
   const stopCamera = () => {
+    cameraRequestIdRef.current++;
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach(track => {
+        try {
+          track.enabled = false;
+          track.stop();
+        } catch {}
+      });
+      activeStreamRef.current = null;
+    }
     if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach(track => {
+        try {
+          track.enabled = false;
+          track.stop();
+        } catch {}
+      });
       setStream(null);
+    }
+    if (videoRef.current && videoRef.current.srcObject) {
+      try {
+        const srcObj = videoRef.current.srcObject as MediaStream;
+        if (srcObj && srcObj.getTracks) {
+          srcObj.getTracks().forEach(track => {
+            try {
+              track.enabled = false;
+              track.stop();
+            } catch {}
+          });
+        }
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      } catch {}
     }
     setCameraActive(false);
   };
@@ -243,13 +286,93 @@ export const CheckInPage: React.FC = () => {
     }
   }, [cameraActive, stream, stage]);
 
+  // Automatically handle camera state based on active stage/subtab
   useEffect(() => {
+    if (stage === 3) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+      stopCamera();
+    };
+  }, [stage]);
+
+  // Page visibility & window focus camera lifecycle management
+  const cameraActiveRef = useRef(cameraActive);
+  const shouldResumeRef = useRef(false);
+
+  useEffect(() => {
+    cameraActiveRef.current = cameraActive;
+  }, [cameraActive]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (cameraActiveRef.current) {
+          shouldResumeRef.current = true;
+          stopCamera();
+        }
+      } else {
+        if (shouldResumeRef.current) {
+          shouldResumeRef.current = false;
+          if (stage === 3) {
+            startCamera();
+          }
+        }
       }
     };
-  }, [stream]);
+
+    const handleWindowBlur = () => {
+      if (cameraActiveRef.current) {
+        shouldResumeRef.current = true;
+        stopCamera();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      if (shouldResumeRef.current) {
+        shouldResumeRef.current = false;
+        if (stage === 3) {
+          startCamera();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [stage]);
+
+  // Component unmount stream cleanup
+  useEffect(() => {
+    return () => {
+      cameraRequestIdRef.current++;
+      if (activeStreamRef.current) {
+        activeStreamRef.current.getTracks().forEach(track => {
+          try {
+            track.enabled = false;
+            track.stop();
+          } catch {}
+        });
+        activeStreamRef.current = null;
+      }
+      if (stream) {
+        stream.getTracks().forEach(track => {
+          try {
+            track.enabled = false;
+            track.stop();
+          } catch {}
+        });
+      }
+    };
+  }, []);
 
   const handleVerifyQR = async (code: string) => {
     const cleanCode = code.trim();
@@ -367,18 +490,17 @@ export const CheckInPage: React.FC = () => {
       : (t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-'));
     return isAvailable && isCapacitySuitable && matchesCategory;
   });
-
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       
       {/* Wizard Progress Header Bar */}
-      <div className="glass-panel p-6 rounded-2xl border border-border-main relative overflow-hidden">
+      <div className="glass-panel p-4 rounded-2xl border border-border-main relative overflow-hidden">
         {/* Background connector line */}
-        <div className="absolute left-[6%] right-[6%] top-1/2 -translate-y-1/2 h-[2px] bg-bg-primary -z-10" />
+        <div className="absolute left-[6%] right-[6%] top-1/2 -translate-y-1/2 h-[2px] bg-amber-500/10 dark:bg-amber-300/10 -z-10" />
         
         {/* Progress fill line */}
         <div 
-          className="absolute left-[6%] top-1/2 -translate-y-1/2 h-[2px] bg-[#8D6CE5] transition-all duration-500 ease-out -z-10"
+          className="absolute left-[6%] top-1/2 -translate-y-1/2 h-[2px] bg-gradient-to-r from-amber-500 to-amber-600 dark:from-amber-400 dark:to-amber-500 shadow-[0_0_8px_rgba(217,119,6,0.3)] dark:shadow-[0_0_8px_rgba(251,191,36,0.4)] transition-all duration-500 ease-out -z-10"
           style={{ width: `${((stage - 1) / 4) * 88}%` }}
         />
 
@@ -393,20 +515,20 @@ export const CheckInPage: React.FC = () => {
             const isCompleted = stage > step.num;
             const isActive = stage === step.num;
             return (
-              <div key={step.num} className="flex flex-col items-center gap-2 relative z-10">
+              <div key={step.num} className="flex flex-col items-center gap-1.5 relative z-10">
                 <div 
-                  className={`w-9 h-9 rounded-full flex items-center justify-center text-xs transition-all duration-300 ${
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs transition-all duration-300 ${
                     isCompleted 
-                      ? 'bg-emerald-500 text-black font-black shadow-lg shadow-emerald-500/20' 
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 dark:from-amber-400 dark:to-amber-500 text-black font-black shadow-lg shadow-amber-500/20 border border-amber-600/30' 
                       : isActive 
-                      ? 'dark:bg-amber-300 bg-amber-700 dark:text-black text-white font-black shadow-[0_0_8px_rgba(180,83,9,0.15)] dark:shadow-[0_0_8px_rgba(252,211,77,0.15)] ring-2 ring-amber-700/10 dark:ring-amber-300/10 scale-110' 
-                      : 'bg-bg-primary text-text-muted border border-border-main'
+                      ? 'bg-amber-500/10 dark:bg-amber-300/15 text-amber-700 dark:text-amber-300 font-black shadow-[0_0_12px_rgba(217,119,6,0.25)] dark:shadow-[0_0_15px_rgba(251,191,36,0.3)] ring-2 ring-amber-500/25 dark:ring-amber-300/30 border border-amber-500/40 dark:border-amber-300/50 scale-105' 
+                      : 'bg-amber-500/[0.03] dark:bg-amber-300/[0.03] text-amber-600/40 dark:text-amber-400/40 border border-amber-500/10 dark:border-amber-300/10'
                   }`}
                 >
                   {isCompleted ? '✓' : step.num}
                 </div>
                 <span className={`text-[10px] uppercase tracking-wider font-extrabold transition-all hidden md:block ${
-                  isActive ? 'text-[#8D6CE5]' : isCompleted ? 'dark:text-emerald-400 text-emerald-700' : 'text-text-muted'
+                  isActive ? 'text-amber-700 dark:text-amber-300' : isCompleted ? 'text-amber-600 dark:text-amber-400/80' : 'text-text-muted/60'
                 }`}>
                   {step.label}
                 </span>
@@ -416,7 +538,7 @@ export const CheckInPage: React.FC = () => {
         </div>
 
         {/* Mobile-only status text tracker */}
-        <div className="text-center mt-4 text-[10px] uppercase tracking-widest font-black text-[#8D6CE5] md:hidden">
+        <div className="text-center mt-2.5 text-[10px] uppercase tracking-widest font-black text-amber-600 dark:text-amber-400 md:hidden">
           Step {stage} of 5: {[
             'Customer Info',
             'Table Seating',
@@ -441,8 +563,8 @@ export const CheckInPage: React.FC = () => {
                   <User size={20} />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-text-main">Stage 1: Guest Information & Pass Channel</h3>
-                  <p className="text-xs text-text-muted">Select pass delivery channel and enter customer contact details</p>
+                  <h3 className="text-lg font-bold text-text-main">Stage 1: Guest Information</h3>
+                  <p className="text-xs text-text-muted">Enter customer contact details for session check-in</p>
                 </div>
               </div>
 
@@ -454,7 +576,7 @@ export const CheckInPage: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   <div>
                     <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
-                      <Phone size={14} className="text-[#8D6CE5]" /> Phone Number <span className="dark:text-red-400 text-red-700">*</span>
+                      <Phone size={14} className="text-text-main" /> Phone Number <span className="dark:text-red-400 text-red-700">*</span>
                     </label>
                     <input
                       type="tel"
@@ -484,7 +606,7 @@ export const CheckInPage: React.FC = () => {
 
                   <div>
                     <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
-                      <User size={14} className="text-[#8D6CE5]" /> Customer Full Name <span className="dark:text-red-400 text-red-700">*</span>
+                      <User size={14} className="text-text-main" /> Customer Full Name <span className="dark:text-red-400 text-red-700">*</span>
                     </label>
                     <input
                       type="text"
@@ -511,7 +633,7 @@ export const CheckInPage: React.FC = () => {
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-xs font-semibold text-text-muted flex items-center gap-1.5">
-                        <Mail size={14} className="text-[#8D6CE5]" /> Email Address
+                        <Mail size={14} className="text-text-main" /> Email Address
                       </label>
                       <span className="text-[10px] font-extrabold uppercase tracking-wider dark:text-red-400 text-red-700">
                         REQUIRED
@@ -550,7 +672,7 @@ export const CheckInPage: React.FC = () => {
 
                   <div>
                     <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
-                      <Users size={14} className="text-[#8D6CE5]" /> Guest Headcount (Persons)
+                      <Users size={14} className="text-text-main" /> Guest Headcount (Persons)
                     </label>
                     
                     {/* Custom Increment/Decrement and Editable Input Control */}
@@ -627,10 +749,10 @@ export const CheckInPage: React.FC = () => {
                           }}
                           className={`px-3.5 py-2.5 text-xs font-bold transition-all ${
                             personsCount === count
-                              ? 'premium-tab-secondary active'
+                              ? 'premium-tab-secondary active active:scale-95'
                               : count > maxCapacity 
                               ? 'bg-bg-primary text-gray-600 border-border-main line-through opacity-50 cursor-not-allowed'
-                              : 'premium-tab-secondary'
+                              : 'premium-tab-secondary active:scale-95'
                           }`}
                         >
                           {count} {count === 1 ? 'Guest' : 'Guests'}
@@ -719,11 +841,11 @@ export const CheckInPage: React.FC = () => {
                               Unavailable
                             </span>
                           ) : isSel ? (
-                            <CheckCircle2 size={18} className="text-[#8D6CE5]" />
+                            <CheckCircle2 size={18} className="text-text-main" />
                           ) : null}
                         </div>
                         <div>
-                          <p className="text-2xl font-black text-[#8D6CE5]">₹{rc.ratePerPerson} <span className="text-xs text-text-muted font-normal">/ person</span></p>
+                          <p className="text-2xl font-black text-text-main">₹{rc.ratePerPerson} <span className="text-xs text-text-muted font-normal">/ person</span></p>
                           <p className="text-[11px] dark:text-amber-300 text-amber-700 mt-1 font-semibold">
                             {rc.redemptionsPerPerson || 2} Drinks Included • {Math.round((rc.baseTimeMinutes || 120) / 60)} Hours
                           </p>
@@ -1019,19 +1141,19 @@ export const CheckInPage: React.FC = () => {
               <div className="glass-panel p-6 rounded-2xl border border-border-main text-left space-y-3 font-mono text-xs max-w-md mx-auto">
                 <div className="flex justify-between border-b border-border-main pb-2">
                   <span className="text-text-muted">Token Number:</span>
-                  <span className="font-bold text-[#8D6CE5]">{createdToken.tokenNumber}</span>
+                  <span className="font-bold text-text-main">{createdToken.tokenNumber}</span>
                 </div>
                 <div className="flex justify-between border-b border-border-main pb-2">
                   <span className="text-text-muted">Customer Phone:</span>
                   <span className="text-text-main">{createdToken.customer?.phoneNumber}</span>
                 </div>
                 <div className="flex justify-between border-b border-border-main pb-2">
-                  <span className="text-text-muted">Drink Allowance:</span>
-                  <span className="dark:text-amber-300 text-amber-700 font-bold">{totalAllowedDrinks} Drinks ({createdToken.redemptionsUsed} Used)</span>
+                  <span className="text-text-muted">Customer Email:</span>
+                  <span className="text-text-main truncate max-w-[200px]" title={createdToken.customer?.email}>{createdToken.customer?.email || '—'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-text-muted">Delivery Channel:</span>
-                  <span className="dark:text-emerald-400 text-emerald-700 font-bold">{createdToken.deliveryMode}</span>
+                  <span className="text-text-muted">Drink Allowance:</span>
+                  <span className="dark:text-amber-300 text-amber-700 font-bold">{totalAllowedDrinks} Drinks ({createdToken.redemptionsUsed} Used)</span>
                 </div>
               </div>
 
@@ -1051,7 +1173,7 @@ export const CheckInPage: React.FC = () => {
           {/* Header Card */}
           <div className="glass-panel p-6 rounded-3xl border border-border-main space-y-5 shadow-xl">
             <div className="flex items-center gap-2.5 pb-3.5 border-b border-border-main">
-              <Receipt size={18} className="text-[#8D6CE5]" />
+              <Receipt size={18} className="text-text-main" />
               <h4 className="text-xs font-black text-text-main uppercase tracking-wider font-sans">
                 {selectedTableId ? 'Live Check-In Receipt' : 'Live Rate Comparison'}
               </h4>
@@ -1072,10 +1194,8 @@ export const CheckInPage: React.FC = () => {
                     <span className="font-mono font-bold text-text-main text-right">{phoneNumber || '—'}</span>
                   </div>
                   <div className="flex justify-between items-center text-text-muted">
-                    <span>Channel:</span>
-                    <span className="font-bold dark:text-emerald-400 text-emerald-700 text-right">
-                      📩 Digital Email QR
-                    </span>
+                    <span>Email:</span>
+                    <span className="font-mono font-bold text-text-main text-right truncate max-w-[160px]" title={email}>{email || '—'}</span>
                   </div>
                 </div>
 
@@ -1084,7 +1204,7 @@ export const CheckInPage: React.FC = () => {
                   <p className="text-[9px] font-black uppercase text-text-muted tracking-widest">Seating Assignment</p>
                   <div className="flex justify-between items-center text-text-muted">
                     <span>Selected Area:</span>
-                    <span className="font-bold text-[#8D6CE5] text-right">{currentRateCard.name}</span>
+                    <span className="font-bold text-text-main text-right">{currentRateCard.name}</span>
                   </div>
                   <div className="flex justify-between items-center text-text-muted">
                     <span>Assigned Table:</span>
@@ -1132,7 +1252,7 @@ export const CheckInPage: React.FC = () => {
                     <p className="text-[10px] text-text-muted mt-0.5">Includes entry cover & drinks</p>
                   </div>
                   <div className="text-right">
-                    <span className="text-2xl font-black text-[#8D6CE5]">₹{calculatedTotal}</span>
+                    <span className="text-2xl font-black text-text-main">₹{calculatedTotal}</span>
                   </div>
                 </div>
               </div>
@@ -1200,7 +1320,7 @@ export const CheckInPage: React.FC = () => {
                         )}
                         <div className="flex justify-between items-baseline pt-1.5 border-t border-border-main/50 mt-1">
                           <span className="font-bold text-text-main">Estimated Cost:</span>
-                          <span className="text-base font-black text-[#8D6CE5]">₹{standardTotal}</span>
+                          <span className="text-base font-black text-text-main">₹{standardTotal}</span>
                         </div>
                       </div>
                     </div>
@@ -1264,7 +1384,7 @@ export const CheckInPage: React.FC = () => {
                         )}
                         <div className="flex justify-between items-baseline pt-1.5 border-t border-border-main/50 mt-1">
                           <span className="font-bold text-text-main">Estimated Cost:</span>
-                          <span className="text-base font-black text-[#8D6CE5]">₹{premiumTotal}</span>
+                          <span className="text-base font-black text-text-main">₹{premiumTotal}</span>
                         </div>
                       </div>
                     </div>
