@@ -27,54 +27,65 @@ const AppContent: React.FC = () => {
   }
 
   const renderTabContent = () => {
-    switch (activeTab) {
-      case 'dashboard':
-        return (
-          <DashboardPage 
-            onNavigate={(tabId, adminSubtab) => {
-              if (adminSubtab) {
-                localStorage.setItem('bar_web_admin_subtab', adminSubtab);
-                window.dispatchEvent(new Event('storage'));
-              }
+    if (activeTab === 'dashboard') {
+      return (
+        <DashboardPage 
+          onNavigate={(tabId, adminSubtab) => {
+            if (tabId === 'admin' && adminSubtab) {
+              setActiveTab(`admin/${adminSubtab}`);
+            } else if (tabId === 'tables') {
+              setActiveTab('tables/layout');
+            } else {
               setActiveTab(tabId);
-            }} 
-          />
-        );
-      case 'checkin':
-        return <CheckInPage />;
-      case 'quick_attendance':
-        return <QuickAttendanceWebPage />;
-      case 'bartender':
-        return <BartenderPage />;
-      case 'tables':
-        return <TablesPage onNavigateToCheckIn={() => setActiveTab('checkin')} />;
-      case 'admin':
-        return <AdminPage />;
-      default:
-        return (
-          <DashboardPage 
-            onNavigate={(tabId, adminSubtab) => {
-              if (adminSubtab) {
-                localStorage.setItem('bar_web_admin_subtab', adminSubtab);
-                window.dispatchEvent(new Event('storage'));
-              }
-              setActiveTab(tabId);
-            }} 
-          />
-        );
+            }
+          }} 
+        />
+      );
     }
+    if (activeTab === 'checkin') {
+      return <CheckInPage />;
+    }
+    if (activeTab === 'quick_attendance') {
+      return <QuickAttendanceWebPage />;
+    }
+    if (activeTab.startsWith('bartender')) {
+      return <BartenderPage activeTab={activeTab} setActiveTab={setActiveTab} />;
+    }
+    if (activeTab.startsWith('tables')) {
+      return (
+        <TablesPage 
+          onNavigateToCheckIn={() => setActiveTab('checkin')} 
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+        />
+      );
+    }
+    if (activeTab.startsWith('admin')) {
+      return <AdminPage activeTab={activeTab} setActiveTab={setActiveTab} />;
+    }
+    return (
+      <DashboardPage 
+        onNavigate={(tabId, adminSubtab) => {
+          if (tabId === 'admin' && adminSubtab) {
+            setActiveTab(`admin/${adminSubtab}`);
+          } else if (tabId === 'tables') {
+            setActiveTab('tables/layout');
+          } else {
+            setActiveTab(tabId);
+          }
+        }} 
+      />
+    );
   };
 
   const getTabTitle = () => {
-    switch (activeTab) {
-      case 'dashboard': return 'Executive Management Dashboard';
-      case 'checkin': return 'Reception Check-In & Customer Registration';
-      case 'quick_attendance': return 'FaceMark Quick Facial Attendance Kiosk';
-      case 'bartender': return 'Bartender Drink Service Station';
-      case 'tables': return 'Live Seating Floor Plan & Tables';
-      case 'admin': return 'System Administration & Staff Portal';
-      default: return 'Bar Management System';
-    }
+    if (activeTab === 'dashboard') return 'Executive Management Dashboard';
+    if (activeTab === 'checkin') return 'Reception Check-In & Customer Registration';
+    if (activeTab === 'quick_attendance') return 'FaceMark Quick Facial Attendance Kiosk';
+    if (activeTab.startsWith('bartender')) return 'Bartender Drink Service Station';
+    if (activeTab.startsWith('tables')) return 'Live Seating Floor Plan & Tables';
+    if (activeTab.startsWith('admin')) return 'System Administration & Staff Portal';
+    return 'Bar Management System';
   };
 
   return (

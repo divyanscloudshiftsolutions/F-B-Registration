@@ -9,7 +9,8 @@ import {
   LogOut,
   X,
   UserCheck,
-  CalendarRange
+  CalendarRange,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Token } from '../types';
@@ -138,31 +139,39 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             onClick={() => onNavigate?.('checkin')}
             className="px-4 py-2.5 rounded-xl primary-btn text-xs font-bold flex items-center gap-2 shadow-md cursor-pointer"
           >
-            <UserCheck size={16} />
+            <div className="nav-icon-badge">
+              <UserCheck size={14} />
+            </div>
             <span>New Check-In</span>
           </button>
 
           <button
             onClick={() => onNavigate?.('tables')}
-            className="px-4 py-2.5 rounded-xl bg-bg-surface border border-border-main hover:bg-bg-hover text-text-muted hover:text-text-primary text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
+            className="px-4 py-2.5 text-xs font-semibold flex items-center gap-2 transition-all premium-btn-secondary"
           >
-            <Grid3X3 size={16} />
+            <div className="nav-icon-badge">
+              <Grid3X3 size={14} />
+            </div>
             <span>Table Layout</span>
           </button>
 
           <button
             onClick={() => onNavigate?.('tables')}
-            className="px-4 py-2.5 rounded-xl bg-bg-surface border border-border-main hover:bg-bg-hover text-text-muted hover:text-text-primary text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
+            className="px-4 py-2.5 text-xs font-semibold flex items-center gap-2 transition-all premium-btn-secondary"
           >
-            <CalendarRange size={16} />
+            <div className="nav-icon-badge">
+              <CalendarRange size={14} />
+            </div>
             <span>Reservations</span>
           </button>
 
           <button
             onClick={() => onNavigate?.('admin', 'customers')}
-            className="px-4 py-2.5 rounded-xl bg-bg-surface border border-border-main hover:bg-bg-hover text-text-muted hover:text-text-primary text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
+            className="px-4 py-2.5 text-xs font-semibold flex items-center gap-2 transition-all premium-btn-secondary"
           >
-            <Users size={16} />
+            <div className="nav-icon-badge">
+              <Users size={14} />
+            </div>
             <span>Customer Sessions</span>
           </button>
         </div>
@@ -177,9 +186,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           </div>
           <button 
             onClick={() => { refreshTokens(); refreshTables(); }}
-            className="px-3 py-1.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main transition-colors border border-border-main cursor-pointer"
+            className="px-3 py-1.5 text-xs font-semibold transition-all premium-btn-secondary active flex items-center gap-1.5"
           >
-            Refresh List
+            <div className="nav-icon-badge">
+              <RefreshCw size={12} />
+            </div>
+            <span>Refresh List</span>
           </button>
         </div>
 
@@ -303,6 +315,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 <button
                   type="submit"
                   disabled={isSubmittingExtend}
+                  title={isSubmittingExtend ? "Request in progress" : undefined}
                   className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
                 >
                   {isSubmittingExtend ? 'Extending...' : 'Confirm Extension'}
@@ -357,6 +370,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 <button
                   type="submit"
                   disabled={isSubmittingClose}
+                  title={isSubmittingClose ? "Request in progress" : undefined}
                   className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold uppercase tracking-wider cursor-pointer"
                 >
                   {isSubmittingClose ? 'Closing...' : 'Close & Release Table'}

@@ -7,7 +7,9 @@
   --bg-surface: #FFFFFF;
   --bg-secondary-surface: #F4F5F7;
   --bg-sidebar: rgba(255, 255, 255, 0.25);
-  --border-sidebar: rgba(226, 229, 233, 0.35);
+  --border-sidebar: rgba(255, 255, 255, 0.35);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --glass-blur: 18px;
   --bg-header: #FFFFFF;
   --bg-card: #FFFFFF;
   --bg-modal: #FFFFFF;
@@ -31,8 +33,8 @@
   --color-orange-light: #FFF4DF;
 
   /* Text Colors */
-  --text-primary: #1E1E1E;
-  --text-secondary: #555555;
+  --text-primary: rgba(17, 24, 39, 0.85);
+  --text-secondary: rgba(17, 24, 39, 0.60);
   --text-muted: #7B7B7B;
   --text-placeholder: #A4A4A4;
   --text-disabled: #C7C7C7;
@@ -61,8 +63,10 @@
   --bg-primary: #141414;
   --bg-surface: #1E1E1E;
   --bg-secondary-surface: #252525;
-  --bg-sidebar: rgba(15, 15, 15, 0.35);
-  --border-sidebar: rgba(255, 255, 255, 0.05);
+  --bg-sidebar: rgba(255, 255, 255, 0.08);
+  --border-sidebar: rgba(255, 255, 255, 0.12);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --glass-blur: 18px;
   --bg-header: #1A1A1A;
   --bg-card: #1E1E1E;
   --bg-modal: #222222;
@@ -86,8 +90,8 @@
   --color-orange-light: rgba(241, 147, 7, 0.15);
 
   /* Text Colors */
-  --text-primary: #FFFFFF;
-  --text-secondary: #D5D5D5;
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(255, 255, 255, 0.60);
   --text-muted: #A0A0A0;
   --text-placeholder: #8C8C8C;
   --text-disabled: #666666;
@@ -140,6 +144,9 @@
   --color-pink-light: var(--color-pink-light);
   --color-orange: var(--color-orange);
   --color-orange-light: var(--color-orange-light);
+
+  --shadow-glass: var(--glass-shadow);
+  --blur-glass: var(--glass-blur);
 
   --color-text-main: var(--text-primary);
   --color-text-muted: var(--text-muted);
@@ -205,26 +212,360 @@ h1, h2, h3, h4, h5, h6 {
   border: 1px solid var(--border);
 }
 
-.primary-btn {
-  background-color: var(--color-primary);
-  color: var(--text-inverse);
-  border-radius: 12px;
+/* Button Glow System: Uses CSS custom variables for dynamic, unified glows */
+.primary-btn, .premium-btn-primary, .premium-btn-secondary, .premium-tab-primary, .premium-tab-secondary {
+  --glow-rgb: 141, 108, 229; /* default Purple glow */
+}
+
+/* Color overrides based on Tailwind classes or other specific colors present on elements */
+[class*="bg-emerald-"], [class*="text-emerald-"], .bg-success, .text-success {
+  --glow-rgb: 16, 185, 129 !important;
+}
+[class*="bg-red-"], [class*="text-red-"], .bg-danger, .text-danger {
+  --glow-rgb: 239, 68, 68 !important;
+}
+[class*="bg-amber-"], [class*="text-amber-"], [class*="bg-orange-"], .bg-warning, .text-warning, .text-\[\#F19307\] {
+  --glow-rgb: 245, 158, 11 !important;
+}
+[class*="bg-blue-"], [class*="text-blue-"] {
+  --glow-rgb: 59, 130, 246 !important;
+}
+
+.primary-btn, .premium-btn-primary {
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.35), rgba(var(--glow-rgb), 0.2)) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(var(--glow-rgb), 0.6) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 0 15px rgba(var(--glow-rgb), 0.25), 0 0 24px rgba(var(--glow-rgb), 0.4) !important;
   font-weight: 600;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
 }
-.primary-btn:hover {
-  background-color: var(--color-primary-hover);
+.dark .primary-btn, .dark .premium-btn-primary {
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.3), rgba(var(--glow-rgb), 0.15)) !important;
+  border-color: rgba(var(--glow-rgb), 0.5) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(var(--glow-rgb), 0.3), 0 0 28px rgba(var(--glow-rgb), 0.45) !important;
+}
+.primary-btn:hover, .premium-btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 6px 16px rgba(141, 108, 229, 0.3);
+  /* Hover: Soft glass glow */
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), 0 0 16px rgba(var(--glow-rgb), 0.2), 0 4px 8px rgba(var(--glow-rgb), 0.15) !important;
+  opacity: 0.95;
 }
-.primary-btn:active {
-  transform: translateY(0) scale(0.98);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 4px rgba(141, 108, 229, 0.2);
+.primary-btn.active, .premium-btn-primary.active {
+  /* Active / Selected: matches Sidebar Active state */
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.35), rgba(var(--glow-rgb), 0.2)) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(var(--glow-rgb), 0.6) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 0 15px rgba(var(--glow-rgb), 0.25), 0 0 24px rgba(var(--glow-rgb), 0.4) !important;
+  font-weight: 600;
+}
+.dark .primary-btn.active, .dark .premium-btn-primary.active {
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.3), rgba(var(--glow-rgb), 0.15)) !important;
+  border-color: rgba(var(--glow-rgb), 0.5) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(var(--glow-rgb), 0.3), 0 0 28px rgba(var(--glow-rgb), 0.45) !important;
+}
+.primary-btn:active, .premium-btn-primary:active {
+  transform: scale(0.97) translateY(0) !important;
+  /* Pressed: matches Sidebar Pressed state */
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.95), rgba(var(--glow-rgb), 0.85)) !important;
+  border-color: rgba(255, 255, 255, 0.7) !important;
+  box-shadow: inset 0 1.5px 2px rgba(255, 255, 255, 0.6), 0 0 32px rgba(var(--glow-rgb), 0.8) !important;
+}
+
+/* Glass Menu Item Interactive States — exact match to reference image */
+
+/* Base Item */
+.premium-menu-item {
+  border-radius: 16px;
+  padding: 8px 12px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  font-weight: 500;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+}
+.dark .premium-menu-item {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Icon Badge Container inside Item */
+.nav-icon-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+.dark .nav-icon-badge {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* STATE 1: Default */
+.premium-menu-item:not(:hover):not(.active) {
+  color: var(--text-secondary);
+}
+
+/* STATE 2: Hover */
+.premium-menu-item:hover:not(.active) {
+  color: var(--text-primary);
+  background: rgba(141, 108, 229, 0.1);
+  border-color: rgba(141, 108, 229, 0.35);
+  box-shadow: 0 0 16px rgba(141, 108, 229, 0.2);
+  transform: translateY(-1px);
+}
+.premium-menu-item:hover:not(.active) .nav-icon-badge {
+  background: rgba(141, 108, 229, 0.2);
+  border-color: rgba(141, 108, 229, 0.35);
+  color: var(--color-primary);
+}
+
+/* STATE 3: Active / Selected — Translucent glowing purple glass card with top inner shine */
+.premium-menu-item.active {
+  background: linear-gradient(135deg, rgba(141, 108, 229, 0.35), rgba(141, 108, 229, 0.2));
+  color: #FFFFFF !important;
+  border: 1px solid rgba(180, 160, 255, 0.6);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 0 15px rgba(141, 108, 229, 0.25), 0 0 24px rgba(141, 108, 229, 0.4);
+  font-weight: 600;
+}
+.dark .premium-menu-item.active {
+  background: linear-gradient(135deg, rgba(141, 108, 229, 0.3), rgba(141, 108, 229, 0.15));
+  border-color: rgba(180, 160, 255, 0.5);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(141, 108, 229, 0.3), 0 0 28px rgba(141, 108, 229, 0.45);
+}
+.premium-menu-item.active .nav-icon-badge {
+  background: rgba(141, 108, 229, 0.45);
+  border-color: rgba(200, 180, 255, 0.6);
+  color: #FFFFFF;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4);
+}
+.premium-menu-item.active .lucide,
+.premium-menu-item.active span {
+  color: #FFFFFF !important;
+}
+
+/* STATE 4: Pressed / Click — Vivid glass purple pill button with maximum glow */
+.premium-menu-item:active {
+  background: linear-gradient(135deg, rgba(141, 108, 229, 0.95), rgba(115, 80, 215, 0.98)) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(255, 255, 255, 0.7) !important;
+  box-shadow: inset 0 1.5px 2px rgba(255, 255, 255, 0.6), 0 0 32px rgba(141, 108, 229, 0.8) !important;
+  transform: scale(0.97) !important;
+}
+.premium-menu-item:active .nav-icon-badge {
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-color: rgba(255, 255, 255, 0.5) !important;
+  color: #FFFFFF !important;
+}
+.premium-menu-item:active .lucide,
+.premium-menu-item:active span {
+  color: #FFFFFF !important;
+}
+
+/* SUB-TAB ITEM CONCEPT — Matches parent navigation interaction */
+.glass-sub-menu-btn {
+  border-radius: 12px;
+  padding: 6px 12px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 500;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+.dark .glass-sub-menu-btn {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+.glass-sub-menu-btn:hover:not(.active) {
+  color: var(--text-primary) !important;
+  background: rgba(141, 108, 229, 0.1) !important;
+  border-color: rgba(141, 108, 229, 0.35) !important;
+  box-shadow: 0 0 16px rgba(141, 108, 229, 0.2) !important;
+}
+.glass-sub-menu-btn.active {
+  background: linear-gradient(135deg, rgba(141, 108, 229, 0.35), rgba(141, 108, 229, 0.2)) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(180, 160, 255, 0.6) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 0 15px rgba(141, 108, 229, 0.25), 0 0 24px rgba(141, 108, 229, 0.4) !important;
+  font-weight: 600;
+}
+.dark .glass-sub-menu-btn.active {
+  background: linear-gradient(135deg, rgba(141, 108, 229, 0.3), rgba(141, 108, 229, 0.15)) !important;
+  border-color: rgba(180, 160, 255, 0.5) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(141, 108, 229, 0.3), 0 0 28px rgba(141, 108, 229, 0.45) !important;
+}
+.glass-sub-menu-btn:active {
+  background: linear-gradient(135deg, rgba(141, 108, 229, 0.95), rgba(115, 80, 215, 0.98)) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(255, 255, 255, 0.7) !important;
+  box-shadow: inset 0 1.5px 2px rgba(255, 255, 255, 0.6), 0 0 32px rgba(141, 108, 229, 0.8) !important;
+  transform: scale(0.97) !important;
+}
+
+/* Brand Logo Glowing State — matches the pressed solid purple glow at all times */
+.premium-logo-glow {
+  background: linear-gradient(135deg, rgba(141, 108, 229, 0.95), rgba(115, 80, 215, 0.98)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.7) !important;
+  box-shadow: inset 0 1.5px 2px rgba(255, 255, 255, 0.6), 0 0 32px rgba(141, 108, 229, 0.8) !important;
+  color: #FFFFFF !important;
+}
+.dark .premium-logo-glow {
+  background: linear-gradient(135deg, rgba(141, 108, 229, 0.92), rgba(110, 75, 210, 0.95)) !important;
+  border-color: rgba(255, 255, 255, 0.6) !important;
+  box-shadow: inset 0 1px 1.5px rgba(255, 255, 255, 0.5), 0 0 36px rgba(141, 108, 229, 0.9) !important;
+}
+
+/* ==========================================
+   PREMIUM BUTTON & TAB INTERACTION CLASSES 
+   ========================================== */
+
+
+
+/* 2. SECONDARY BUTTONS (.premium-btn-secondary) */
+.premium-btn-secondary {
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.35), rgba(var(--glow-rgb), 0.2)) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(var(--glow-rgb), 0.6) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 0 15px rgba(var(--glow-rgb), 0.25), 0 0 24px rgba(var(--glow-rgb), 0.4) !important;
+  font-weight: 600;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  border-radius: 12px;
+}
+.dark .premium-btn-secondary {
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.3), rgba(var(--glow-rgb), 0.15)) !important;
+  border-color: rgba(var(--glow-rgb), 0.5) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(var(--glow-rgb), 0.3), 0 0 28px rgba(var(--glow-rgb), 0.45) !important;
+}
+.premium-btn-secondary:hover {
+  background: rgba(var(--glow-rgb), 0.06) !important;
+  color: var(--text-primary) !important;
+  border-color: rgba(var(--glow-rgb), 0.25) !important;
+  /* Hover: Soft glass glow */
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 0 12px rgba(var(--glow-rgb), 0.12) !important;
+  transform: translateY(-1px);
+}
+.premium-btn-secondary.active {
+  /* Active / Selected: matches Sidebar Active state */
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.35), rgba(var(--glow-rgb), 0.2)) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(var(--glow-rgb), 0.6) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 0 15px rgba(var(--glow-rgb), 0.25), 0 0 24px rgba(var(--glow-rgb), 0.4) !important;
+  font-weight: 600;
+}
+.dark .premium-btn-secondary.active {
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.3), rgba(var(--glow-rgb), 0.15)) !important;
+  border-color: rgba(var(--glow-rgb), 0.5) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(var(--glow-rgb), 0.3), 0 0 28px rgba(var(--glow-rgb), 0.45) !important;
+}
+.premium-btn-secondary:active {
+  transform: scale(0.97) translateY(0) !important;
+  /* Pressed: matches Sidebar Pressed state */
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.95), rgba(var(--glow-rgb), 0.85)) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(255, 255, 255, 0.7) !important;
+  box-shadow: inset 0 1.5px 2px rgba(255, 255, 255, 0.6), 0 0 32px rgba(var(--glow-rgb), 0.8) !important;
+}
+
+/* 3. PRIMARY TABS (.premium-tab-primary) */
+.premium-tab-primary {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.premium-tab-primary:hover:not(.active) {
+  background: rgba(var(--glow-rgb), 0.08) !important;
+  border-color: rgba(var(--glow-rgb), 0.3) !important;
+  color: var(--text-primary) !important;
+  /* Hover: Soft glass glow */
+  box-shadow: 0 0 12px rgba(var(--glow-rgb), 0.12) !important;
+}
+.premium-tab-primary.active {
+  /* Active / Selected: matches Sidebar Active state */
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.35), rgba(var(--glow-rgb), 0.2)) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(var(--glow-rgb), 0.6) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 0 15px rgba(var(--glow-rgb), 0.25), 0 0 24px rgba(var(--glow-rgb), 0.4) !important;
+  font-weight: 700;
+}
+.dark .premium-tab-primary.active {
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.3), rgba(var(--glow-rgb), 0.15)) !important;
+  border-color: rgba(var(--glow-rgb), 0.5) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(var(--glow-rgb), 0.3), 0 0 28px rgba(var(--glow-rgb), 0.45) !important;
+}
+.premium-tab-primary:active {
+  /* Pressed: matches Sidebar Pressed state */
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.95), rgba(var(--glow-rgb), 0.85)) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(255, 255, 255, 0.7) !important;
+  box-shadow: inset 0 1.5px 2px rgba(255, 255, 255, 0.6), 0 0 32px rgba(var(--glow-rgb), 0.8) !important;
+  transform: scale(0.97) !important;
+}
+
+/* 4. SECONDARY TABS (.premium-tab-secondary) */
+.premium-tab-secondary {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.premium-tab-secondary:hover:not(.active) {
+  border-color: rgba(var(--glow-rgb), 0.2) !important;
+  background-color: rgba(var(--glow-rgb), 0.05) !important;
+  color: var(--text-secondary) !important;
+  box-shadow: 0 0 10px rgba(var(--glow-rgb), 0.1) !important;
+}
+.premium-tab-secondary.active {
+  /* Active / Selected: matches Sidebar Active state */
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.35), rgba(var(--glow-rgb), 0.2)) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(var(--glow-rgb), 0.6) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 0 15px rgba(var(--glow-rgb), 0.25), 0 0 24px rgba(var(--glow-rgb), 0.4) !important;
+  font-weight: 600;
+}
+.dark .premium-tab-secondary.active {
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.3), rgba(var(--glow-rgb), 0.15)) !important;
+  border-color: rgba(var(--glow-rgb), 0.5) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(var(--glow-rgb), 0.3), 0 0 28px rgba(var(--glow-rgb), 0.45) !important;
+}
+.premium-tab-secondary:active {
+  /* Pressed: matches Sidebar Pressed state */
+  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.95), rgba(var(--glow-rgb), 0.85)) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(255, 255, 255, 0.7) !important;
+  box-shadow: inset 0 1.5px 2px rgba(255, 255, 255, 0.6), 0 0 32px rgba(var(--glow-rgb), 0.8) !important;
+  transform: scale(0.97) !important;
 }
 
 .badge-active {
@@ -272,4 +613,98 @@ h1, h2, h3, h4, h5, h6 {
 
 ::view-transition-new(root) {
   z-index: 9999;
+}
+
+/* Disabled button state overrides to block active/hover glows while keeping native hover tooltips */
+.primary-btn:disabled, .premium-btn-primary:disabled,
+.premium-btn-secondary:disabled, .premium-tab-primary:disabled, .premium-tab-secondary:disabled,
+button[disabled] {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+  transform: none !important;
+  pointer-events: auto !important; /* Explicitly keep pointer events for hover tooltips */
+}
+.primary-btn:disabled:hover, .premium-btn-primary:disabled:hover,
+.premium-btn-secondary:disabled:hover, .premium-tab-primary:disabled:hover, .premium-tab-secondary:disabled:hover,
+button[disabled]:hover {
+  box-shadow: none !important;
+  transform: none !important;
+  opacity: 0.45 !important;
+  background-image: none !important;
+}
+
+/* Icon glass badge containers for buttons and tabs (excluding navigation chevron arrows) */
+.primary-btn .nav-icon-badge, 
+.premium-btn-primary .nav-icon-badge,
+.premium-btn-secondary .nav-icon-badge, 
+.premium-tab-primary .nav-icon-badge, 
+.premium-tab-secondary .nav-icon-badge {
+  width: 24px !important;
+  height: 24px !important;
+  border-radius: 8px !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: content-box !important;
+  flex-shrink: 0 !important;
+  margin-right: 6px !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.dark .primary-btn .nav-icon-badge, 
+.dark .premium-btn-primary .nav-icon-badge,
+.dark .premium-btn-secondary .nav-icon-badge, 
+.dark .premium-tab-primary .nav-icon-badge, 
+.dark .premium-tab-secondary .nav-icon-badge {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Active State for Icon badge */
+.primary-btn.active .nav-icon-badge, 
+.premium-btn-primary.active .nav-icon-badge,
+.premium-btn-secondary.active .nav-icon-badge, 
+.premium-tab-primary.active .nav-icon-badge, 
+.premium-tab-secondary.active .nav-icon-badge,
+.primary-btn .nav-icon-badge, 
+.premium-btn-secondary .nav-icon-badge {
+  background: rgba(var(--glow-rgb), 0.35) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  color: #FFFFFF !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Hover State for Icon badge */
+.primary-btn:hover .nav-icon-badge, 
+.premium-btn-primary:hover .nav-icon-badge,
+.premium-btn-secondary:hover .nav-icon-badge, 
+.premium-tab-primary:hover:not(.active) .nav-icon-badge, 
+.premium-tab-secondary:hover:not(.active) .nav-icon-badge {
+  background: rgba(var(--glow-rgb), 0.45) !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+  color: #FFFFFF !important;
+}
+
+/* Pressed State for Icon badge */
+.primary-btn:active .nav-icon-badge, 
+.premium-btn-primary:active .nav-icon-badge,
+.premium-btn-secondary:active .nav-icon-badge, 
+.premium-tab-primary:active .nav-icon-badge, 
+.premium-tab-secondary:active .nav-icon-badge {
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-color: rgba(255, 255, 255, 0.5) !important;
+  color: #FFFFFF !important;
+}
+
+/* Hide scrollbar for Chrome, Safari, Edge, Firefox */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }

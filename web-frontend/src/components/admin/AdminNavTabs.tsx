@@ -37,13 +37,13 @@ export const AdminNavTabs: React.FC<AdminNavTabsProps> = ({ activeTab, setActive
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all group ${
-              isSel
-                ? 'bg-primary text-text-inverse shadow-md shadow-primary/25'
-                : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs transition-all premium-tab-secondary ${
+              isSel ? 'active' : ''
             }`}
           >
-            <Icon size={16} className={isSel ? 'text-text-inverse' : 'text-text-muted group-hover:text-text-primary'} />
+            <div className="nav-icon-badge">
+              <Icon size={12} className={isSel ? 'text-primary' : 'text-text-muted'} />
+            </div>
             <span>{t.label}</span>
           </button>
         );

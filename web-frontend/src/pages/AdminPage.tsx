@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AdminNavTabs, type AdminSubTab } from '../components/admin/AdminNavTabs';
@@ -8,26 +8,20 @@ import { RevenueAnalyticsChart } from '../components/admin/RevenueAnalyticsChart
 import { RateManagement } from '../components/admin/RateManagement';
 import { CustomerSessionsManager } from '../components/admin/CustomerSessionsManager';
 
-export const AdminPage: React.FC = () => {
-  const { user } = useAuth();
-  const [activeTab, setActiveTabState] = useState<AdminSubTab>(() => {
-    return (localStorage.getItem('bar_web_admin_subtab') as AdminSubTab) || 'tables';
-  });
-  const setActiveTab = (tab: AdminSubTab) => {
-    setActiveTabState(tab);
-    localStorage.setItem('bar_web_admin_subtab', tab);
-  };
+interface AdminPageProps {
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+}
 
-  useEffect(() => {
-    const handleStorageChange = () => {
-      const subtab = localStorage.getItem('bar_web_admin_subtab') as AdminSubTab;
-      if (subtab && subtab !== activeTab) {
-        setActiveTabState(subtab);
-      }
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [activeTab]);
+export const AdminPage: React.FC<AdminPageProps> = ({ activeTab: routePath, setActiveTab: setRoutePath }) => {
+  const { user } = useAuth();
+  
+  // Extract subtab from path (e.g. 'admin/staff' -> 'staff')
+  const activeTab = (routePath.split('/')[1] as AdminSubTab) || 'tables';
+  
+  const setActiveTab = (tab: AdminSubTab) => {
+    setRoutePath(`admin/${tab}`);
+  };
 
   // Role Security Check matching BarContext.tsx
   const userRole = user?.role ? user.role.toLowerCase() : '';
