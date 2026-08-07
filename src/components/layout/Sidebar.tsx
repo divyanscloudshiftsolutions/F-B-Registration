@@ -5,11 +5,11 @@ import {
   Wine, 
   Grid3X3, 
   ShieldCheck, 
-  LogOut, 
-  ChevronLeft, 
+  ChevronLeft,
   ChevronRight,
-  ChevronDown,
-  Camera
+  Camera,
+  Settings,
+  Martini
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { UserRole } from '../../types';
@@ -35,54 +35,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
   });
 
   useEffect(() => {
-    if (activeTab === 'tables') {
+    if (activeTab.startsWith('tables')) {
       setOpenGroups(prev => ({ ...prev, tables: true }));
-    } else if (activeTab === 'bartender') {
+    } else if (activeTab.startsWith('bartender')) {
       setOpenGroups(prev => ({ ...prev, bartender: true }));
-    } else if (activeTab === 'admin') {
+    } else if (activeTab.startsWith('admin')) {
       setOpenGroups(prev => ({ ...prev, administration: true }));
     }
   }, [activeTab]);
 
   const toggleGroup = (group: string) => {
-    if (collapsed) {
-      setCollapsed(false);
-    }
+    setCollapsed(false);
+    const isOpen = openGroups[group];
     
-    const wasOpen = openGroups[group];
-    
-    // Toggle open state
     setOpenGroups(prev => ({
       ...prev,
-      [group]: !wasOpen
+      [group]: !isOpen
     }));
 
-    // Trigger default navigation to the first child subtab only if we are expanding it
-    if (!wasOpen) {
+    if (!isOpen) {
       if (group === 'tables') {
-        handleSubItemClick('tables');
+        setActiveTab('tables/layout');
       } else if (group === 'bartender') {
-        handleSubItemClick('bartender');
+        setActiveTab('bartender/orders');
       } else if (group === 'administration') {
-        handleSubItemClick('admin', 'tables');
+        setActiveTab('admin/tables');
       }
     }
-  };
-
-  const handleSubItemClick = (tabId: string, adminSubtab?: string, subtabValue?: string) => {
-    if (adminSubtab) {
-      localStorage.setItem('bar_web_admin_subtab', adminSubtab);
-      window.dispatchEvent(new Event('storage'));
-    }
-    if (tabId === 'tables' && subtabValue) {
-      localStorage.setItem('bar_web_tables_filter', subtabValue);
-      window.dispatchEvent(new Event('storage'));
-    }
-    if (tabId === 'bartender' && subtabValue) {
-      localStorage.setItem('bar_web_bartender_subtab', subtabValue);
-      window.dispatchEvent(new Event('storage'));
-    }
-    setActiveTab(tabId);
   };
 
   const userRoleLower = user?.role ? user.role.toLowerCase() : '';
@@ -98,8 +77,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Grid3X3,
       roles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST, UserRole.BARTENDER],
       subItems: [
-        { label: 'Table Layout', onClick: () => handleSubItemClick('tables', undefined, 'all'), active: activeTab === 'tables' && (localStorage.getItem('bar_web_tables_filter') !== 'reserved') },
-        { label: 'Reservations', onClick: () => handleSubItemClick('tables', undefined, 'reserved'), active: activeTab === 'tables' && localStorage.getItem('bar_web_tables_filter') === 'reserved' }
+        { label: 'Table Layout', onClick: () => setActiveTab('tables/layout'), active: activeTab === 'tables/layout' },
+        { label: 'Reservations', onClick: () => setActiveTab('tables/reservations'), active: activeTab === 'tables/reservations' }
       ]
     },
     {
@@ -108,8 +87,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Wine,
       roles: [UserRole.ADMIN, UserRole.BARTENDER],
       subItems: [
-        { label: 'Orders', onClick: () => handleSubItemClick('bartender', undefined, 'orders'), active: activeTab === 'bartender' && localStorage.getItem('bar_web_bartender_subtab') !== 'queue' },
-        { label: 'Queue', onClick: () => handleSubItemClick('bartender', undefined, 'queue'), active: activeTab === 'bartender' && localStorage.getItem('bar_web_bartender_subtab') === 'queue' }
+        { label: 'Orders', onClick: () => setActiveTab('bartender/orders'), active: activeTab === 'bartender/orders' },
+        { label: 'Queue', onClick: () => setActiveTab('bartender/queue'), active: activeTab === 'bartender/queue' }
       ]
     },
     {
@@ -118,14 +97,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: ShieldCheck,
       roles: [UserRole.ADMIN, UserRole.MANAGER],
       subItems: [
-        { label: 'Table Floor', onClick: () => handleSubItemClick('admin', 'tables'), active: activeTab === 'admin' && (localStorage.getItem('bar_web_admin_subtab') === 'tables' || !localStorage.getItem('bar_web_admin_subtab')) },
-        { label: 'Staff Directory', onClick: () => handleSubItemClick('admin', 'staff'), active: activeTab === 'admin' && localStorage.getItem('bar_web_admin_subtab') === 'staff' },
-        { label: 'Revenue Analytics', onClick: () => handleSubItemClick('admin', 'chart'), active: activeTab === 'admin' && localStorage.getItem('bar_web_admin_subtab') === 'chart' },
-        { label: 'Rate Cards', onClick: () => handleSubItemClick('admin', 'rates'), active: activeTab === 'admin' && localStorage.getItem('bar_web_admin_subtab') === 'rates' },
-        { label: 'Customer Sessions', onClick: () => handleSubItemClick('admin', 'customers'), active: activeTab === 'admin' && localStorage.getItem('bar_web_admin_subtab') === 'customers' }
+        { label: 'Table Floor', onClick: () => setActiveTab('admin/tables'), active: activeTab === 'admin/tables' },
+        { label: 'Staff Directory', onClick: () => setActiveTab('admin/staff'), active: activeTab === 'admin/staff' },
+        { label: 'Revenue Analytics', onClick: () => setActiveTab('admin/chart'), active: activeTab === 'admin/chart' },
+        { label: 'Rate Cards', onClick: () => setActiveTab('admin/rates'), active: activeTab === 'admin/rates' },
+        { label: 'Customer Sessions', onClick: () => setActiveTab('admin/customers'), active: activeTab === 'admin/customers' }
       ]
     }
   ];
+
+  const renderNavButton = (id: string, label: string, Icon: any, allowedRoles: string[]) => {
+    if (!hasRole(allowedRoles)) return null;
+    const isActive = activeTab === id;
+    
+    return (
+      <button
+        onClick={() => setActiveTab(id)}
+        className={`w-full flex items-center justify-between ${
+          collapsed ? 'justify-center px-0' : 'px-3'
+        } py-2.5 text-[13px] overflow-hidden premium-menu-item ${
+          isActive ? 'active' : ''
+        }`}
+        title={collapsed ? label : undefined}
+      >
+        <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} relative z-10`}>
+          <div className="nav-icon-badge">
+            <Icon size={16} strokeWidth={isActive ? 2.5 : 2} />
+          </div>
+          {!collapsed && <span>{label}</span>}
+        </div>
+      </button>
+    );
+  };
 
   const renderGroup = (group: any) => {
     if (!group || !hasRole(group.roles)) return null;
@@ -133,48 +136,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const isGroupOpen = openGroups[group.id];
     
     const isGroupActive = 
-      (group.id === 'tables' && activeTab === 'tables') ||
-      (group.id === 'bartender' && activeTab === 'bartender') ||
-      (group.id === 'administration' && activeTab === 'admin');
+      (group.id === 'tables' && activeTab.startsWith('tables')) ||
+      (group.id === 'bartender' && activeTab.startsWith('bartender')) ||
+      (group.id === 'administration' && activeTab.startsWith('admin'));
     
     return (
       <div key={group.id} className="space-y-1">
         <button
           onClick={() => toggleGroup(group.id)}
-          className={`w-full flex items-center ${
-            collapsed ? 'justify-center px-0' : 'justify-between px-3'
-          } py-2.5 rounded-xl text-xs font-bold transition-all duration-300 cursor-pointer ${
-            isGroupActive
-              ? 'bg-primary text-text-inverse shadow-[0_4px_20px_rgba(141,108,229,0.3)] border-t border-t-white/10 scale-[1.01] active:scale-[0.98] font-black'
-              : 'text-text-muted hover:bg-bg-hover/60 hover:text-text-primary hover:scale-[1.01] active:scale-[0.98]'
+          className={`w-full flex items-center justify-between ${
+            collapsed ? 'justify-center px-0' : 'px-3'
+          } py-2 text-[13px] overflow-hidden premium-menu-item ${
+            isGroupActive ? 'active' : ''
           }`}
           title={collapsed ? group.label : undefined}
         >
-          <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
-            <GroupIcon size={18} className={isGroupActive ? 'text-text-inverse' : 'text-text-muted'} />
+          <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} relative z-10`}>
+            <div className="nav-icon-badge">
+              <GroupIcon size={16} strokeWidth={isGroupActive ? 2.5 : 2} />
+            </div>
             {!collapsed && <span>{group.label}</span>}
           </div>
           {!collapsed && (
-            <ChevronDown 
-              size={14} 
-              className={`${isGroupActive ? 'text-text-inverse' : 'text-text-muted'} transition-transform duration-200 ${isGroupOpen ? 'rotate-180' : ''}`} 
+            <ChevronRight 
+              size={16} 
+              className={`relative z-10 ${isGroupActive ? 'text-white/70' : 'text-text-muted'} transition-transform duration-200 ${isGroupOpen ? 'rotate-90' : ''}`} 
             />
           )}
         </button>
 
         {!collapsed && isGroupOpen && (
-          <div className="pl-9 pr-2 py-1 space-y-1 animate-slideDown">
+          <div className="pl-8 pr-2 py-1 space-y-1.5 animate-slideDown">
             {group.subItems.map((sub: any, idx: number) => (
               <button
                 key={idx}
                 onClick={sub.onClick}
-                className={`w-full text-left py-1.5 px-3 rounded-lg text-[11px] font-semibold transition-all duration-300 cursor-pointer hover:scale-[1.01] active:scale-[0.98] ${
-                  sub.active
-                    ? 'text-primary bg-primary-light font-bold shadow-[0_2px_10px_rgba(141,108,229,0.15)] border-t border-t-white/5'
-                    : 'text-text-muted hover:text-text-primary hover:bg-bg-hover/60'
+                className={`w-full text-left py-2 px-3 text-[12px] cursor-pointer flex items-center justify-between glass-sub-menu-btn ${
+                  sub.active ? 'active' : ''
                 }`}
               >
-                {sub.label}
+                <div className="flex items-center gap-2">
+                  <div className={`w-1.5 h-1.5 rounded-full ${sub.active ? 'bg-white shadow-[0_0_8px_#8D6CE5]' : 'bg-text-muted/40'}`} />
+                  <span>{sub.label}</span>
+                </div>
               </button>
             ))}
           </div>
@@ -185,118 +189,113 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside 
-      className={`h-[calc(100vh-2rem)] my-4 ml-4 bg-bg-sidebar border border-border-sidebar flex flex-col justify-between transition-all duration-300 z-30 rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.08)] backdrop-blur-xl ${
-        collapsed ? 'w-20' : 'w-64'
+      className={`h-[calc(100vh-2rem)] my-4 ml-4 bg-bg-sidebar border border-border-sidebar flex flex-col justify-between transition-all duration-300 z-30 rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] ${
+        collapsed ? 'w-20' : 'w-[280px]'
       }`}
     >
       <div className="flex flex-col flex-1 min-h-0">
-        <div className="h-16 border-b border-border flex items-center justify-between px-4 shrink-0">
-          {!collapsed && (
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-text-inverse font-bold text-sm">
-                🍸
+        {/* Logo Section */}
+        <div className={`h-24 flex items-center justify-between shrink-0 pt-4 pb-2 w-full ${collapsed ? 'px-2' : 'px-5'}`}>
+          {!collapsed ? (
+            <>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full premium-logo-glow flex items-center justify-center shrink-0">
+                  <Martini size={20} className="text-white" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-extrabold text-text-primary text-sm tracking-wide">BAR SYSTEM</span>
+                  <span className="text-[11px] text-text-muted font-medium">Management Portal</span>
+                </div>
               </div>
-              <span className="font-extrabold text-text-primary tracking-wide text-xs">BAR SYSTEM</span>
+              <button
+                onClick={() => setCollapsed(true)}
+                className="w-7 h-7 rounded-lg bg-white/60 dark:bg-white/10 flex items-center justify-center text-text-primary hover:bg-white dark:hover:bg-white/20 transition-colors shadow-sm border border-black/5 dark:border-white/5 cursor-pointer shrink-0"
+                title="Minimize Sidebar"
+              >
+                <ChevronLeft size={14} />
+              </button>
+            </>
+          ) : (
+            <div className="flex items-center justify-between w-full gap-1">
+              <div className="w-8 h-8 rounded-full premium-logo-glow flex items-center justify-center shrink-0">
+                <Martini size={16} className="text-white" />
+              </div>
+              <button
+                onClick={() => setCollapsed(false)}
+                className="w-5.5 h-5.5 rounded-lg bg-white/60 dark:bg-white/10 flex items-center justify-center text-text-primary hover:bg-white dark:hover:bg-white/20 transition-colors shadow-sm border border-black/5 dark:border-white/5 cursor-pointer shrink-0"
+                title="Expand Sidebar"
+              >
+                <ChevronRight size={12} />
+              </button>
             </div>
           )}
-          {collapsed && (
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-text-inverse font-bold text-sm mx-auto">
-               🍸
-            </div>
-          )}
-
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="p-1.5 rounded-lg bg-bg-primary hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors cursor-pointer"
-          >
-            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button>
         </div>
 
-        <nav className="p-3 space-y-1.5 overflow-y-auto flex-1 min-h-0">
-          {/* 1. Dashboard (Direct) */}
-          {hasRole([UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST, UserRole.BARTENDER]) && (
-            <button
-              onClick={() => handleSubItemClick('dashboard')}
-              className={`w-full flex items-center ${
-                collapsed ? 'justify-center px-0' : 'gap-3 px-3'
-              } py-2.5 rounded-xl text-xs font-bold transition-all duration-300 cursor-pointer ${
-                activeTab === 'dashboard'
-                  ? 'bg-primary text-text-inverse shadow-[0_4px_20px_rgba(141,108,229,0.3)] border-t border-t-white/10 scale-[1.01] active:scale-[0.98] font-black'
-                  : 'text-text-muted hover:bg-bg-hover/60 hover:text-text-primary hover:scale-[1.01] active:scale-[0.98]'
-              }`}
-              title={collapsed ? 'Dashboard' : undefined}
-            >
-              <LayoutDashboard size={18} className={activeTab === 'dashboard' ? 'text-text-inverse' : 'text-text-muted'} />
-              {!collapsed && <span>Dashboard</span>}
-            </button>
+        <nav className="px-4 py-2 space-y-1 overflow-y-auto flex-1 min-h-0">
+          {/* MAIN SECTION */}
+          {!collapsed && (
+            <div className="px-2 mb-2 mt-2 text-[10px] font-bold text-text-muted/70 tracking-widest uppercase">MAIN</div>
           )}
-
-          {/* 2. Reception (Direct) */}
-          {hasRole([UserRole.ADMIN, UserRole.RECEPTIONIST]) && (
-            <button
-              onClick={() => handleSubItemClick('checkin')}
-              className={`w-full flex items-center ${
-                collapsed ? 'justify-center px-0' : 'gap-3 px-3'
-              } py-2.5 rounded-xl text-xs font-bold transition-all duration-300 cursor-pointer ${
-                activeTab === 'checkin'
-                  ? 'bg-primary text-text-inverse shadow-[0_4px_20px_rgba(141,108,229,0.3)] border-t border-t-white/10 scale-[1.01] active:scale-[0.98] font-black'
-                  : 'text-text-muted hover:bg-bg-hover/60 hover:text-text-primary hover:scale-[1.01] active:scale-[0.98]'
-              }`}
-              title={collapsed ? 'Reception' : undefined}
-            >
-              <UserCheck size={18} className={activeTab === 'checkin' ? 'text-text-inverse' : 'text-text-muted'} />
-              {!collapsed && <span>Reception</span>}
-            </button>
-          )}
-
-          {/* 3. Tables (Group) */}
+          
+          {renderNavButton('dashboard', 'Dashboard', LayoutDashboard, [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST, UserRole.BARTENDER])}
+          {renderNavButton('checkin', 'Reception', UserCheck, [UserRole.ADMIN, UserRole.RECEPTIONIST])}
           {renderGroup(groups.find(g => g.id === 'tables'))}
-
-          {/* 4. Bartender (Group) */}
           {renderGroup(groups.find(g => g.id === 'bartender'))}
-
-          {/* 5. Attendance (Direct) */}
-          {hasRole([UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST]) && (
-            <button
-              onClick={() => handleSubItemClick('quick_attendance')}
-              className={`w-full flex items-center ${
-                collapsed ? 'justify-center px-0' : 'gap-3 px-3'
-              } py-2.5 rounded-xl text-xs font-bold transition-all duration-300 cursor-pointer ${
-                activeTab === 'quick_attendance'
-                  ? 'bg-primary text-text-inverse shadow-[0_4px_20px_rgba(141,108,229,0.3)] border-t border-t-white/10 scale-[1.01] active:scale-[0.98] font-black'
-                  : 'text-text-muted hover:bg-bg-hover/60 hover:text-text-primary hover:scale-[1.01] active:scale-[0.98]'
-              }`}
-              title={collapsed ? 'Attendance' : undefined}
-            >
-              <Camera size={18} className={activeTab === 'quick_attendance' ? 'text-text-inverse' : 'text-text-muted'} />
-              {!collapsed && <span>Attendance</span>}
-            </button>
+          
+          {/* OTHER SECTION */}
+          {!collapsed && (
+            <div className="px-2 mb-2 mt-6 text-[10px] font-bold text-text-muted/70 tracking-widest uppercase">OTHER</div>
           )}
 
-          {/* 6. Administration (Group) */}
+          {renderNavButton('quick_attendance', 'Attendance', Camera, [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST])}
           {renderGroup(groups.find(g => g.id === 'administration'))}
+          
+          <button
+            onClick={() => {}}
+            className={`w-full flex items-center justify-between ${
+              collapsed ? 'justify-center px-0' : 'px-3'
+            } py-2 text-[13px] overflow-hidden premium-menu-item mt-1`}
+            title={collapsed ? 'Settings' : undefined}
+          >
+            <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} relative z-10`}>
+              <div className="nav-icon-badge">
+                <Settings size={16} strokeWidth={2} />
+              </div>
+              {!collapsed && <span>Settings</span>}
+            </div>
+          </button>
         </nav>
       </div>
 
-      <div className="p-3 border-t border-border shrink-0">
-        {user && !collapsed && (
-          <div className="mb-3 px-2">
-            <p className="text-xs font-bold text-text-primary truncate">{user.fullName || user.username}</p>
-            <p className="text-[10px] text-primary uppercase tracking-wider font-bold">{user.role}</p>
+      <div className="shrink-0 pb-4">
+        {/* User Profile / Logout */}
+        {user && (
+          <div className="px-4">
+            <button
+              onClick={logout}
+              className={`w-full flex items-center justify-between p-2.5 rounded-2xl transition-colors cursor-pointer border border-transparent ${
+                collapsed ? 'justify-center' : 'hover:bg-black/5 dark:hover:bg-white/5 hover:border-black/5 dark:hover:border-white/5'
+              }`}
+              title="Sign Out"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-pink-500 flex items-center justify-center text-white font-bold text-sm shadow-md shrink-0">
+                  {user.fullName ? user.fullName.charAt(0).toUpperCase() : 'U'}
+                </div>
+                {!collapsed && (
+                  <div className="flex flex-col text-left">
+                    <span className="text-[13px] font-bold text-text-primary flex items-center gap-1.5">
+                      {user.fullName || user.username} 
+                      <span className="text-white text-[9px] bg-[#2A85FF] w-3.5 h-3.5 rounded-full flex items-center justify-center shadow-sm">✓</span>
+                    </span>
+                    <span className="text-[11px] text-text-muted capitalize font-medium">{user.role} Account</span>
+                  </div>
+                )}
+              </div>
+              {!collapsed && <ChevronRight size={16} className="text-text-muted" />}
+            </button>
           </div>
         )}
-
-        <button
-          onClick={logout}
-          className={`w-full flex items-center justify-center ${
-            collapsed ? 'px-0' : 'gap-3 px-3'
-          } py-2.5 rounded-xl text-xs font-bold primary-btn cursor-pointer`}
-          title={collapsed ? 'Sign Out' : undefined}
-        >
-          <LogOut size={18} />
-          {!collapsed && <span>Sign Out</span>}
-        </button>
       </div>
     </aside>
   );
