@@ -94,7 +94,7 @@ export const StaffManagement: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={refreshUsers}
-            className="px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary active"
+            className="px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary"
           >
             <div className="nav-icon-badge">
               <RefreshCw size={12} />
@@ -189,7 +189,7 @@ export const StaffManagement: React.FC = () => {
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-2 text-[#8D6CE5] font-bold text-sm">
+            <div className="flex items-center gap-2 text-text-main font-bold text-sm">
               <UserPlus size={18} /> Register New Staff Member
             </div>
 

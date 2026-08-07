@@ -68,7 +68,8 @@ export const CustomerSessionsManager: React.FC = () => {
     const matchesSearch = 
       t.tokenNumber.toLowerCase().includes(query) ||
       (t.customer?.name || '').toLowerCase().includes(query) ||
-      (t.customer?.phoneNumber || '').includes(query);
+      (t.customer?.phoneNumber || '').includes(query) ||
+      (t.customer?.email || '').toLowerCase().includes(query);
 
     const matchesFilter = statusFilter === 'all' || (t.status || '').toLowerCase() === statusFilter.toLowerCase();
     return matchesSearch && matchesFilter;
@@ -94,7 +95,7 @@ export const CustomerSessionsManager: React.FC = () => {
             <button
               key={f}
               onClick={() => setStatusFilter(f)}
-              className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all premium-tab-secondary ${
+              className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all premium-tab-secondary active:scale-95 ${
                 statusFilter === f ? 'active' : ''
               }`}
             >
@@ -104,7 +105,7 @@ export const CustomerSessionsManager: React.FC = () => {
 
           <button
             onClick={refreshTokens}
-            className="px-3.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary active"
+            className="px-3.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary"
           >
             <div className="nav-icon-badge">
               <RefreshCw size={12} />
@@ -127,7 +128,7 @@ export const CustomerSessionsManager: React.FC = () => {
                 <tr className="border-b border-border-main text-text-muted uppercase font-semibold text-[10px] tracking-wider">
                   <th className="pb-3 px-3">Token #</th>
                   <th className="pb-3 px-3">Customer Name</th>
-                  <th className="pb-3 px-3">Phone</th>
+                  <th className="pb-3 px-3">Contact Details</th>
                   <th className="pb-3 px-3">Guests</th>
                   <th className="pb-3 px-3">Redemptions</th>
                   <th className="pb-3 px-3">Delivery Mode</th>
@@ -138,9 +139,16 @@ export const CustomerSessionsManager: React.FC = () => {
               <tbody className="divide-y divide-border-main">
                 {filteredTokens.map(tk => (
                   <tr key={tk.id} className="hover:bg-bg-primary transition-colors">
-                    <td className="py-3 px-3 font-mono font-bold text-[#8D6CE5]">{tk.tokenNumber}</td>
+                    <td className="py-3 px-3 font-mono font-bold text-text-main">{tk.tokenNumber}</td>
                     <td className="py-3 px-3 font-semibold text-text-main">{tk.customer?.name || 'Walk-in Guest'}</td>
-                    <td className="py-3 px-3 font-mono text-text-muted">{tk.customer?.phoneNumber || 'N/A'}</td>
+                    <td className="py-3 px-3">
+                      <div className="flex flex-col">
+                        <span className="font-mono text-text-main">{tk.customer?.phoneNumber || 'N/A'}</span>
+                        {tk.customer?.email && (
+                          <span className="font-mono text-[10px] text-text-muted">{tk.customer.email}</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-3 px-3 font-semibold text-text-main">{tk.personsCount} Guests</td>
                     <td className="py-3 px-3">
                       <span className="font-mono dark:text-amber-300 text-amber-700 font-bold">{tk.redemptionsUsed}</span> / {tk.totalRedemptionsAllowed} Drinks
@@ -194,7 +202,7 @@ export const CustomerSessionsManager: React.FC = () => {
             </div>
 
             <p className="text-xs text-text-muted">
-              Token Number: <span className="font-mono font-bold text-[#8D6CE5]">{extendingToken.tokenNumber}</span> ({extendingToken.customer?.name})
+              Token Number: <span className="font-mono font-bold text-text-main">{extendingToken.tokenNumber}</span> ({extendingToken.customer?.name})
             </p>
 
             <form onSubmit={handleExtendSubmit} className="space-y-4">
@@ -261,7 +269,7 @@ export const CustomerSessionsManager: React.FC = () => {
             </div>
 
             <p className="text-xs text-text-muted">
-              Token Number: <span className="font-mono font-bold text-[#8D6CE5]">{deactivatingToken.tokenNumber}</span> ({deactivatingToken.customer?.name})
+              Token Number: <span className="font-mono font-bold text-text-main">{deactivatingToken.tokenNumber}</span> ({deactivatingToken.customer?.name})
             </p>
 
             <form onSubmit={handleDeactivateSubmit} className="space-y-4">

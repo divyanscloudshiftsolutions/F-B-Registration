@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider } from './context/DataContext';
 import { Sidebar } from './components/layout/Sidebar';
@@ -21,6 +21,19 @@ const AppContent: React.FC = () => {
     localStorage.setItem('bar_web_active_tab', tab);
   };
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        setSidebarCollapsed(true);
+      } else {
+        setSidebarCollapsed(false);
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   if (!user) {
     return <LoginPage />;
@@ -89,10 +102,27 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-bg-primary text-text-primary font-sans overflow-hidden relative">
-      {/* Ambient background orbs for glassmorphism */}
-      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[60%] dark:bg-primary/5 bg-primary/10 rounded-full blur-[140px] pointer-events-none z-0" />
-      <div className="absolute bottom-[-10%] left-[20%] w-[40%] h-[55%] dark:bg-mint/5 bg-mint/8 rounded-full blur-[140px] pointer-events-none z-0" />
+    <div className="flex h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F8F9FA] via-[#E9ECEF] to-[#DEE2E6] text-text-primary font-sans overflow-hidden relative">
+      {/* Multi-Layer Atmospheric Ambient Background Composition */}
+      <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
+        {/* Orb 1: Warm Amber Top-Left/behind Sidebar */}
+        <div className="absolute -top-[15%] -left-[10%] w-[45%] h-[55%] dark:bg-[radial-gradient(circle,rgba(241,147,7,0.06)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(241,147,7,0.04)_0%,transparent_70%)] rounded-full blur-[130px] animate-ambient-slow-1" />
+
+        {/* Orb 2: Primary Brand Purple Header Glow */}
+        <div className="absolute -top-[20%] right-[15%] w-[50%] h-[60%] dark:bg-[radial-gradient(circle,rgba(141,108,229,0.16)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(141,108,229,0.12)_0%,transparent_70%)] rounded-full blur-[140px] animate-ambient-slow-2" />
+
+        {/* Orb 3: Deep Indigo Center-Right Depth */}
+        <div className="absolute top-[25%] right-[5%] w-[40%] h-[50%] dark:bg-[radial-gradient(circle,rgba(99,102,241,0.10)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(99,102,241,0.06)_0%,transparent_70%)] rounded-full blur-[150px] animate-ambient-slow-1" />
+
+        {/* Orb 4: Deep Indigo Bottom-Right Accent */}
+        <div className="absolute -bottom-[15%] right-[10%] w-[40%] h-[50%] dark:bg-[radial-gradient(circle,rgba(99,102,241,0.08)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(99,102,241,0.06)_0%,transparent_70%)] rounded-full blur-[140px] animate-ambient-slow-2" />
+
+        {/* Orb 5: Emerald Bottom-Left Accent */}
+        <div className="absolute -bottom-[10%] left-[10%] w-[35%] h-[45%] dark:bg-[radial-gradient(circle,rgba(16,185,129,0.08)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(16,185,129,0.06)_0%,transparent_70%)] rounded-full blur-[130px] animate-ambient-slow-1" />
+
+        {/* Ambient Vignette Overlay for edge depth */}
+        <div className="absolute inset-0 ambient-vignette-overlay" />
+      </div>
 
       {/* Navigation Sidebar */}
       <Sidebar
@@ -102,11 +132,11 @@ const AppContent: React.FC = () => {
         setCollapsed={setSidebarCollapsed}
       />
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative z-10">
+      {/* Main Content Area Glass Panel */}
+      <div className="flex-1 flex flex-col min-w-0 h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] my-2 md:my-4 mr-2 md:mr-4 ml-1 md:ml-2 bg-bg-workspace border border-border-sidebar rounded-[20px] md:rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] overflow-hidden transition-all duration-300 z-10">
         <Header title={getTabTitle()} />
         
-        <main className="p-6 flex-1 overflow-y-auto">
+        <main className="p-4 md:p-6 flex-1 overflow-y-auto no-scrollbar">
           {renderTabContent()}
         </main>
       </div>
