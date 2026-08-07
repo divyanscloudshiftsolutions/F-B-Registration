@@ -94,10 +94,8 @@ export const CustomerSessionsManager: React.FC = () => {
             <button
               key={f}
               onClick={() => setStatusFilter(f)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${
-                statusFilter === f
-                  ? 'bg-[#8D6CE5] text-black border-[#8D6CE5]'
-                  : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
+              className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all premium-tab-secondary ${
+                statusFilter === f ? 'active' : ''
               }`}
             >
               {f}
@@ -106,9 +104,12 @@ export const CustomerSessionsManager: React.FC = () => {
 
           <button
             onClick={refreshTokens}
-            className="px-3.5 py-1.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted border border-border-main flex items-center gap-1.5 transition-all"
+            className="px-3.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary active"
           >
-            <RefreshCw size={14} /> Refresh
+            <div className="nav-icon-badge">
+              <RefreshCw size={12} />
+            </div>
+            <span>Refresh</span>
           </button>
         </div>
       </div>
@@ -226,13 +227,14 @@ export const CustomerSessionsManager: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setExtendingToken(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted"
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingExtend}
+                  title={isSubmittingExtend ? "Request in progress" : undefined}
                   className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider"
                 >
                   {isSubmittingExtend ? 'Extending...' : 'Confirm Extension'}
@@ -280,14 +282,15 @@ export const CustomerSessionsManager: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setDeactivatingToken(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted"
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingClose}
-                  className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-text-main text-xs font-bold uppercase tracking-wider"
+                  title={isSubmittingClose ? "Request in progress" : undefined}
+                  className="flex-1 py-2.5 rounded-xl primary-btn bg-red-500 text-xs font-bold uppercase tracking-wider"
                 >
                   {isSubmittingClose ? 'Deactivating...' : 'Confirm Deactivation'}
                 </button>

@@ -1,10 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Wine, Search, RotateCcw, Camera, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Wine, Search, RotateCcw, Camera, CheckCircle2, AlertCircle, RefreshCw, VideoOff } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import type { Token } from '../types';
 
-export const BartenderPage: React.FC = () => {
+interface BartenderPageProps {
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+}
+
+export const BartenderPage: React.FC<BartenderPageProps> = () => {
   const { showToast } = useAuth();
   const [tokenInput, setTokenInput] = useState('');
   const [scannedToken, setScannedToken] = useState<Token | null>(null);
@@ -159,10 +164,12 @@ export const BartenderPage: React.FC = () => {
           {cameraActive && (
             <button
               onClick={toggleFacingMode}
-              className="px-3.5 py-2 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-bold text-text-muted border border-border-main flex items-center gap-1.5 transition-all"
+              className="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all premium-btn-secondary active"
               title="Switch Camera Source"
             >
-              <RefreshCw size={14} />
+              <div className="nav-icon-badge">
+                <RefreshCw size={12} />
+              </div>
               <span>{facingMode === 'user' ? 'Laptop Webcam' : 'External Scanner'}</span>
             </button>
           )}
@@ -170,16 +177,22 @@ export const BartenderPage: React.FC = () => {
           {!cameraActive ? (
             <button
               onClick={() => startCamera(facingMode)}
-              className="px-4 py-2 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-bold text-text-muted border border-border-main flex items-center gap-2 transition-all"
+              className="px-4 py-2 rounded-xl primary-btn bg-emerald-500 text-xs font-bold transition-all flex items-center gap-1.5"
             >
-              <Camera size={16} /> Enable Camera Scanner
+              <div className="nav-icon-badge">
+                <Camera size={14} />
+              </div>
+              <span>Enable Camera Scanner</span>
             </button>
           ) : (
             <button
               onClick={stopCamera}
-              className="px-4 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-xs font-bold text-red-300 border border-red-500/30 transition-all"
+              className="px-4 py-2 rounded-xl premium-btn-secondary text-red-400 border-red-500/30 bg-red-500/5 text-xs font-bold transition-all flex items-center gap-1.5"
             >
-              Stop Camera Scanner
+              <div className="nav-icon-badge">
+                <VideoOff size={14} />
+              </div>
+              <span>Stop Camera Scanner</span>
             </button>
           )}
         </div>
@@ -240,6 +253,7 @@ export const BartenderPage: React.FC = () => {
               <button
                 type="submit"
                 disabled={isVerifying || !tokenInput.trim()}
+                title={isVerifying ? "Verifying..." : !tokenInput.trim() ? "Enter pass code" : undefined}
                 className="px-6 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 shadow-lg"
               >
                 {isVerifying ? 'Verifying...' : 'Verify Pass'}
@@ -322,9 +336,12 @@ export const BartenderPage: React.FC = () => {
                 <button
                   onClick={handleRedeem}
                   disabled={isRedeeming || isQuotaDepleted}
+                  title={isRedeeming ? "Dispensing..." : isQuotaDepleted ? "No quota left" : undefined}
                   className="w-full py-3.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl disabled:opacity-50"
                 >
-                  <Wine size={18} />
+                  <div className="nav-icon-badge">
+                    <Wine size={14} />
+                  </div>
                   <span>{isRedeeming ? 'Dispensing Drink...' : 'Dispense 1 Drink'}</span>
                 </button>
 

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Grid3X3, Plus, RefreshCw, X, CheckCircle2, Users } from 'lucide-react';
+import { Grid3X3, Plus, RefreshCw, X, CheckCircle2, Users, VideoOff } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import type { Table } from '../../types';
+import { TableDiagram } from '../TableDiagram';
+import { SeatingRow } from '../SeatingRow';
 
 export const TableManagement: React.FC = () => {
   const { showToast } = useAuth();
@@ -86,10 +88,8 @@ export const TableManagement: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setSelectedPlace('STANDING_BAR')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${
-              selectedPlace === 'STANDING_BAR'
-                ? 'bg-[#8D6CE5] text-black border-[#8D6CE5] shadow-lg font-black'
-                : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
+            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary ${
+              selectedPlace === 'STANDING_BAR' ? 'active' : ''
             }`}
           >
             Standard Zone (Standing Bar)
@@ -97,10 +97,8 @@ export const TableManagement: React.FC = () => {
 
           <button
             onClick={() => setSelectedPlace('PREMIUM_LOUNGE')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${
-              selectedPlace === 'PREMIUM_LOUNGE'
-                ? 'bg-[#8D6CE5] text-black border-[#8D6CE5] shadow-lg font-black'
-                : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
+            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary ${
+              selectedPlace === 'PREMIUM_LOUNGE' ? 'active' : ''
             }`}
           >
             Premium Zone (Lounge)
@@ -110,16 +108,22 @@ export const TableManagement: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => { refreshTables(); refreshTokens(); }}
-            className="px-3.5 py-2 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted border border-border-main flex items-center gap-1.5 transition-all"
+            className="px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary active"
           >
-            <RefreshCw size={14} /> Refresh
+            <div className="nav-icon-badge">
+              <RefreshCw size={12} />
+            </div>
+            <span>Refresh</span>
           </button>
 
           <button
             onClick={() => setIsModalOpen(true)}
             className="px-4 py-2 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg"
           >
-            <Plus size={16} /> Add New Table
+            <div className="nav-icon-badge">
+              <Plus size={14} />
+            </div>
+            <span>Add New Table</span>
           </button>
         </div>
       </div>
@@ -134,166 +138,155 @@ export const TableManagement: React.FC = () => {
           <p className="text-xs text-text-muted">There are no tables matching the selected zone filter right now.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {filteredTables.map(tb => {
-            const isOccupied = tb.status === 'occupied';
-            const capacity = tb.capacity || 4;
-            const assignedToken = tokens.find(tk => tk.tableId === tb.id || (tk.table && tk.table.id === tb.id));
-            const occupiedCount = assignedToken ? (assignedToken.personsCount || 1) : (isOccupied ? capacity : 0);
+        <div className="space-y-8">
+          {Array.from(new Set(filteredTables.map(tb => tb.capacity || 4)))
+            .sort((a, b) => b - a)
+            .map(cap => {
+              const capTables = filteredTables
+                .filter(tb => (tb.capacity || 4) === cap)
+                .sort((a, b) => a.tableNumber.localeCompare(b.tableNumber, undefined, { numeric: true, sensitivity: 'base' }));
 
-            return (
-              <div
-                key={tb.id}
-                onClick={() => setInspectingTable(tb)}
-                className={`p-6 rounded-3xl border transition-all cursor-pointer relative overflow-hidden grid grid-rows-[auto_1fr_auto] gap-4 h-72 ${
-                  tb.status === 'occupied'
-                    ? 'bg-bg-surface/50 border-primary/20 opacity-75 shadow-lg shadow-black/40'
-                    : tb.status === 'reserved'
-                    ? 'bg-bg-surface border-orange-500/20 shadow-md'
-                    : tb.status === 'maintenance'
-                    ? 'bg-bg-surface/50 border-border-main opacity-50 shadow-sm'
-                    : 'bg-bg-surface border-emerald-500/25 hover:border-[#8D6CE5]/50 hover:shadow-xl hover:shadow-[#8D6CE5]/5 shadow-md'
-                }`}
-              >
-                {/* Row 1: Header - Table Number & Status Pill */}
-                <div className="grid grid-cols-2 items-center justify-between">
-                  <div>
-                    <span className="font-mono text-[#8D6CE5] font-black text-2xl tracking-wide">{tb.tableNumber}</span>
-                    <p className="text-[10px] text-text-muted font-semibold uppercase tracking-wider block mt-0.5">
-                      {selectedPlace === 'STANDING_BAR' ? 'Standard Zone' : 'Premium Zone'}
-                    </p>
-                  </div>
+              if (capTables.length === 0) return null;
 
-                  <div className="flex justify-end">
-                    <span
-                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
-                        tb.status === 'occupied'
-                          ? 'dark:bg-primary-light/15 bg-primary-light dark:text-primary text-[#8D6CE5] border border-primary/30'
-                          : tb.status === 'reserved'
-                          ? 'dark:bg-orange-light/15 bg-orange-light dark:text-orange text-[#F19307] border border-orange/30'
-                          : tb.status === 'maintenance'
-                          ? 'dark:bg-zinc-800/50 bg-zinc-200/50 text-text-muted border border-border-main'
-                          : 'dark:bg-emerald-500/15 bg-emerald-500/10 dark:text-emerald-400 text-emerald-700 border border-emerald-500/30'
-                      }`}
-                    >
-                      {tb.status === 'occupied' ? <Users size={12} /> : <CheckCircle2 size={12} />}
-                      <span className="capitalize">{tb.status}</span>
-                    </span>
-                  </div>
-                </div>
+              return (
+                <SeatingRow key={cap} capacity={cap} tableCount={capTables.length}>
+                  {capTables.map(tb => {
+                    const isOccupied = tb.status === 'occupied';
+                    const capacity = tb.capacity || 4;
+                    const assignedToken = tokens.find(tk => tk.tableId === tb.id || (tk.table && tk.table.id === tb.id));
+                    const occupiedCount = assignedToken ? (assignedToken.personsCount || 1) : (isOccupied ? capacity : 0);
+                    const sizeCategory = capacity <= 2 ? 'Small' : capacity <= 4 ? 'Medium' : capacity <= 6 ? 'Large' : 'VIP Executive';
 
-                {/* Row 2: Grid Layout for Visual Seating & Metrics */}
-                <div className="py-2.5 px-4 rounded-2xl bg-bg-primary border border-border-main grid grid-rows-[auto_1fr_auto] items-center gap-1.5">
-                  <div className="flex justify-between w-full text-[10px] text-text-muted font-bold uppercase">
-                    <span>Seat Capacity</span>
-                    <span className={
-                      tb.status === 'occupied'
-                        ? 'dark:text-primary text-[#8D6CE5] font-extrabold'
-                        : tb.status === 'reserved'
-                        ? 'dark:text-orange text-[#F19307] font-extrabold'
-                        : 'dark:text-emerald-400 text-emerald-700 font-extrabold'
-                    }>
-                      {occupiedCount} / {capacity} Seats
-                    </span>
-                  </div>
+                    const isFull = isOccupied && occupiedCount >= capacity;
+                    const isPartial = isOccupied && occupiedCount > 0 && occupiedCount < capacity;
 
-                  {/* Micro Floor Plan Seating Alignment */}
-                  <div className="relative flex items-center justify-center h-14 bg-bg-surface/30 rounded-xl border border-border-main">
-                    {/* Top Seats Row */}
-                    <div className="absolute top-1.5 flex gap-2">
-                      {Array.from({ length: Math.ceil(capacity / 2) }).map((_, i) => {
-                        const isFilled = i < occupiedCount;
-                        return (
-                          <div
-                            key={`mini-top-${i}`}
-                            className={`w-3 h-3 rounded-full border transition-all ${
-                              isFilled
-                                ? tb.status === 'reserved'
-                                  ? 'bg-orange-500 border-orange-300 shadow-md shadow-orange-500/30 animate-pulse'
-                                  : 'bg-primary border-primary-light shadow-md shadow-primary/30 animate-pulse'
-                                : 'bg-bg-primary border-border-main'
+                    return (
+                      <div
+                        key={tb.id}
+                        onClick={() => setInspectingTable(tb)}
+                        className={`w-[290px] shrink-0 snap-start p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between gap-3 min-h-[295px] ${
+                          isFull
+                            ? 'bg-bg-surface/50 border-red-500/30 shadow-lg shadow-red-500/5'
+                            : isPartial
+                            ? 'bg-bg-surface/50 border-amber-500/30 shadow-md shadow-amber-500/5'
+                            : tb.status === 'reserved'
+                            ? 'bg-bg-surface border-blue-500/20 shadow-md'
+                            : tb.status === 'maintenance'
+                            ? 'bg-bg-surface/50 border-border-main opacity-60 shadow-sm'
+                            : 'bg-bg-surface border-emerald-500/30 hover:border-[#8D6CE5]/50 hover:shadow-xl hover:shadow-[#8D6CE5]/5 shadow-md'
+                        }`}
+                      >
+                        {/* Header: Table Number & Semantic Status Pill */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-mono text-[#8D6CE5] font-black text-xl tracking-wide">{tb.tableNumber}</span>
+                            <p className="text-[10px] text-text-muted font-semibold uppercase tracking-wider block mt-0.5">
+                              {selectedPlace === 'STANDING_BAR' ? 'Standard Zone' : 'Premium Zone'}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+                              isFull
+                                ? 'dark:bg-red-500/15 bg-red-500/10 dark:text-red-400 text-red-700 border border-red-500/30'
+                                : isPartial
+                                ? 'dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 border border-amber-500/30'
+                                : tb.status === 'reserved'
+                                ? 'dark:bg-blue-500/15 bg-blue-500/10 dark:text-blue-400 text-blue-700 border border-blue-500/30'
+                                : tb.status === 'maintenance'
+                                ? 'dark:bg-zinc-800/50 bg-zinc-200/50 text-text-muted border border-border-main'
+                                : 'dark:bg-emerald-500/15 bg-emerald-500/10 dark:text-emerald-400 text-emerald-700 border border-emerald-500/30'
                             }`}
-                            title={`Seat #${i + 1} (${isFilled ? 'Occupied' : 'Empty'})`}
+                          >
+                            {isOccupied ? <Users size={12} /> : <CheckCircle2 size={12} />}
+                            <span className="capitalize">
+                              {isFull ? 'Occupied (Full)' : isPartial ? 'Partially Occupied' : tb.status}
+                            </span>
+                          </span>
+                        </div>
+
+                        {/* Central Dynamic Table Diagram Container */}
+                        <div className="py-1 px-2 rounded-2xl bg-bg-primary/80 border border-border-main flex items-center justify-center h-28 relative">
+                          <TableDiagram
+                            capacity={capacity}
+                            occupiedCount={occupiedCount}
+                            status={tb.status}
+                            tableNumber={tb.tableNumber}
                           />
-                        );
-                      })}
-                    </div>
+                        </div>
 
-                    {/* Central table plate */}
-                    <div className={`px-4 py-0.5 bg-bg-primary border rounded text-[9px] font-mono font-black tracking-wider shadow ${
-                      tb.status === 'occupied'
-                        ? 'dark:text-primary text-[#8D6CE5] border-primary/30'
-                        : tb.status === 'reserved'
-                        ? 'dark:text-orange text-[#F19307] border-orange/30'
-                        : tb.status === 'maintenance'
-                        ? 'text-text-muted border-border-main'
-                        : 'dark:text-emerald-400 text-emerald-700 border-emerald-500/30'
-                    }`}>
-                      {tb.tableNumber}
-                    </div>
+                        {/* Info Bar - Size, Capacity & Token Metadata */}
+                        <div className="space-y-1 text-xs px-1">
+                          <div className="flex items-center justify-between text-[11px] font-bold text-text-muted">
+                            <span className="uppercase text-[10px] tracking-wider">{sizeCategory} • {capacity} {capacity === 1 ? 'Person' : 'Persons'}</span>
+                            <span className={
+                              isFull
+                                ? 'dark:text-red-400 text-red-700 font-extrabold'
+                                : isPartial
+                                ? 'dark:text-amber-400 text-amber-700 font-extrabold'
+                                : tb.status === 'reserved'
+                                ? 'dark:text-blue-400 text-blue-700 font-extrabold'
+                                : 'dark:text-emerald-400 text-emerald-700 font-extrabold'
+                            }>
+                              {occupiedCount} / {capacity} Seats
+                            </span>
+                          </div>
 
-                    {/* Bottom Seats Row */}
-                    <div className="absolute bottom-1.5 flex gap-2">
-                      {Array.from({ length: Math.floor(capacity / 2) }).map((_, i) => {
-                        const isFilled = (Math.ceil(capacity / 2) + i) < occupiedCount;
-                        return (
-                          <div
-                            key={`mini-bottom-${i}`}
-                            className={`w-3 h-3 rounded-full border transition-all ${
-                              isFilled
-                                ? tb.status === 'reserved'
-                                  ? 'bg-orange-500 border-orange-300 shadow-md shadow-orange-500/30 animate-pulse'
-                                  : 'bg-primary border-primary-light shadow-md shadow-primary/30 animate-pulse'
-                                : 'bg-bg-primary border-border-main'
-                            }`}
-                            title={`Seat #${Math.ceil(capacity / 2) + i + 1} (${isFilled ? 'Occupied' : 'Empty'})`}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
+                          {assignedToken ? (
+                            <div className="flex items-center justify-between text-[11px] border-t border-border-main/40 pt-1 text-text-muted">
+                              <span className="font-semibold truncate max-w-[120px]">👤 {assignedToken.customer?.name || 'Guest'}</span>
+                              <span className="font-mono text-[#8D6CE5] font-bold">{assignedToken.tokenNumber}</span>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-text-muted border-t border-border-main/30 pt-1 flex justify-between">
+                              <span>Rate Allowance:</span>
+                              <span className="font-mono font-bold text-text-main">₹500 / Session</span>
+                            </div>
+                          )}
+                        </div>
 
-                  <div className="h-5 flex items-center justify-center">
-                    {assignedToken ? (
-                      <p className="text-[11px] font-bold dark:text-primary text-[#8D6CE5] truncate max-w-full text-center">
-                        👤 {assignedToken.customer?.name || 'Guest'} ({assignedToken.tokenNumber})
-                      </p>
-                    ) : tb.status === 'reserved' ? (
-                      <p className="text-[10px] dark:text-orange text-[#F19307] text-center font-medium">Table Reserved</p>
-                    ) : tb.status === 'maintenance' ? (
-                      <p className="text-[10px] text-text-muted text-center font-medium">Under Maintenance</p>
-                    ) : (
-                      <p className="text-[10px] dark:text-emerald-400 text-emerald-700/80 text-center font-medium">Ready for guest seating</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Row 3: Action Buttons */}
-                <div className="pt-2 border-t border-border-main">
-                  {tb.status === 'occupied' ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRelease(tb.id);
-                      }}
-                      className="w-full py-2.5 rounded-xl dark:bg-red-500/20 bg-red-500/10 hover:bg-red-500/30 dark:text-red-300 text-red-700 font-bold text-xs border border-red-500/30 transition-all text-center cursor-pointer"
-                    >
-                      Release Table
-                    </button>
-                  ) : tb.status === 'maintenance' ? (
-                    <div className="w-full py-2.5 text-center text-text-muted font-bold text-xs bg-bg-hover rounded-xl border border-border-main">
-                      Locked
-                    </div>
-                  ) : (
-                    <div className="w-full py-2.5 text-center dark:text-emerald-400 text-emerald-700 font-bold text-xs bg-emerald-500/10 rounded-xl border border-emerald-500/20">
-                      Open for Seating
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                        {/* Card Action Row */}
+                        <div className="pt-2 border-t border-border-main/50">
+                          {tb.status === 'occupied' ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRelease(tb.id);
+                              }}
+                              className="w-full py-2.5 rounded-xl primary-btn bg-red-500 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer"
+                            >
+                              <div className="nav-icon-badge">
+                                <VideoOff size={12} />
+                              </div>
+                              <span>Release Table</span>
+                            </button>
+                          ) : tb.status === 'maintenance' ? (
+                            <div className="w-full py-2.5 text-center text-text-muted font-bold text-xs bg-bg-hover rounded-xl border border-border-main">
+                              Locked
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setInspectingTable(tb);
+                              }}
+                              className="w-full py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                            >
+                              <div className="nav-icon-badge">
+                                <Plus size={12} />
+                              </div>
+                              <span>Open for Seating</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </SeatingRow>
+              );
+            })}
         </div>
       )}
 
@@ -302,8 +295,6 @@ export const TableManagement: React.FC = () => {
         const capacity = inspectingTable.capacity || 4;
         const isOccupied = inspectingTable.status === 'occupied';
         const occupiedCount = inspectingToken ? (inspectingToken.personsCount || 1) : (isOccupied ? capacity : 0);
-        const topCount = Math.ceil(capacity / 2);
-        const bottomCount = Math.floor(capacity / 2);
 
         return (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
@@ -322,52 +313,19 @@ export const TableManagement: React.FC = () => {
                 </button>
               </div>
 
-              {/* Top Center Visual Seating View */}
+              {/* Top Center Visual Seating View using TableDiagram */}
               <div className="p-5 rounded-2xl bg-bg-primary border border-border-main flex flex-col items-center justify-center space-y-3">
                 <p className="text-[10px] font-extrabold uppercase tracking-widest text-text-muted">
                   Visual Seating Alignment ({occupiedCount} / {capacity} Seats Occupied)
                 </p>
 
-                <div className="flex flex-col items-center space-y-2">
-                  {/* Top Seats Row */}
-                  <div className="flex items-center justify-center gap-3">
-                    {Array.from({ length: topCount }).map((_, i) => {
-                      const isFilled = i < occupiedCount;
-                      return (
-                        <div key={`top-${i}`} className="flex flex-col items-center gap-1">
-                          <div className={`w-1 h-3 rounded-full ${isFilled ? 'bg-amber-400' : 'bg-gray-600'}`} />
-                          <div className={`w-8 h-8 rounded-full border flex items-center justify-center text-xs font-bold ${
-                            isFilled ? 'dark:bg-amber-500/20 bg-amber-500/10 dark:border-amber-400 border-amber-500 dark:text-amber-300 text-amber-700 font-extrabold shadow-sm' : 'bg-bg-primary border-border-main text-text-muted'
-                          }`}>
-                            👤
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Table Surface */}
-                  <div className="px-8 py-3 rounded-2xl bg-bg-primary border-2 border-[#8D6CE5] text-center min-w-[180px] shadow-lg">
-                    <p className="font-mono text-[#8D6CE5] font-black text-lg">{inspectingTable.tableNumber}</p>
-                    <p className="text-[10px] text-text-muted font-semibold">{selectedPlace === 'STANDING_BAR' ? 'Standard Zone' : 'Premium Zone'}</p>
-                  </div>
-
-                  {/* Bottom Seats Row */}
-                  <div className="flex items-center justify-center gap-3">
-                    {Array.from({ length: bottomCount }).map((_, i) => {
-                      const isFilled = (topCount + i) < occupiedCount;
-                      return (
-                        <div key={`bottom-${i}`} className="flex flex-col items-center gap-1">
-                          <div className={`w-8 h-8 rounded-full border flex items-center justify-center text-xs font-bold ${
-                            isFilled ? 'dark:bg-amber-500/20 bg-amber-500/10 dark:border-amber-400 border-amber-500 dark:text-amber-300 text-amber-700 font-extrabold shadow-sm' : 'bg-bg-primary border-border-main text-text-muted'
-                          }`}>
-                            👤
-                          </div>
-                          <div className={`w-1 h-3 rounded-full ${isFilled ? 'bg-amber-400' : 'bg-gray-600'}`} />
-                        </div>
-                      );
-                    })}
-                  </div>
+                <div className="w-full max-w-sm h-36 flex items-center justify-center">
+                  <TableDiagram
+                    capacity={capacity}
+                    occupiedCount={occupiedCount}
+                    status={inspectingTable.status}
+                    tableNumber={inspectingTable.tableNumber}
+                  />
                 </div>
               </div>
 
@@ -404,7 +362,7 @@ export const TableManagement: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setInspectingTable(null)}
-                  className="flex-1 py-3 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-bold text-text-muted cursor-pointer"
+                  className="flex-1 py-3 rounded-xl text-xs font-bold transition-all premium-btn-secondary text-red-400 border-red-500/30 bg-red-500/5 cursor-pointer"
                 >
                   Close Dialog
                 </button>
@@ -413,9 +371,12 @@ export const TableManagement: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleRelease(inspectingTable.id)}
-                    className="flex-1 py-3 rounded-xl dark:bg-red-500/20 bg-red-500/10 hover:bg-red-500/30 dark:text-red-300 text-red-700 font-bold text-xs border border-red-500/30 transition-all text-center cursor-pointer"
+                    className="flex-1 py-3 rounded-xl primary-btn bg-red-500 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
                   >
-                    Release Table
+                    <div className="nav-icon-badge">
+                      <VideoOff size={12} />
+                    </div>
+                    <span>Release Table</span>
                   </button>
                 )}
               </div>
@@ -484,13 +445,14 @@ export const TableManagement: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted"
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting || !isFormValid}
+                  title={isSubmitting ? "Creating..." : !isFormValid ? "Fill all fields" : undefined}
                   className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
                 >
                   {isSubmitting ? 'Creating...' : 'Confirm Table'}
