@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { User, KeyRound, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Sun, Moon, User, KeyRound, ShieldCheck, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export const LoginPage: React.FC = () => {
-  const { login } = useAuth();
+  const { login, isDark, toggleTheme } = useAuth();
   const [selectedRole, setSelectedRole] = useState<'REC' | 'BAR' | 'ADM' | 'MGR'>('ADM');
   const [username, setUsername] = useState('ADM-03');
   const [pin, setPin] = useState('1234');
@@ -21,6 +21,43 @@ export const LoginPage: React.FC = () => {
     };
     setUsername(defaults[role].user);
     setPin(defaults[role].pin);
+  };
+
+  const toggleThemeWithWave = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (
+      !(document as any).startViewTransition ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      toggleTheme();
+      return;
+    }
+
+    const x = e.clientX;
+    const y = e.clientY;
+
+    const right = window.innerWidth - x;
+    const bottom = window.innerHeight - y;
+    const maxRadius = Math.hypot(Math.max(x, right), Math.max(y, bottom));
+
+    const transition = (document as any).startViewTransition(() => {
+      toggleTheme();
+    });
+
+    transition.ready.then(() => {
+      document.documentElement.animate(
+        {
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${maxRadius}px at ${x}px ${y}px)`
+          ]
+        },
+        {
+          duration: 800,
+          easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+          pseudoElement: '::view-transition-new(root)'
+        }
+      );
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -41,9 +78,24 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F8F9FA] via-[#E9ECEF] to-[#DEE2E6] flex items-center justify-center p-4 lg:p-12 relative overflow-hidden text-text-main">
+    <div className="min-h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] flex items-center justify-center p-4 lg:p-12 relative overflow-hidden text-text-main">
+      {/* Theme Toggle in Top Right Corner */}
+      <div className="absolute top-4 right-4 z-20">
+        <button
+          onClick={toggleThemeWithWave}
+          className="p-2 transition-all premium-btn-secondary"
+          title="Toggle Color Theme"
+        >
+          {isDark ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} />}
+        </button>
+      </div>
       {/* Ambient background layers matching App.tsx */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0">
+        {/* Background Lounge Image */}
+        <div 
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-700 opacity-50 dark:opacity-30 mix-blend-normal"
+          style={{ backgroundImage: isDark ? "url('/login_bg_dark.png')" : "url('/login_bg_light.png')" }}
+        />
         {/* Orb 1: Warm Amber Top-Left/behind Sidebar */}
         <div className="absolute -top-[15%] -left-[10%] w-[45%] h-[55%] dark:bg-[radial-gradient(circle,rgba(241,147,7,0.06)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(241,147,7,0.04)_0%,transparent_70%)] rounded-full blur-[130px] animate-ambient-slow-1" />
 
@@ -103,7 +155,7 @@ export const LoginPage: React.FC = () => {
 
           {/* Error Banner */}
           {errorMsg && (
-            <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold flex items-center gap-2">
+            <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 dark:text-red-400 text-red-700 text-xs font-bold flex items-center gap-2">
               <span>⚠️</span>
               <span>{errorMsg}</span>
             </div>
@@ -112,7 +164,7 @@ export const LoginPage: React.FC = () => {
           {/* Role Selection Tabs styled as standardized premium segmented controls */}
           <div>
             <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2">1. Select Shift Role</label>
-            <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-white/5 dark:bg-black/10 border border-border-main">
+            <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-[#F8F7FC] dark:bg-black/10 border border-border-main">
               {(['REC', 'BAR', 'ADM', 'MGR'] as const).map(r => {
                 const isSel = selectedRole === r;
                 const labels = { REC: 'Recep', BAR: 'Bar', ADM: 'Admin', MGR: 'Mngr' };

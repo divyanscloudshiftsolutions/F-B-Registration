@@ -181,7 +181,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="glass-panel p-6 rounded-2xl flex items-center justify-between border-l-4 border-l-[#8D6CE5]">
+        <div className="glass-panel p-6 rounded-2xl flex items-center justify-between border-l-4 dark:border-l-[#8D6CE5] border-l-primary">
           <div>
             <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Active Guest Sessions</p>
             <h3 className="text-2xl font-black text-text-main mt-1">{activeTokensCount}</h3>
@@ -189,7 +189,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               <TrendingUp size={12} /> {totalGuestsInHouse} Total Guests In-House
             </p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-[#8D6CE5]/15 text-[#8D6CE5] flex items-center justify-center font-bold">
+          <div className="w-12 h-12 rounded-xl dark:bg-[#8D6CE5]/15 bg-primary/10 dark:text-[#8D6CE5] text-primary flex items-center justify-center font-bold">
             <Users size={24} />
           </div>
         </div>
@@ -299,7 +299,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
                       <button
                         onClick={() => setClosingToken(tk)}
-                        className="px-2 py-1 rounded dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 dark:text-red-400 text-red-700 text-[10px] font-bold border border-red-500/30 transition-all flex items-center gap-1 cursor-pointer"
+                        className="px-2 py-1 rounded dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 text-[10px] font-bold border border-red-500/30 transition-all flex items-center gap-1 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20"
                         title="Close Session"
                       >
                         <LogOut size={12} /> Checkout
@@ -320,19 +320,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 text-left">
-          <div className="p-3.5 bg-white/20 dark:bg-black/10 rounded-xl border border-border-main/50 flex flex-col justify-between">
+          <div className="p-3.5 bg-bg-secondary-surface dark:bg-black/10 rounded-xl border border-border-main/50 flex flex-col justify-between">
             <span className="text-[9px] text-text-muted block uppercase font-semibold tracking-wider">Avg Checkout</span>
             <span className="text-sm font-black text-text-main block mt-1">1h 45m</span>
           </div>
-          <div className="p-3.5 bg-white/20 dark:bg-black/10 rounded-xl border border-border-main/50 flex flex-col justify-between">
+          <div className="p-3.5 bg-bg-secondary-surface dark:bg-black/10 rounded-xl border border-border-main/50 flex flex-col justify-between">
             <span className="text-[9px] text-text-muted block uppercase font-semibold tracking-wider">Drink Conversion</span>
             <span className="text-sm font-black text-text-main block mt-1">84.2%</span>
           </div>
-          <div className="p-3.5 bg-white/20 dark:bg-black/10 rounded-xl border border-border-main/50 flex flex-col justify-between">
+          <div className="p-3.5 bg-bg-secondary-surface dark:bg-black/10 rounded-xl border border-border-main/50 flex flex-col justify-between">
             <span className="text-[9px] text-text-muted block uppercase font-semibold tracking-wider">QR Pass Active</span>
             <span className="text-sm font-black text-text-main block mt-1">94.8%</span>
           </div>
-          <div className="p-3.5 bg-white/20 dark:bg-black/10 rounded-xl border border-border-main/50 flex flex-col justify-between">
+          <div className="p-3.5 bg-bg-secondary-surface dark:bg-black/10 rounded-xl border border-border-main/50 flex flex-col justify-between">
             <span className="text-[9px] text-text-muted block uppercase font-semibold tracking-wider">Peak Seating</span>
             <span className="text-sm font-black text-text-main block mt-1">10:00 PM</span>
           </div>
@@ -367,12 +367,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
               {/* Bars Container */}
               <div className="flex-1 border-l border-b border-border-main px-2 flex justify-between items-end relative h-full">
+                {/* Background Grid lines */}
+                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none select-none pb-1">
+                  <div className="w-full border-t border-border-main/15 h-0" />
+                  <div className="w-full border-t border-border-main/15 h-0" />
+                  <div className="w-full border-t border-border-main/15 h-0" />
+                  <div className="w-full border-t border-border-main/15 h-0" />
+                  <div className="w-full h-0" />
+                </div>
+
                 {MOCK_REVENUE_TRENDS.map((trend, idx) => {
                   const maxVal = Math.max(...MOCK_REVENUE_TRENDS.map(t => t.value));
                   const isPeak = trend.value === maxVal;
                   const percent = Math.min(100, (trend.value / 62000) * 100);
                   return (
-                    <div key={idx} className="flex flex-col items-center flex-1 group h-full justify-end relative">
+                    <div key={idx} className="flex flex-col items-center flex-1 group h-full justify-end relative z-10">
                       {/* Tooltip amount on hover */}
                       <div className="absolute -top-6 text-[9px] font-mono font-bold text-[#8D6CE5] opacity-0 group-hover:opacity-100 transition-opacity bg-bg-surface px-1.5 py-0.5 rounded border border-border-main shadow-md z-20 pointer-events-none whitespace-nowrap">
                         ₹{(trend.value / 1000).toFixed(1)}k
@@ -408,7 +417,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               <span>Peak Hour Revenue</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded dark:bg-black/20 bg-white/40 border border-border-main" />
+              <div className="w-2.5 h-2.5 rounded analytics-bar-regular border border-border-main" />
               <span>Regular Shift Revenue</span>
             </div>
           </div>
@@ -417,10 +426,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         {/* Live Alerts & Notifications - SPANS 1 COLUMN */}
         <div className="glass-panel p-6 rounded-2xl border border-border-main flex flex-col justify-between h-[340px]">
           <div className="flex items-center justify-between pb-3 border-b border-border-main shrink-0">
-            <div className="flex items-center gap-2 text-red-400 font-bold text-sm">
+            <div className="flex items-center gap-2 dark:text-red-400 text-red-700 font-bold text-sm">
               <Bell size={18} /> Live System Alerts
             </div>
-            <span className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 text-[10px] font-bold">
+            <span className="px-2 py-0.5 rounded-full dark:bg-red-500/10 bg-red-500/10 dark:text-red-400 text-red-700 dark:border-red-500/20 border-red-500/30 text-[10px] font-bold">
               {MOCK_NOTIFICATIONS.length} Active
             </span>
           </div>
@@ -434,15 +443,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               const iconColorClass = notif.read 
                 ? 'text-text-muted bg-border-main/20' 
                 : isExpiring 
-                ? 'text-amber-500 bg-amber-550/15 dark:bg-amber-500/10 dark:text-amber-400' 
+                ? 'text-amber-700 bg-amber-500/15 dark:bg-amber-500/10 dark:text-amber-400' 
                 : isPayment 
-                ? 'text-emerald-500 bg-emerald-555/15 dark:bg-emerald-500/10 dark:text-emerald-400' 
+                ? 'text-emerald-700 bg-emerald-500/15 dark:bg-emerald-500/10 dark:text-emerald-400' 
                 : isCritical
-                ? 'text-red-500 bg-red-555/15 dark:bg-red-500/10 dark:text-red-400'
+                ? 'text-red-700 bg-red-500/15 dark:bg-red-500/10 dark:text-red-400'
                 : 'text-primary bg-primary/10';
 
               return (
-                <div key={notif.id} className="p-3 rounded-xl bg-white/20 dark:bg-black/10 border border-border-main flex items-start gap-3">
+                <div key={notif.id} className="p-3 rounded-xl bg-bg-secondary-surface dark:bg-black/10 border border-border-main flex items-start gap-3">
                   <div className={`mt-0.5 p-1.5 rounded-lg shrink-0 ${iconColorClass}`}>
                     <AlertCircle size={14} />
                   </div>
@@ -510,7 +519,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 <select
                   value={extraMinutes}
                   onChange={e => setExtraMinutes(Number(e.target.value))}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                 >
                   <option value={30}>30 Minutes</option>
                   <option value={60}>60 Minutes (1 Hour)</option>
@@ -525,7 +534,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                   type="number"
                   value={additionalAmount}
                   onChange={e => setAdditionalAmount(Number(e.target.value))}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                   required
                 />
               </div>
@@ -577,7 +586,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 <select
                   value={closeReason}
                   onChange={e => setCloseReason(e.target.value)}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                 >
                   <option value="CHECKOUT">Standard Guest Checkout</option>
                   <option value="EXPIRED">Session Time Expired</option>
@@ -593,12 +602,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingClose}
-                  title={isSubmittingClose ? "Request in progress" : undefined}
-                  className="flex-1 py-2.5 rounded-xl bg-red-500/20 hover:bg-red-600 text-red-200 dark:text-red-100 hover:text-white text-xs font-bold uppercase tracking-wider border border-red-500/30 transition-all cursor-pointer"
-                >
+                 <button
+                   type="submit"
+                   disabled={isSubmittingClose}
+                   title={isSubmittingClose ? "Request in progress" : undefined}
+                   className="flex-1 py-2.5 rounded-xl dark:bg-red-500/20 bg-red-500/10 dark:hover:bg-red-600 hover:bg-red-600 dark:text-red-200 text-red-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-red-500/30 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20"
+                 >
                   {isSubmittingClose ? 'Closing...' : 'Close & Release Table'}
                 </button>
               </div>

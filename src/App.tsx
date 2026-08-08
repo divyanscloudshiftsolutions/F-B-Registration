@@ -102,7 +102,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F8F9FA] via-[#E9ECEF] to-[#DEE2E6] text-text-primary font-sans overflow-hidden relative">
+    <div className="flex h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] text-text-primary font-sans overflow-hidden relative">
       {/* Multi-Layer Atmospheric Ambient Background Composition */}
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
         {/* Orb 1: Warm Amber Top-Left/behind Sidebar */}

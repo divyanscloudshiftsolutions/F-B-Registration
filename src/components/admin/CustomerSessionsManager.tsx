@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 
 export const CustomerSessionsManager: React.FC = () => {
-  const { showToast } = useAuth();
+  const { showToast, isDark } = useAuth();
   const { tokens, isLoading, refreshTokens, refreshTables } = useData();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -86,7 +86,7 @@ export const CustomerSessionsManager: React.FC = () => {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by Token Number, Customer Name, or Phone..."
-            className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5]"
+            className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
           />
         </div>
 
@@ -173,7 +173,7 @@ export const CustomerSessionsManager: React.FC = () => {
 
                       <button
                         onClick={() => setDeactivatingToken(tk)}
-                        className="px-2.5 py-1 rounded cursor-pointer dark:bg-red-500/20 bg-red-500/10 hover:dark:bg-red-500/30 hover:bg-red-500/20 dark:text-red-400 text-red-700 text-[10px] font-bold border border-red-500/30 transition-all flex items-center gap-1"
+                        className="px-2.5 py-1 rounded cursor-pointer dark:bg-red-500/20 bg-red-500/10 hover:dark:bg-red-500/30 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 text-[10px] font-bold border border-red-500/30 transition-all flex items-center gap-1 focus:outline-none focus:ring-2 focus:ring-red-500/20"
                       >
                         <LogOut size={12} /> Deactivate
                       </button>
@@ -211,7 +211,7 @@ export const CustomerSessionsManager: React.FC = () => {
                 <select
                   value={extraMinutes}
                   onChange={e => setExtraMinutes(Number(e.target.value))}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                 >
                   <option value={30}>30 Minutes</option>
                   <option value={60}>60 Minutes (1 Hour)</option>
@@ -226,7 +226,7 @@ export const CustomerSessionsManager: React.FC = () => {
                   type="number"
                   value={additionalAmount}
                   onChange={e => setAdditionalAmount(Number(e.target.value))}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                   required
                 />
               </div>
@@ -298,7 +298,9 @@ export const CustomerSessionsManager: React.FC = () => {
                   type="submit"
                   disabled={isSubmittingClose}
                   title={isSubmittingClose ? "Request in progress" : undefined}
-                  className="flex-1 py-2.5 rounded-xl primary-btn bg-red-500 text-xs font-bold uppercase tracking-wider"
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    isDark ? 'primary-btn bg-red-500' : 'bg-red-500/10 text-red-700 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/20'
+                  }`}
                 >
                   {isSubmittingClose ? 'Deactivating...' : 'Confirm Deactivation'}
                 </button>

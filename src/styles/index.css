@@ -1,62 +1,64 @@
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   /* Backgrounds */
-  --bg-primary: #F8F8F8;
+  --bg-primary: #F5F3FA;
   --bg-surface: #FFFFFF;
-  --bg-secondary-surface: #F4F5F7;
-  --bg-sidebar: rgba(255, 255, 255, 0.28);
-  --bg-workspace: rgba(255, 255, 255, 0.16);
-  --border-sidebar: rgba(255, 255, 255, 0.35);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
-  --glass-blur: 18px;
-  --bg-header: #FFFFFF;
+  --bg-secondary-surface: #F8F7FC;
+  --bg-sidebar: #FAF9FF;
+  --bg-workspace: #FAF9FF;
+  --border-sidebar: #E4E4E7;
+  --glass-shadow: 0 4px 20px rgba(0, 0, 0, 0.03), 0 1px 3px rgba(0, 0, 0, 0.01);
+  --glass-blur: 12px;
+  --bg-header: #F8F7FC;
   --bg-card: #FFFFFF;
   --bg-modal: #FFFFFF;
   --bg-table: #FFFFFF;
-  --bg-hover: #F2F3F5;
-  --bg-selected: #F6F2FF;
-  --divider: #E8E8E8;
-  --border: #E2E5E9;
-  --border-color: #E2E5E9;
+  --bg-hover: #F8F7FC;
+  --bg-selected: #EDE9FE;
+  --divider: #E4E4E7;
+  --border: #E4E4E7;
+  --border-color: #E4E4E7;
 
   /* Brand Colors */
-  --color-primary: #8D6CE5;
-  --color-primary-hover: #7B59DD;
-  --color-primary-light: #F2ECFF;
-  --color-primary-border: #D9CBFF;
-  --color-mint: #44F1C6;
-  --color-mint-light: #E7FFF8;
-  --color-pink: #F24DCE;
-  --color-pink-light: #FFE9FA;
-  --color-orange: #F19307;
-  --color-orange-light: #FFF4DF;
+  --color-primary: #7C3AED;
+  --color-primary-hover: #6D28D9;
+  --color-primary-light: #EDE9FE;
+  --color-primary-border: #DDD6FE;
+  --color-mint: #10B981;
+  --color-mint-light: #ECFDF5;
+  --color-pink: #EF4444;
+  --color-pink-light: #FEE2E2;
+  --color-orange: #F59E0B;
+  --color-orange-light: #FEF3C7;
 
   /* Text Colors */
-  --text-primary: rgba(17, 24, 39, 0.85);
-  --text-secondary: rgba(17, 24, 39, 0.60);
-  --text-muted: #7B7B7B;
-  --text-placeholder: #A4A4A4;
-  --text-disabled: #C7C7C7;
+  --text-primary: #18181B;
+  --text-secondary: #52525B;
+  --text-muted: #71717A;
+  --text-placeholder: #71717A;
+  --text-disabled: #A1A1AA;
   --text-inverse: #FFFFFF;
 
   /* Status Colors */
-  --color-success: #44F1C6;
-  --color-success-bg: #E7FFF8;
-  --color-success-border: #B9F8E7;
-  --color-warning: #F19307;
-  --color-warning-bg: #FFF4DF;
-  --color-warning-border: #FFDFA8;
-  --color-danger-status: #F24DCE;
-  --color-danger-bg: #FFE9FA;
-  --color-danger-border: #FFC8F0;
-  --color-info: #8D6CE5;
-  --color-info-bg: #F2ECFF;
-  --color-info-border: #D8CAFF;
-  --color-inactive: #D7D7D7;
+  --color-success: #10B981;
+  --color-success-bg: #ECFDF5;
+  --color-success-border: #A7F3D0;
+  --color-warning: #F59E0B;
+  --color-warning-bg: #FEF3C7;
+  --color-warning-border: #FDE68A;
+  --color-danger-status: #EF4444;
+  --color-danger-bg: #FEE2E2;
+  --color-danger-border: #FCA5A5;
+  --color-info: #3B82F6;
+  --color-info-bg: #EFF6FF;
+  --color-info-border: #BFDBFE;
+  --color-inactive: #A1A1AA;
 
-  --bg-card-glass: rgba(255, 255, 255, 0.85);
+  --bg-card-glass: rgba(255, 255, 255, 0.8);
 }
 
 .dark {
@@ -180,9 +182,13 @@ html, body {
   height: 100%;
   overflow: hidden;
   font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
   -webkit-font-smoothing: antialiased;
+}
+.dark body {
+  background-color: #0A0C10 !important;
+  color: #F3F4F6 !important;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -604,10 +610,10 @@ omg_this_is_unused_class_but_we_keep_to_match_target { color: transparent; }
 
 /* Revenue Analytics Chart Custom Bar Styles */
 .analytics-bar-regular {
-  background-color: var(--bg-secondary-surface) !important;
+  background-color: rgba(141, 108, 229, 0.2) !important;
 }
 .analytics-bar-regular:hover {
-  background-color: var(--bg-hover) !important;
+  background-color: rgba(141, 108, 229, 0.35) !important;
 }
 
 /* Premium Wave Theme Transition Configurations */
@@ -794,4 +800,238 @@ button[disabled]:hover {
 }
 :root:not(.dark) .ambient-vignette-overlay {
   background: radial-gradient(circle at 50% 50%, transparent 65%, rgba(0, 0, 0, 0.06) 100%);
+}
+
+/* Light Theme Input Overrides for Premium Contrast */
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]),
+select,
+textarea {
+  background-color: var(--bg-surface) !important;
+  border-color: #D4D4D8 !important;
+  color: var(--text-primary) !important;
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"])::placeholder,
+select::placeholder,
+textarea::placeholder {
+  color: #71717A !important;
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):focus,
+select:focus,
+textarea:focus {
+  border-color: #7C3AED !important;
+  --tw-ring-color: rgba(124, 58, 237, 0.2) !important;
+}
+
+/* Dark Theme Input resets */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]),
+.dark select,
+.dark textarea {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary) !important;
+}
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="submit"])::placeholder,
+.dark select::placeholder,
+.dark textarea::placeholder {
+  color: var(--text-placeholder) !important;
+}
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):focus,
+.dark select:focus,
+.dark textarea:focus {
+  border-color: var(--color-primary) !important;
+}
+
+/* Light Theme Menu Item Overrides */
+html:not(.dark) .premium-menu-item {
+  background: #FFFFFF;
+  border-color: #E4E4E7;
+  color: #52525B;
+}
+html:not(.dark) .nav-icon-badge {
+  background: #F8F7FC;
+  border-color: #E4E4E7;
+  color: #71717A;
+}
+html:not(.dark) .premium-menu-item:hover:not(.active) {
+  background: #EDE9FE;
+  border-color: #DDD6FE;
+  color: #18181B;
+}
+html:not(.dark) .premium-menu-item:hover:not(.active) .nav-icon-badge {
+  background: #FFFFFF;
+  border-color: #DDD6FE;
+  color: #7C3AED;
+}
+html:not(.dark) .premium-menu-item.active {
+  background: #EDE9FE !important;
+  color: #18181B !important;
+  border-color: #DDD6FE !important;
+  box-shadow: none !important;
+  font-weight: 600;
+}
+html:not(.dark) .premium-menu-item.active .nav-icon-badge {
+  background: #FFFFFF !important;
+  border-color: #DDD6FE !important;
+  color: #7C3AED !important;
+  box-shadow: none !important;
+}
+html:not(.dark) .premium-menu-item.active .lucide,
+html:not(.dark) .premium-menu-item.active span {
+  color: #18181B !important;
+}
+
+/* Light Theme Sub-Menu Item Overrides */
+html:not(.dark) .glass-sub-menu-btn {
+  background: #FFFFFF;
+  border-color: #E4E4E7;
+  color: #52525B;
+}
+html:not(.dark) .glass-sub-menu-btn:hover:not(.active) {
+  background: #EDE9FE !important;
+  border-color: #DDD6FE !important;
+  color: #18181B !important;
+  box-shadow: none !important;
+}
+html:not(.dark) .glass-sub-menu-btn.active {
+  background: #EDE9FE !important;
+  color: #18181B !important;
+  border-color: #DDD6FE !important;
+  box-shadow: none !important;
+  font-weight: 600;
+}
+
+/* Light Theme Primary Button Overrides (Matching Dark Theme Premium Interactions) */
+html:not(.dark) .primary-btn,
+html:not(.dark) .premium-btn-primary {
+  background: linear-gradient(135deg, #7C3AED, #6D28D9) !important;
+  color: #FFFFFF !important;
+  border: 1px solid #6D28D9 !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), inset 0 0 10px rgba(124, 58, 237, 0.15), 0 0 16px rgba(124, 58, 237, 0.2), 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+html:not(.dark) .primary-btn:hover,
+html:not(.dark) .premium-btn-primary:hover {
+  transform: translateY(-1px) !important;
+  background: linear-gradient(135deg, #6D28D9, #5B21B6) !important;
+  border-color: #5B21B6 !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 12px rgba(124, 58, 237, 0.2), 0 0 20px rgba(124, 58, 237, 0.3), 0 4px 8px rgba(124, 58, 237, 0.1) !important;
+}
+html:not(.dark) .primary-btn:active,
+html:not(.dark) .premium-btn-primary:active {
+  transform: scale(0.97) translateY(0) !important;
+  background: linear-gradient(135deg, #5B21B6, #4C1D95) !important;
+  border-color: #4C1D95 !important;
+  box-shadow: inset 0 1.5px 2px rgba(255, 255, 255, 0.4), inset 0 0 15px rgba(124, 58, 237, 0.4), 0 0 24px rgba(124, 58, 237, 0.4) !important;
+}
+html:not(.dark) .primary-btn:focus,
+html:not(.dark) .premium-btn-primary:focus {
+  outline: none !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 0 0 3px rgba(124, 58, 237, 0.45), 0 0 16px rgba(124, 58, 237, 0.2) !important;
+}
+
+/* Light Theme Secondary Button Overrides */
+html:not(.dark) .premium-btn-secondary {
+  background: #FFFFFF !important;
+  color: #7C3AED !important;
+  border: 1px solid #DDD6FE !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+}
+html:not(.dark) .premium-btn-secondary:hover {
+  background: #EDE9FE !important;
+  color: #6D28D9 !important;
+  border-color: #DDD6FE !important;
+}
+html:not(.dark) .premium-btn-secondary:active,
+html:not(.dark) .premium-btn-secondary.active {
+  background: #EDE9FE !important;
+  color: #5B21B6 !important;
+  border-color: #DDD6FE !important;
+}
+
+/* Light Theme Tabs Overrides */
+html:not(.dark) .premium-tab-primary {
+  background: #FFFFFF;
+  border-color: #E4E4E7;
+  color: #52525B;
+}
+html:not(.dark) .premium-tab-primary:hover:not(.active) {
+  background: #F8F7FC !important;
+  color: #18181B !important;
+  border-color: #DDD6FE !important;
+}
+html:not(.dark) .premium-tab-primary.active {
+  background: #EDE9FE !important;
+  color: #7C3AED !important;
+  border-color: #DDD6FE !important;
+  box-shadow: none !important;
+  font-weight: 700;
+}
+html:not(.dark) .premium-tab-primary:active {
+  background: #DDD6FE !important;
+  color: #6D28D9 !important;
+}
+
+/* Secondary Tabs */
+html:not(.dark) .premium-tab-secondary {
+  background: #FFFFFF !important;
+  border: 1px solid #E4E4E7 !important;
+  color: #52525B !important;
+}
+html:not(.dark) .premium-tab-secondary:hover:not(.active) {
+  background: #F1EFF8 !important;
+  color: #3F3F46 !important;
+  border-color: #DDD6FE !important;
+  transform: translateY(-0.5px) !important;
+}
+html:not(.dark) .premium-tab-secondary.active {
+  background: #EDE9FE !important;
+  color: #7C3AED !important;
+  border-color: #DDD6FE !important;
+  box-shadow: none !important;
+  font-weight: 700 !important;
+}
+html:not(.dark) .premium-tab-secondary:active,
+html:not(.dark) .premium-tab-secondary.active:active {
+  background: #DDD6FE !important;
+  border-color: #DDD6FE !important;
+  color: #6D28D9 !important;
+  transform: scale(0.97) !important;
+}
+html:not(.dark) .premium-tab-secondary:focus-visible,
+html:not(.dark) .premium-tab-secondary:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2.5px rgba(124, 58, 237, 0.4) !important;
+}
+
+/* Light Theme Revenue Analytics Chart Regular Bar Overrides */
+html:not(.dark) .analytics-bar-regular {
+  background-color: var(--color-primary-border) !important;
+}
+html:not(.dark) .analytics-bar-regular:hover {
+  background-color: var(--color-primary) !important;
+  opacity: 0.8;
+}
+
+/* Light Theme Destructive/Cancellation Button Parity Override */
+html:not(.dark) .premium-btn-secondary.cancellation-btn {
+  background: rgba(239, 68, 68, 0.08) !important;
+  color: #B91C1C !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+  box-shadow: none !important;
+}
+html:not(.dark) .premium-btn-secondary.cancellation-btn:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #991B1B !important;
+  border-color: rgba(239, 68, 68, 0.5) !important;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.15) !important;
+}
+html:not(.dark) .premium-btn-secondary.cancellation-btn:active {
+  background: rgba(239, 68, 68, 0.25) !important;
+  color: #7F1D1D !important;
+  border-color: rgba(239, 68, 68, 0.5) !important;
+}
+html:not(.dark) .premium-btn-secondary.cancellation-btn:focus-visible,
+html:not(.dark) .premium-btn-secondary.cancellation-btn:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2.5px rgba(239, 68, 68, 0.4) !important;
 }
