@@ -38,17 +38,17 @@ export const AppBadge: React.FC<AppBadgeProps> = ({
         };
       case 'gold':
         return {
-          bg: 'rgba(255, 159, 28, 0.15)',
-          border: 'rgba(255, 159, 28, 0.3)',
-          text: '#FF9F1C',
-          dotColor: '#FF9F1C',
+          bg: isDark ? 'rgba(141, 110, 229, 0.15)' : 'rgba(124, 58, 237, 0.12)',
+          border: isDark ? 'rgba(141, 110, 229, 0.3)' : 'rgba(124, 58, 237, 0.2)',
+          text: colors.primary,
+          dotColor: colors.primary,
         };
       case 'role':
         return {
-          bg: isDark ? 'rgba(255, 159, 28, 0.1)' : 'rgba(212, 175, 55, 0.1)',
-          border: 'rgba(255, 159, 28, 0.25)',
-          text: '#FF9F1C',
-          dotColor: '#FF9F1C',
+          bg: isDark ? 'rgba(141, 110, 229, 0.1)' : 'rgba(124, 58, 237, 0.08)',
+          border: isDark ? 'rgba(141, 110, 229, 0.25)' : 'rgba(124, 58, 237, 0.15)',
+          text: colors.primary,
+          dotColor: colors.primary,
         };
       case 'danger':
         return {
@@ -59,8 +59,8 @@ export const AppBadge: React.FC<AppBadgeProps> = ({
         };
       case 'neutral':
         return {
-          bg: isDark ? '#171A22' : colors.secondarySurface,
-          border: isDark ? 'rgba(255,255,255,0.1)' : colors.border,
+          bg: colors.secondarySurface,
+          border: colors.border,
           text: colors.text,
           dotColor: colors.text,
         };

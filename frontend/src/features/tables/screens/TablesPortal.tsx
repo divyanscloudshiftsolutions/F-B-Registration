@@ -139,7 +139,7 @@ export const TablesPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true
     // Determine colors/classes based on status
     let primaryColor = colors.gold; // Gold default
     let labelText = 'Occupied';
-    let filledBg = isDark ? 'rgba(245, 166, 35, 0.12)' : '#FEF3C7';
+    let filledBg = isDark ? 'rgba(141, 110, 229, 0.12)' : 'rgba(124, 58, 237, 0.08)';
     
     if (table.status === TableStatus.MAINTENANCE) {
       primaryColor = colors.muted; // Muted gray
@@ -563,7 +563,7 @@ export const TablesPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true
                          : (table.status === TableStatus.RESERVED 
                             ? (isDark ? 'rgba(59, 130, 246, 0.12)' : '#EFF6FF') 
                             : (table.status === TableStatus.OCCUPIED 
-                               ? (isDark ? 'rgba(245, 166, 35, 0.12)' : '#FEF3C7') 
+                               ? (isDark ? 'rgba(141, 110, 229, 0.12)' : 'rgba(124, 58, 237, 0.08)') 
                                : colors.secondarySurface))),
                     borderColor: isExp 
                       ? colors.red 
@@ -572,7 +572,7 @@ export const TablesPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true
                          : (table.status === TableStatus.RESERVED 
                             ? (isDark ? 'rgba(59, 130, 246, 0.35)' : '#BFDBFE') 
                             : (table.status === TableStatus.OCCUPIED 
-                               ? (isDark ? 'rgba(245, 166, 35, 0.3)' : '#FDE68A') 
+                               ? (isDark ? 'rgba(141, 110, 229, 0.35)' : 'rgba(124, 58, 237, 0.25)') 
                                : colors.border))),
                     borderWidth: 1.5,
                     borderRadius: 12,

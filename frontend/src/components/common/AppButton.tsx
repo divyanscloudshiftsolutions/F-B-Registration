@@ -34,10 +34,10 @@ export const AppButton: React.FC<AppButtonProps> = ({
     switch (variant) {
       case 'primary':
         return {
-          bg: '#FF9F1C',
-          border: '#FF9F1C',
-          text: '#08090D',
-          iconColor: '#08090D',
+          bg: colors.primary,
+          border: colors.primary,
+          text: colors.goldButtonText,
+          iconColor: colors.goldButtonText,
         };
       case 'secondary':
         return {

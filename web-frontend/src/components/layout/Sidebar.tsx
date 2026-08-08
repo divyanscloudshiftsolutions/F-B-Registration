@@ -195,7 +195,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <div className={`w-1.5 h-1.5 rounded-full ${sub.active ? 'bg-white shadow-[0_0_8px_#8D6CE5]' : 'bg-text-muted/40'}`} />
+                  <div className={`w-1.5 h-1.5 rounded-full ${sub.active ? 'dark:bg-white bg-primary shadow-[0_0_8px_#8D6CE5]' : 'bg-text-muted/40'}`} />
                   <span>{sub.label}</span>
                 </div>
               </button>

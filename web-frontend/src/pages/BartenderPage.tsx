@@ -443,7 +443,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
             ) : (
               <button
                 onClick={stopCamera}
-                className="px-4 py-2 rounded-xl premium-btn-secondary text-red-400 border-red-500/30 bg-red-500/5 text-xs font-bold transition-all flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl premium-btn-secondary cancellation-btn dark:text-red-400 text-red-700 dark:border-red-500/30 border-red-500/30 dark:bg-red-500/5 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 <div className="nav-icon-badge">
                   <VideoOff size={14} />
@@ -492,8 +492,8 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                       className="w-full h-full object-cover" 
                     />
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-48 h-48 border-2 border-[#8D6CE5] rounded-3xl animate-pulse flex items-center justify-center">
-                        <span className="text-[10px] text-[#8D6CE5] font-extrabold uppercase tracking-widest bg-black/60 px-2 py-1 rounded-md">Align QR Code</span>
+                      <div className="w-48 h-48 border-2 dark:border-[#8D6CE5] border-primary rounded-3xl animate-pulse flex items-center justify-center">
+                        <span className="text-[10px] dark:text-[#8D6CE5] text-primary font-extrabold uppercase tracking-widest bg-black/60 px-2 py-1 rounded-md">Align QR Code</span>
                       </div>
                     </div>
                   </>
@@ -519,7 +519,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                       value={tokenInput}
                       onChange={e => setTokenInput(e.target.value.toUpperCase())}
                       placeholder="e.g. TKB-0104"
-                      className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5]"
+                      className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                     />
                   </div>
 
@@ -552,8 +552,8 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                 <span
                   className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${
                     isQuotaDepleted
-                      ? 'bg-red-500/20 text-red-300 border border-red-500/40'
-                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      ? 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-300 text-red-700 border dark:border-red-500/40 border-red-500/30'
+                      : 'dark:bg-emerald-500/20 bg-emerald-500/10 dark:text-emerald-300 text-emerald-700 border dark:border-emerald-500/40 border-emerald-500/30'
                   }`}
                 >
                   {isQuotaDepleted ? <AlertCircle size={12} /> : <CheckCircle2 size={12} />}
@@ -658,7 +658,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Global Session Search (Search by Guest Name, Phone Number, Email, or Token code...)"
-                className="w-full bg-bg-primary border border-border-main rounded-2xl pl-12 pr-4 py-3 text-sm text-text-main placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5] font-semibold"
+                className="w-full bg-bg-primary border border-border-main rounded-2xl pl-12 pr-4 py-3 text-sm text-text-main placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary font-semibold"
               />
             </div>
             {searchQuery.trim() !== '' && (
@@ -701,11 +701,11 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                         </span>
 
                         {/* Status Badges */}
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider dark:bg-emerald-500/10 bg-emerald-500/10 dark:text-emerald-400 text-emerald-700 dark:border-emerald-500/20 border-emerald-500/30">
                           {tk.status}
                         </span>
 
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-primary/10 text-[#8D6CE5] border border-[#8D6CE5]/20">
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-primary/10 dark:text-[#8D6CE5] text-primary border dark:border-[#8D6CE5]/20 border-primary/20">
                           {tk.deliveryMode || 'EMAIL_QR'}
                         </span>
                       </div>
@@ -746,7 +746,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                       <div className="text-left sm:text-right space-y-1">
                         <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Redemption Progress</span>
                         <div className="flex items-center gap-2">
-                          <span className={`text-sm font-black font-mono ${isTokenQuotaDepleted ? 'text-red-400' : 'text-emerald-400'}`}>
+                          <span className={`text-sm font-black font-mono ${isTokenQuotaDepleted ? 'dark:text-red-400 text-red-700' : 'dark:text-emerald-400 text-emerald-700'}`}>
                             {tk.redemptionsUsed} / {tk.totalRedemptionsAllowed}
                           </span>
                           <span className="text-[10px] text-text-muted font-semibold">Drinks Used</span>
@@ -771,7 +771,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                           onClick={() => handleRedeemForToken(tk)}
                           disabled={isRedeeming || isTokenQuotaDepleted}
                           title={isTokenQuotaDepleted ? "Drink quota limit reached for this session." : "Dispense 1 Drink"}
-                          className="px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-600 text-emerald-200 hover:text-white text-xs font-bold uppercase tracking-wider border border-emerald-500/30 transition-all flex items-center gap-1 disabled:opacity-40 cursor-pointer"
+                          className="px-3 py-2 rounded-xl dark:bg-emerald-500/20 bg-emerald-500/10 dark:hover:bg-emerald-600 hover:bg-emerald-600 dark:text-emerald-200 text-emerald-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-emerald-500/30 transition-all flex items-center gap-1 disabled:opacity-40 cursor-pointer"
                         >
                           <Wine size={12} /> Redeem
                         </button>
@@ -786,7 +786,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
                         <button
                           onClick={() => setClosingToken(tk)}
-                          className="px-3 py-2 rounded-xl dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 dark:text-red-400 text-red-700 text-xs font-bold border border-red-500/30 transition-all flex items-center gap-1 cursor-pointer"
+                          className="px-3 py-2 rounded-xl dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 text-xs font-bold border border-red-500/30 transition-all flex items-center gap-1 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20"
                           title="Checkout Session"
                         >
                           <LogOut size={12} /> Checkout
@@ -820,7 +820,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
       {/* 1. EXTEND SESSION MODAL */}
       {extendingToken && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 dark:bg-black/75 bg-slate-900/35 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
             <button 
               onClick={() => setExtendingToken(null)}
@@ -843,7 +843,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                 <select
                   value={extraMinutes}
                   onChange={e => setExtraMinutes(Number(e.target.value))}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                 >
                   <option value={30}>30 Minutes</option>
                   <option value={60}>60 Minutes (1 Hour)</option>
@@ -858,7 +858,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                   type="number"
                   value={additionalAmount}
                   onChange={e => setAdditionalAmount(Number(e.target.value))}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                   required
                 />
               </div>
@@ -887,7 +887,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
       {/* 2. CLOSE / CHECKOUT SESSION MODAL */}
       {closingToken && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 dark:bg-black/75 bg-slate-900/35 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
             <button 
               onClick={() => setClosingToken(null)}
@@ -910,7 +910,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                 <select
                   value={closeReason}
                   onChange={e => setCloseReason(e.target.value)}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                 >
                   <option value="CHECKOUT">Standard Guest Checkout</option>
                   <option value="EXPIRED">Session Time Expired</option>
@@ -930,7 +930,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                   type="submit"
                   disabled={isSubmittingClose}
                   title={isSubmittingClose ? "Request in progress" : undefined}
-                  className="flex-1 py-2.5 rounded-xl bg-red-500/20 hover:bg-red-600 text-red-200 dark:text-red-100 hover:text-white text-xs font-bold uppercase tracking-wider border border-red-500/30 transition-all cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl dark:bg-red-500/20 bg-red-500/10 dark:hover:bg-red-600 hover:bg-red-600 dark:text-red-200 text-red-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-red-500/30 transition-all cursor-pointer"
                 >
                   {isSubmittingClose ? 'Closing...' : 'Close & Release Table'}
                 </button>

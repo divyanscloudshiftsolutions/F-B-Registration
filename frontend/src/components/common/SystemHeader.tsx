@@ -127,7 +127,8 @@ export const SystemHeader: React.FC<SystemHeaderProps> = ({ onOpenNotifs }) => {
       <View className="flex-row items-center gap-2">
         {/* Quick Attendance Kiosk Button */}
         <TouchableOpacity 
-          className="w-10 h-10 rounded-full justify-center items-center border bg-[#171A22] border-[#D4AF37]/40"
+          className="w-10 h-10 rounded-full justify-center items-center border"
+          style={{ backgroundColor: colors.secondarySurface, borderColor: colors.border, borderWidth: 1 }}
           onPress={() => setScreen('quick_attendance')}
           activeOpacity={0.8}
           accessibilityLabel="Open Quick Attendance Kiosk"
@@ -137,22 +138,24 @@ export const SystemHeader: React.FC<SystemHeaderProps> = ({ onOpenNotifs }) => {
 
         {/* Theme Toggle Button */}
         <TouchableOpacity 
-          className="w-10 h-10 rounded-full justify-center items-center border bg-[#171A22] border-white/10"
+          className="w-10 h-10 rounded-full justify-center items-center border"
+          style={{ backgroundColor: colors.secondarySurface, borderColor: colors.border, borderWidth: 1 }}
           onPress={toggleTheme}
           activeOpacity={0.8}
         >
-          <AppIcon name={isDark ? 'sun' : 'moon'} color="#FF9F1C" size={18} />
+          <AppIcon name={isDark ? 'sun' : 'moon'} color={colors.primary} size={18} />
         </TouchableOpacity>
 
         {/* Notifications Icon Button with Dot Badge */}
         <TouchableOpacity 
-          className="w-10 h-10 rounded-full justify-center items-center border bg-[#171A22] border-white/10 relative"
+          className="w-10 h-10 rounded-full justify-center items-center border relative"
+          style={{ backgroundColor: colors.secondarySurface, borderColor: colors.border, borderWidth: 1 }}
           onPress={onOpenNotifs}
           activeOpacity={0.8}
         >
-          <AppIcon name="bell" label="Open Notifications" color="#FFFFFF" size={18} />
+          <AppIcon name="bell" label="Open Notifications" color={colors.text} size={18} />
           {unreadCount > 0 && (
-            <View className="absolute top-0 right-0 w-3 h-3 rounded-full bg-[#FF9F1C] border-2 border-[#08090D]" />
+            <View className="absolute top-0 right-0 w-3 h-3 rounded-full bg-red border-2" style={{ backgroundColor: colors.red, borderColor: colors.bg }} />
           )}
         </TouchableOpacity>
       </View>

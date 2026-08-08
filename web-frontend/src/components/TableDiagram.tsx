@@ -1,4 +1,5 @@
 import React from 'react';
+import { useAuth } from '../context/AuthContext';
 
 interface TableDiagramProps {
   capacity: number;
@@ -15,6 +16,7 @@ export const TableDiagram: React.FC<TableDiagramProps> = ({
   tableNumber,
   className = '',
 }) => {
+  const { isDark } = useAuth();
   const cap = Math.max(1, capacity);
   const occ = Math.min(cap, Math.max(0, occupiedCount));
 
@@ -236,7 +238,7 @@ export const TableDiagram: React.FC<TableDiagramProps> = ({
           x={tx + tableWidth / 2}
           y={ty + tableHeight / 2 + 3.5}
           textAnchor="middle"
-          fill={isFull ? '#EF4444' : isPartial ? '#F59E0B' : isAvailable ? '#10B981' : '#8D6CE5'}
+          fill={isFull ? '#EF4444' : isPartial ? '#F59E0B' : isAvailable ? '#10B981' : (isDark ? '#8D6CE5' : '#7C3AED')}
           fontSize="9.5"
           fontWeight="900"
           fontFamily="monospace"

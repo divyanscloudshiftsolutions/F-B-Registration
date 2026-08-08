@@ -35,7 +35,7 @@ export const AppSuccessState: React.FC<AppSuccessStateProps> = ({
   const { colors, isDark } = useTheme();
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#111318' : colors.card, borderColor: isDark ? 'rgba(255,255,255,0.08)' : colors.border }, style]}>
+    <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }, style]}>
       {/* Large Success Badge */}
       <View style={[styles.badge, { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.3)' }]}>
         <AppIcon name={icon} color="#10B981" size={42} />
@@ -46,7 +46,7 @@ export const AppSuccessState: React.FC<AppSuccessStateProps> = ({
 
       {/* Details Box */}
       {details.length > 0 && (
-        <View style={[styles.detailsBox, { backgroundColor: isDark ? '#171A22' : colors.secondarySurface, borderColor: isDark ? 'rgba(255,255,255,0.08)' : colors.border }]}>
+        <View style={[styles.detailsBox, { backgroundColor: colors.secondarySurface, borderColor: colors.border }]}>
           {details.map((item, idx) => (
             <View key={idx} style={[styles.detailRow, idx < details.length - 1 && { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : colors.divider, borderBottomWidth: 1 }]}>
               <Text style={[styles.detailLabel, { color: colors.muted }]}>{item.label}</Text>

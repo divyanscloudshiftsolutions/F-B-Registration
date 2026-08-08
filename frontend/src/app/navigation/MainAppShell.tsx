@@ -288,8 +288,8 @@ export const MainAppShell: React.FC = () => {
             style={{ 
               paddingBottom: Math.max(12, insets.bottom), 
               height: 64 + Math.max(12, insets.bottom), 
-              backgroundColor: '#08090D', 
-              borderTopColor: 'rgba(255,255,255,0.08)', 
+              backgroundColor: colors.navBg, 
+              borderTopColor: colors.navBorder, 
               borderTopWidth: 1 
             }}
           >
@@ -300,15 +300,15 @@ export const MainAppShell: React.FC = () => {
                 activeOpacity={0.8}
               >
                 <View className="mb-1">
-                  <AppIcon name="checkin" color={activeTab === 'checkin' ? '#FF9F1C' : '#8E8E93'} size={20} />
+                  <AppIcon name="checkin" color={activeTab === 'checkin' ? colors.navActive : colors.navInactive} size={20} />
                 </View>
                 <Text 
                   className="text-[10px] font-black uppercase tracking-wider mb-1 text-center" 
-                  style={{ color: activeTab === 'checkin' ? '#FF9F1C' : '#8E8E93' }}
+                  style={{ color: activeTab === 'checkin' ? colors.navActive : colors.navInactive }}
                 >
                   CHECK-IN
                 </Text>
-                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'checkin' ? '#FF9F1C' : 'transparent' }} />
+                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'checkin' ? colors.navActive : 'transparent' }} />
               </TouchableOpacity>
             )}
 
@@ -319,15 +319,15 @@ export const MainAppShell: React.FC = () => {
                 activeOpacity={0.8}
               >
                 <View className="mb-1">
-                  <AppIcon name="bartender" color={activeTab === 'bartender' ? '#FF9F1C' : '#8E8E93'} size={20} />
+                  <AppIcon name="bartender" color={activeTab === 'bartender' ? colors.navActive : colors.navInactive} size={20} />
                 </View>
                 <Text 
                   className="text-[10px] font-black uppercase tracking-wider mb-1 text-center" 
-                  style={{ color: activeTab === 'bartender' ? '#FF9F1C' : '#8E8E93' }}
+                  style={{ color: activeTab === 'bartender' ? colors.navActive : colors.navInactive }}
                 >
                   BARTENDER
                 </Text>
-                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'bartender' ? '#FF9F1C' : 'transparent' }} />
+                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'bartender' ? colors.navActive : 'transparent' }} />
               </TouchableOpacity>
             )}
 
@@ -338,15 +338,15 @@ export const MainAppShell: React.FC = () => {
                 activeOpacity={0.8}
               >
                 <View className="mb-1">
-                  <AppIcon name="tables" color={activeTab === 'tables' ? '#FF9F1C' : '#8E8E93'} size={20} />
+                  <AppIcon name="tables" color={activeTab === 'tables' ? colors.navActive : colors.navInactive} size={20} />
                 </View>
                 <Text 
                   className="text-[10px] font-black uppercase tracking-wider mb-1 text-center" 
-                  style={{ color: activeTab === 'tables' ? '#FF9F1C' : '#8E8E93' }}
+                  style={{ color: activeTab === 'tables' ? colors.navActive : colors.navInactive }}
                 >
                   TABLES
                 </Text>
-                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'tables' ? '#FF9F1C' : 'transparent' }} />
+                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'tables' ? colors.navActive : 'transparent' }} />
               </TouchableOpacity>
             )}
 
@@ -357,15 +357,15 @@ export const MainAppShell: React.FC = () => {
                 activeOpacity={0.8}
               >
                 <View className="mb-1">
-                  <AppIcon name="admin" color={activeTab === 'admin' ? '#FF9F1C' : '#8E8E93'} size={20} />
+                  <AppIcon name="admin" color={activeTab === 'admin' ? colors.navActive : colors.navInactive} size={20} />
                 </View>
                 <Text 
                   className="text-[10px] font-black uppercase tracking-wider mb-1 text-center" 
-                  style={{ color: activeTab === 'admin' ? '#FF9F1C' : '#8E8E93' }}
+                  style={{ color: activeTab === 'admin' ? colors.navActive : colors.navInactive }}
                 >
                   ADMIN
                 </Text>
-                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'admin' ? '#FF9F1C' : 'transparent' }} />
+                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'admin' ? colors.navActive : 'transparent' }} />
               </TouchableOpacity>
             )}
           </View>

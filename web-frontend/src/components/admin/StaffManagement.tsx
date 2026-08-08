@@ -87,7 +87,7 @@ export const StaffManagement: React.FC = () => {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search staff members by name, code or role..."
-            className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5]"
+            className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
           />
         </div>
 
@@ -136,7 +136,7 @@ export const StaffManagement: React.FC = () => {
               <tbody className="divide-y divide-border-main">
                 {filteredUsers.map(u => (
                   <tr key={u.id} className="hover:bg-bg-primary transition-colors">
-                    <td className="py-3 px-3 font-mono font-bold text-[#8D6CE5]">{u.username}</td>
+                    <td className="py-3 px-3 font-mono font-bold dark:text-[#8D6CE5] text-primary">{u.username}</td>
                     <td className="py-3 px-3 font-semibold text-text-main">{u.fullName}</td>
                     <td className="py-3 px-3">
                       <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
@@ -161,10 +161,10 @@ export const StaffManagement: React.FC = () => {
                     <td className="py-3 px-3">
                       <button
                         onClick={() => handleToggleStatus(u)}
-                        className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                        className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer focus:outline-none focus:ring-2 ${
                           u.isActive
-                            ? 'dark:bg-red-500/20 bg-red-500/10 hover:dark:bg-red-500/30 hover:bg-red-500/20 dark:text-red-400 text-red-700 border-red-500/30'
-                            : 'dark:bg-emerald-500/20 bg-emerald-500/10 hover:dark:bg-emerald-500/30 hover:bg-emerald-500/20 dark:text-emerald-400 text-emerald-700 border-emerald-500/30'
+                            ? 'dark:bg-red-500/20 bg-red-500/10 hover:dark:bg-red-500/30 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 border-red-500/30 focus:ring-red-500/20'
+                            : 'dark:bg-emerald-500/20 bg-emerald-500/10 hover:dark:bg-emerald-500/30 hover:bg-emerald-500/15 hover:border-emerald-500/50 hover:text-emerald-800 active:bg-emerald-500/25 active:text-emerald-900 dark:text-emerald-400 text-emerald-700 border-emerald-500/30 focus:ring-emerald-500/20'
                         }`}
                       >
                         {u.isActive ? 'Deactivate' : 'Activate'}
@@ -199,7 +199,7 @@ export const StaffManagement: React.FC = () => {
                 <select
                   value={role}
                   onChange={e => setRole(e.target.value as UserRole)}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                 >
                   <option value="receptionist">Receptionist (REC)</option>
                   <option value="bartender">Bartender (BAR)</option>
@@ -215,7 +215,7 @@ export const StaffManagement: React.FC = () => {
                   value={fullName}
                   onChange={e => setFullName(e.target.value)}
                   placeholder="e.g. Divyansh Saxena"
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                   required
                 />
               </div>
@@ -229,7 +229,7 @@ export const StaffManagement: React.FC = () => {
                   value={username}
                   onChange={e => setUsername(e.target.value.toUpperCase())}
                   placeholder={`e.g. ${expectedPrefix}-01`}
-                  className={`w-full bg-bg-primary border rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5] ${
+                  className={`w-full bg-bg-primary border rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary ${
                     username.trim() && (!isUsernameValid || isDuplicate) ? 'border-red-500/50 focus:border-red-500' : 'border-border-main'
                   }`}
                   required
@@ -261,7 +261,7 @@ export const StaffManagement: React.FC = () => {
                   onChange={e => setPin(e.target.value)}
                   maxLength={4}
                   placeholder="e.g. 1234"
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                   required
                 />
               </div>
