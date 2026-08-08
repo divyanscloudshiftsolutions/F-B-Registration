@@ -38,24 +38,24 @@ export const LiveDashboard: React.FC = () => {
     <div className="space-y-6">
       {/* Live Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="glass-panel p-5 rounded-2xl border-l-4 border-l-[#8D6CE5] flex items-center justify-between">
+        <div className="glass-panel p-5 rounded-2xl border-l-4 dark:border-l-[#8D6CE5] border-l-primary flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Sales Revenue</p>
-            <h3 className="text-2xl font-black text-white mt-1">₹{totalCollections.toLocaleString()}</h3>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Total Sales Revenue</p>
+            <h3 className="text-2xl font-black text-text-main mt-1">₹{totalCollections.toLocaleString()}</h3>
             <p className="text-[11px] dark:text-emerald-400 text-emerald-700 mt-1 font-medium flex items-center gap-1">
               <TrendingUp size={12} /> Live Verified Collections
             </p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-[#8D6CE5]/15 text-[#8D6CE5] flex items-center justify-center font-bold">
+          <div className="w-12 h-12 rounded-xl dark:bg-[#8D6CE5]/15 bg-primary/10 dark:text-[#8D6CE5] text-primary flex items-center justify-center font-bold">
             <DollarSign size={24} />
           </div>
         </div>
 
         <div className="glass-panel p-5 rounded-2xl border-l-4 border-l-emerald-500 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Active Guest Sessions</p>
-            <h3 className="text-2xl font-black text-white mt-1">{activeCount}</h3>
-            <p className="text-[11px] text-gray-400 mt-1">{inHouseGuests} Total Guests In-House</p>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Active Guest Sessions</p>
+            <h3 className="text-2xl font-black text-text-main mt-1">{activeCount}</h3>
+            <p className="text-[11px] text-text-muted mt-1">{inHouseGuests} Total Guests In-House</p>
           </div>
           <div className="w-12 h-12 rounded-xl dark:bg-emerald-500/15 bg-emerald-500/10 dark:text-emerald-400 text-emerald-700 flex items-center justify-center font-bold">
             <Users size={24} />
@@ -64,8 +64,8 @@ export const LiveDashboard: React.FC = () => {
 
         <div className="glass-panel p-5 rounded-2xl border-l-4 border-l-amber-500 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Drinks Redeemed</p>
-            <h3 className="text-2xl font-black text-white mt-1">{totalDrinksServed}</h3>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Drinks Redeemed</p>
+            <h3 className="text-2xl font-black text-text-main mt-1">{totalDrinksServed}</h3>
             <p className="text-[11px] dark:text-amber-400 text-amber-700 mt-1">Dispensed Today</p>
           </div>
           <div className="w-12 h-12 rounded-xl dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 flex items-center justify-center font-bold">
@@ -75,11 +75,11 @@ export const LiveDashboard: React.FC = () => {
 
         <div className="glass-panel p-5 rounded-2xl border-l-4 border-l-purple-500 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Floor Occupancy</p>
-            <h3 className="text-2xl font-black text-white mt-1">{occupiedTables} / {tables.length}</h3>
-            <p className="text-[11px] text-purple-400 mt-1">Seating Tables Occupied</p>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Floor Occupancy</p>
+            <h3 className="text-2xl font-black text-text-main mt-1">{occupiedTables} / {tables.length}</h3>
+            <p className="text-[11px] dark:text-purple-400 text-purple-700 mt-1">Seating Tables Occupied</p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center font-bold">
+          <div className="w-12 h-12 rounded-xl dark:bg-purple-500/15 bg-purple-500/10 dark:text-purple-400 text-purple-700 flex items-center justify-center font-bold">
             <Grid3X3 size={24} />
           </div>
         </div>

@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
+import { useTheme } from '../../context/ThemeContext';
+
 interface StepItem {
   num: number;
   label: string;
@@ -12,6 +14,8 @@ interface AppStepperProps {
 }
 
 export const AppStepper: React.FC<AppStepperProps> = ({ steps, currentStep }) => {
+  const { colors } = useTheme();
+
   return (
     <View style={styles.container}>
       {steps.map((step, idx) => {
@@ -25,7 +29,7 @@ export const AppStepper: React.FC<AppStepperProps> = ({ steps, currentStep }) =>
                 style={[
                   styles.circle,
                   {
-                    backgroundColor: isActive || isDone ? '#FF9F1C' : '#232733',
+                    backgroundColor: isActive || isDone ? colors.primary : colors.secondarySurface,
                   },
                 ]}
               >
@@ -33,7 +37,7 @@ export const AppStepper: React.FC<AppStepperProps> = ({ steps, currentStep }) =>
                   style={[
                     styles.circleText,
                     {
-                      color: isActive || isDone ? '#08090D' : '#8E8E93',
+                      color: isActive || isDone ? colors.goldButtonText : colors.muted,
                     },
                   ]}
                 >
@@ -44,7 +48,7 @@ export const AppStepper: React.FC<AppStepperProps> = ({ steps, currentStep }) =>
                 style={[
                   styles.label,
                   {
-                    color: isActive || isDone ? '#FF9F1C' : '#8E8E93',
+                    color: isActive || isDone ? colors.primary : colors.muted,
                   },
                 ]}
               >
@@ -57,7 +61,7 @@ export const AppStepper: React.FC<AppStepperProps> = ({ steps, currentStep }) =>
                 style={[
                   styles.line,
                   {
-                    backgroundColor: isDone ? '#FF9F1C' : '#232733',
+                    backgroundColor: isDone ? colors.primary : colors.secondarySurface,
                   },
                 ]}
               />

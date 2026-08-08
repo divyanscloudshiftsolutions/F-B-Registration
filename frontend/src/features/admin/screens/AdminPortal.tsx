@@ -420,9 +420,9 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
                   accessibilityLabel={`${item.label} sub-tab`}
                   accessibilityState={{ selected: isActive }}
                   style={{
-                    backgroundColor: isActive ? 'rgba(255, 159, 28, 0.12)' : colors.card,
+                    backgroundColor: isActive ? (isDark ? 'rgba(141, 110, 229, 0.12)' : 'rgba(124, 58, 237, 0.08)') : colors.card,
                     borderWidth: 1,
-                    borderColor: isActive ? '#FF9F1C' : colors.border,
+                    borderColor: isActive ? colors.primary : colors.border,
                     borderRadius: 12,
                     paddingHorizontal: 12,
                     paddingVertical: 8,
@@ -435,8 +435,8 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
                   }}
                   activeOpacity={0.8}
                 >
-                  <AppIcon name={item.icon} color={isActive ? '#FF9F1C' : colors.muted} size={13} />
-                  <Text style={{ fontSize: 10, fontWeight: 'bold', color: isActive ? '#FF9F1C' : colors.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  <AppIcon name={item.icon} color={isActive ? colors.primary : colors.muted} size={13} />
+                  <Text style={{ fontSize: 10, fontWeight: 'bold', color: isActive ? colors.primary : colors.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                     {item.label}
                   </Text>
                 </TouchableOpacity>
@@ -579,7 +579,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
               >
                 <View className="flex-row justify-between items-start mb-3">
                   <View className="flex-row items-center gap-2.5">
-                    <View style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: isDark ? 'rgba(212, 175, 55, 0.12)' : '#FEF3C7', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.gold }}>
+                    <View style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: isDark ? 'rgba(141, 110, 229, 0.12)' : 'rgba(124, 58, 237, 0.08)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.gold }}>
                       <Text style={{ fontSize: 14 }}>{rate.placeType === 'PREMIUM_LOUNGE' ? '🛋️' : '🍺'}</Text>
                     </View>
                     <View>
@@ -686,7 +686,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
                 >
                   <View className="flex-row justify-between items-start mb-3">
                     <View className="flex-row items-center gap-2.5">
-                      <View style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: isDark ? 'rgba(212, 175, 55, 0.12)' : '#FEF3C7', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.gold }}>
+                      <View style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: isDark ? 'rgba(141, 110, 229, 0.12)' : 'rgba(124, 58, 237, 0.08)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.gold }}>
                         <Text style={{ fontSize: 14 }}>{table.placeType === 'PREMIUM_LOUNGE' ? '🛋️' : '🍺'}</Text>
                       </View>
                       <View>
@@ -696,7 +696,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
                         </Text>
                       </View>
                     </View>
-                    <View style={{ backgroundColor: isOccupied ? 'rgba(245, 166, 35, 0.12)' : (table.status === TableStatus.AVAILABLE ? 'rgba(34, 197, 94, 0.12)' : (table.status === TableStatus.RESERVED ? 'rgba(59, 130, 246, 0.12)' : 'rgba(239, 68, 68, 0.12)')), paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: isOccupied ? 'rgba(245, 166, 35, 0.25)' : (table.status === TableStatus.AVAILABLE ? 'rgba(34, 197, 94, 0.25)' : (table.status === TableStatus.RESERVED ? 'rgba(59, 130, 246, 0.25)' : 'rgba(239, 68, 68, 0.25)')) }}>
+                    <View style={{ backgroundColor: isOccupied ? (isDark ? 'rgba(141, 110, 229, 0.12)' : 'rgba(124, 58, 237, 0.08)') : (table.status === TableStatus.AVAILABLE ? 'rgba(34, 197, 94, 0.12)' : (table.status === TableStatus.RESERVED ? 'rgba(59, 130, 246, 0.12)' : 'rgba(239, 68, 68, 0.12)')), paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: isOccupied ? (isDark ? 'rgba(141, 110, 229, 0.25)' : 'rgba(124, 58, 237, 0.2)') : (table.status === TableStatus.AVAILABLE ? 'rgba(34, 197, 94, 0.25)' : (table.status === TableStatus.RESERVED ? 'rgba(59, 130, 246, 0.25)' : 'rgba(239, 68, 68, 0.25)')) }}>
                       <Text style={{ color: statusColor, fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.5 }}>{isOccupied ? 'occupied' : table.status}</Text>
                     </View>
                   </View>
@@ -1563,7 +1563,7 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
                         {/* Header */}
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, paddingRight: 8 }}>
-                            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isDark ? 'rgba(212, 175, 55, 0.15)' : '#FEF3C7', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: colors.gold }}>
+                            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isDark ? 'rgba(141, 110, 229, 0.15)' : 'rgba(124, 58, 237, 0.08)', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: colors.gold }}>
                               <Text style={{ color: colors.gold, fontSize: 11, fontWeight: 'bold' }}>{initials}</Text>
                             </View>
                             <View style={{ flex: 1 }}>
@@ -1639,9 +1639,9 @@ export const AdminPortal: React.FC<{ isActive?: boolean }> = ({ isActive = true 
                                 {(session.status === TokenStatus.ACTIVE || session.status === TokenStatus.EXTENDED || session.status === TokenStatus.EXPIRED) && (
                                   <TouchableOpacity
                                     style={{ 
-                                      backgroundColor: isDark ? 'rgba(245, 166, 35, 0.12)' : '#FEF3C7', 
+                                      backgroundColor: isDark ? 'rgba(141, 110, 229, 0.12)' : 'rgba(124, 58, 237, 0.08)', 
                                       borderWidth: 1.5, 
-                                      borderColor: 'rgba(245, 166, 35, 0.35)', 
+                                      borderColor: isDark ? 'rgba(141, 110, 229, 0.35)' : 'rgba(124, 58, 237, 0.2)', 
                                       paddingHorizontal: 10, 
                                       paddingVertical: 5, 
                                       borderRadius: 8, 

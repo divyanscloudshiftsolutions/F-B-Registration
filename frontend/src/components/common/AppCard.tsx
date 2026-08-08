@@ -27,8 +27,8 @@ export const AppCard: React.FC<AppCardProps> = ({
       style={[
         styles.card,
         {
-          backgroundColor: isDark ? '#111318' : colors.card,
-          borderColor: isDark ? 'rgba(255,255,255,0.08)' : colors.border,
+          backgroundColor: colors.card,
+          borderColor: colors.border,
           borderWidth: 1.5,
         },
         style,
@@ -41,8 +41,8 @@ export const AppCard: React.FC<AppCardProps> = ({
               style={[
                 styles.iconBadge,
                 {
-                  backgroundColor: isDark ? '#2B2215' : 'rgba(245, 166, 35, 0.15)',
-                  borderColor: isDark ? 'rgba(255,159,28,0.25)' : colors.gold,
+                  backgroundColor: isDark ? 'rgba(141, 110, 229, 0.15)' : 'rgba(124, 58, 237, 0.12)',
+                  borderColor: isDark ? 'rgba(141, 110, 229, 0.25)' : 'rgba(124, 58, 237, 0.2)',
                 },
               ]}
             >

@@ -488,16 +488,16 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
                 <View 
                   className="w-7 h-7 rounded-full items-center justify-center mb-1"
                   style={{ 
-                    backgroundColor: isActive || isDone ? '#FF9F1C' : '#232733',
+                    backgroundColor: isActive || isDone ? colors.primary : colors.secondarySurface,
                   }}
                 >
-                  <Text className="font-black text-[11px]" style={{ color: isActive || isDone ? '#08090D' : '#8E8E93' }}>
+                  <Text className="font-black text-[11px]" style={{ color: isActive || isDone ? colors.goldButtonText : colors.muted }}>
                     {item.num}
                   </Text>
                 </View>
                 <Text 
                   className="text-[10px] font-bold text-center"
-                  style={{ color: isActive || isDone ? '#FF9F1C' : '#8E8E93' }}
+                  style={{ color: isActive || isDone ? colors.primary : colors.muted }}
                 >
                   {item.label}
                 </Text>
@@ -506,7 +506,7 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
               {idx < arr.length - 1 && (
                 <View 
                   className="flex-1 h-[2px] mx-1 -mt-4"
-                  style={{ backgroundColor: isDone ? '#FF9F1C' : '#232733' }}
+                  style={{ backgroundColor: isDone ? colors.primary : colors.secondarySurface }}
                 />
               )}
             </React.Fragment>
@@ -781,11 +781,18 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
           >
             {/* Card Header matching mockup */}
             <View className="flex-row items-center gap-3.5 mb-5">
-              <View className="w-12 h-12 rounded-2xl bg-[#2B2215] justify-center items-center border border-[#FF9F1C]/25">
-                <AppIcon name="user" color="#FF9F1C" size={22} />
+              <View 
+                className="w-12 h-12 rounded-2xl justify-center items-center border"
+                style={{ 
+                  backgroundColor: isDark ? 'rgba(141, 110, 229, 0.15)' : 'rgba(124, 58, 237, 0.12)', 
+                  borderColor: isDark ? 'rgba(141, 110, 229, 0.25)' : 'rgba(124, 58, 237, 0.2)',
+                  borderWidth: 1 
+                }}
+              >
+                <AppIcon name="user" color={colors.primary} size={22} />
               </View>
               <View className="flex-1">
-                <Text className="text-[10px] font-black uppercase tracking-widest text-[#FF9F1C]">STEP 1</Text>
+                <Text className="text-[10px] font-black uppercase tracking-widest" style={{ color: colors.primary }}>STEP 1</Text>
                 <Text className="text-xl font-black" style={{ color: colors.text }}>Guest Details</Text>
                 <Text className="text-xs font-medium" style={{ color: colors.muted }}>Fill in the guest information to continue</Text>
               </View>
@@ -1004,8 +1011,8 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
             <TouchableOpacity 
               className="py-4 rounded-xl flex-row items-center justify-between px-6 min-h-[52px] border shadow-xl"
               style={{
-                backgroundColor: !isStep1Valid ? (isDark ? '#27272A' : '#E4E4E7') : '#FF9F1C',
-                borderColor: !isStep1Valid ? (isDark ? '#3F3F46' : '#D4D4D8') : '#FF9F1C',
+                backgroundColor: !isStep1Valid ? (isDark ? '#27272A' : '#E4E4E7') : colors.primary,
+                borderColor: !isStep1Valid ? (isDark ? '#3F3F46' : '#D4D4D8') : colors.primary,
                 borderWidth: 1.5,
                 opacity: !isStep1Valid ? 0.6 : 1
               }}
@@ -1016,11 +1023,11 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
               <View style={{ width: 20 }} />
               <Text 
                 className="font-black text-base tracking-wider uppercase text-center" 
-                style={{ color: !isStep1Valid ? colors.muted : '#08090D' }}
+                style={{ color: !isStep1Valid ? colors.muted : colors.goldButtonText }}
               >
                 Continue
               </Text>
-              <AppIcon name="arrow-right" label="Continue" color={!isStep1Valid ? colors.muted : '#08090D'} size={20} />
+              <AppIcon name="arrow-right" label="Continue" color={!isStep1Valid ? colors.muted : colors.goldButtonText} size={20} />
             </TouchableOpacity>
             
             {pendingSessions.length > 0 && (
@@ -1142,9 +1149,9 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
                   let labelTag = `${table.seats} Seats`;
 
                   if (isSelected) {
-                    bgCol = isDark ? 'rgba(245,166,35,0.12)' : '#FEF3C7';
-                    borderCol = colors.gold;
-                    textCol = isDark ? colors.gold : '#B45309';
+                    bgCol = isDark ? 'rgba(141, 110, 229, 0.12)' : 'rgba(124, 58, 237, 0.08)';
+                    borderCol = colors.primary;
+                    textCol = colors.primary;
                   } else if (isOccupied) {
                     bgCol = isDark ? 'rgba(239,68,68,0.15)' : '#FEE2E2';
                     borderCol = '#EF4444';
@@ -1249,7 +1256,7 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
               {/* Guest Card */}
               <View style={{ width: '50%', padding: 8 }}>
                 <View style={{
-                  backgroundColor: isDark ? 'rgba(245,166,35,0.08)' : '#FEF3C7',
+                  backgroundColor: isDark ? 'rgba(141, 110, 229, 0.08)' : 'rgba(124, 58, 237, 0.08)',
                   borderWidth: 1.5,
                   borderColor: colors.gold,
                   borderRadius: 12,
@@ -1257,7 +1264,7 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
                   minHeight: 56,
                   justifyContent: 'center'
                 }}>
-                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: colors.gold, textTransform: 'uppercase', marginBottom: 2 }}>Guest</Text>
+                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: colors.primary, textTransform: 'uppercase', marginBottom: 2 }}>Guest</Text>
                   <Text style={{ fontSize: 13, fontWeight: 'bold', color: colors.text }} numberOfLines={1}>{fullName}</Text>
                 </View>
               </View>
@@ -1347,7 +1354,7 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
 
             {/* Total Amount Box */}
             <View style={{
-              backgroundColor: isDark ? 'rgba(245, 166, 35, 0.08)' : '#FEF3C7',
+              backgroundColor: isDark ? 'rgba(141, 110, 229, 0.08)' : 'rgba(124, 58, 237, 0.08)',
               borderWidth: 1.5,
               borderColor: colors.gold,
               borderRadius: 16,
@@ -1359,9 +1366,9 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
             }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: colors.text, fontSize: 13, fontWeight: 'bold' }}>Total Bill</Text>
-                <Text style={{ color: isDark ? colors.muted : '#4B5563', fontSize: 10, marginTop: 2 }}>₹{basePrice} × {guestCount} guests</Text>
+                <Text style={{ color: colors.muted, fontSize: 10, marginTop: 2 }}>₹{basePrice} × {guestCount} guests</Text>
               </View>
-              <Text style={{ color: isDark ? colors.gold : '#B45309', fontSize: 22, fontWeight: '900' }}>₹{totalPrice.toLocaleString('en-IN')}</Text>
+              <Text style={{ color: colors.primary, fontSize: 22, fontWeight: '900' }}>₹{totalPrice.toLocaleString('en-IN')}</Text>
             </View>
 
             {/* Payment Mode Selector */}
@@ -1377,12 +1384,12 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
                     borderWidth: 1.5,
                     alignItems: 'center',
                     justifyContent: 'center',
-                    backgroundColor: checkinPaymentMode === mode ? (isDark ? 'rgba(245, 166, 35, 0.12)' : '#FEF3C7') : colors.secondarySurface,
+                    backgroundColor: checkinPaymentMode === mode ? (isDark ? 'rgba(141, 110, 229, 0.12)' : 'rgba(124, 58, 237, 0.08)') : colors.secondarySurface,
                     borderColor: checkinPaymentMode === mode ? colors.gold : (isDark ? colors.border : '#CBD5E1')
                   }}
                   onPress={() => setCheckinPaymentMode(mode)}
                 >
-                  <Text style={{ fontSize: 12, fontWeight: 'bold', color: checkinPaymentMode === mode ? (isDark ? colors.gold : '#B45309') : colors.muted }}>
+                  <Text style={{ fontSize: 12, fontWeight: 'bold', color: checkinPaymentMode === mode ? colors.primary : colors.muted }}>
                     {mode === 'CASH' ? '💵 CASH' : '📱 UPI'}
                   </Text>
                 </TouchableOpacity>
@@ -1406,7 +1413,7 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
                 shadowRadius: 8,
                 elevation: 4
               }}>
-                <Text style={{ fontSize: 11, fontWeight: 'bold', color: colors.gold, marginBottom: 8 }}>Scan dummy QR to pay</Text>
+                <Text style={{ fontSize: 11, fontWeight: 'bold', color: colors.primary, marginBottom: 8 }}>Scan dummy QR to pay</Text>
                 <View style={{ padding: 8, backgroundColor: '#FFFFFF', borderRadius: 12 }}>
                   <Image
                     source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=upi://pay?pa=demo@upi&pn=BarManagementSystem&am=${totalPrice}` }}
@@ -1419,7 +1426,7 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
 
             {/* Prompt Box */}
             <View style={{
-              backgroundColor: isDark ? 'rgba(245, 166, 35, 0.08)' : '#FEF3C7',
+              backgroundColor: isDark ? 'rgba(141, 110, 229, 0.08)' : 'rgba(124, 58, 237, 0.08)',
               borderWidth: 1.5,
               borderColor: colors.gold,
               borderRadius: 16,
@@ -1430,7 +1437,7 @@ export const CheckInWizard: React.FC<{ isActive?: boolean }> = ({ isActive = tru
               marginBottom: 20
             }}>
               <Text style={{ fontSize: 18 }}>{checkinPaymentMode === 'CASH' ? '💵' : '📱'}</Text>
-              <Text style={{ color: isDark ? colors.gold : '#B45309', fontSize: 12, fontWeight: 'bold', flex: 1 }}>
+              <Text style={{ color: colors.primary, fontSize: 12, fontWeight: 'bold', flex: 1 }}>
                 {checkinPaymentMode === 'CASH' 
                   ? `Collect Cash ₹${totalPrice.toLocaleString('en-IN')} — then confirm payment below`
                   : `Verify UPI transfer of ₹${totalPrice.toLocaleString('en-IN')} — then confirm payment below`}

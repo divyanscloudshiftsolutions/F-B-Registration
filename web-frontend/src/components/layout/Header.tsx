@@ -137,7 +137,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
                 {notifications.length > 0 && (
                   <button 
                     onClick={handleClearAll}
-                    className="px-2.5 py-1 text-[10px] font-bold flex items-center gap-1 transition-all premium-btn-secondary text-red-400 border-red-500/30 bg-red-500/5 active:scale-95 cursor-pointer"
+                    className="px-2.5 py-1 text-[10px] font-bold flex items-center gap-1 transition-all premium-btn-secondary cancellation-btn dark:text-red-400 text-red-700 dark:border-red-500/30 border-red-500/30 dark:bg-red-500/5 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 active:scale-95 cursor-pointer"
                   >
                     <Trash2 size={11} /> Clear All
                   </button>
@@ -154,7 +154,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
                   </div>
                 ) : (
                   notifications.map(notif => (
-                    <div key={notif.id} className="p-4 bg-white/20 dark:bg-black/10 hover:bg-bg-hover transition-all text-xs space-y-1 border-b border-border/30 last:border-b-0">
+                    <div key={notif.id} className="p-4 bg-bg-secondary-surface dark:bg-black/10 hover:bg-bg-hover transition-all text-xs space-y-1 border-b border-border/30 last:border-b-0">
                       <div className="flex justify-between items-start gap-2">
                         <p className="font-bold text-text-primary text-[11px]">{notif.title}</p>
                         <span className="text-[9px] text-text-muted font-mono">{notif.timestamp}</span>

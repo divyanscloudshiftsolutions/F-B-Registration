@@ -29,8 +29,8 @@ export const AppInput: React.FC<AppInputProps> = ({
         style={[
           styles.container,
           {
-            backgroundColor: isDark ? '#171A22' : colors.secondarySurface,
-            borderColor: error ? '#EF4444' : isDark ? 'rgba(255,255,255,0.1)' : colors.border,
+            backgroundColor: colors.secondarySurface,
+            borderColor: error ? '#EF4444' : colors.border,
             borderWidth: 1.5,
           },
         ]}

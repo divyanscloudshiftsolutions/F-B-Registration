@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 export const QuickAttendanceWebPage: React.FC = () => {
-  const { showToast } = useAuth();
+  const { showToast, isDark } = useAuth();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -209,7 +209,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
               <button
                 type="button"
                 onClick={stopCamera}
-                className="px-4 py-2 rounded-xl premium-btn-secondary text-red-400 border-red-500/30 bg-red-500/5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                className="px-4 py-2 rounded-xl premium-btn-secondary cancellation-btn dark:text-red-400 text-red-700 dark:border-red-500/30 border-red-500/30 dark:bg-red-500/5 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
               >
                 <div className="nav-icon-badge">
                   <VideoOff size={14} />
@@ -219,7 +219,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
             )}
 
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-bg-primary border border-border-main text-[10px] font-semibold text-text-muted">
-              <Shield size={12} className="text-[#8D6CE5]" />
+              <Shield size={12} className="dark:text-[#8D6CE5] text-primary" />
               <span>FaceMark AI</span>
             </div>
           </div>
@@ -253,7 +253,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
           {/* Scanning Reticle Frame Overlay */}
           {!attendanceResult && !errorMessage && cameraActive && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-48 h-48 border-2 border-dashed border-[#8D6CE5]/60 rounded-full animate-pulse flex items-center justify-center">
+              <div className="w-48 h-48 border-2 border-dashed dark:border-[#8D6CE5]/60 border-primary/60 rounded-full animate-pulse flex items-center justify-center">
                 <div className="w-40 h-40 border border-white/20 rounded-full" />
               </div>
             </div>
@@ -261,16 +261,16 @@ export const QuickAttendanceWebPage: React.FC = () => {
 
           {/* Result Card Overlay */}
           {attendanceResult && (
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center space-y-3">
+            <div className="absolute inset-0 dark:bg-black/80 bg-slate-900/40 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center space-y-3">
               <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
-                attendanceResult.action === 'check-in' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500' : 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                attendanceResult.action === 'check-in' ? 'bg-emerald-500/20 dark:text-emerald-400 text-emerald-300 border border-emerald-500' : 'dark:bg-blue-500/20 bg-blue-500/10 dark:text-blue-300 text-blue-700 border dark:border-blue-500/40 border-blue-500/30'
               }`}>
                 <CheckCircle2 size={28} />
               </div>
 
               <div>
                 <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
-                  attendanceResult.action === 'check-in' ? 'badge-active' : 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                  attendanceResult.action === 'check-in' ? 'badge-active' : 'dark:bg-blue-500/20 bg-blue-500/10 dark:text-blue-300 text-blue-700 border dark:border-blue-500/40 border-blue-500/30'
                 }`}>
                   {attendanceResult.action}
                 </span>
@@ -279,7 +279,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
               </div>
 
               {attendanceResult.confidence && (
-                <div className="text-[10px] font-semibold text-[#8D6CE5] bg-bg-primary px-2.5 py-0.5 rounded-full border border-border-main">
+                <div className="text-[10px] font-semibold dark:text-[#8D6CE5] text-primary bg-bg-primary px-2.5 py-0.5 rounded-full border border-border-main">
                   Confidence Score: {(attendanceResult.confidence * 100).toFixed(1)}%
                 </div>
               )}
@@ -295,7 +295,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
 
           {/* Error State Overlay */}
           {errorMessage && (
-            <div className="absolute inset-0 bg-black/85 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center space-y-3">
+            <div className="absolute inset-0 dark:bg-black/85 bg-slate-900/45 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center space-y-3">
               <div className="w-12 h-12 rounded-full dark:bg-red-500/20 bg-red-500/10 border border-red-500 dark:text-red-400 text-red-700 flex items-center justify-center text-xl">
                 <AlertTriangle size={24} />
               </div>
@@ -305,7 +305,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
 
               <button
                 onClick={handleReset}
-                className="mt-2 px-6 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-text-main text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                className="mt-2 px-6 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer"
               >
                 Try Again
               </button>
@@ -322,7 +322,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 value={employeeCode}
                 onChange={e => setEmployeeCode(e.target.value)}
                 placeholder="Optional Employee ID (e.g. EMP-99)"
-                className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5]"
+                className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
               />
             </div>
 
@@ -331,7 +331,9 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={startCamera}
-                  className="w-full md:w-auto px-6 py-2.5 rounded-xl primary-btn bg-emerald-500 text-text-main flex items-center justify-center gap-1.5 text-xs uppercase font-black tracking-wider shadow-xl transition-all cursor-pointer"
+                  className={`w-full md:w-auto px-6 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-xs uppercase font-black tracking-wider shadow-xl transition-all cursor-pointer ${
+                    isDark ? 'primary-btn bg-emerald-500 text-text-main' : 'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 border border-emerald-500/30'
+                  }`}
                 >
                   <div className="nav-icon-badge">
                     <Video size={14} />
@@ -342,7 +344,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={stopCamera}
-                  className="px-6 py-2.5 rounded-xl premium-btn-secondary text-red-400 border-red-500/30 bg-red-500/5 flex items-center justify-center gap-1.5 text-xs uppercase font-bold tracking-wider transition-all cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl premium-btn-secondary cancellation-btn dark:text-red-400 text-red-700 dark:border-red-500/30 border-red-500/30 dark:bg-red-500/5 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 flex items-center justify-center gap-1.5 text-xs uppercase font-bold tracking-wider transition-all cursor-pointer"
                 >
                   <div className="nav-icon-badge">
                     <VideoOff size={14} />

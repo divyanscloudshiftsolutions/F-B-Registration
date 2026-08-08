@@ -100,7 +100,7 @@ export const QuickAttendanceScreen: React.FC = () => {
   if (!permission) {
     return (
       <View className="flex-1 justify-center items-center bg-black p-6">
-        <ActivityIndicator size="large" color="#D4AF37" />
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text className="text-white text-xs mt-4">Initializing camera access...</Text>
       </View>
     );
@@ -117,9 +117,9 @@ export const QuickAttendanceScreen: React.FC = () => {
           </Text>
           <TouchableOpacity
             onPress={requestPermission}
-            style={{ backgroundColor: '#D4AF37', borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 }}
+            style={{ backgroundColor: colors.primary, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 }}
           >
-            <Text style={{ color: 'black', fontWeight: 'bold', fontSize: 13 }}>Grant Camera Permission</Text>
+            <Text style={{ color: colors.goldButtonText, fontWeight: 'bold', fontSize: 13 }}>Grant Camera Permission</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleBack} className="mt-4">
             <Text className="text-white/50 text-xs font-semibold">Return Back</Text>
@@ -148,8 +148,8 @@ export const QuickAttendanceScreen: React.FC = () => {
           onPress={handleBack}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 }}
         >
-          <AppIcon name="arrow-right" color="#D4AF37" size={16} />
-          <Text style={{ color: '#D4AF37', fontWeight: 'bold', fontSize: 13 }}>Back</Text>
+          <AppIcon name="arrow-right" color={colors.primary} size={16} />
+          <Text style={{ color: colors.primary, fontWeight: 'bold', fontSize: 13 }}>Back</Text>
         </TouchableOpacity>
 
         <View style={{ alignItems: 'center' }}>
@@ -190,10 +190,10 @@ export const QuickAttendanceScreen: React.FC = () => {
               height: 320,
               borderRadius: 160,
               borderWidth: 3,
-              borderColor: attendanceResult ? '#22c55e' : errorMessage ? '#ef4444' : '#D4AF37',
+              borderColor: attendanceResult ? '#22c55e' : errorMessage ? '#ef4444' : colors.primary,
               borderStyle: isSubmitting ? 'solid' : 'dashed',
               backgroundColor: 'transparent',
-              shadowColor: '#D4AF37',
+              shadowColor: colors.primary,
               shadowOffset: { width: 0, height: 0 },
               shadowOpacity: 0.5,
               shadowRadius: 16,
@@ -222,7 +222,7 @@ export const QuickAttendanceScreen: React.FC = () => {
             justifyContent: 'center',
             zIndex: 30
           }}>
-            <ActivityIndicator size="large" color="#D4AF37" />
+            <ActivityIndicator size="large" color={colors.primary} />
             <Text style={{ color: 'white', fontSize: 13, fontWeight: 'bold', marginTop: 16 }}>
               Verifying face with FaceMark...
             </Text>
@@ -315,7 +315,7 @@ export const QuickAttendanceScreen: React.FC = () => {
                   {attendanceResult.confidence !== undefined && (
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                       <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Match Score:</Text>
-                      <Text style={{ color: '#D4AF37', fontWeight: 'bold', fontSize: 11 }}>
+                      <Text style={{ color: colors.primary, fontWeight: 'bold', fontSize: 11 }}>
                         {Math.round(attendanceResult.confidence * 100)}%
                       </Text>
                     </View>
@@ -338,13 +338,13 @@ export const QuickAttendanceScreen: React.FC = () => {
                   onPress={handleReset}
                   style={{
                     width: '100%',
-                    backgroundColor: '#D4AF37',
+                    backgroundColor: colors.primary,
                     borderRadius: 14,
                     paddingVertical: 14,
                     alignItems: 'center'
                   }}
                 >
-                  <Text style={{ color: 'black', fontWeight: 'black', fontSize: 13, textTransform: 'uppercase' }}>Done / Next Verification</Text>
+                  <Text style={{ color: colors.goldButtonText, fontWeight: 'black', fontSize: 13, textTransform: 'uppercase' }}>Done / Next Verification</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -445,7 +445,7 @@ export const QuickAttendanceScreen: React.FC = () => {
               borderRadius: 36,
               borderWidth: 4,
               borderColor: 'white',
-              backgroundColor: '#D4AF37',
+              backgroundColor: colors.primary,
               alignItems: 'center',
               justifyContent: 'center',
               opacity: isSubmitting ? 0.5 : 1
