@@ -100,7 +100,7 @@ export const RateManagement: React.FC = () => {
                   </button>
                 </div>
 
-                <p className="text-3xl font-black text-[#8D6CE5]">₹{r.ratePerPerson} <span className="text-xs font-normal text-text-muted">/ person</span></p>
+                <p className="text-3xl font-black dark:text-[#8D6CE5] text-primary">₹{r.ratePerPerson} <span className="text-xs font-normal text-text-muted">/ person</span></p>
 
                 <div className="mt-4 pt-4 border-t border-border-main text-xs text-text-muted space-y-2">
                   <p className="flex items-center justify-between">
@@ -141,7 +141,7 @@ export const RateManagement: React.FC = () => {
                   value={ratePerPerson}
                   onChange={e => setRatePerPerson(e.target.value)}
                   min={0}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                   required
                 />
               </div>
@@ -155,7 +155,7 @@ export const RateManagement: React.FC = () => {
                   onChange={e => setDurationHours(e.target.value)}
                   min={0.5}
                   max={24}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                   required
                 />
               </div>
@@ -168,7 +168,7 @@ export const RateManagement: React.FC = () => {
                   onChange={e => setDrinkAllowance(e.target.value)}
                   min={0}
                   max={50}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                   required
                 />
               </div>

@@ -586,7 +586,7 @@ export const CheckInPage: React.FC = () => {
                       className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-sm text-text-main focus:outline-none transition-all ${
                         phoneNumber.trim().length > 0 && !isValidPhone(phoneNumber)
                           ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-                          : 'border-border-main focus:border-[#8D6CE5] focus:ring-2 focus:ring-[#8D6CE5]/20'
+                          : 'border-border-main dark:focus:border-[#8D6CE5] focus:border-primary focus:ring-2 dark:focus:ring-[#8D6CE5]/20 focus:ring-primary/20'
                       }`}
                       required
                     />
@@ -616,7 +616,7 @@ export const CheckInPage: React.FC = () => {
                       className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-sm text-text-main focus:outline-none transition-all ${
                         customerName.trim().length > 0 && !isNameOk
                           ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-                          : 'border-border-main focus:border-[#8D6CE5] focus:ring-2 focus:ring-[#8D6CE5]/20'
+                          : 'border-border-main dark:focus:border-[#8D6CE5] focus:border-primary focus:ring-2 dark:focus:ring-[#8D6CE5]/20 focus:ring-primary/20'
                       }`}
                       required
                     />
@@ -647,7 +647,7 @@ export const CheckInPage: React.FC = () => {
                       className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-sm text-text-main focus:outline-none transition-all ${
                         email.trim().length === 0 || !isValidEmail(email)
                           ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-                          : 'border-border-main focus:border-[#8D6CE5] focus:ring-2 focus:ring-[#8D6CE5]/20'
+                          : 'border-border-main dark:focus:border-[#8D6CE5] focus:border-primary focus:ring-2 dark:focus:ring-[#8D6CE5]/20 focus:ring-primary/20'
                       }`}
                     />
                     {email.trim().length === 0 && (
@@ -679,7 +679,7 @@ export const CheckInPage: React.FC = () => {
                     <div className={`flex items-center justify-between mb-3 bg-bg-primary border rounded-xl p-1 w-full max-w-[160px] transition-all duration-200 ${
                       personsCount !== '' && !isCapacityOk
                         ? 'border-red-500/80 focus-within:border-red-500 focus-within:ring-2 focus-within:ring-red-500/20'
-                        : 'border-border-main focus-within:border-[#8D6CE5] focus-within:ring-2 focus-within:ring-[#8D6CE5]/20'
+                        : 'border-border-main dark:focus-within:border-[#8D6CE5] focus-within:border-primary focus-within:ring-2 dark:focus-within:ring-[#8D6CE5]/20 focus-within:ring-primary/20'
                     }`}>
                       <button
                         type="button"
@@ -830,7 +830,7 @@ export const CheckInPage: React.FC = () => {
                           !isAvailable
                             ? 'bg-bg-primary/40 border-border-main/50 opacity-40 cursor-not-allowed'
                             : isSel
-                            ? 'bg-[#8D6CE5]/15 border-[#8D6CE5] shadow-xl shadow-[#8D6CE5]/10 cursor-pointer'
+                            ? 'dark:bg-[#8D6CE5]/15 bg-primary/10 dark:border-[#8D6CE5] border-primary shadow-xl dark:shadow-[#8D6CE5]/10 shadow-primary/10 cursor-pointer'
                             : 'bg-bg-primary border-border-main hover:bg-bg-card cursor-pointer'
                         }`}
                       >
@@ -949,14 +949,14 @@ export const CheckInPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={toggleFacingMode}
-                        className="px-2.5 py-1.5 rounded-lg bg-black/75 hover:bg-black text-[10px] font-bold text-text-main border border-white/15 transition-all cursor-pointer"
+                        className="px-2.5 py-1.5 rounded-lg bg-black/75 hover:bg-black text-[10px] font-bold text-white border border-white/15 transition-all cursor-pointer"
                       >
                         Switch Source
                       </button>
                       <button
                         type="button"
                         onClick={stopCamera}
-                        className="px-2.5 py-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 text-[10px] font-bold text-text-main border border-red-500/30 transition-all cursor-pointer"
+                        className="px-2.5 py-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 text-[10px] font-bold text-white border border-red-500/30 transition-all cursor-pointer"
                       >
                         Close Viewfinder
                       </button>
@@ -995,7 +995,7 @@ export const CheckInPage: React.FC = () => {
                       setQrVerificationError(null);
                     }}
                     placeholder="e.g. BAR-20260728-1"
-                    className="flex-1 bg-bg-primary border border-border-main rounded-xl px-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-[#8D6CE5] focus:ring-2 focus:ring-[#8D6CE5]/20"
+                    className="flex-1 bg-bg-primary border border-border-main rounded-xl px-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary focus:ring-2 dark:focus:ring-[#8D6CE5]/20 focus:ring-primary/20"
                   />
                   <button
                     type="button"
@@ -1078,7 +1078,7 @@ export const CheckInPage: React.FC = () => {
                       onClick={() => setPaymentMode('CASH')}
                       className={`py-3.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                         paymentMode === 'CASH'
-                          ? 'bg-[#8D6CE5] text-black border-[#8D6CE5] font-black shadow-lg shadow-[#8D6CE5]/20'
+                          ? 'dark:bg-[#8D6CE5] bg-primary dark:text-black text-white dark:border-[#8D6CE5] border-primary font-black shadow-lg dark:shadow-[#8D6CE5]/20 shadow-primary/20'
                           : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
                       }`}
                     >
@@ -1089,7 +1089,7 @@ export const CheckInPage: React.FC = () => {
                       onClick={() => setPaymentMode('UPI')}
                       className={`py-3.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                         paymentMode === 'UPI'
-                          ? 'bg-[#8D6CE5] text-black border-[#8D6CE5] font-black shadow-lg shadow-[#8D6CE5]/20'
+                          ? 'dark:bg-[#8D6CE5] bg-primary dark:text-black text-white dark:border-[#8D6CE5] border-primary font-black shadow-lg dark:shadow-[#8D6CE5]/20 shadow-primary/20'
                           : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
                       }`}
                     >

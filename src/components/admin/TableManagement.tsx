@@ -8,7 +8,7 @@ import { TableDiagram } from '../TableDiagram';
 import { SeatingRow } from '../SeatingRow';
 
 export const TableManagement: React.FC = () => {
-  const { showToast } = useAuth();
+  const { showToast, isDark } = useAuth();
   const { tables, tokens, isLoading, refreshTables, refreshTokens } = useData();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<'STANDING_BAR' | 'PREMIUM_LOUNGE'>('STANDING_BAR');
@@ -173,13 +173,13 @@ export const TableManagement: React.FC = () => {
                             ? 'bg-bg-surface border-blue-500/20 shadow-md'
                             : tb.status === 'maintenance'
                             ? 'bg-bg-surface/50 border-border-main opacity-60 shadow-sm'
-                            : 'bg-bg-surface border-emerald-500/30 hover:border-[#8D6CE5]/50 hover:shadow-xl hover:shadow-[#8D6CE5]/5 shadow-md'
+                            : 'bg-bg-surface border-emerald-500/30 dark:hover:border-[#8D6CE5]/50 hover:border-primary/50 dark:hover:shadow-[#8D6CE5]/5 hover:shadow-primary/5 shadow-md'
                         }`}
                       >
                         {/* Header: Table Number & Semantic Status Pill */}
                         <div className="flex items-center justify-between">
                           <div>
-                            <span className="font-mono text-[#8D6CE5] font-black text-xl tracking-wider">{tb.tableNumber}</span>
+                            <span className="font-mono dark:text-[#8D6CE5] text-primary font-black text-xl tracking-wider">{tb.tableNumber}</span>
                             <p className="text-[10px] text-text-muted/80 font-bold uppercase tracking-widest block mt-0.5">
                               {selectedPlace === 'STANDING_BAR' ? 'Standard Zone' : 'Premium Zone'}
                             </p>
@@ -256,7 +256,7 @@ export const TableManagement: React.FC = () => {
                                 e.stopPropagation();
                                 handleRelease(tb.id);
                               }}
-                              className="w-full py-2.5 rounded-xl primary-btn bg-red-500 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer"
+                              className={`w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer ${isDark ? 'primary-btn bg-red-500' : 'bg-red-500/10 text-red-700 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/20'}`}
                             >
                               <div className="nav-icon-badge">
                                 <VideoOff size={12} />
@@ -299,7 +299,7 @@ export const TableManagement: React.FC = () => {
         const occupiedCount = inspectingToken ? (inspectingToken.personsCount || 1) : (isOccupied ? capacity : 0);
 
         return (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="fixed inset-0 z-50 dark:bg-black/80 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
             <div className="w-full max-w-lg bg-bg-surface border border-border-main rounded-3xl p-6 space-y-6 shadow-2xl relative animate-scaleUp">
               
               {/* Header */}
@@ -374,7 +374,7 @@ export const TableManagement: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setInspectingTable(null)}
-                  className="flex-1 py-3 rounded-xl text-xs font-bold transition-all premium-btn-secondary text-red-400 border-red-500/30 bg-red-500/5 cursor-pointer"
+                  className="flex-1 py-3 rounded-xl text-xs font-bold transition-all premium-btn-secondary cancellation-btn dark:text-red-400 text-red-700 dark:border-red-500/30 border-red-500/30 dark:bg-red-500/5 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer"
                 >
                   Close Dialog
                 </button>
@@ -383,7 +383,7 @@ export const TableManagement: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleRelease(inspectingTable.id)}
-                    className="flex-1 py-3 rounded-xl primary-btn bg-red-500 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${isDark ? 'primary-btn bg-red-500' : 'bg-red-500/10 text-red-700 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/20'}`}
                   >
                     <div className="nav-icon-badge">
                       <VideoOff size={12} />
@@ -400,7 +400,7 @@ export const TableManagement: React.FC = () => {
 
       {/* ADD TABLE MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 dark:bg-black/75 bg-slate-900/35 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
             <button 
               onClick={() => setIsModalOpen(false)}
@@ -423,7 +423,7 @@ export const TableManagement: React.FC = () => {
                   value={tableNumber}
                   onChange={e => setTableNumber(e.target.value.toUpperCase())}
                   placeholder="e.g. S-01"
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                   required
                 />
               </div>
@@ -436,7 +436,7 @@ export const TableManagement: React.FC = () => {
                   onChange={e => setCapacity(e.target.value)}
                   min={1}
                   max={100}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                   required
                 />
               </div>
@@ -446,7 +446,7 @@ export const TableManagement: React.FC = () => {
                 <select
                   value={placeType}
                   onChange={e => setPlaceType(e.target.value)}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-[#8D6CE5]"
+                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                 >
                   <option value="STANDING_BAR">Standing Bar Zone</option>
                   <option value="PREMIUM_LOUNGE">Premium Lounge Zone</option>
