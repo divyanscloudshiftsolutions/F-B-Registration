@@ -4,11 +4,13 @@ import { useAuth } from '../../context/AuthContext';
 
 interface HeaderProps {
   title: string;
+  onSidebarToggle?: () => void;
+  isSidebarCollapsed?: boolean;
   onRefresh?: () => void;
   isRefreshing?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }) => {
+export const Header: React.FC<HeaderProps> = ({ title, onSidebarToggle, onRefresh, isRefreshing }) => {
   const { 
     isDark, 
     toggleTheme, 
@@ -87,17 +89,29 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
   };
 
   return (
-    <header className="sticky top-0 z-20 bg-transparent border-b border-border-sidebar px-4 md:px-6 py-3.5 flex items-center justify-between text-text-primary shrink-0">
+    <header className="sticky top-0 z-20 bg-transparent border-b border-border-sidebar px-4 md:px-6 py-3.5 flex items-center justify-between text-text-primary shrink-0 min-w-0">
       {/* Title & Page Header */}
-      <div>
-        <h2 className="text-xl md:text-2xl font-black text-text-primary dark:text-white tracking-wider uppercase leading-none">{title}</h2>
-        <p className="text-[10px] text-text-muted/90 font-bold mt-1.5 uppercase tracking-widest">Bar Management System</p>
+      <div className="flex items-center gap-3 min-w-0 flex-1 mr-4">
+        {/* Hamburger Menu (Mobile Only) */}
+        {onSidebarToggle && (
+          <button 
+            onClick={onSidebarToggle}
+            className="lg:hidden p-2 -ml-2 rounded-xl premium-btn-secondary shrink-0 flex items-center justify-center cursor-pointer"
+            title="Toggle Sidebar"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          </button>
+        )}
+        <div className="min-w-0">
+          <h2 className="text-xl md:text-2xl font-black text-text-primary dark:text-white tracking-wider uppercase leading-none truncate">{title}</h2>
+          <p className="text-[10px] text-text-muted/90 font-bold mt-1.5 uppercase tracking-widest truncate">Bar Management System</p>
+        </div>
       </div>
 
       {/* System Status & Actions */}
-      <div className="flex items-center gap-3 relative">
+      <div className="flex items-center gap-3 relative shrink-0">
         {/* System Status Capsule */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-status-success-bg border border-status-success-border text-status-success text-xs font-semibold">
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-status-success-bg border border-status-success-border text-status-success text-xs font-semibold shrink-0">
           <span className="w-2 h-2 rounded-full bg-status-success animate-pulse" />
           <span>System Active</span>
         </div>
@@ -129,7 +143,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
 
           {/* Notifications Dropdown Panel Overlay */}
           {isOpen && (
-            <div className="absolute right-0 mt-2.5 w-80 rounded-3xl border border-border glass-panel shadow-2xl overflow-hidden z-50 text-text-primary animate-fadeIn">
+            <div className="fixed inset-x-4 top-[64px] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2.5 sm:w-80 rounded-3xl border border-border glass-panel shadow-2xl overflow-hidden z-50 text-text-primary animate-fadeIn flex flex-col max-h-[85vh]">
               
               {/* Popover Header */}
               <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
@@ -145,7 +159,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onRefresh, isRefreshing }
               </div>
 
               {/* Popover Body List */}
-              <div className="max-h-72 overflow-y-auto divide-y divide-border">
+              <div className="flex-1 overflow-y-auto divide-y divide-border max-h-[60vh] sm:max-h-72">
                 {notifications.length === 0 ? (
                   <div className="px-5 py-8 text-center space-y-2">
                     <CheckSquare className="mx-auto text-text-muted" size={24} />

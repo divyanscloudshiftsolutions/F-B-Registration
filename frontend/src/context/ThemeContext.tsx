@@ -139,7 +139,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 const THEME_STORAGE_KEY = '@bar_theme_mode';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [themeMode, setThemeState] = useState<ThemeMode>('dark');
+  const [themeMode, setThemeState] = useState<ThemeMode>('light');
 
   // Load saved theme from storage on mount
   useEffect(() => {

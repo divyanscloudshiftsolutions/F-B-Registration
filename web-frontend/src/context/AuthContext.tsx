@@ -43,7 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isDark, setIsDark] = useState<boolean>(() => {
     const savedTheme = localStorage.getItem('bar_web_theme');
-    return savedTheme !== 'light'; // Default to true (dark theme)
+    return savedTheme === 'dark'; // Default to false (light theme)
   });
   const [systemMode] = useState<'online' | 'offline' | 'syncing'>('online');
   const [preselectedTable, setPreselectedTable] = useState<PreselectedTable | null>(null);

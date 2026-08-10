@@ -258,41 +258,43 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
       {/* Non-Overlapping Structured Control Toolbar */}
       <div className="glass-panel p-5 rounded-3xl border border-border-main space-y-4">
         {/* Tier 1: Primary Zone Switcher Tabs */}
-        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-border-main">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-border-main">
+          <div className="flex w-full sm:w-auto items-center gap-2">
             <button
               onClick={() => setPlaceZone('STANDING_BAR')}
-              className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary ${
+              className={`flex-1 sm:flex-none px-2 sm:px-5 py-2.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center ${
                 placeZone === 'STANDING_BAR' ? 'active' : ''
               }`}
             >
-              Standard Zone (Standing Bar)
+              <span className="hidden sm:inline">Standard Zone (Standing Bar)</span>
+              <span className="sm:hidden">Standard</span>
             </button>
 
             <button
               onClick={() => setPlaceZone('PREMIUM_LOUNGE')}
-              className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary ${
+              className={`flex-1 sm:flex-none px-2 sm:px-5 py-2.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center ${
                 placeZone === 'PREMIUM_LOUNGE' ? 'active' : ''
               }`}
             >
-              Premium Zone (Lounge)
+              <span className="hidden sm:inline">Premium Zone (Lounge)</span>
+              <span className="sm:hidden">Premium</span>
             </button>
           </div>
 
-          <div className="text-xs font-bold text-text-muted">
-            Total Tables: <span className="text-text-main font-mono">{filteredTables.length}</span>
+          <div className="text-xs font-bold text-text-muted w-full sm:w-auto text-left sm:text-right flex items-center justify-between sm:block">
+            <span>Total Tables:</span> <span className="text-text-main font-mono text-sm sm:text-xs">{filteredTables.length}</span>
           </div>
         </div>
 
         {/* Tier 2: Secondary Status Filters & Refresh Action */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1">Status Filter:</span>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 w-full sm:w-auto block mb-1 sm:mb-0">Status Filter:</span>
             {['all', 'available', 'occupied', 'reserved'].map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-secondary ${
+                className={`px-3 sm:px-3.5 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-secondary ${
                   filter === f ? 'active' : ''
                 }`}
               >
@@ -303,7 +305,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
 
           <button
             onClick={handleRefresh}
-            className="px-4 py-2 text-xs font-bold flex items-center gap-2 whitespace-nowrap transition-all premium-btn-secondary active"
+            className="w-full sm:w-auto px-4 py-2.5 sm:py-2 text-xs font-bold flex items-center justify-center gap-2 whitespace-nowrap transition-all premium-btn-secondary active"
           >
             <div className="nav-icon-badge">
               <RefreshCw size={12} />
@@ -347,7 +349,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
                       <div
                         key={tb.id}
                         onClick={() => setInspectingTable(tb)}
-                        className={`w-[290px] shrink-0 snap-start p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between gap-3 min-h-[295px] ${
+                        className={`w-[85vw] max-w-[290px] shrink-0 snap-start p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between gap-3 min-h-[295px] ${
                           isFull
                             ? 'bg-bg-surface/50 border-red-500/30 shadow-lg shadow-red-500/5'
                             : isPartial
@@ -483,16 +485,17 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
 
         return (
           <div className="fixed inset-0 z-50 dark:bg-black/80 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-            <div className="w-full max-w-lg bg-bg-surface border border-border-main rounded-3xl p-6 space-y-6 shadow-2xl relative text-text-main animate-scaleUp">
+            <div className="w-full max-w-lg bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 space-y-6 shadow-2xl relative text-text-main animate-scaleUp">
               
               {/* Header */}
               <div className="flex items-center justify-between pb-3 border-b border-border-main">
-                <div className="flex items-center gap-2 text-text-main font-bold text-base">
-                  <Grid3X3 size={20} /> Table {inspectingTable.tableNumber} Inspection Dialog
+                <div className="flex items-center gap-2 text-text-main font-bold text-sm sm:text-base pr-2">
+                  <Grid3X3 size={20} className="shrink-0" />
+                  <span className="truncate">Table {inspectingTable.tableNumber} Inspection Dialog</span>
                 </div>
                 <button 
                   onClick={() => setInspectingTable(null)}
-                  className="p-1.5 rounded-lg bg-bg-primary hover:bg-bg-card text-text-muted hover:text-text-main transition-all cursor-pointer"
+                  className="p-1.5 rounded-lg bg-bg-primary hover:bg-bg-card text-text-muted hover:text-text-main transition-all cursor-pointer shrink-0"
                 >
                   <X size={20} />
                 </button>
@@ -543,7 +546,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
               )}
 
               {/* Action Buttons */}
-              <div className="pt-2 border-t border-border-main flex gap-3">
+              <div className="pt-4 border-t border-border-main flex flex-col-reverse sm:flex-row gap-3">
                 <button
                   type="button"
                   onClick={() => setInspectingTable(null)}
@@ -579,16 +582,16 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
       {/* ASSIGN TABLE MODAL */}
       {assigningTable && (
         <div className="fixed inset-0 z-50 dark:bg-black/75 bg-slate-900/35 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
             <button 
               onClick={() => setAssigningTable(null)}
-              className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
+              className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
             >
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-2 text-text-main font-bold text-sm">
-              <Grid3X3 size={18} /> Assign Table {assigningTable.tableNumber}
+            <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-8">
+              <Grid3X3 size={18} className="shrink-0" /> <span className="truncate">Assign Table {assigningTable.tableNumber}</span>
             </div>
 
             <form onSubmit={handleAssignSubmit} className="space-y-4">
@@ -613,7 +616,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
                 )}
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setAssigningTable(null)}
