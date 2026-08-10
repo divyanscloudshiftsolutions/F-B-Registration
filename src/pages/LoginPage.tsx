@@ -78,7 +78,7 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div style={{ fontFamily: "'Inter', sans-serif" }} className="min-h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] flex items-center justify-center p-4 lg:p-12 relative overflow-hidden text-text-main">
+    <div style={{ fontFamily: "'Manrope', sans-serif" }} className="min-h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] flex items-center justify-center p-4 lg:p-12 relative overflow-hidden text-text-main">
       {/* Theme Toggle in Top Right Corner */}
       <div className="absolute top-4 right-4 z-20">
         <button
@@ -125,7 +125,7 @@ export const LoginPage: React.FC = () => {
             <div className="w-14 h-14 rounded-2xl premium-logo-glow flex items-center justify-center text-text-inverse text-2xl font-bold mb-6">
               🍸
             </div>
-            <h1 className="text-3xl font-black text-text-main tracking-wider uppercase">BAR MANAGEMENT SYSTEM</h1>
+            <h1 className="text-3xl font-bold text-text-main tracking-wider uppercase">BAR MANAGEMENT SYSTEM</h1>
             <p className="text-xs text-primary font-semibold mt-1 uppercase tracking-widest">Enterprise Terminal Gateway</p>
             
             <p className="text-xs text-text-muted mt-6 leading-relaxed">
