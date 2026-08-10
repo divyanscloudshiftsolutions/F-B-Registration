@@ -416,11 +416,11 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
         </div>
 
         {isScanTab && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
             {cameraActive && (
               <button
                 onClick={toggleFacingMode}
-                className="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all premium-btn-secondary"
+                className="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all premium-btn-secondary"
                 title="Switch Camera Source"
               >
                 <div className="nav-icon-badge">
@@ -433,7 +433,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
             {!cameraActive ? (
               <button
                 onClick={() => startCamera(facingMode)}
-                className="px-4 py-2 rounded-xl primary-btn bg-emerald-500 text-xs font-bold transition-all flex items-center gap-1.5"
+                className="w-full sm:w-auto justify-center px-4 py-2 rounded-xl primary-btn bg-emerald-500 text-xs font-bold transition-all flex items-center gap-1.5"
               >
                 <div className="nav-icon-badge">
                   <Camera size={14} />
@@ -443,7 +443,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
             ) : (
               <button
                 onClick={stopCamera}
-                className="px-4 py-2 rounded-xl premium-btn-secondary cancellation-btn dark:text-red-400 text-red-700 dark:border-red-500/30 border-red-500/30 dark:bg-red-500/5 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                className="w-full sm:w-auto justify-center px-4 py-2 rounded-xl premium-btn-secondary cancellation-btn dark:text-red-400 text-red-700 dark:border-red-500/30 border-red-500/30 dark:bg-red-500/5 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 <div className="nav-icon-badge">
                   <VideoOff size={14} />
@@ -457,7 +457,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
         {!isScanTab && (
           <button 
             onClick={fetchActiveTokens}
-            className="px-4 py-2 rounded-xl premium-btn-secondary text-xs font-bold transition-all flex items-center gap-1.5"
+            className="w-full sm:w-auto justify-center px-4 py-2 rounded-xl premium-btn-secondary text-xs font-bold transition-all flex items-center gap-1.5 mt-2 sm:mt-0"
           >
             <RefreshCw size={14} className={isLoadingTokens ? 'animate-spin' : ''} />
             <span>Sync Sessions ({activeTokens.length})</span>
@@ -479,7 +479,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
               </div>
 
               {/* Camera View / Reticle Box */}
-              <div className={`relative rounded-2xl overflow-hidden border border-border-main aspect-video flex flex-col items-center justify-center ${
+              <div className={`relative rounded-2xl overflow-hidden border border-border-main aspect-square sm:aspect-video flex flex-col items-center justify-center ${
                 cameraActive ? 'bg-black' : 'bg-bg-primary'
               }`}>
                 {cameraActive ? (
@@ -511,15 +511,15 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
               {/* Manual Token Lookup Form */}
               <form onSubmit={handleVerify} className="space-y-3 pt-2">
                 <label className="block text-xs font-semibold text-text-muted">Or Enter Token Code Manually</label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1 w-full">
                     <Search className="absolute left-3.5 top-3 text-text-muted" size={18} />
                     <input
                       type="text"
                       value={tokenInput}
                       onChange={e => setTokenInput(e.target.value.toUpperCase())}
                       placeholder="e.g. TKB-0104"
-                      className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
+                      className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-base md:text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
                     />
                   </div>
 
@@ -527,7 +527,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                     type="submit"
                     disabled={isVerifying || !tokenInput.trim()}
                     title={isVerifying ? "Verifying..." : !tokenInput.trim() ? "Enter pass code" : undefined}
-                    className="px-6 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 shadow-lg cursor-pointer"
+                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-lg cursor-pointer"
                   >
                     {isVerifying ? 'Verifying...' : 'Verify Pass'}
                   </button>
@@ -543,14 +543,14 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
               </div>
 
               {/* Token Number & Status Header */}
-              <div className="p-4 rounded-2xl bg-bg-primary border border-border-main flex items-center justify-between">
+              <div className="p-4 rounded-2xl bg-bg-primary border border-border-main flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
                 <div>
                   <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block">Token Pass</span>
-                  <span className="font-mono text-2xl font-black text-text-main">{scannedToken.tokenNumber}</span>
+                  <span className="font-mono text-2xl font-black text-text-main break-all">{scannedToken.tokenNumber}</span>
                 </div>
 
                 <span
-                  className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${
+                  className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${
                     isQuotaDepleted
                       ? 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-300 text-red-700 border dark:border-red-500/40 border-red-500/30'
                       : 'dark:bg-emerald-500/20 bg-emerald-500/10 dark:text-emerald-300 text-emerald-700 border dark:border-emerald-500/40 border-emerald-500/30'
@@ -563,24 +563,24 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
               {/* Guest Details */}
               <div className="space-y-2 text-xs">
-                <div className="flex justify-between p-3 rounded-xl bg-bg-primary border border-border-main">
-                  <span className="text-text-muted">Guest Name:</span>
-                  <span className="font-bold text-text-main text-sm">{scannedToken.customer?.name || 'Walk-in Guest'}</span>
+                <div className="flex justify-between items-center p-3 rounded-xl bg-bg-primary border border-border-main gap-2">
+                  <span className="text-text-muted shrink-0">Guest Name:</span>
+                  <span className="font-bold text-text-main text-sm truncate flex-1 text-right">{scannedToken.customer?.name || 'Walk-in Guest'}</span>
                 </div>
 
-                <div className="flex justify-between p-3 rounded-xl bg-bg-primary border border-border-main">
-                  <span className="text-text-muted">Phone Contact:</span>
-                  <span className="font-mono text-text-muted">{scannedToken.customer?.phoneNumber || '—'}</span>
+                <div className="flex justify-between items-center p-3 rounded-xl bg-bg-primary border border-border-main gap-2">
+                  <span className="text-text-muted shrink-0">Phone Contact:</span>
+                  <span className="font-mono text-text-muted truncate flex-1 text-right">{scannedToken.customer?.phoneNumber || '—'}</span>
                 </div>
 
-                <div className="flex justify-between p-3 rounded-xl bg-bg-primary border border-border-main">
-                  <span className="text-text-muted">Email Contact:</span>
-                  <span className="font-mono text-text-muted truncate max-w-[200px]" title={scannedToken.customer?.email}>{scannedToken.customer?.email || '—'}</span>
+                <div className="flex justify-between items-center p-3 rounded-xl bg-bg-primary border border-border-main gap-2">
+                  <span className="text-text-muted shrink-0">Email Contact:</span>
+                  <span className="font-mono text-text-muted truncate flex-1 text-right" title={scannedToken.customer?.email}>{scannedToken.customer?.email || '—'}</span>
                 </div>
 
-                <div className="flex justify-between p-3 rounded-xl bg-bg-primary border border-border-main">
-                  <span className="text-text-muted">Guest Headcount:</span>
-                  <span className="font-bold text-text-main">{scannedToken.personsCount} Guests</span>
+                <div className="flex justify-between items-center p-3 rounded-xl bg-bg-primary border border-border-main gap-2">
+                  <span className="text-text-muted shrink-0">Guest Headcount:</span>
+                  <span className="font-bold text-text-main truncate flex-1 text-right">{scannedToken.personsCount} Guests</span>
                 </div>
               </div>
 
@@ -617,11 +617,11 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                   <span>{isRedeeming ? 'Dispensing Drink...' : 'Dispense 1 Drink'}</span>
                 </button>
 
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-3">
                   {redemptionsUsed > 0 && (
                     <button
                       onClick={handleUndo}
-                      className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-bold text-amber-300 border border-amber-500/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      className="flex-1 py-3 sm:py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-bold text-amber-300 border border-amber-500/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
                       <RotateCcw size={14} /> Revert Last Drink
                     </button>
@@ -632,7 +632,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                       setTokenInput('');
                       startCamera();
                     }}
-                    className="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all premium-btn-secondary flex items-center justify-center gap-2 cursor-pointer"
+                    className="flex-1 py-3 sm:py-2.5 rounded-xl text-xs font-bold transition-all premium-btn-secondary flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Camera size={14} /> Scan Next
                   </button>
@@ -658,7 +658,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Global Session Search (Search by Guest Name, Phone Number, Email, or Token code...)"
-                className="w-full bg-bg-primary border border-border-main rounded-2xl pl-12 pr-4 py-3 text-sm text-text-main placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary font-semibold"
+                className="w-full bg-bg-primary border border-border-main rounded-2xl pl-12 pr-4 py-3 text-base md:text-sm text-text-main placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary font-semibold"
               />
             </div>
             {searchQuery.trim() !== '' && (
@@ -690,8 +690,8 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                   >
                     {/* Customer Info and Headcount Column */}
                     <div className="space-y-2 flex-1 min-w-0">
-                      <div className="flex items-center gap-3">
-                        <h4 className="text-base font-black text-text-main truncate">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="text-base font-black text-text-main truncate w-full sm:w-auto">
                           {tk.customer?.name || 'Walk-in Guest'}
                         </h4>
                         
@@ -711,7 +711,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                       </div>
 
                       {/* Phone, Email, Table, and headcount grids */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-y-1 gap-x-4 text-xs text-text-muted">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-1 gap-x-4 text-xs text-text-muted">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <Phone size={12} className="shrink-0 text-text-muted" />
                           <span className="font-mono truncate">{tk.customer?.phoneNumber || 'N/A'}</span>
@@ -726,7 +726,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-y-1 gap-x-4 text-xs text-text-muted pt-1 border-t border-border-main/20">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-1 gap-x-4 text-xs text-text-muted pt-1 border-t border-border-main/20">
                         <div>
                           Table/Zone: <span className="font-bold text-text-main">{tk.tableNumber || 'Walking / Bar'}</span>
                         </div>
@@ -740,56 +740,58 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                     </div>
 
                     {/* Pricing, Redemptions progress, and Actions layout */}
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center lg:justify-end gap-6 shrink-0 pt-4 lg:pt-0 border-t lg:border-t-0 border-border-main/30">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center lg:justify-end gap-4 sm:gap-6 shrink-0 pt-4 lg:pt-0 border-t lg:border-t-0 border-border-main/30 w-full lg:w-auto">
                       
-                      {/* Drink Quota Status */}
-                      <div className="text-left sm:text-right space-y-1">
-                        <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Redemption Progress</span>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-sm font-black font-mono ${isTokenQuotaDepleted ? 'dark:text-red-400 text-red-700' : 'dark:text-emerald-400 text-emerald-700'}`}>
-                            {tk.redemptionsUsed} / {tk.totalRedemptionsAllowed}
-                          </span>
-                          <span className="text-[10px] text-text-muted font-semibold">Drinks Used</span>
+                      <div className="flex items-center justify-between w-full sm:w-auto sm:justify-end gap-6 border-b sm:border-b-0 border-border-main/20 pb-4 sm:pb-0">
+                        {/* Drink Quota Status */}
+                        <div className="text-left sm:text-right space-y-1 flex-1 sm:flex-initial">
+                          <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Redemption Progress</span>
+                          <div className="flex items-center sm:justify-end gap-2">
+                            <span className={`text-sm font-black font-mono ${isTokenQuotaDepleted ? 'dark:text-red-400 text-red-700' : 'dark:text-emerald-400 text-emerald-700'}`}>
+                              {tk.redemptionsUsed} / {tk.totalRedemptionsAllowed}
+                            </span>
+                            <span className="text-[10px] text-text-muted font-semibold">Drinks Used</span>
+                          </div>
+                          <div className="w-full sm:w-24 h-1.5 rounded-full bg-bg-card overflow-hidden ml-0 sm:ml-auto mt-2">
+                            <div 
+                              className={`h-full ${isTokenQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'}`}
+                              style={{ width: `${Math.min(100, (tk.redemptionsUsed / tk.totalRedemptionsAllowed) * 100)}%` }}
+                            />
+                          </div>
                         </div>
-                        <div className="w-24 h-1.5 rounded-full bg-bg-card overflow-hidden">
-                          <div 
-                            className={`h-full ${isTokenQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'}`}
-                            style={{ width: `${Math.min(100, (tk.redemptionsUsed / tk.totalRedemptionsAllowed) * 100)}%` }}
-                          />
-                        </div>
-                      </div>
 
-                      {/* Total Amount Paid */}
-                      <div className="text-left sm:text-right">
-                        <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Gate Payment</span>
-                        <span className="text-sm font-black text-text-main font-mono">₹{tk.amountPaid}</span>
+                        {/* Total Amount Paid */}
+                        <div className="text-right space-y-1 flex-1 sm:flex-initial border-l border-border-main/20 pl-4 sm:border-l-0 sm:pl-0">
+                          <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Gate Payment</span>
+                          <span className="text-sm font-black text-text-main font-mono">₹{tk.amountPaid}</span>
+                        </div>
                       </div>
 
                       {/* Action Buttons */}
-                      <div className="flex flex-wrap gap-2">
+                      <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto">
                         <button
                           onClick={() => handleRedeemForToken(tk)}
                           disabled={isRedeeming || isTokenQuotaDepleted}
                           title={isTokenQuotaDepleted ? "Drink quota limit reached for this session." : "Dispense 1 Drink"}
-                          className="px-3 py-2 rounded-xl dark:bg-emerald-500/20 bg-emerald-500/10 dark:hover:bg-emerald-600 hover:bg-emerald-600 dark:text-emerald-200 text-emerald-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-emerald-500/30 transition-all flex items-center gap-1 disabled:opacity-40 cursor-pointer"
+                          className="px-3 py-3 sm:py-2 rounded-xl dark:bg-emerald-500/20 bg-emerald-500/10 dark:hover:bg-emerald-600 hover:bg-emerald-600 dark:text-emerald-200 text-emerald-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-emerald-500/30 transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 cursor-pointer"
                         >
-                          <Wine size={12} /> Redeem
+                          <Wine size={14} /> Redeem
                         </button>
 
                         <button
                           onClick={() => setExtendingToken(tk)}
-                          className="px-3 py-2 rounded-xl dark:bg-amber-500/10 bg-amber-500/5 hover:dark:bg-amber-500/20 hover:bg-amber-500/10 dark:text-amber-300 text-amber-700 text-xs font-bold border border-amber-500/30 transition-all flex items-center gap-1 cursor-pointer"
+                          className="px-3 py-3 sm:py-2 rounded-xl dark:bg-amber-500/10 bg-amber-500/5 hover:dark:bg-amber-500/20 hover:bg-amber-500/10 dark:text-amber-300 text-amber-700 text-xs font-bold border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                           title="Extend Session"
                         >
-                          <Clock size={12} /> Extend
+                          <Clock size={14} /> Extend
                         </button>
 
                         <button
                           onClick={() => setClosingToken(tk)}
-                          className="px-3 py-2 rounded-xl dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 text-xs font-bold border border-red-500/30 transition-all flex items-center gap-1 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20"
+                          className="px-3 py-3 sm:py-2 rounded-xl dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 text-xs font-bold border border-red-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20"
                           title="Checkout Session"
                         >
-                          <LogOut size={12} /> Checkout
+                          <LogOut size={14} /> Checkout
                         </button>
 
                         <button
@@ -797,10 +799,10 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                             setScannedToken(tk);
                             setActiveTab('bartender/scan');
                           }}
-                          className="px-3 py-2 rounded-xl text-xs font-bold transition-all premium-btn-secondary flex items-center gap-1 cursor-pointer"
+                          className="px-3 py-3 sm:py-2 rounded-xl text-xs font-bold transition-all premium-btn-secondary flex items-center justify-center gap-1.5 cursor-pointer"
                           title="Enable Focused QR Scan View"
                         >
-                          <QrCode size={12} /> Scan Mode
+                          <QrCode size={14} /> Scan Mode
                         </button>
                       </div>
 
@@ -821,7 +823,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
       {/* 1. EXTEND SESSION MODAL */}
       {extendingToken && (
         <div className="fixed inset-0 z-50 dark:bg-black/75 bg-slate-900/35 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
             <button 
               onClick={() => setExtendingToken(null)}
               className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
@@ -863,11 +865,11 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                 />
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setExtendingToken(null)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -875,7 +877,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                   type="submit"
                   disabled={isSubmittingExtend}
                   title={isSubmittingExtend ? "Request in progress" : undefined}
-                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
+                  className="flex-1 py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
                 >
                   {isSubmittingExtend ? 'Extending...' : 'Confirm Extension'}
                 </button>
@@ -888,7 +890,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
       {/* 2. CLOSE / CHECKOUT SESSION MODAL */}
       {closingToken && (
         <div className="fixed inset-0 z-50 dark:bg-black/75 bg-slate-900/35 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
             <button 
               onClick={() => setClosingToken(null)}
               className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
@@ -918,11 +920,11 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                 </select>
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setClosingToken(null)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -930,7 +932,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                   type="submit"
                   disabled={isSubmittingClose}
                   title={isSubmittingClose ? "Request in progress" : undefined}
-                  className="flex-1 py-2.5 rounded-xl dark:bg-red-500/20 bg-red-500/10 dark:hover:bg-red-600 hover:bg-red-600 dark:text-red-200 text-red-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-red-500/30 transition-all cursor-pointer"
+                  className="flex-1 py-3 rounded-xl dark:bg-red-500/20 bg-red-500/10 dark:hover:bg-red-600 hover:bg-red-600 dark:text-red-200 text-red-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-red-500/30 transition-all cursor-pointer"
                 >
                   {isSubmittingClose ? 'Closing...' : 'Close & Release Table'}
                 </button>

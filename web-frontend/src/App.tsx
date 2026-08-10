@@ -133,8 +133,8 @@ const AppContent: React.FC = () => {
       />
 
       {/* Main Content Area Glass Panel */}
-      <div className="flex-1 flex flex-col min-w-0 h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] my-2 md:my-4 mr-2 md:mr-4 ml-1 md:ml-2 bg-bg-workspace border border-border-sidebar rounded-[20px] md:rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] overflow-hidden transition-all duration-300 z-10">
-        <Header title={getTabTitle()} />
+      <div className="flex-1 flex flex-col min-w-0 h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] my-2 md:my-4 mx-2 md:mx-4 lg:ml-1 lg:mr-2 lg:md:mr-4 lg:md:ml-2 bg-bg-workspace border border-border-sidebar rounded-[20px] md:rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] overflow-hidden transition-all duration-300 z-10">
+        <Header title={getTabTitle()} onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)} isSidebarCollapsed={sidebarCollapsed} />
         
         <main className="p-4 md:p-6 flex-1 overflow-y-auto no-scrollbar">
           {renderTabContent()}

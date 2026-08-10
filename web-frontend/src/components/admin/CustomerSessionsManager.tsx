@@ -78,34 +78,36 @@ export const CustomerSessionsManager: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Search & Filter Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
-        <div className="relative flex-1 max-w-md">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
+        <div className="relative w-full md:w-auto md:flex-1 max-w-md">
           <Search className="absolute left-3.5 top-3 text-text-muted" size={16} />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search by Token Number, Customer Name, or Phone..."
+            placeholder="Search token, name, or phone..."
             className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          {['all', 'active', 'extended', 'expired', 'closed'].map(f => (
-            <button
-              key={f}
-              onClick={() => setStatusFilter(f)}
-              className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all premium-tab-secondary active:scale-95 ${
-                statusFilter === f ? 'active' : ''
-              }`}
-            >
-              {f}
-            </button>
-          ))}
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-3 w-full md:w-auto">
+          <div className="flex flex-nowrap overflow-x-auto custom-scrollbar gap-2 w-full sm:w-auto pb-1 sm:pb-0">
+            {['all', 'active', 'extended', 'expired', 'closed'].map(f => (
+              <button
+                key={f}
+                onClick={() => setStatusFilter(f)}
+                className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all premium-tab-secondary active:scale-95 shrink-0 whitespace-nowrap ${
+                  statusFilter === f ? 'active' : ''
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
 
           <button
             onClick={refreshTokens}
-            className="px-3.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary"
+            className="w-full sm:w-auto justify-center px-4 py-2 text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0 whitespace-nowrap"
           >
             <div className="nav-icon-badge">
               <RefreshCw size={12} />
@@ -116,14 +118,14 @@ export const CustomerSessionsManager: React.FC = () => {
       </div>
 
       {/* Customer Sessions Directory Table */}
-      <div className="glass-panel rounded-2xl p-6 border border-border-main">
+      <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-border-main">
         {isLoading ? (
           <div className="py-12 text-center text-text-muted text-sm">Loading customer sessions...</div>
         ) : filteredTokens.length === 0 ? (
           <div className="py-12 text-center text-text-muted text-sm">No customer sessions found.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+          <div className="overflow-x-auto custom-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+            <table className="w-full text-left text-xs min-w-[800px]">
               <thead>
                 <tr className="border-b border-border-main text-text-muted uppercase font-semibold text-[10px] tracking-wider">
                   <th className="pb-3 px-3">Token #</th>
@@ -189,7 +191,7 @@ export const CustomerSessionsManager: React.FC = () => {
       {/* EXTEND SESSION MODAL */}
       {extendingToken && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
             <button 
               onClick={() => setExtendingToken(null)}
               className="absolute top-4 right-4 text-text-muted hover:text-text-main"
@@ -231,11 +233,11 @@ export const CustomerSessionsManager: React.FC = () => {
                 />
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setExtendingToken(null)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -243,7 +245,7 @@ export const CustomerSessionsManager: React.FC = () => {
                   type="submit"
                   disabled={isSubmittingExtend}
                   title={isSubmittingExtend ? "Request in progress" : undefined}
-                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider"
+                  className="flex-1 py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider"
                 >
                   {isSubmittingExtend ? 'Extending...' : 'Confirm Extension'}
                 </button>
@@ -256,7 +258,7 @@ export const CustomerSessionsManager: React.FC = () => {
       {/* DEACTIVATE SESSION MODAL */}
       {deactivatingToken && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
             <button 
               onClick={() => setDeactivatingToken(null)}
               className="absolute top-4 right-4 text-text-muted hover:text-text-main"
@@ -286,11 +288,11 @@ export const CustomerSessionsManager: React.FC = () => {
                 </select>
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setDeactivatingToken(null)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -298,7 +300,7 @@ export const CustomerSessionsManager: React.FC = () => {
                   type="submit"
                   disabled={isSubmittingClose}
                   title={isSubmittingClose ? "Request in progress" : undefined}
-                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`flex-1 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     isDark ? 'primary-btn bg-red-500' : 'bg-red-500/10 text-red-700 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/20'
                   }`}
                 >

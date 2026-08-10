@@ -207,11 +207,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside 
-      className={`h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] my-2 md:my-4 ml-2 md:ml-4 mr-1 md:mr-2 bg-bg-sidebar border border-border-sidebar flex flex-col justify-between transition-all duration-300 z-30 rounded-[20px] md:rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] ${
-        collapsed ? 'w-16 md:w-20' : 'w-[240px] md:w-[280px]'
-      }`}
-    >
+    <>
+      {/* Mobile Drawer Overlay */}
+      {!collapsed && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden transition-opacity"
+          onClick={() => setCollapsed(true)}
+        />
+      )}
+      <aside 
+        className={`fixed lg:relative inset-y-0 left-0 h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] my-2 md:my-4 mx-2 lg:ml-2 lg:md:ml-4 lg:mr-1 lg:md:mr-2 bg-bg-sidebar border border-border-sidebar flex flex-col justify-between transition-all duration-300 z-50 rounded-[20px] md:rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] ${
+          collapsed ? '-translate-x-[120%] lg:translate-x-0 lg:w-16 lg:md:w-20' : 'translate-x-0 w-[240px] md:w-[280px]'
+        }`}
+      >
       <div className="flex flex-col flex-1 min-h-0">
         {/* Logo Section */}
         <div className={`h-24 flex items-center justify-between shrink-0 pt-4 pb-2 w-full ${collapsed ? 'px-2' : 'px-5'}`}>
@@ -291,5 +299,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
     </aside>
+    </>
   );
 };

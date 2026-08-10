@@ -557,7 +557,7 @@ export const CheckInPage: React.FC = () => {
           
           {/* STAGE 1: CUSTOMER DETAILS ENTRY */}
           {stage === 1 && (
-            <div className="glass-panel p-8 rounded-3xl border border-border-main space-y-6">
+            <div className="glass-panel p-5 md:p-8 rounded-3xl border border-border-main space-y-6">
               <div className="flex items-center gap-3 pb-4 border-b border-border-main">
                 <div className="w-10 h-10 rounded-xl dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 flex items-center justify-center font-bold">
                   <User size={20} />
@@ -583,7 +583,7 @@ export const CheckInPage: React.FC = () => {
                       value={phoneNumber}
                       onChange={e => setPhoneNumber(e.target.value)}
                       placeholder="e.g. 9876543210"
-                      className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-sm text-text-main focus:outline-none transition-all ${
+                      className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-base md:text-sm text-text-main focus:outline-none transition-all ${
                         phoneNumber.trim().length > 0 && !isValidPhone(phoneNumber)
                           ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
                           : 'border-border-main dark:focus:border-[#8D6CE5] focus:border-primary focus:ring-2 dark:focus:ring-[#8D6CE5]/20 focus:ring-primary/20'
@@ -613,7 +613,7 @@ export const CheckInPage: React.FC = () => {
                       value={customerName}
                       onChange={e => setCustomerName(e.target.value)}
                       placeholder="e.g. Rahul Sharma"
-                      className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-sm text-text-main focus:outline-none transition-all ${
+                      className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-base md:text-sm text-text-main focus:outline-none transition-all ${
                         customerName.trim().length > 0 && !isNameOk
                           ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
                           : 'border-border-main dark:focus:border-[#8D6CE5] focus:border-primary focus:ring-2 dark:focus:ring-[#8D6CE5]/20 focus:ring-primary/20'
@@ -644,7 +644,7 @@ export const CheckInPage: React.FC = () => {
                       value={email}
                       onChange={e => setEmail(e.target.value)}
                       placeholder="e.g. rahul@gmail.com"
-                      className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-sm text-text-main focus:outline-none transition-all ${
+                      className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-base md:text-sm text-text-main focus:outline-none transition-all ${
                         email.trim().length === 0 || !isValidEmail(email)
                           ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
                           : 'border-border-main dark:focus:border-[#8D6CE5] focus:border-primary focus:ring-2 dark:focus:ring-[#8D6CE5]/20 focus:ring-primary/20'
@@ -715,7 +715,7 @@ export const CheckInPage: React.FC = () => {
                             }
                           }
                         }}
-                        className="w-12 bg-transparent text-center text-sm font-black text-text-main focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none cursor-text select-all"
+                        className="w-12 bg-transparent text-center text-base md:text-sm font-black text-text-main focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none cursor-text select-all"
                       />
                       <button
                         type="button"
@@ -763,14 +763,14 @@ export const CheckInPage: React.FC = () => {
                 </div>
 
                 {/* STAGE 1 SUBMIT BUTTON (STRICTLY DISABLED UNTIL isStep1Valid IS TRUE) */}
-                <div className="pt-4 flex items-center justify-between border-t border-border-main">
-                  <div className="text-xs text-text-muted">
+                <div className="pt-4 flex flex-col sm:flex-row items-center sm:justify-between gap-4 border-t border-border-main">
+                  <div className="text-xs text-text-muted w-full sm:w-auto text-center sm:text-left">
                     {!isStep1Valid ? (
-                      <span className="dark:text-amber-400 text-amber-700 flex items-center gap-1">
+                      <span className="dark:text-amber-400 text-amber-700 flex items-center justify-center sm:justify-start gap-1">
                         <AlertTriangle size={14} /> Complete all required fields above to proceed
                       </span>
                     ) : (
-                      <span className="dark:text-emerald-400 text-emerald-700 font-bold flex items-center gap-1">
+                      <span className="dark:text-emerald-400 text-emerald-700 font-bold flex items-center justify-center sm:justify-start gap-1">
                         ✓ All inputs validated
                       </span>
                     )}
@@ -780,7 +780,7 @@ export const CheckInPage: React.FC = () => {
                     type="submit"
                     disabled={!isStep1Valid}
                     title={!isStep1Valid ? "Fill required details" : undefined}
-                    className="px-8 py-3.5 rounded-xl primary-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl transition-all"
+                    className="px-8 py-3.5 rounded-xl primary-btn flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl transition-all w-full sm:w-auto"
                   >
                     <span>Proceed to Seating Plan</span>
                     <ChevronRight size={16} />
@@ -792,7 +792,7 @@ export const CheckInPage: React.FC = () => {
 
           {/* STAGE 2: SEATING ZONE & RATE SELECTION */}
           {stage === 2 && (
-            <div className="glass-panel p-8 rounded-3xl border border-border-main space-y-6">
+            <div className="glass-panel p-5 md:p-8 rounded-3xl border border-border-main space-y-6">
               <div className="flex items-center gap-3 pb-4 border-b border-border-main">
                 <div className="w-10 h-10 rounded-xl dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 flex items-center justify-center font-bold">
                   <Grid3X3 size={20} />
@@ -884,11 +884,11 @@ export const CheckInPage: React.FC = () => {
                 )}
               </div>
 
-              <div className="pt-4 flex items-center justify-between">
+              <div className="pt-4 flex flex-col-reverse sm:flex-row items-center sm:justify-between gap-3">
                 <button
                   type="button"
                   onClick={() => setStage(1)}
-                  className="px-6 py-3 rounded-xl text-xs font-bold flex items-center gap-2 transition-all premium-btn-secondary"
+                  className="px-6 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all premium-btn-secondary w-full sm:w-auto"
                 >
                   <ChevronLeft size={16} /> Back
                 </button>
@@ -896,7 +896,7 @@ export const CheckInPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleStage2Next}
-                  className="px-8 py-3.5 rounded-xl primary-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl"
+                  className="px-8 py-3.5 rounded-xl primary-btn flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl w-full sm:w-auto"
                 >
                   <span>Proceed to Payment</span>
                   <ChevronRight size={16} />
@@ -907,7 +907,7 @@ export const CheckInPage: React.FC = () => {
 
           {/* STAGE 3: QR PASS SCAN & VERIFY */}
           {stage === 3 && (
-            <div className="glass-panel p-8 rounded-3xl border border-border-main space-y-6">
+            <div className="glass-panel p-5 md:p-8 rounded-3xl border border-border-main space-y-6">
               <div className="flex items-center gap-3 pb-4 border-b border-border-main">
                 <div className="w-10 h-10 rounded-xl dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 flex items-center justify-center font-bold">
                   <QrCode size={20} />
@@ -919,7 +919,7 @@ export const CheckInPage: React.FC = () => {
               </div>
 
               {/* Live Camera Viewfinder Layer */}
-              <div className="relative rounded-2xl overflow-hidden bg-bg-primary border border-border-main aspect-video flex flex-col items-center justify-center shadow-inner">
+              <div className="relative rounded-2xl overflow-hidden bg-bg-primary border border-border-main aspect-[3/4] sm:aspect-video max-h-[55vh] lg:max-h-[60vh] flex flex-col items-center justify-center shadow-inner">
                 {cameraActive ? (
                   <>
                     <video 
@@ -938,8 +938,8 @@ export const CheckInPage: React.FC = () => {
                       <span className="text-[9px] text-[#8D6CE5] font-black uppercase tracking-wider bg-black/60 px-2 py-0.5 rounded-md">Viewfinder</span>
                     </div>
 
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 px-4 py-1.5 rounded-full border border-border-main z-30">
-                      <p className="text-[10px] text-text-main font-extrabold uppercase tracking-widest text-center">
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 w-[90%] sm:w-max max-w-[280px] px-4 py-1.5 rounded-full border border-border-main z-30 flex items-center justify-center">
+                      <p className="text-[10px] text-text-main font-extrabold uppercase tracking-widest text-center leading-tight">
                         Align QR Code within the golden frame
                       </p>
                     </div>
@@ -986,7 +986,7 @@ export const CheckInPage: React.FC = () => {
               {/* Manual Input Fallback */}
               <div className="space-y-2.5">
                 <label className="block text-xs font-semibold text-text-muted">Or Input Token Number Manually</label>
-                <div className="flex gap-2.5">
+                <div className="flex flex-col sm:flex-row gap-2.5">
                   <input
                     type="text"
                     value={qrCodeInput}
@@ -995,14 +995,14 @@ export const CheckInPage: React.FC = () => {
                       setQrVerificationError(null);
                     }}
                     placeholder="e.g. BAR-20260728-1"
-                    className="flex-1 bg-bg-primary border border-border-main rounded-xl px-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary focus:ring-2 dark:focus:ring-[#8D6CE5]/20 focus:ring-primary/20"
+                    className="flex-1 bg-bg-primary border border-border-main rounded-xl px-4 py-2.5 text-base md:text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary focus:ring-2 dark:focus:ring-[#8D6CE5]/20 focus:ring-primary/20"
                   />
                   <button
                     type="button"
                     disabled={isVerifyingQr || !qrCodeInput.trim()}
                     title={isVerifyingQr ? "Verification in progress" : !qrCodeInput.trim() ? "Enter QR Code" : undefined}
                     onClick={() => handleVerifyQR(qrCodeInput)}
-                    className="px-6 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider disabled:opacity-40 transition-all cursor-pointer shadow-md"
+                    className="px-6 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider disabled:opacity-40 transition-all cursor-pointer shadow-md w-full sm:w-auto"
                   >
                     {isVerifyingQr ? 'Verifying...' : 'Verify Token'}
                   </button>
@@ -1024,7 +1024,7 @@ export const CheckInPage: React.FC = () => {
               </div>
 
               {/* Stage Navigation Buttons */}
-              <div className="pt-4 border-t border-border-main flex items-center justify-between">
+              <div className="pt-4 border-t border-border-main flex flex-col-reverse sm:flex-row items-center sm:justify-between gap-3">
                 <button
                   type="button"
                   onClick={() => {
@@ -1035,7 +1035,7 @@ export const CheckInPage: React.FC = () => {
                       setStage(2);
                     }
                   }}
-                  className="px-6 py-3 rounded-xl text-xs font-bold flex items-center gap-2 transition-all premium-btn-secondary"
+                  className="px-6 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all premium-btn-secondary w-full sm:w-auto"
                 >
                   <ChevronLeft size={16} /> Back
                 </button>
@@ -1046,7 +1046,7 @@ export const CheckInPage: React.FC = () => {
                     stopCamera();
                     setStage(4); // Manual proceed to Payment
                   }}
-                  className="px-8 py-3.5 rounded-xl primary-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl cursor-pointer"
+                  className="px-8 py-3.5 rounded-xl primary-btn flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl cursor-pointer w-full sm:w-auto"
                 >
                   <span>Proceed to Payment</span>
                   <ChevronRight size={16} />
@@ -1057,7 +1057,7 @@ export const CheckInPage: React.FC = () => {
 
           {/* STAGE 4: PAYMENT DETAILS */}
           {stage === 4 && (
-            <div className="glass-panel p-8 rounded-3xl border border-border-main space-y-6">
+            <div className="glass-panel p-5 md:p-8 rounded-3xl border border-border-main space-y-6">
               <div className="flex items-center gap-3 pb-4 border-b border-border-main">
                 <div className="w-10 h-10 rounded-xl dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 flex items-center justify-center font-bold">
                   <CreditCard size={20} />
@@ -1072,7 +1072,7 @@ export const CheckInPage: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-semibold text-text-muted mb-2">Payment Method</label>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <button
                       type="button"
                       onClick={() => setPaymentMode('CASH')}
@@ -1098,11 +1098,11 @@ export const CheckInPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="pt-4 flex items-center justify-between">
+                <div className="pt-4 flex flex-col-reverse sm:flex-row items-center sm:justify-between gap-3 border-t border-border-main mt-4">
                   <button
                     type="button"
                     onClick={() => setStage(3)}
-                    className="px-6 py-3 rounded-xl text-xs font-bold flex items-center gap-2 transition-all premium-btn-secondary"
+                    className="px-6 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all premium-btn-secondary w-full sm:w-auto"
                   >
                     <ChevronLeft size={16} /> Back
                   </button>
@@ -1111,7 +1111,7 @@ export const CheckInPage: React.FC = () => {
                     type="submit"
                     disabled={isSubmitting || !isStep1Valid}
                     title={isSubmitting ? "Check-in in progress" : !isStep1Valid ? "Verify token first" : undefined}
-                    className="px-8 py-3.5 rounded-xl primary-btn flex items-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    className="px-8 py-3.5 rounded-xl primary-btn flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider shadow-xl disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer w-full sm:w-auto"
                   >
                     {isSubmitting ? (
                       <span>Issuing Pass...</span>
@@ -1129,7 +1129,7 @@ export const CheckInPage: React.FC = () => {
 
           {/* STAGE 5: CHECK-IN SUCCESS PASS TICKET */}
           {stage === 5 && createdToken && (
-            <div className="glass-panel p-8 rounded-3xl border border-emerald-500/30 bg-emerald-500/5 space-y-6 text-center">
+            <div className="glass-panel p-5 md:p-8 rounded-3xl border border-emerald-500/30 bg-emerald-500/5 space-y-6 text-center">
               <div className="w-16 h-16 rounded-full bg-emerald-500/20 dark:text-emerald-400 text-emerald-700 flex items-center justify-center mx-auto">
                 <CheckCircle2 size={36} />
               </div>
