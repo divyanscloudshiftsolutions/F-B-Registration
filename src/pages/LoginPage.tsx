@@ -121,24 +121,28 @@ export const LoginPage: React.FC = () => {
         {/* Left Panel: Venue Branding Showcase (Hidden on Mobile) */}
         <div className="hidden lg:flex flex-col justify-between p-10 bg-gradient-to-br from-primary/10 to-primary/5 border-r border-border-main relative">
           <div>
-            {/* Glowing Brand Logo element */}
-            <div className="w-14 h-14 rounded-2xl premium-logo-glow flex items-center justify-center text-text-inverse text-2xl font-bold mb-6">
-              🍸
+            <div className="flex items-center gap-4 mb-6">
+              {/* Glowing Brand Logo element */}
+              <div className="w-14 h-14 rounded-2xl premium-logo-glow flex items-center justify-center text-text-inverse text-2xl font-bold shrink-0">
+                🍸
+              </div>
+              <div>
+                <h1 className="text-[27px] font-bold text-text-main tracking-wider uppercase leading-tight">BAR MANAGEMENT SYSTEM</h1>
+                <p className="text-xs text-primary font-semibold mt-1 uppercase tracking-widest">Enterprise Terminal Gateway</p>
+              </div>
             </div>
-            <h1 className="text-3xl font-bold text-text-main tracking-wider uppercase">BAR MANAGEMENT SYSTEM</h1>
-            <p className="text-xs text-primary font-semibold mt-1 uppercase tracking-widest">Enterprise Terminal Gateway</p>
             
-            <p className="text-xs text-text-muted mt-6 leading-relaxed">
-              Unified venue check-in, real-time seating map, beverage redemption station, and executive management portal.
+            <p className="text-xs text-text-muted mt-6 leading-relaxed font-semibold">
+              A unified workstation for guest check-in, table management, drink redemption, and operations.
             </p>
           </div>
 
           <div className="space-y-3">
-            <div className="p-4 rounded-2xl bg-white/20 dark:bg-black/10 border border-border-main flex items-center gap-3">
+            <div className="p-4 rounded-2xl bg-bg-secondary-surface border border-border-main flex items-center gap-3">
               <ShieldCheck className="text-emerald-400" size={20} />
               <div>
                 <p className="text-xs font-bold text-text-main">Secure Terminal Access</p>
-                <p className="text-[10px] text-text-muted">Authorized Shift Staff Terminal Only</p>
+                <p className="text-[10px] text-text-muted font-semibold">Authorized Shift Staff Terminal Only</p>
               </div>
             </div>
           </div>
@@ -149,8 +153,8 @@ export const LoginPage: React.FC = () => {
           
           {/* Header */}
           <div>
-            <h2 className="text-xl font-bold text-text-main tracking-wide">Staff Terminal Login</h2>
-            <p className="text-xs text-text-muted mt-1">Select your shift role and enter credentials</p>
+            <h2 className="text-xl font-bold text-text-main tracking-wide">Staff Workstation Login</h2>
+            <p className="text-xs text-text-muted mt-1 font-semibold">Select your station role and enter your credentials to continue.</p>
           </div>
 
           {/* Error Banner */}
@@ -163,17 +167,17 @@ export const LoginPage: React.FC = () => {
 
           {/* Role Selection Tabs styled as standardized premium segmented controls */}
           <div>
-            <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2">1. Select Shift Role</label>
+            <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2">1. Select Station Role</label>
             <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-[#F8F7FC] dark:bg-black/10 border border-border-main">
               {(['REC', 'BAR', 'ADM', 'MGR'] as const).map(r => {
                 const isSel = selectedRole === r;
-                const labels = { REC: 'Recep', BAR: 'Bar', ADM: 'Admin', MGR: 'Mngr' };
+                const labels = { REC: 'Reception', BAR: 'Bartender', ADM: 'Admin', MGR: 'Manager' };
                 return (
                   <button
                     key={r}
                     type="button"
                     onClick={() => handleRoleSelect(r)}
-                    className={`py-1.5 text-xs font-bold uppercase transition-all duration-200 active:scale-95 premium-tab-secondary ${
+                    className={`py-1.5 text-[10px] sm:text-xs font-bold uppercase transition-all duration-200 active:scale-95 premium-tab-secondary ${
                       isSel ? 'active' : ''
                     }`}
                   >
@@ -187,9 +191,9 @@ export const LoginPage: React.FC = () => {
           {/* Credentials Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-text-muted mb-1.5">Employee ID Code</label>
+              <label className="block text-xs font-semibold text-text-muted mb-1.5">Employee Access Code</label>
               <div className="relative">
-                <User className="absolute left-3.5 top-3.5 text-text-muted" size={16} />
+                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted" size={16} />
                 <input
                   type="text"
                   value={username}
@@ -198,16 +202,16 @@ export const LoginPage: React.FC = () => {
                     setErrorMsg('');
                   }}
                   placeholder="e.g. ADM-03"
-                  className="w-full bg-white/5 dark:bg-black/15 border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 backdrop-blur-sm transition-all"
+                  className="w-full bg-bg-secondary-surface border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono font-semibold placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 backdrop-blur-sm transition-all"
                   required
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-text-muted mb-1.5">Security PIN / Password</label>
+              <label className="block text-xs font-semibold text-text-muted mb-1.5">Security PIN</label>
               <div className="relative">
-                <KeyRound className="absolute left-3.5 top-3.5 text-text-muted" size={16} />
+                <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted" size={16} />
                 <input
                   type="password"
                   value={pin}
@@ -216,7 +220,7 @@ export const LoginPage: React.FC = () => {
                     setErrorMsg('');
                   }}
                   placeholder="••••"
-                  className="w-full bg-white/5 dark:bg-black/15 border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 backdrop-blur-sm transition-all"
+                  className="w-full bg-bg-secondary-surface border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono font-semibold placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 backdrop-blur-sm transition-all"
                   required
                 />
               </div>
@@ -230,10 +234,10 @@ export const LoginPage: React.FC = () => {
               className="w-full py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all mt-4"
             >
               {isSubmitting ? (
-                <span>Authenticating Terminal...</span>
+                <span>Opening Workstation...</span>
               ) : (
                 <>
-                  <span>Sign In To Shift Station</span>
+                  <span>Open Workstation</span>
                   <ArrowRight size={16} />
                 </>
               )}
