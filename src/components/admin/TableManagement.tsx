@@ -84,11 +84,11 @@ export const TableManagement: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Bar with Place Type Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
+        <div className="flex flex-nowrap overflow-x-auto custom-scrollbar gap-2 w-full md:w-auto pb-1 md:pb-0">
           <button
             onClick={() => setSelectedPlace('STANDING_BAR')}
-            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary active:scale-95 ${
+            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary active:scale-95 shrink-0 whitespace-nowrap ${
               selectedPlace === 'STANDING_BAR' ? 'active' : ''
             }`}
           >
@@ -97,7 +97,7 @@ export const TableManagement: React.FC = () => {
 
           <button
             onClick={() => setSelectedPlace('PREMIUM_LOUNGE')}
-            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary active:scale-95 ${
+            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary active:scale-95 shrink-0 whitespace-nowrap ${
               selectedPlace === 'PREMIUM_LOUNGE' ? 'active' : ''
             }`}
           >
@@ -105,10 +105,10 @@ export const TableManagement: React.FC = () => {
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full md:w-auto shrink-0">
           <button
             onClick={() => { refreshTables(); refreshTokens(); }}
-            className="px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary"
+            className="flex-1 sm:flex-none justify-center px-4 py-2.5 text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0 whitespace-nowrap"
           >
             <div className="nav-icon-badge">
               <RefreshCw size={12} />
@@ -118,7 +118,7 @@ export const TableManagement: React.FC = () => {
 
           <button
             onClick={() => setIsModalOpen(true)}
-            className="px-4 py-2 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg"
+            className="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg shrink-0 whitespace-nowrap"
           >
             <div className="nav-icon-badge">
               <Plus size={14} />
@@ -164,7 +164,7 @@ export const TableManagement: React.FC = () => {
                       <div
                         key={tb.id}
                         onClick={() => setInspectingTable(tb)}
-                        className={`w-[290px] shrink-0 snap-start p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between gap-3 min-h-[295px] ${
+                        className={`w-[85vw] max-w-[290px] shrink-0 snap-start p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between gap-3 min-h-[295px] ${
                           isFull
                             ? 'bg-bg-surface/50 border-red-500/30 shadow-lg shadow-red-500/5'
                             : isPartial
@@ -370,7 +370,7 @@ export const TableManagement: React.FC = () => {
               )}
 
               {/* Action Buttons */}
-              <div className="pt-2 border-t border-border-main flex gap-3">
+              <div className="pt-4 border-t border-border-main flex flex-col-reverse sm:flex-row gap-3">
                 <button
                   type="button"
                   onClick={() => setInspectingTable(null)}
@@ -453,11 +453,11 @@ export const TableManagement: React.FC = () => {
                 </select>
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -465,7 +465,7 @@ export const TableManagement: React.FC = () => {
                   type="submit"
                   disabled={isSubmitting || !isFormValid}
                   title={isSubmitting ? "Creating..." : !isFormValid ? "Fill all fields" : undefined}
-                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
+                  className="flex-1 py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
                 >
                   {isSubmitting ? 'Creating...' : 'Confirm Table'}
                 </button>

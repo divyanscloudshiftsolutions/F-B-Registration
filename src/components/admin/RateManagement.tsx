@@ -62,7 +62,7 @@ export const RateManagement: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Header */}
-      <div className="flex items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
         <div>
           <h3 className="text-sm font-bold text-text-main uppercase tracking-wider">Place Type Rate Cards & Pricing Config</h3>
           <p className="text-xs text-text-muted">Configure cover charge rates, base hours, and drink allowances</p>
@@ -70,7 +70,7 @@ export const RateManagement: React.FC = () => {
 
         <button
           onClick={refreshRates}
-          className="px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary"
+          className="w-full sm:w-auto justify-center px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0"
         >
           <div className="nav-icon-badge">
             <RefreshCw size={12} />
@@ -83,7 +83,7 @@ export const RateManagement: React.FC = () => {
       {isLoading ? (
         <div className="py-12 text-center text-text-muted text-sm">Loading rate cards...</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {rates.map(r => (
             <div key={r.id} className="glass-panel p-6 rounded-3xl border border-border-main space-y-4 relative overflow-hidden flex flex-col justify-between">
               <div>
@@ -173,11 +173,11 @@ export const RateManagement: React.FC = () => {
                 />
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setEditingRate(null)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -185,7 +185,7 @@ export const RateManagement: React.FC = () => {
                   type="submit"
                   disabled={isSubmitting || !isFormValid}
                   title={isSubmitting ? "Saving..." : !isFormValid ? "Fill all fields" : undefined}
-                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
+                  className="flex-1 py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
                 >
                   {isSubmitting ? 'Saving...' : 'Update Pricing'}
                 </button>
