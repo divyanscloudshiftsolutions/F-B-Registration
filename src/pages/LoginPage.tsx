@@ -78,7 +78,7 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] flex items-center justify-center p-4 lg:p-12 relative overflow-hidden text-text-main">
+    <div style={{ fontFamily: "'Inter', sans-serif" }} className="min-h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] flex items-center justify-center p-4 lg:p-12 relative overflow-hidden text-text-main">
       {/* Theme Toggle in Top Right Corner */}
       <div className="absolute top-4 right-4 z-20">
         <button
