@@ -60,7 +60,7 @@ export const RevenueAnalyticsChart: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Action Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
         <div>
           <h3 className="text-sm font-bold text-text-main uppercase tracking-wider">Revenue Analytics & Sales Summary</h3>
           <p className="text-xs text-text-muted">Peak hour analysis and financial collections</p>
@@ -68,24 +68,25 @@ export const RevenueAnalyticsChart: React.FC = () => {
 
         <button
           onClick={handleExportCSV}
-          className="px-4 py-2 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg cursor-pointer"
+          className="w-full sm:w-auto justify-center px-4 py-2.5 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg cursor-pointer shrink-0"
         >
           <Download size={16} /> Export Sessions CSV
         </button>
       </div>
 
       {/* Hourly Sales Bar Chart Component */}
-      <div className="glass-panel p-6 rounded-2xl border border-border-main space-y-6">
-        <div className="flex items-center justify-between pb-3 border-b border-border-main">
-          <div className="flex items-center gap-2 text-text-main font-bold text-sm animate-fadeIn">
-            <BarChart3 size={18} /> Hourly Revenue Breakdown & Peak Collections
+      <div className="glass-panel p-4 sm:p-6 rounded-2xl border border-border-main space-y-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-border-main">
+          <div className="flex items-center gap-2 text-text-main font-bold text-sm animate-fadeIn min-w-0 w-full sm:w-auto">
+            <BarChart3 size={18} className="shrink-0" /> <span className="truncate">Hourly Revenue Breakdown & Peak Collections</span>
           </div>
-          <span className="text-xs font-bold dark:text-emerald-400 text-emerald-700 flex items-center gap-1">
+          <span className="text-xs font-bold dark:text-emerald-400 text-emerald-700 flex items-center gap-1 shrink-0">
             <TrendingUp size={14} /> Peak Hour: 10:00 PM (₹94,800)
           </span>
         </div>
 
-        <div className="flex gap-4 items-stretch h-64 mt-4">
+        <div className="overflow-x-auto custom-scrollbar -mx-2 px-2 sm:mx-0 sm:px-0">
+         <div className="flex gap-4 items-stretch h-64 mt-4 min-w-[500px]">
           {/* Y-Axis Labels Column */}
           <div className="flex flex-col justify-between text-[10px] font-mono text-text-muted font-bold py-3.5 select-none text-right w-10">
             <span>₹100k</span>
@@ -126,7 +127,7 @@ export const RevenueAnalyticsChart: React.FC = () => {
                     </div>
 
                     {/* Numerical Label on top of the Bar */}
-                    <span className="text-[9px] font-mono text-text-muted font-bold mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-[9px] font-mono text-text-muted font-bold mb-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                       ₹{(d.amount / 1000).toFixed(0)}k
                     </span>
 
@@ -151,10 +152,11 @@ export const RevenueAnalyticsChart: React.FC = () => {
               })}
             </div>
           </div>
+         </div>
         </div>
 
         {/* Chart Legend Footer */}
-        <div className="flex items-center justify-center gap-6 pt-4 border-t border-border-main text-[11px] font-bold text-text-muted select-none">
+        <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 pt-4 border-t border-border-main text-[11px] font-bold text-text-muted select-none">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded bg-gradient-to-t from-[#8D6CE5] to-[#F5E08B]" />
             <span>Peak Hour Revenue</span>

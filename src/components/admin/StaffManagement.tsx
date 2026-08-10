@@ -79,22 +79,22 @@ export const StaffManagement: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Action Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
-        <div className="relative flex-1 max-w-md">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
+        <div className="relative w-full md:w-auto md:flex-1 max-w-md">
           <Search className="absolute left-3.5 top-3 text-text-muted" size={16} />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search staff members by name, code or role..."
+            placeholder="Search staff members..."
             className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full md:w-auto shrink-0">
           <button
             onClick={refreshUsers}
-            className="px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary"
+            className="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0 whitespace-nowrap"
           >
             <div className="nav-icon-badge">
               <RefreshCw size={12} />
@@ -104,25 +104,25 @@ export const StaffManagement: React.FC = () => {
 
           <button
             onClick={() => setIsModalOpen(true)}
-            className="px-4 py-2 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg"
+            className="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg shrink-0 whitespace-nowrap"
           >
             <div className="nav-icon-badge">
               <UserPlus size={14} />
             </div>
-            <span>Add New Staff Member</span>
+            <span>Add Staff</span>
           </button>
         </div>
       </div>
 
       {/* Staff User Directory Table */}
-      <div className="glass-panel rounded-2xl p-6 border border-border-main">
+      <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-border-main">
         {isLoading ? (
           <div className="py-12 text-center text-text-muted text-sm">Loading staff user directory...</div>
         ) : filteredUsers.length === 0 ? (
           <div className="py-12 text-center text-text-muted text-sm">No staff members found matching criteria.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+          <div className="overflow-x-auto custom-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+            <table className="w-full text-left text-xs min-w-[700px]">
               <thead>
                 <tr className="border-b border-border-main text-text-muted uppercase font-semibold text-[10px] tracking-wider">
                   <th className="pb-3 px-3">Employee Code</th>
@@ -181,7 +181,7 @@ export const StaffManagement: React.FC = () => {
       {/* CREATE STAFF MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
             <button 
               onClick={() => setIsModalOpen(false)}
               className="absolute top-4 right-4 text-text-muted hover:text-text-main"
@@ -266,11 +266,11 @@ export const StaffManagement: React.FC = () => {
                 />
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -278,7 +278,7 @@ export const StaffManagement: React.FC = () => {
                   type="submit"
                   disabled={isSubmitting || !isFormValid}
                   title={isSubmitting ? "Registering..." : !isFormValid ? "Fill all fields" : undefined}
-                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
+                  className="flex-1 py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
                 >
                   {isSubmitting ? 'Registering...' : 'Confirm Registration'}
                 </button>

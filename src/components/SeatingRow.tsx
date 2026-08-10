@@ -69,7 +69,7 @@ export const SeatingRow: React.FC<SeatingRowProps> = ({ capacity, tableCount, ch
           <button
             type="button"
             onClick={() => handleScroll('left')}
-            className="absolute -left-4 z-30 w-10 h-10 rounded-full glass-panel bg-bg-surface/90 dark:hover:bg-[#8D6CE5] hover:bg-primary dark:border-[#8D6CE5]/40 border-primary/40 dark:text-[#8D6CE5] text-primary hover:text-white shadow-xl dark:hover:shadow-[#8D6CE5]/30 hover:shadow-primary/30 flex items-center justify-center transition-all cursor-pointer hover:scale-110 active:scale-95"
+            className="absolute left-1 md:-left-4 z-30 w-10 h-10 rounded-full glass-panel bg-bg-surface/90 dark:hover:bg-[#8D6CE5] hover:bg-primary dark:border-[#8D6CE5]/40 border-primary/40 dark:text-[#8D6CE5] text-primary hover:text-white shadow-xl dark:hover:shadow-[#8D6CE5]/30 hover:shadow-primary/30 flex items-center justify-center transition-all cursor-pointer hover:scale-110 active:scale-95"
             aria-label="Scroll Left"
           >
             <ChevronLeft size={22} />
@@ -89,7 +89,7 @@ export const SeatingRow: React.FC<SeatingRowProps> = ({ capacity, tableCount, ch
           <button
             type="button"
             onClick={() => handleScroll('right')}
-            className="absolute -right-4 z-30 w-10 h-10 rounded-full glass-panel bg-bg-surface/90 dark:hover:bg-[#8D6CE5] hover:bg-primary dark:border-[#8D6CE5]/40 border-primary/40 dark:text-[#8D6CE5] text-primary hover:text-white shadow-xl dark:hover:shadow-[#8D6CE5]/30 hover:shadow-primary/30 flex items-center justify-center transition-all cursor-pointer hover:scale-110 active:scale-95"
+            className="absolute right-1 md:-right-4 z-30 w-10 h-10 rounded-full glass-panel bg-bg-surface/90 dark:hover:bg-[#8D6CE5] hover:bg-primary dark:border-[#8D6CE5]/40 border-primary/40 dark:text-[#8D6CE5] text-primary hover:text-white shadow-xl dark:hover:shadow-[#8D6CE5]/30 hover:shadow-primary/30 flex items-center justify-center transition-all cursor-pointer hover:scale-110 active:scale-95"
             aria-label="Scroll Right"
           >
             <ChevronRight size={22} />

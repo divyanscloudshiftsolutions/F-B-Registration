@@ -78,19 +78,10 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] flex items-center justify-center p-4 lg:p-12 relative overflow-hidden text-text-main">
-      {/* Theme Toggle in Top Right Corner */}
-      <div className="absolute top-4 right-4 z-20">
-        <button
-          onClick={toggleThemeWithWave}
-          className="p-2 transition-all premium-btn-secondary"
-          title="Toggle Color Theme"
-        >
-          {isDark ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} />}
-        </button>
-      </div>
+    <div style={{ fontFamily: "'Manrope', sans-serif" }} className="min-h-[100dvh] dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] flex flex-col items-center p-4 lg:p-12 relative overflow-y-auto overflow-x-hidden text-text-main">
+
       {/* Ambient background layers matching App.tsx */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0 fixed">
         {/* Background Lounge Image */}
         <div 
           className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-700 opacity-50 dark:opacity-30 mix-blend-normal"
@@ -116,29 +107,44 @@ export const LoginPage: React.FC = () => {
       </div>
 
       {/* Split Screen Container styled as Premium Glass card */}
-      <div className="w-full max-w-5xl glass-panel shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] border border-border-main rounded-3xl overflow-hidden grid grid-cols-1 lg:grid-cols-2 relative z-10">
+      <div className="w-full max-w-5xl my-auto glass-panel shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] border border-border-main rounded-3xl overflow-hidden grid grid-cols-1 lg:grid-cols-2 relative z-10 shrink-0">
         
-        {/* Left Panel: Venue Branding Showcase (Hidden on Mobile) */}
-        <div className="hidden lg:flex flex-col justify-between p-10 bg-gradient-to-br from-primary/10 to-primary/5 border-r border-border-main relative">
+        {/* Left Panel: Venue Branding Showcase (Responsive) */}
+        <div className="flex flex-col justify-between p-6 lg:p-10 bg-gradient-to-br from-primary/10 to-primary/5 border-b lg:border-b-0 lg:border-r border-border-main relative">
+          {/* Theme Toggle inside Card */}
+          <div className="absolute top-4 right-4 lg:top-6 lg:right-6 z-20">
+            <button
+              onClick={toggleThemeWithWave}
+              className="p-2 transition-all premium-btn-secondary shadow-md"
+              title="Toggle Color Theme"
+            >
+              {isDark ? <Sun size={14} className="text-amber-400" /> : <Moon size={14} />}
+            </button>
+          </div>
+
           <div>
-            {/* Glowing Brand Logo element */}
-            <div className="w-14 h-14 rounded-2xl premium-logo-glow flex items-center justify-center text-text-inverse text-2xl font-bold mb-6">
-              🍸
+            <div className="flex items-center gap-3 lg:gap-4 mb-2 lg:mb-6 pr-10">
+              {/* Glowing Brand Logo element */}
+              <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl premium-logo-glow flex items-center justify-center text-text-inverse text-xl lg:text-2xl font-bold shrink-0">
+                🍸
+              </div>
+              <div>
+                <h1 className="text-lg lg:text-[27px] font-bold text-text-main tracking-wider uppercase leading-tight">BAR MANAGEMENT SYSTEM</h1>
+                <p className="text-[10px] lg:text-xs text-primary font-semibold mt-0.5 lg:mt-1 uppercase tracking-widest">Enterprise Terminal Gateway</p>
+              </div>
             </div>
-            <h1 className="text-3xl font-black text-text-main tracking-wider uppercase">BAR MANAGEMENT SYSTEM</h1>
-            <p className="text-xs text-primary font-semibold mt-1 uppercase tracking-widest">Enterprise Terminal Gateway</p>
             
-            <p className="text-xs text-text-muted mt-6 leading-relaxed">
-              Unified venue check-in, real-time seating map, beverage redemption station, and executive management portal.
+            <p className="hidden lg:block text-xs text-text-muted mt-6 leading-relaxed font-semibold">
+              A unified workstation for guest check-in, table management, drink redemption, and operations.
             </p>
           </div>
 
-          <div className="space-y-3">
-            <div className="p-4 rounded-2xl bg-white/20 dark:bg-black/10 border border-border-main flex items-center gap-3">
+          <div className="hidden lg:block space-y-3">
+            <div className="p-4 rounded-2xl bg-bg-secondary-surface border border-border-main flex items-center gap-3">
               <ShieldCheck className="text-emerald-400" size={20} />
               <div>
                 <p className="text-xs font-bold text-text-main">Secure Terminal Access</p>
-                <p className="text-[10px] text-text-muted">Authorized Shift Staff Terminal Only</p>
+                <p className="text-[10px] text-text-muted font-semibold">Authorized Shift Staff Terminal Only</p>
               </div>
             </div>
           </div>
@@ -149,8 +155,8 @@ export const LoginPage: React.FC = () => {
           
           {/* Header */}
           <div>
-            <h2 className="text-xl font-bold text-text-main tracking-wide">Staff Terminal Login</h2>
-            <p className="text-xs text-text-muted mt-1">Select your shift role and enter credentials</p>
+            <h2 className="text-xl font-bold text-text-main tracking-wide">Staff Workstation Login</h2>
+            <p className="text-xs text-text-muted mt-1 font-semibold">Select your station role and enter your credentials to continue.</p>
           </div>
 
           {/* Error Banner */}
@@ -163,17 +169,17 @@ export const LoginPage: React.FC = () => {
 
           {/* Role Selection Tabs styled as standardized premium segmented controls */}
           <div>
-            <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2">1. Select Shift Role</label>
-            <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-[#F8F7FC] dark:bg-black/10 border border-border-main">
+            <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2">1. Select Station Role</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 rounded-xl bg-[#F8F7FC] dark:bg-black/10 border border-border-main">
               {(['REC', 'BAR', 'ADM', 'MGR'] as const).map(r => {
                 const isSel = selectedRole === r;
-                const labels = { REC: 'Recep', BAR: 'Bar', ADM: 'Admin', MGR: 'Mngr' };
+                const labels = { REC: 'Reception', BAR: 'Bartender', ADM: 'Admin', MGR: 'Manager' };
                 return (
                   <button
                     key={r}
                     type="button"
                     onClick={() => handleRoleSelect(r)}
-                    className={`py-1.5 text-xs font-bold uppercase transition-all duration-200 active:scale-95 premium-tab-secondary ${
+                    className={`py-2 sm:py-1.5 text-[11px] sm:text-[10px] md:text-xs font-bold uppercase transition-all duration-200 active:scale-95 premium-tab-secondary ${
                       isSel ? 'active' : ''
                     }`}
                   >
@@ -187,9 +193,9 @@ export const LoginPage: React.FC = () => {
           {/* Credentials Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-text-muted mb-1.5">Employee ID Code</label>
+              <label className="block text-xs font-semibold text-text-muted mb-1.5">Employee Access Code</label>
               <div className="relative">
-                <User className="absolute left-3.5 top-3.5 text-text-muted" size={16} />
+                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted" size={16} />
                 <input
                   type="text"
                   value={username}
@@ -198,16 +204,16 @@ export const LoginPage: React.FC = () => {
                     setErrorMsg('');
                   }}
                   placeholder="e.g. ADM-03"
-                  className="w-full bg-white/5 dark:bg-black/15 border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 backdrop-blur-sm transition-all"
+                  className="w-full bg-bg-secondary-surface border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-base md:text-sm text-text-main font-mono font-semibold placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 backdrop-blur-sm transition-all"
                   required
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-text-muted mb-1.5">Security PIN / Password</label>
+              <label className="block text-xs font-semibold text-text-muted mb-1.5">Security PIN</label>
               <div className="relative">
-                <KeyRound className="absolute left-3.5 top-3.5 text-text-muted" size={16} />
+                <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted" size={16} />
                 <input
                   type="password"
                   value={pin}
@@ -216,7 +222,7 @@ export const LoginPage: React.FC = () => {
                     setErrorMsg('');
                   }}
                   placeholder="••••"
-                  className="w-full bg-white/5 dark:bg-black/15 border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 backdrop-blur-sm transition-all"
+                  className="w-full bg-bg-secondary-surface border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-base md:text-sm text-text-main font-mono font-semibold placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 backdrop-blur-sm transition-all"
                   required
                 />
               </div>
@@ -230,10 +236,10 @@ export const LoginPage: React.FC = () => {
               className="w-full py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all mt-4"
             >
               {isSubmitting ? (
-                <span>Authenticating Terminal...</span>
+                <span>Opening Workstation...</span>
               ) : (
                 <>
-                  <span>Sign In To Shift Station</span>
+                  <span>Open Workstation</span>
                   <ArrowRight size={16} />
                 </>
               )}

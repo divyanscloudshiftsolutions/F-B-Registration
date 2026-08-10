@@ -109,7 +109,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   return (
     <div className="space-y-6 text-text-main animate-fadeIn">
       {/* Demo Mode Toggle Header */}
-      <div className="flex items-center justify-between p-6 glass-panel rounded-2xl border border-border-main">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 glass-panel rounded-2xl border border-border-main">
         <div>
           <h2 className="text-sm font-bold uppercase tracking-wider text-text-main flex items-center gap-2">
             <span className={`w-2.5 h-2.5 rounded-full ${useDemoData ? 'bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.6)]' : 'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]'}`}></span>
@@ -119,7 +119,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             {useDemoData ? "Currently displaying centralized demo/simulation metrics" : "Currently displaying live production database metrics"}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 self-end md:self-auto">
           <span className="text-xs font-semibold text-text-muted">Simulate Demo Data</span>
           <button
             onClick={() => setUseDemoData(!useDemoData)}
@@ -136,10 +136,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider">Quick Operator Actions</h4>
           <span className="text-[10px] text-text-muted font-mono uppercase tracking-wider">Control Panel</span>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-1">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pt-1">
           <button
             onClick={() => onNavigate?.('checkin')}
-            className="w-full px-4 py-2.5 rounded-xl primary-btn text-xs font-bold flex items-center justify-center gap-2 shadow-md cursor-pointer"
+            className="w-full px-2 sm:px-4 py-2.5 rounded-xl primary-btn text-[10px] sm:text-xs font-bold flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 shadow-md cursor-pointer text-center"
           >
             <div className="nav-icon-badge">
               <UserCheck size={14} />
@@ -149,7 +149,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
           <button
             onClick={() => onNavigate?.('tables')}
-            className="w-full px-4 py-2.5 text-xs font-semibold flex items-center justify-center gap-2 transition-all premium-btn-secondary"
+            className="w-full px-2 sm:px-4 py-2.5 text-[10px] sm:text-xs font-semibold flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition-all premium-btn-secondary text-center"
           >
             <div className="nav-icon-badge">
               <Grid3X3 size={14} />
@@ -159,7 +159,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
           <button
             onClick={() => onNavigate?.('tables')}
-            className="w-full px-4 py-2.5 text-xs font-semibold flex items-center justify-center gap-2 transition-all premium-btn-secondary"
+            className="w-full px-2 sm:px-4 py-2.5 text-[10px] sm:text-xs font-semibold flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition-all premium-btn-secondary text-center"
           >
             <div className="nav-icon-badge">
               <CalendarRange size={14} />
@@ -169,7 +169,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
           <button
             onClick={() => onNavigate?.('admin', 'customers')}
-            className="w-full px-4 py-2.5 text-xs font-semibold flex items-center justify-center gap-2 transition-all premium-btn-secondary"
+            className="w-full px-2 sm:px-4 py-2.5 text-[10px] sm:text-xs font-semibold flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition-all premium-btn-secondary text-center"
           >
             <div className="nav-icon-badge">
               <Users size={14} />
@@ -181,50 +181,50 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="glass-panel p-6 rounded-2xl flex items-center justify-between border-l-4 dark:border-l-[#8D6CE5] border-l-primary">
-          <div>
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Active Guest Sessions</p>
+        <div className="glass-panel p-6 rounded-2xl flex items-center justify-between border-l-4 dark:border-l-[#8D6CE5] border-l-primary gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider truncate">Active Guest Sessions</p>
             <h3 className="text-2xl font-black text-text-main mt-1">{activeTokensCount}</h3>
-            <p className="text-[11px] dark:text-emerald-400 text-emerald-700 mt-1 flex items-center gap-1 font-medium">
-              <TrendingUp size={12} /> {totalGuestsInHouse} Total Guests In-House
+            <p className="text-[11px] dark:text-emerald-400 text-emerald-700 mt-1 flex items-center gap-1 font-medium truncate">
+              <TrendingUp size={12} className="shrink-0" /> <span className="truncate">{totalGuestsInHouse} Total Guests In-House</span>
             </p>
           </div>
-          <div className="w-12 h-12 rounded-xl dark:bg-[#8D6CE5]/15 bg-primary/10 dark:text-[#8D6CE5] text-primary flex items-center justify-center font-bold">
+          <div className="w-12 h-12 rounded-xl dark:bg-[#8D6CE5]/15 bg-primary/10 dark:text-[#8D6CE5] text-primary flex items-center justify-center font-bold shrink-0">
             <Users size={24} />
           </div>
         </div>
 
-        <div className="glass-panel p-6 rounded-2xl flex items-center justify-between border-l-4 border-l-emerald-500">
-          <div>
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Seating Occupancy</p>
+        <div className="glass-panel p-6 rounded-2xl flex items-center justify-between border-l-4 border-l-emerald-500 gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider truncate">Seating Occupancy</p>
             <h3 className="text-2xl font-black text-text-main mt-1">{occupiedTablesCount} / {displayTablesCount}</h3>
-            <p className="text-[11px] text-text-muted mt-1">
+            <p className="text-[11px] text-text-muted mt-1 truncate">
               Floor Capacity: {totalCapacity} Seats
             </p>
           </div>
-          <div className="w-12 h-12 rounded-xl dark:bg-emerald-500/15 bg-emerald-500/10 dark:text-emerald-400 text-emerald-700 flex items-center justify-center font-bold">
+          <div className="w-12 h-12 rounded-xl dark:bg-emerald-500/15 bg-emerald-500/10 dark:text-emerald-400 text-emerald-700 flex items-center justify-center font-bold shrink-0">
             <Grid3X3 size={24} />
           </div>
         </div>
 
-        <div className="glass-panel p-6 rounded-2xl flex items-center justify-between border-l-4 border-l-amber-500">
-          <div>
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Drink Redemptions</p>
+        <div className="glass-panel p-6 rounded-2xl flex items-center justify-between border-l-4 border-l-amber-500 gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider truncate">Drink Redemptions</p>
             <h3 className="text-2xl font-black text-text-main mt-1">{totalRedemptionsUsed}</h3>
-            <p className="text-[11px] dark:text-amber-400 text-amber-700 mt-1">Active Drinks Served Today</p>
+            <p className="text-[11px] dark:text-amber-400 text-amber-700 mt-1 truncate">Active Drinks Served Today</p>
           </div>
-          <div className="w-12 h-12 rounded-xl dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 flex items-center justify-center font-bold">
+          <div className="w-12 h-12 rounded-xl dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 flex items-center justify-center font-bold shrink-0">
             <Wine size={24} />
           </div>
         </div>
 
-        <div className="glass-panel p-6 rounded-2xl flex items-center justify-between border-l-4 border-l-blue-500">
-          <div>
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Session Revenue</p>
+        <div className="glass-panel p-6 rounded-2xl flex items-center justify-between border-l-4 border-l-blue-500 gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider truncate">Session Revenue</p>
             <h3 className="text-2xl font-black text-text-main mt-1">₹{totalRevenue.toLocaleString()}</h3>
-            <p className="text-[11px] dark:text-blue-400 text-blue-700 mt-1">Verified Gate Payments</p>
+            <p className="text-[11px] dark:text-blue-400 text-blue-700 mt-1 truncate">Verified Gate Payments</p>
           </div>
-          <div className="w-12 h-12 rounded-xl dark:bg-blue-500/15 bg-blue-500/10 dark:text-blue-400 text-blue-700 flex items-center justify-center font-bold">
+          <div className="w-12 h-12 rounded-xl dark:bg-blue-500/15 bg-blue-500/10 dark:text-blue-400 text-blue-700 flex items-center justify-center font-bold shrink-0">
             <DollarSign size={24} />
           </div>
         </div>
@@ -232,14 +232,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
       {/* Active Guest Sessions Table - FULL WORKSPACE WIDTH */}
       <div className="glass-panel rounded-2xl p-6 border border-border-main">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
           <div>
             <h3 className="text-base font-bold text-text-main">Live Customer Sessions</h3>
             <p className="text-xs text-text-muted">Real-time QR active seating tickets</p>
           </div>
           <button 
             onClick={() => { refreshTokens(); refreshTables(); }}
-            className="px-3 py-1.5 text-xs font-semibold transition-all premium-btn-secondary flex items-center gap-1.5"
+            className="w-full sm:w-auto justify-center px-4 py-2 text-xs font-semibold transition-all premium-btn-secondary flex items-center gap-1.5"
           >
             <div className="nav-icon-badge">
               <RefreshCw size={12} />
@@ -253,8 +253,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         ) : activeTokens.length === 0 ? (
           <div className="py-12 text-center text-text-muted text-sm">No active customer sessions found.</div>
         ) : (
-          <div className="overflow-auto max-h-[320px]">
-            <table className="w-full text-left text-xs">
+          <div className="overflow-x-auto overflow-y-auto max-h-[320px] custom-scrollbar">
+            <table className="w-full text-left text-xs min-w-[600px]">
               <thead>
                 <tr className="border-b border-border-main text-text-muted uppercase font-semibold text-[10px] tracking-wider">
                   <th className="pb-3 px-3">Token #</th>
@@ -343,17 +343,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         
         {/* Hourly Revenue Analytics Chart - SPANS 2 COLUMNS */}
-        <div className="lg:col-span-2 glass-panel p-6 rounded-2xl border border-border-main flex flex-col justify-between h-[340px]">
-          <div className="flex items-center justify-between pb-3 border-b border-border-main">
+        <div className="lg:col-span-2 glass-panel p-6 rounded-2xl border border-border-main flex flex-col justify-between min-h-[340px] md:h-[340px]">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 justify-between pb-3 border-b border-border-main shrink-0">
             <div className="flex items-center gap-2 text-text-main font-bold text-sm">
-              <BarChart3 size={18} /> Hourly Revenue Analytics & Seating Peaks
+              <BarChart3 size={18} className="shrink-0" /> <span className="truncate">Hourly Revenue Analytics & Seating Peaks</span>
             </div>
-            <span className="text-xs font-bold dark:text-emerald-400 text-emerald-700 flex items-center gap-1">
+            <span className="text-xs font-bold dark:text-emerald-400 text-emerald-700 flex items-center gap-1 shrink-0">
               <TrendingUp size={14} /> Peak Sales Hour (10:00 PM)
             </span>
           </div>
 
-          <div className="flex flex-col space-y-2 mt-4 flex-1 justify-center">
+          <div className="flex flex-col space-y-2 mt-4 flex-1 justify-center overflow-x-auto custom-scrollbar">
+           <div className="min-w-[400px]">
             {/* Main Chart Row */}
             <div className="flex gap-4 items-stretch h-36">
               {/* Y-Axis */}
@@ -408,10 +409,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 </span>
               ))}
             </div>
+           </div>
           </div>
 
           {/* Chart Legend Footer */}
-          <div className="flex items-center justify-center gap-6 pt-3 border-t border-border-main text-[10px] font-bold text-text-muted select-none shrink-0">
+          <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 pt-4 mt-2 border-t border-border-main text-[10px] font-bold text-text-muted select-none shrink-0">
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded bg-gradient-to-t from-[#8D6CE5] to-[#F5E08B]" />
               <span>Peak Hour Revenue</span>
@@ -424,12 +426,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         </div>
 
         {/* Live Alerts & Notifications - SPANS 1 COLUMN */}
-        <div className="glass-panel p-6 rounded-2xl border border-border-main flex flex-col justify-between h-[340px]">
-          <div className="flex items-center justify-between pb-3 border-b border-border-main shrink-0">
+        <div className="glass-panel p-6 rounded-2xl border border-border-main flex flex-col justify-between h-[300px] lg:h-[340px]">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-border-main shrink-0">
             <div className="flex items-center gap-2 dark:text-red-400 text-red-700 font-bold text-sm">
               <Bell size={18} /> Live System Alerts
             </div>
-            <span className="px-2 py-0.5 rounded-full dark:bg-red-500/10 bg-red-500/10 dark:text-red-400 text-red-700 dark:border-red-500/20 border-red-500/30 text-[10px] font-bold">
+            <span className="px-2 py-0.5 rounded-full dark:bg-red-500/10 bg-red-500/10 dark:text-red-400 text-red-700 dark:border-red-500/20 border-red-500/30 text-[10px] font-bold shrink-0">
               {MOCK_NOTIFICATIONS.length} Active
             </span>
           </div>
@@ -469,12 +471,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         </div>
 
         {/* Recent Live Activities - SPANS 1 COLUMN */}
-        <div className="glass-panel p-6 rounded-2xl border border-border-main flex flex-col justify-between h-[340px]">
-          <div className="flex items-center justify-between pb-3 border-b border-border-main shrink-0">
+        <div className="glass-panel p-6 rounded-2xl border border-border-main flex flex-col justify-between h-[300px] lg:h-[340px]">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-border-main shrink-0">
             <div className="flex items-center gap-2 text-text-main font-bold text-sm">
-              <Activity size={18} className="animate-pulse" /> Recent Live Activities
+              <Activity size={18} className="animate-pulse shrink-0" /> <span className="truncate">Recent Live Activities</span>
             </div>
-            <span className="text-[10px] text-text-muted font-mono uppercase tracking-wider">Audit Stream</span>
+            <span className="text-[10px] text-text-muted font-mono uppercase tracking-wider shrink-0">Audit Stream</span>
           </div>
 
           <div className="flex-1 overflow-y-auto my-3 pr-1 custom-scrollbar">
@@ -497,7 +499,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       {/* EXTEND SESSION MODAL */}
       {extendingToken && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
             <button 
               onClick={() => setExtendingToken(null)}
               className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
@@ -539,11 +541,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 />
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setExtendingToken(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main cursor-pointer"
+                  className="flex-1 py-3 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -551,7 +553,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                   type="submit"
                   disabled={isSubmittingExtend}
                   title={isSubmittingExtend ? "Request in progress" : undefined}
-                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
+                  className="flex-1 py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
                 >
                   {isSubmittingExtend ? 'Extending...' : 'Confirm Extension'}
                 </button>
@@ -564,7 +566,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       {/* CLOSE / CHECKOUT SESSION MODAL */}
       {closingToken && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
             <button 
               onClick={() => setClosingToken(null)}
               className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
@@ -594,11 +596,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 </select>
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setClosingToken(null)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -606,7 +608,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                    type="submit"
                    disabled={isSubmittingClose}
                    title={isSubmittingClose ? "Request in progress" : undefined}
-                   className="flex-1 py-2.5 rounded-xl dark:bg-red-500/20 bg-red-500/10 dark:hover:bg-red-600 hover:bg-red-600 dark:text-red-200 text-red-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-red-500/30 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20"
+                   className="flex-1 py-3 rounded-xl dark:bg-red-500/20 bg-red-500/10 dark:hover:bg-red-600 hover:bg-red-600 dark:text-red-200 text-red-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-red-500/30 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20"
                  >
                   {isSubmittingClose ? 'Closing...' : 'Close & Release Table'}
                 </button>
