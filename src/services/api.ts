@@ -1,7 +1,12 @@
 import type { User, Table, Token } from '../types';
 
 export const DEPLOYED_API_BASE_URL = 'https://api.nfc-qr.app.cloudshiftsolutions.in/api';
-export const LOCAL_API_BASE_URL = 'http://localhost:4000/api';
+export const getLocalApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    return `http://${window.location.hostname}:4000/api`;
+  }
+  return 'http://localhost:4000/api';
+};
 
 class ApiService {
   private activeBaseUrl: string | null = null;
@@ -9,22 +14,27 @@ class ApiService {
   public async getBaseUrl(): Promise<string> {
     if (this.activeBaseUrl) return this.activeBaseUrl;
 
-    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    if (typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' || 
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname.match(/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/)
+    )) {
       try {
+        const localApiUrl = getLocalApiBaseUrl();
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 600);
 
         // Ping the local backend to check if it is active and running
-        const res = await fetch(`${LOCAL_API_BASE_URL}/tables`, {
+        const res = await fetch(`${localApiUrl}/tables`, {
           method: 'GET',
           signal: controller.signal
         });
         clearTimeout(timeoutId);
 
         if (res.ok || res.status === 401 || res.status === 403) {
-          this.activeBaseUrl = LOCAL_API_BASE_URL;
-          console.log('[API] Auto-detected local backend active. Routing to local DB:', LOCAL_API_BASE_URL);
-          return LOCAL_API_BASE_URL;
+          this.activeBaseUrl = localApiUrl;
+          console.log('[API] Auto-detected local backend active. Routing to local DB:', localApiUrl);
+          return localApiUrl;
         }
       } catch (e) {
         // Local backend is offline or down

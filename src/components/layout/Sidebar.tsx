@@ -165,7 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => toggleGroup(group.id)}
           className={`w-full flex items-center justify-between ${
             collapsed ? 'justify-center px-0' : 'px-3'
-          } py-2 text-[13px] overflow-hidden premium-menu-item ${
+          } py-2.5 text-[13px] overflow-hidden premium-menu-item ${
             isGroupActive ? 'active' : ''
           }`}
           title={collapsed ? group.label : undefined}
@@ -190,7 +190,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 key={idx}
                 onClick={sub.onClick}
-                className={`w-full text-left py-2 px-3 text-[12px] cursor-pointer flex items-center justify-between glass-sub-menu-btn ${
+                className={`w-full text-left py-2.5 px-3 text-[12px] cursor-pointer flex items-center justify-between glass-sub-menu-btn ${
                   sub.active ? 'active' : ''
                 }`}
               >
@@ -216,7 +216,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
       )}
       <aside 
-        className={`fixed lg:relative inset-y-0 left-0 h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] my-2 md:my-4 mx-2 lg:ml-2 lg:md:ml-4 lg:mr-1 lg:md:mr-2 bg-bg-sidebar border border-border-sidebar flex flex-col justify-between transition-all duration-300 z-50 rounded-[20px] md:rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] ${
+        className={`fixed lg:relative inset-y-0 left-0 h-[calc(100dvh-1rem)] md:h-[calc(100dvh-2rem)] my-2 md:my-4 mx-2 lg:ml-2 lg:md:ml-4 lg:mr-1 lg:md:mr-2 bg-bg-sidebar border border-border-sidebar flex flex-col justify-between transition-all duration-300 z-50 rounded-[20px] md:rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] ${
           collapsed ? '-translate-x-[120%] lg:translate-x-0 lg:w-16 lg:md:w-20' : 'translate-x-0 w-[240px] md:w-[280px]'
         }`}
       >
@@ -268,7 +268,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
 
-      <div className="shrink-0 pb-4">
+      <div className="shrink-0 pb-4" style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
         {/* User Profile / Logout */}
         {user && (
           <div className="px-4">
@@ -280,14 +280,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               title="Sign Out"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-pink-500 flex items-center justify-center text-white font-bold text-sm shadow-md shrink-0">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-purple-500 flex items-center justify-center text-white font-bold text-sm shadow-md shrink-0">
                   {user.fullName ? user.fullName.charAt(0).toUpperCase() : 'U'}
                 </div>
                 {!collapsed && (
-                  <div className="flex flex-col text-left">
-                    <span className="text-[13px] font-bold text-text-primary flex items-center gap-1.5">
-                      {user.fullName || user.username} 
-                      <span className="text-white text-[9px] bg-[#2A85FF] w-3.5 h-3.5 rounded-full flex items-center justify-center shadow-sm">✓</span>
+                  <div className="flex flex-col text-left min-w-0 flex-1">
+                    <span className="text-[13px] font-bold text-text-primary flex items-center gap-1.5 min-w-0">
+                      <span className="truncate">{user.fullName || user.username}</span>
+                      <span className="shrink-0 text-white text-[9px] bg-[#2A85FF] w-3.5 h-3.5 rounded-full flex items-center justify-center shadow-sm">✓</span>
                     </span>
                     <span className="text-[11px] text-text-muted capitalize font-medium">{user.role} Account</span>
                   </div>
