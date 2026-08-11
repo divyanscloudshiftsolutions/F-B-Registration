@@ -82,48 +82,52 @@ export const TableManagement: React.FC = () => {
     : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Top Bar with Place Type Tabs */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4 glass-panel p-3 sm:p-4 rounded-2xl border border-border-main">
         <div className="flex flex-nowrap overflow-x-auto custom-scrollbar gap-2 w-full md:w-auto pb-1 md:pb-0">
           <button
             onClick={() => setSelectedPlace('STANDING_BAR')}
-            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary active:scale-95 shrink-0 whitespace-nowrap ${
+            className={`px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary active:scale-95 shrink-0 whitespace-nowrap ${
               selectedPlace === 'STANDING_BAR' ? 'active' : ''
             }`}
           >
-            Standard Zone (Standing Bar)
+            <span className="hidden sm:inline">Standard Zone (Standing Bar)</span>
+            <span className="sm:hidden">Standard Zone</span>
           </button>
 
           <button
             onClick={() => setSelectedPlace('PREMIUM_LOUNGE')}
-            className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary active:scale-95 shrink-0 whitespace-nowrap ${
+            className={`px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-bold uppercase tracking-wider transition-all premium-tab-primary active:scale-95 shrink-0 whitespace-nowrap ${
               selectedPlace === 'PREMIUM_LOUNGE' ? 'active' : ''
             }`}
           >
-            Premium Zone (Lounge)
+            <span className="hidden sm:inline">Premium Zone (Lounge)</span>
+            <span className="sm:hidden">Premium Zone</span>
           </button>
         </div>
 
-        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full md:w-auto shrink-0">
+        <div className="flex flex-row items-center gap-2 w-full md:w-auto shrink-0">
           <button
             onClick={() => { refreshTables(); refreshTokens(); }}
-            className="flex-1 sm:flex-none justify-center px-4 py-2.5 text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0 whitespace-nowrap"
+            className="flex-1 sm:flex-none justify-center px-3 sm:px-4 py-2 sm:py-2.5 text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0 whitespace-nowrap"
           >
             <div className="nav-icon-badge">
               <RefreshCw size={12} />
             </div>
-            <span>Refresh</span>
+            <span className="hidden sm:inline">Refresh Data</span>
+            <span className="sm:hidden">Refresh</span>
           </button>
 
           <button
             onClick={() => setIsModalOpen(true)}
-            className="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg shrink-0 whitespace-nowrap"
+            className="flex-1 sm:flex-none justify-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl primary-btn text-[11px] sm:text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 sm:gap-2 shadow-lg shrink-0 whitespace-nowrap"
           >
             <div className="nav-icon-badge">
               <Plus size={14} />
             </div>
-            <span>Add New Table</span>
+            <span className="hidden sm:inline">Add New Table</span>
+            <span className="sm:hidden">Add Table</span>
           </button>
         </div>
       </div>
@@ -138,7 +142,7 @@ export const TableManagement: React.FC = () => {
           <p className="text-xs text-text-muted">There are no tables matching the selected zone filter right now.</p>
         </div>
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-6 sm:space-y-8">
           {Array.from(new Set(filteredTables.map(tb => tb.capacity || 4)))
             .sort((a, b) => b - a)
             .map(cap => {
@@ -164,7 +168,7 @@ export const TableManagement: React.FC = () => {
                       <div
                         key={tb.id}
                         onClick={() => setInspectingTable(tb)}
-                        className={`w-[85vw] max-w-[290px] shrink-0 snap-start p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between gap-3 min-h-[295px] ${
+                        className={`w-[290px] shrink-0 snap-start p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between gap-3 min-h-[295px] ${
                           isFull
                             ? 'bg-bg-surface/50 border-red-500/30 shadow-lg shadow-red-500/5'
                             : isPartial

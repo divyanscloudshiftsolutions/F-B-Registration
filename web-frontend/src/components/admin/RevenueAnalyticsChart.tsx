@@ -60,7 +60,7 @@ export const RevenueAnalyticsChart: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Action Header Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 glass-panel p-3 sm:p-4 rounded-2xl border border-border-main">
         <div>
           <h3 className="text-sm font-bold text-text-main uppercase tracking-wider">Revenue Analytics & Sales Summary</h3>
           <p className="text-xs text-text-muted">Peak hour analysis and financial collections</p>
@@ -68,15 +68,17 @@ export const RevenueAnalyticsChart: React.FC = () => {
 
         <button
           onClick={handleExportCSV}
-          className="w-full sm:w-auto justify-center px-4 py-2.5 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg cursor-pointer shrink-0"
+          className="w-full sm:w-auto justify-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl primary-btn text-[11px] sm:text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 sm:gap-2 shadow-lg cursor-pointer shrink-0"
         >
-          <Download size={16} /> Export Sessions CSV
+          <Download size={14} className="sm:w-4 sm:h-4" /> 
+          <span className="hidden sm:inline">Export Sessions CSV</span>
+          <span className="sm:hidden">Export CSV</span>
         </button>
       </div>
 
       {/* Hourly Sales Bar Chart Component */}
-      <div className="glass-panel p-4 sm:p-6 rounded-2xl border border-border-main space-y-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-border-main">
+      <div className="glass-panel p-3 sm:p-6 rounded-2xl border border-border-main space-y-4 sm:space-y-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3 pb-3 border-b border-border-main">
           <div className="flex items-center gap-2 text-text-main font-bold text-sm animate-fadeIn min-w-0 w-full sm:w-auto">
             <BarChart3 size={18} className="shrink-0" /> <span className="truncate">Hourly Revenue Breakdown & Peak Collections</span>
           </div>
@@ -133,11 +135,12 @@ export const RevenueAnalyticsChart: React.FC = () => {
 
                     {/* Bar Visual Element */}
                     <div 
+                      onClick={() => showToast(`Hour: ${d.hour} - Revenue: ₹${d.amount.toLocaleString()}${d.peak ? ' (Peak)' : ''}`, 'info')}
                       style={{ height: `${heightPercent * 0.8}%` }}
                       className={`w-full rounded-t-xl transition-all duration-300 cursor-pointer ${
                         d.peak 
-                          ? 'bg-gradient-to-t from-[#8D6CE5] to-[#F5E08B] shadow-lg shadow-[#8D6CE5]/30 hover:scale-105' 
-                          : 'analytics-bar-regular hover:scale-105'
+                          ? 'bg-gradient-to-t from-[#8D6CE5] to-[#F5E08B] shadow-lg shadow-[#8D6CE5]/30 hover:scale-105 active:scale-95' 
+                          : 'analytics-bar-regular hover:scale-105 active:scale-95'
                       }`}
                     />
                     
@@ -156,8 +159,8 @@ export const RevenueAnalyticsChart: React.FC = () => {
         </div>
 
         {/* Chart Legend Footer */}
-        <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 pt-4 border-t border-border-main text-[11px] font-bold text-text-muted select-none">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 pt-3 sm:pt-4 border-t border-border-main text-[10px] sm:text-[11px] font-bold text-text-muted select-none">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <div className="w-3 h-3 rounded bg-gradient-to-t from-[#8D6CE5] to-[#F5E08B]" />
             <span>Peak Hour Revenue</span>
           </div>

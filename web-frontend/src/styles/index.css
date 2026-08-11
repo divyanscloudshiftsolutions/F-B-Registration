@@ -455,26 +455,25 @@ omg_this_is_unused_class_but_we_keep_to_match_target { color: transparent; }
 
 /* 2. SECONDARY BUTTONS (.premium-btn-secondary) */
 .premium-btn-secondary {
-  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.35), rgba(var(--glow-rgb), 0.2)) !important;
-  color: #FFFFFF !important;
-  border: 1px solid rgba(var(--glow-rgb), 0.6) !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 0 15px rgba(var(--glow-rgb), 0.25), 0 0 24px rgba(var(--glow-rgb), 0.4) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: var(--text-secondary) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: none !important;
   font-weight: 600;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   border-radius: 12px;
 }
 .dark .premium-btn-secondary {
-  background: linear-gradient(135deg, rgba(var(--glow-rgb), 0.3), rgba(var(--glow-rgb), 0.15)) !important;
-  border-color: rgba(var(--glow-rgb), 0.5) !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 0 20px rgba(var(--glow-rgb), 0.3), 0 0 28px rgba(var(--glow-rgb), 0.45) !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
 }
-.premium-btn-secondary:hover {
-  background: rgba(var(--glow-rgb), 0.06) !important;
+.premium-btn-secondary:hover:not(.active) {
+  background: rgba(var(--glow-rgb), 0.08) !important;
   color: var(--text-primary) !important;
-  border-color: rgba(var(--glow-rgb), 0.25) !important;
+  border-color: rgba(var(--glow-rgb), 0.3) !important;
   /* Hover: Soft glass glow */
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 0 12px rgba(var(--glow-rgb), 0.12) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 0 16px rgba(var(--glow-rgb), 0.15) !important;
   transform: translateY(-1px);
 }
 .premium-btn-secondary.active {
@@ -667,7 +666,6 @@ button[disabled]:hover {
   justify-content: center !important;
   box-sizing: content-box !important;
   flex-shrink: 0 !important;
-  margin-right: 6px !important;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 .dark .primary-btn .nav-icon-badge, 

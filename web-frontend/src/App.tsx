@@ -102,7 +102,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] text-text-primary font-sans overflow-hidden relative">
+    <div className="flex h-[100dvh] dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] text-text-primary font-sans overflow-hidden relative">
       {/* Multi-Layer Atmospheric Ambient Background Composition */}
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
         {/* Orb 1: Warm Amber Top-Left/behind Sidebar */}
@@ -133,7 +133,7 @@ const AppContent: React.FC = () => {
       />
 
       {/* Main Content Area Glass Panel */}
-      <div className="flex-1 flex flex-col min-w-0 h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] my-2 md:my-4 mx-2 md:mx-4 lg:ml-1 lg:mr-2 lg:md:mr-4 lg:md:ml-2 bg-bg-workspace border border-border-sidebar rounded-[20px] md:rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] overflow-hidden transition-all duration-300 z-10">
+      <div className="flex-1 flex flex-col min-w-0 h-[calc(100dvh-1rem)] md:h-[calc(100dvh-2rem)] my-2 md:my-4 mx-2 md:mx-4 lg:ml-1 lg:mr-2 lg:md:mr-4 lg:md:ml-2 bg-bg-workspace border border-border-sidebar rounded-[20px] md:rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] overflow-hidden transition-all duration-300 z-10">
         <Header title={getTabTitle()} onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)} isSidebarCollapsed={sidebarCollapsed} />
         
         <main className="p-4 md:p-6 flex-1 overflow-y-auto no-scrollbar">

@@ -59,7 +59,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ activeTab: routePath, setA
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Sub-Tab Navigation Bar */}
       <AdminNavTabs activeTab={activeTab} setActiveTab={setActiveTab} />
 

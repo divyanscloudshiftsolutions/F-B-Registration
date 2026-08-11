@@ -189,11 +189,11 @@ export const QuickAttendanceWebPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
-      <div className="glass-panel p-5 rounded-3xl border border-border-main relative overflow-hidden">
+    <div className="max-w-2xl mx-auto space-y-3 sm:space-y-4" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+      <div className="glass-panel p-3 sm:p-5 rounded-3xl border border-border-main relative overflow-hidden">
         
         {/* Header Title & Camera Enable / Disable Controls */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-border-main">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 mb-3 pb-2.5 sm:mb-4 sm:pb-3 border-b border-border-main">
           <div className="flex items-start sm:items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 flex items-center justify-center font-bold shrink-0">
               <UserCheck size={18} />
@@ -213,7 +213,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
         </div>
 
         {/* Video Camera View Box */}
-        <div className={`relative rounded-2xl overflow-hidden aspect-square sm:aspect-video border border-border-main flex items-center justify-center shadow-2xl max-h-[40vh] sm:max-h-[50vh] lg:max-h-none ${
+        <div className={`relative rounded-2xl overflow-hidden aspect-video border border-border-main flex items-center justify-center shadow-2xl max-h-[40vh] sm:max-h-[50vh] lg:max-h-none ${
           cameraActive ? 'bg-black' : 'bg-bg-primary'
         }`}>
           {cameraActive ? (
@@ -302,7 +302,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
 
         {/* Shutter Controls & Employee Code Option */}
         {!attendanceResult && !errorMessage && (
-          <div className="mt-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 md:gap-3">
+          <div className="mt-3 sm:mt-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 md:gap-3">
             <div className="w-full md:w-64 shrink-0">
               <label className="block md:hidden text-[10px] font-bold text-text-muted mb-1 uppercase tracking-wider ml-1">Manual Override</label>
               <input
@@ -310,16 +310,16 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 value={employeeCode}
                 onChange={e => setEmployeeCode(e.target.value)}
                 placeholder="Optional Employee ID (e.g. EMP-99)"
-                className="w-full bg-bg-primary border border-border-main rounded-xl px-4 py-3 md:py-2 text-sm md:text-xs text-text-main placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary font-mono"
+                className="w-full bg-bg-primary border border-border-main rounded-xl px-4 py-2.5 md:py-2 text-sm md:text-xs text-text-main placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary font-mono"
               />
             </div>
 
-            <div className="grid grid-cols-2 md:flex md:flex-row items-center gap-2.5 w-full md:w-auto">
+            <div className="flex flex-row flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-2.5 w-full md:w-auto">
               {!cameraActive ? (
                 <button
                   type="button"
                   onClick={startCamera}
-                  className={`w-full md:w-auto px-4 md:px-6 py-3 md:py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-[11px] md:text-xs uppercase font-black tracking-wider shadow-xl transition-all cursor-pointer col-span-2 ${
+                  className={`flex-1 md:w-auto px-4 md:px-6 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-[11px] md:text-xs uppercase font-black tracking-wider shadow-xl transition-all cursor-pointer ${
                     isDark ? 'primary-btn bg-emerald-500 text-text-main' : 'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 border border-emerald-500/30'
                   }`}
                 >
@@ -332,7 +332,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={stopCamera}
-                  className="w-full md:w-auto px-4 md:px-6 py-3 md:py-2.5 rounded-xl premium-btn-secondary cancellation-btn dark:text-red-400 text-red-700 dark:border-red-500/30 border-red-500/30 dark:bg-red-500/5 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 flex items-center justify-center gap-1.5 text-[11px] md:text-xs uppercase font-bold tracking-wider transition-all cursor-pointer col-span-1"
+                  className="flex-1 md:w-auto px-3 sm:px-4 md:px-6 py-2.5 rounded-xl premium-btn-secondary cancellation-btn dark:text-red-400 text-red-700 dark:border-red-500/30 border-red-500/30 dark:bg-red-500/5 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 flex items-center justify-center gap-1.5 text-[11px] md:text-xs uppercase font-bold tracking-wider transition-all cursor-pointer"
                 >
                   <div className="nav-icon-badge hidden sm:block">
                     <VideoOff size={14} />
@@ -345,7 +345,7 @@ export const QuickAttendanceWebPage: React.FC = () => {
                 onClick={handleCaptureAndSubmit}
                 disabled={isSubmitting || !cameraActive}
                 title={isSubmitting ? "Verifying..." : !cameraActive ? "Enable camera first" : undefined}
-                className="w-full md:w-auto px-4 md:px-6 py-3 md:py-2.5 rounded-xl primary-btn flex items-center justify-center gap-1.5 text-[11px] md:text-xs uppercase font-black tracking-wider disabled:opacity-40 disabled:cursor-not-allowed shadow-xl cursor-pointer col-span-1"
+                className="flex-1 md:w-auto px-3 sm:px-4 md:px-6 py-2.5 rounded-xl primary-btn flex items-center justify-center gap-1.5 text-[11px] md:text-xs uppercase font-black tracking-wider disabled:opacity-40 disabled:cursor-not-allowed shadow-xl cursor-pointer"
               >
                 <div className="nav-icon-badge hidden sm:block">
                   <Camera size={14} />
