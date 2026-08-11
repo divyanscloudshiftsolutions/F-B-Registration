@@ -256,13 +256,13 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
     <div className="space-y-6 text-text-main">
       
       {/* Non-Overlapping Structured Control Toolbar */}
-      <div className="glass-panel p-5 rounded-3xl border border-border-main space-y-4">
+      <div className="glass-panel p-3 sm:p-5 rounded-3xl border border-border-main space-y-4">
         {/* Tier 1: Primary Zone Switcher Tabs */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-border-main">
           <div className="flex w-full sm:w-auto items-center gap-2">
             <button
               onClick={() => setPlaceZone('STANDING_BAR')}
-              className={`flex-1 sm:flex-none px-2 sm:px-5 py-2.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center ${
+              className={`flex-1 px-2 py-2 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center ${
                 placeZone === 'STANDING_BAR' ? 'active' : ''
               }`}
             >
@@ -272,7 +272,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
 
             <button
               onClick={() => setPlaceZone('PREMIUM_LOUNGE')}
-              className={`flex-1 sm:flex-none px-2 sm:px-5 py-2.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center ${
+              className={`flex-1 px-2 py-2 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center ${
                 placeZone === 'PREMIUM_LOUNGE' ? 'active' : ''
               }`}
             >
@@ -349,7 +349,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
                       <div
                         key={tb.id}
                         onClick={() => setInspectingTable(tb)}
-                        className={`w-[85vw] max-w-[290px] shrink-0 snap-start p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between gap-3 min-h-[295px] ${
+                        className={`w-[290px] shrink-0 snap-start p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between gap-3 min-h-[295px] ${
                           isFull
                             ? 'bg-bg-surface/50 border-red-500/30 shadow-lg shadow-red-500/5'
                             : isPartial

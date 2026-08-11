@@ -10,6 +10,12 @@ export const CustomerSessionsManager: React.FC = () => {
   const { tokens, isLoading, refreshTokens, refreshTables } = useData();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
 
   // Fetch tokens and tables on component mount
   useEffect(() => {
@@ -75,10 +81,13 @@ export const CustomerSessionsManager: React.FC = () => {
     return matchesSearch && matchesFilter;
   });
 
+  const totalPages = Math.ceil(filteredTokens.length / itemsPerPage);
+  const paginatedTokens = filteredTokens.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
   return (
     <div className="space-y-6">
       {/* Search & Filter Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 glass-panel p-3 sm:p-4 rounded-2xl border border-border-main">
         <div className="relative w-full md:w-auto md:flex-1 max-w-md">
           <Search className="absolute left-3.5 top-3 text-text-muted" size={16} />
           <input
@@ -107,7 +116,7 @@ export const CustomerSessionsManager: React.FC = () => {
 
           <button
             onClick={refreshTokens}
-            className="w-full sm:w-auto justify-center px-4 py-2 text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0 whitespace-nowrap"
+            className="w-full sm:w-auto justify-center px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0 whitespace-nowrap"
           >
             <div className="nav-icon-badge">
               <RefreshCw size={12} />
@@ -118,13 +127,13 @@ export const CustomerSessionsManager: React.FC = () => {
       </div>
 
       {/* Customer Sessions Directory Table */}
-      <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-border-main">
+      <div className="glass-panel rounded-2xl p-3 sm:p-6 border border-border-main">
         {isLoading ? (
           <div className="py-12 text-center text-text-muted text-sm">Loading customer sessions...</div>
         ) : filteredTokens.length === 0 ? (
           <div className="py-12 text-center text-text-muted text-sm">No customer sessions found.</div>
         ) : (
-          <div className="overflow-x-auto custom-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="overflow-x-auto custom-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0">
             <table className="w-full text-left text-xs min-w-[800px]">
               <thead>
                 <tr className="border-b border-border-main text-text-muted uppercase font-semibold text-[10px] tracking-wider">
@@ -139,7 +148,7 @@ export const CustomerSessionsManager: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-main">
-                {filteredTokens.map(tk => (
+                {paginatedTokens.map(tk => (
                   <tr key={tk.id} className="hover:bg-bg-primary transition-colors">
                     <td className="py-3 px-3 font-mono font-bold text-text-main">{tk.tokenNumber}</td>
                     <td className="py-3 px-3 font-semibold text-text-main">{tk.customer?.name || 'Walk-in Guest'}</td>
@@ -186,21 +195,50 @@ export const CustomerSessionsManager: React.FC = () => {
             </table>
           </div>
         )}
+
+        {/* Pagination UI */}
+        {totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-border-main text-xs">
+            <span className="text-text-muted text-center sm:text-left">
+              Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredTokens.length)} of {filteredTokens.length} sessions
+            </span>
+            <div className="flex gap-1.5 sm:gap-2">
+              <button 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-2.5 sm:px-3 py-1.5 rounded-lg border border-border-main bg-bg-primary disabled:opacity-50 transition-all hover:bg-bg-surface text-text-main"
+              >
+                Prev
+              </button>
+              <div className="flex items-center gap-2 px-1 sm:px-2 text-text-main font-semibold">
+                Page {currentPage} of {totalPages}
+              </div>
+              <button 
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-2.5 sm:px-3 py-1.5 rounded-lg border border-border-main bg-bg-primary disabled:opacity-50 transition-all hover:bg-bg-surface text-text-main"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* EXTEND SESSION MODAL */}
       {extendingToken && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
+        <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn max-h-full overflow-y-auto custom-scrollbar">
             <button 
               onClick={() => setExtendingToken(null)}
-              className="absolute top-4 right-4 text-text-muted hover:text-text-main"
+              className="absolute top-4 sm:top-6 right-4 sm:right-6 text-text-muted hover:text-text-main bg-bg-surface rounded-full z-10"
             >
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-2 dark:text-amber-400 text-amber-700 font-bold text-sm">
-              <Clock size={18} /> Admin Extend Session Time
+            <div className="flex items-start sm:items-center gap-2 dark:text-amber-400 text-amber-700 font-bold text-sm pr-8">
+              <Clock size={18} className="shrink-0 mt-0.5 sm:mt-0" /> 
+              <span>Admin Extend Session Time</span>
             </div>
 
             <p className="text-xs text-text-muted">
@@ -233,11 +271,11 @@ export const CustomerSessionsManager: React.FC = () => {
                 />
               </div>
 
-              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-3 sm:pt-4">
                 <button
                   type="button"
                   onClick={() => setExtendingToken(null)}
-                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                  className="flex-1 py-2.5 sm:py-3 rounded-xl text-[11px] sm:text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -245,9 +283,14 @@ export const CustomerSessionsManager: React.FC = () => {
                   type="submit"
                   disabled={isSubmittingExtend}
                   title={isSubmittingExtend ? "Request in progress" : undefined}
-                  className="flex-1 py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider"
+                  className="flex-1 py-2.5 sm:py-3 rounded-xl primary-btn text-[11px] sm:text-xs font-bold uppercase tracking-wider"
                 >
-                  {isSubmittingExtend ? 'Extending...' : 'Confirm Extension'}
+                  {isSubmittingExtend ? 'Extending...' : (
+                    <>
+                      <span className="hidden sm:inline">Confirm Extension</span>
+                      <span className="sm:hidden">Confirm</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -257,17 +300,18 @@ export const CustomerSessionsManager: React.FC = () => {
 
       {/* DEACTIVATE SESSION MODAL */}
       {deactivatingToken && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn">
+        <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-4 shadow-2xl relative text-text-main animate-fadeIn max-h-full overflow-y-auto custom-scrollbar">
             <button 
               onClick={() => setDeactivatingToken(null)}
-              className="absolute top-4 right-4 text-text-muted hover:text-text-main"
+              className="absolute top-4 sm:top-6 right-4 sm:right-6 text-text-muted hover:text-text-main bg-bg-surface rounded-full z-10"
             >
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-2 dark:text-red-400 text-red-700 font-bold text-sm">
-              <LogOut size={18} /> Admin Deactivate Session
+            <div className="flex items-start sm:items-center gap-2 dark:text-red-400 text-red-700 font-bold text-sm pr-8">
+              <LogOut size={18} className="shrink-0 mt-0.5 sm:mt-0" /> 
+              <span>Admin Deactivate Session</span>
             </div>
 
             <p className="text-xs text-text-muted">
@@ -288,11 +332,11 @@ export const CustomerSessionsManager: React.FC = () => {
                 </select>
               </div>
 
-              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-3 sm:pt-4">
                 <button
                   type="button"
                   onClick={() => setDeactivatingToken(null)}
-                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                  className="flex-1 py-2.5 sm:py-3 rounded-xl text-[11px] sm:text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -300,11 +344,16 @@ export const CustomerSessionsManager: React.FC = () => {
                   type="submit"
                   disabled={isSubmittingClose}
                   title={isSubmittingClose ? "Request in progress" : undefined}
-                  className={`flex-1 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`flex-1 py-2.5 sm:py-3 rounded-xl text-[11px] sm:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     isDark ? 'primary-btn bg-red-500' : 'bg-red-500/10 text-red-700 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/20'
                   }`}
                 >
-                  {isSubmittingClose ? 'Deactivating...' : 'Confirm Deactivation'}
+                  {isSubmittingClose ? 'Deactivating...' : (
+                    <>
+                      <span className="hidden sm:inline">Confirm Deactivation</span>
+                      <span className="sm:hidden">Deactivate</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

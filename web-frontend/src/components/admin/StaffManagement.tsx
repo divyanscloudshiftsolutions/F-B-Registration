@@ -9,6 +9,12 @@ export const StaffManagement: React.FC = () => {
   const { showToast } = useAuth();
   const { users, isLoading, refreshUsers } = useData();
   const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
 
   // Fetch users on component mount
   useEffect(() => {
@@ -76,10 +82,13 @@ export const StaffManagement: React.FC = () => {
     u.role.toLowerCase().includes(search.toLowerCase())
   );
 
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+  const paginatedUsers = filteredUsers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
   return (
     <div className="space-y-6">
       {/* Top Action Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 glass-panel p-4 rounded-2xl border border-border-main">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 glass-panel p-3 sm:p-4 rounded-2xl border border-border-main">
         <div className="relative w-full md:w-auto md:flex-1 max-w-md">
           <Search className="absolute left-3.5 top-3 text-text-muted" size={16} />
           <input
@@ -91,20 +100,21 @@ export const StaffManagement: React.FC = () => {
           />
         </div>
 
-        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full md:w-auto shrink-0">
+        <div className="flex flex-row items-center gap-2 w-full md:w-auto shrink-0">
           <button
             onClick={refreshUsers}
-            className="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0 whitespace-nowrap"
+            className="flex-1 sm:flex-none justify-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0 whitespace-nowrap"
           >
             <div className="nav-icon-badge">
               <RefreshCw size={12} />
             </div>
-            <span>Refresh</span>
+            <span className="hidden sm:inline">Refresh Data</span>
+            <span className="sm:hidden">Refresh</span>
           </button>
 
           <button
             onClick={() => setIsModalOpen(true)}
-            className="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl primary-btn text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg shrink-0 whitespace-nowrap"
+            className="flex-1 sm:flex-none justify-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl primary-btn text-[11px] sm:text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 sm:gap-2 shadow-lg shrink-0 whitespace-nowrap"
           >
             <div className="nav-icon-badge">
               <UserPlus size={14} />
@@ -115,13 +125,13 @@ export const StaffManagement: React.FC = () => {
       </div>
 
       {/* Staff User Directory Table */}
-      <div className="glass-panel rounded-2xl p-4 sm:p-6 border border-border-main">
+      <div className="glass-panel rounded-2xl p-3 sm:p-6 border border-border-main">
         {isLoading ? (
           <div className="py-12 text-center text-text-muted text-sm">Loading staff user directory...</div>
         ) : filteredUsers.length === 0 ? (
           <div className="py-12 text-center text-text-muted text-sm">No staff members found matching criteria.</div>
         ) : (
-          <div className="overflow-x-auto custom-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="overflow-x-auto custom-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0">
             <table className="w-full text-left text-xs min-w-[700px]">
               <thead>
                 <tr className="border-b border-border-main text-text-muted uppercase font-semibold text-[10px] tracking-wider">
@@ -134,7 +144,7 @@ export const StaffManagement: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-main">
-                {filteredUsers.map(u => (
+                {paginatedUsers.map(u => (
                   <tr key={u.id} className="hover:bg-bg-primary transition-colors">
                     <td className="py-3 px-3 font-mono font-bold dark:text-[#8D6CE5] text-primary">{u.username}</td>
                     <td className="py-3 px-3 font-semibold text-text-main">{u.fullName}</td>
@@ -174,6 +184,34 @@ export const StaffManagement: React.FC = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination UI */}
+        {totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-border-main text-xs">
+            <span className="text-text-muted text-center sm:text-left">
+              Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredUsers.length)} of {filteredUsers.length} staff
+            </span>
+            <div className="flex gap-1.5 sm:gap-2">
+              <button 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-2.5 sm:px-3 py-1.5 rounded-lg border border-border-main bg-bg-primary disabled:opacity-50 transition-all hover:bg-bg-surface text-text-main"
+              >
+                Prev
+              </button>
+              <div className="flex items-center gap-2 px-1 sm:px-2 text-text-main font-semibold">
+                Page {currentPage} of {totalPages}
+              </div>
+              <button 
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-2.5 sm:px-3 py-1.5 rounded-lg border border-border-main bg-bg-primary disabled:opacity-50 transition-all hover:bg-bg-surface text-text-main"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -266,11 +304,11 @@ export const StaffManagement: React.FC = () => {
                 />
               </div>
 
-              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-3 sm:pt-4">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                  className="flex-1 py-2.5 sm:py-3 rounded-xl text-[11px] sm:text-xs font-semibold transition-all premium-btn-secondary"
                 >
                   Cancel
                 </button>
@@ -278,9 +316,9 @@ export const StaffManagement: React.FC = () => {
                   type="submit"
                   disabled={isSubmitting || !isFormValid}
                   title={isSubmitting ? "Registering..." : !isFormValid ? "Fill all fields" : undefined}
-                  className="flex-1 py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
+                  className="flex-1 py-2.5 sm:py-3 rounded-xl primary-btn text-[11px] sm:text-xs font-bold uppercase tracking-wider disabled:opacity-50"
                 >
-                  {isSubmitting ? 'Registering...' : 'Confirm Registration'}
+                  {isSubmitting ? 'Registering...' : 'Confirm'}
                 </button>
               </div>
             </form>
