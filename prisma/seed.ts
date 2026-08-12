@@ -6,15 +6,8 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('--- Database Initialization & Seeding ---');
 
-  // Clear existing transaction data for a clean reset
-  console.log('Wiping existing transaction tables...');
-  await prisma.redemption.deleteMany({});
-  await prisma.tokenExtension.deleteMany({});
-  await prisma.tableOccupancyLog.deleteMany({});
-  await prisma.token.deleteMany({});
-  await prisma.customer.deleteMany({});
-  await prisma.table.deleteMany({});
-  console.log('Transaction tables, seating tables cleared.');
+  // Transaction data deletion removed to prevent data loss.
+  console.log('Skipping transactional table deletion for safety.');
 
   // 1. Create triggers in PostgreSQL database using raw SQL
   console.log('Creating triggers...');
