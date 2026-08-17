@@ -11,8 +11,12 @@ import { BartenderPage } from './pages/BartenderPage';
 import { TablesPage } from './pages/TablesPage';
 import { AdminPage } from './pages/AdminPage';
 
+import { AlertTriangle, X } from 'lucide-react';
+import { useData } from './context/DataContext';
+
 const AppContent: React.FC = () => {
   const { user, toasts, dismissToast } = useAuth();
+  const { sessionAlerts, dismissAlert } = useData();
   const [activeTab, setActiveTabState] = useState<string>(() => {
     return localStorage.getItem('bar_web_active_tab') || 'dashboard';
   });
@@ -94,15 +98,17 @@ const AppContent: React.FC = () => {
   const getTabTitle = () => {
     if (activeTab === 'dashboard') return 'Executive Management Dashboard';
     if (activeTab === 'checkin') return 'Reception Check-In & Customer Registration';
-    if (activeTab === 'quick_attendance') return 'FaceMark Quick Facial Attendance Kiosk';
+    if (activeTab === 'quick_attendance') return 'Quick Facial Attendance Kiosk';
     if (activeTab.startsWith('bartender')) return 'Bartender Drink Service Station';
     if (activeTab.startsWith('tables')) return 'Live Seating Floor Plan & Tables';
     if (activeTab.startsWith('admin')) return 'System Administration & Staff Portal';
-    return 'Bar Management System';
+    return 'Open the Bottle';
   };
 
+
+
   return (
-    <div className="flex h-screen dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] text-text-primary font-sans overflow-hidden relative">
+    <div className="flex h-[100dvh] dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] text-text-primary font-sans overflow-hidden relative">
       {/* Multi-Layer Atmospheric Ambient Background Composition */}
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
         {/* Orb 1: Warm Amber Top-Left/behind Sidebar */}
@@ -132,37 +138,71 @@ const AppContent: React.FC = () => {
         setCollapsed={setSidebarCollapsed}
       />
 
-      {/* Main Content Area Glass Panel */}
-      <div className="flex-1 flex flex-col min-w-0 h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] my-2 md:my-4 mx-2 md:mx-4 lg:ml-1 lg:mr-2 lg:md:mr-4 lg:md:ml-2 bg-bg-workspace border border-border-sidebar rounded-[20px] md:rounded-[28px] shadow-[var(--shadow-glass)] backdrop-blur-[var(--blur-glass)] overflow-hidden transition-all duration-300 z-10">
+      <div className="flex-1 flex flex-col min-w-0 h-[100dvh] bg-bg-workspace border border-border-sidebar border-y-0 border-r-0 border-l-[1px] rounded-none overflow-hidden transition-all duration-300 z-10">
         <Header title={getTabTitle()} onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)} isSidebarCollapsed={sidebarCollapsed} />
         
         <main className="p-4 md:p-6 flex-1 overflow-y-auto no-scrollbar">
           {renderTabContent()}
         </main>
-      </div>
 
-      {/* Global Toast Alert Notifications Container */}
-      <div className="fixed bottom-4 right-4 z-50 space-y-2 max-w-sm w-full pointer-events-none">
-        {toasts.map(toast => (
-          <div
-            key={toast.id}
-            className={`pointer-events-auto p-4 rounded-xl shadow-lg flex items-center justify-between border backdrop-blur-md transition-all ${
-              toast.type === 'success'
-                ? 'bg-status-success-bg border-status-success-border text-status-success'
-                : toast.type === 'danger'
-                ? 'bg-status-danger-bg border-status-danger-border text-status-danger'
-                : 'bg-status-info-bg border-status-info-border text-status-info'
-            }`}
-          >
-            <span className="text-xs font-semibold">{toast.message}</span>
-            <button
-              onClick={() => dismissToast(toast.id)}
-              className="ml-4 text-xs opacity-70 hover:opacity-100 font-bold"
+        {/* Session Expiry Warning Popups Container */}
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[70] flex flex-col gap-3 w-full max-w-md px-4 pointer-events-none">
+          {sessionAlerts.filter(a => !a.dismissed).map(alert => (
+            <div
+              key={alert.id}
+              onClick={() => {
+                if (alert.tableId) {
+                  localStorage.setItem('bar_auto_inspect_table_id', alert.tableId);
+                  setActiveTab('tables/layout');
+                  window.dispatchEvent(new CustomEvent('bar_auto_inspect', { detail: { tableId: alert.tableId } }));
+                }
+              }}
+              className="pointer-events-auto p-4 dark:bg-[#1C1C1E] bg-white border border-red-500/40 rounded-2xl shadow-2xl flex items-start gap-3 animate-fadeIn text-text-main cursor-pointer hover:border-red-500/70 transition-colors"
             >
-              ✕
-            </button>
-          </div>
-        ))}
+              <div className="p-2 rounded-xl bg-red-500/10 text-red-500 shrink-0">
+                <AlertTriangle size={18} />
+              </div>
+              <div className="flex-1 min-w-0 text-left">
+                <h4 className="text-xs font-black text-red-500 uppercase tracking-widest">Session Expiring Soon</h4>
+                <p className="text-sm font-bold mt-1">Table {alert.tableNumber} — {alert.customerName}</p>
+                <p className="text-xs text-text-muted mt-0.5">Session expires in {alert.remainingTimeStr}.</p>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  dismissAlert(alert.id);
+                }}
+                className="p-1 rounded-lg text-text-muted hover:text-text-main cursor-pointer shrink-0"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Global Toast Alert Notifications Container */}
+        <div className="fixed bottom-4 right-4 z-[75] space-y-2 max-w-sm w-full pointer-events-none">
+          {toasts.map(toast => (
+            <div
+              key={toast.id}
+              className={`pointer-events-auto p-4 rounded-xl shadow-lg flex items-center justify-between border backdrop-blur-md transition-all ${
+                toast.type === 'success'
+                  ? 'bg-status-success-bg border-status-success-border text-status-success'
+                  : toast.type === 'danger'
+                  ? 'bg-status-danger-bg border-status-danger-border text-status-danger'
+                  : 'bg-status-info-bg border-status-info-border text-status-info'
+              }`}
+            >
+              <span className="text-xs font-semibold">{toast.message}</span>
+              <button
+                onClick={() => dismissToast(toast.id)}
+                className="ml-4 text-xs opacity-70 hover:opacity-100 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

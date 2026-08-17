@@ -1,7 +1,12 @@
 import type { User, Table, Token } from '../types';
 
 export const DEPLOYED_API_BASE_URL = 'https://api.nfc-qr.app.cloudshiftsolutions.in/api';
-export const LOCAL_API_BASE_URL = 'http://localhost:4000/api';
+export const getLocalApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    return `http://${window.location.hostname}:4000/api`;
+  }
+  return 'http://localhost:4000/api';
+};
 
 class ApiService {
   private activeBaseUrl: string | null = null;
@@ -9,22 +14,27 @@ class ApiService {
   public async getBaseUrl(): Promise<string> {
     if (this.activeBaseUrl) return this.activeBaseUrl;
 
-    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    if (typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' || 
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname.match(/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/)
+    )) {
       try {
+        const localApiUrl = getLocalApiBaseUrl();
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 600);
 
         // Ping the local backend to check if it is active and running
-        const res = await fetch(`${LOCAL_API_BASE_URL}/tables`, {
+        const res = await fetch(`${localApiUrl}/tables`, {
           method: 'GET',
           signal: controller.signal
         });
         clearTimeout(timeoutId);
 
         if (res.ok || res.status === 401 || res.status === 403) {
-          this.activeBaseUrl = LOCAL_API_BASE_URL;
-          console.log('[API] Auto-detected local backend active. Routing to local DB:', LOCAL_API_BASE_URL);
-          return LOCAL_API_BASE_URL;
+          this.activeBaseUrl = localApiUrl;
+          console.log('[API] Auto-detected local backend active. Routing to local DB:', localApiUrl);
+          return localApiUrl;
         }
       } catch (e) {
         // Local backend is offline or down
@@ -67,7 +77,10 @@ class ApiService {
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(data.message || data.error || `HTTP Error ${response.status}`);
+      const errMsg = data.message || 
+                     (data.error && typeof data.error === 'object' ? data.error.message : data.error) || 
+                     `HTTP Error ${response.status}`;
+      throw new Error(errMsg);
     }
 
     return data;
@@ -228,6 +241,33 @@ class ApiService {
     });
   }
 
+  async lockTable(tableId: string) {
+    return this.request<{ success: boolean; table: Table }>(`/tables/${tableId}/lock`, {
+      method: 'POST',
+    });
+  }
+
+  async unlockTable(tableId: string, forceAvailable?: boolean) {
+    const url = forceAvailable ? `/tables/${tableId}/unlock?forceAvailable=true` : `/tables/${tableId}/unlock`;
+    return this.request<{ success: boolean; table: Table }>(url, {
+      method: 'POST',
+    });
+  }
+
+  async patchTableStatus(tableId: string, status: string) {
+    return this.request<{ success: boolean; table: Table }>(`/tables/${tableId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  async validateDuplicate(body: { phoneNumber?: string; email?: string; tokenNumber?: string }) {
+    return this.request<{ success: boolean; conflicts: { email: boolean; phone: boolean } }>('/check-in/validate-duplicate', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
   // Customer & Tokens APIs
   async getActiveTokens(): Promise<Token[]> {
     try {
@@ -245,10 +285,13 @@ class ApiService {
         customer: {
           id: t.customer?.id || t.customerId || '',
           name: t.customer?.name || t.customerName || 'Walk-in Guest',
-          phoneNumber: t.customer?.phoneNumber || t.customerPhone || 'N/A',
-          email: t.customer?.email,
+          phoneNumber: t.phoneNumber || t.customer?.phoneNumber || t.customerPhone || 'N/A',
+          email: t.email || t.customer?.email,
         },
+        tableId: t.tableId || t.table?.id || null,
         tableNumber: t.tableNumber || t.table?.number,
+        startTime: t.startTime || new Date().toISOString(),
+        endTime: t.endTime || new Date().toISOString(),
         createdAt: t.createdAt || new Date().toISOString(),
         expiresAt: t.expiresAt || new Date().toISOString(),
       }));
@@ -265,30 +308,68 @@ class ApiService {
     placeTypeId: string;
     deliveryMode?: 'EMAIL_QR';
   }) {
-    return this.request<{ success: boolean; token: Token; customer: any }>('/check-in', {
+    const res = await this.request<any>('/check-in', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+    return {
+      success: true,
+      token: {
+        id: res.id,
+        tokenNumber: res.tokenNumber,
+        customerId: '',
+        personsCount: res.persons,
+        placeTypeId: '',
+        amountPaid: Number(res.amountPaid || 0),
+        paymentVerified: res.paymentVerified,
+        startTime: res.startTime,
+        endTime: res.endTime,
+        totalRedemptionsAllowed: res.redemptionLimit,
+        redemptionsUsed: res.redemptionCount,
+        status: res.status,
+        issuedBy: '',
+        deliveryMode: 'EMAIL_QR',
+        customer: {
+          id: '',
+          phoneNumber: res.phoneNumber,
+          name: res.customerName,
+          email: res.email || undefined,
+          totalVisits: 1
+        }
+      } as Token
+    };
   }
 
-  async extendToken(tokenNumber: string, extraMinutes: number, amount: number) {
-    return this.request<{ success: boolean }>(`/tokens/${tokenNumber}/extend`, {
+
+
+  async extendToken(tokenNumber: string, extraMinutes: number, amount: number, sendEmail?: boolean, paymentMethod?: string) {
+    return this.request<any>(`/tokens/${tokenNumber}/extend`, {
       method: 'PUT',
-      body: JSON.stringify({ extraMinutes, amount }),
+      body: JSON.stringify({ extraMinutes, amount, sendEmail, paymentMethod }),
     });
   }
 
-  async closeToken(tokenNumber: string, reason?: string) {
-    return this.request<{ success: boolean }>(`/tokens/${tokenNumber}/close`, {
+  async closeToken(tokenNumber: string, reason?: string, reasonDetail?: string) {
+    return this.request<any>(`/tokens/${tokenNumber}/close`, {
       method: 'PUT',
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason, reasonDetail }),
     });
   }
 
-  async activateSession(tokenNumber: string, tableNumber: string, amountPaid: number) {
+
+  async getAllSessions(): Promise<any[]> {
+    try {
+      const res = await this.request<any>('/admin/sessions');
+      return Array.isArray(res) ? res : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async activateSession(tokenNumber: string, tableNumber: string, amountPaid: number, bypassCapacity?: boolean) {
     const res = await this.request<any>('/check-in/activate', {
       method: 'POST',
-      body: JSON.stringify({ tokenNumber, tableNumber, amountPaid }),
+      body: JSON.stringify({ tokenNumber, tableNumber, amountPaid, bypassCapacity }),
     });
     return {
       success: true,
@@ -418,17 +499,17 @@ class ApiService {
     };
   }
 
-  async redeemDrink(tokenId: string, drinkName?: string) {
+  async redeemDrink(tokenNumber: string, quantity: number = 1) {
     return this.request<{ success: boolean; remainingDrinks: number }>('/redemptions', {
       method: 'POST',
-      body: JSON.stringify({ tokenId, drinkName }),
+      body: JSON.stringify({ payload: tokenNumber, presentationType: 'QR_SCAN', quantity }),
     });
   }
 
-  async undoRedeem(tokenId: string) {
+  async undoRedeem(tokenNumber: string) {
     return this.request<{ success: boolean }>('/token/redeem/undo', {
       method: 'POST',
-      body: JSON.stringify({ tokenId }),
+      body: JSON.stringify({ tokenNumber }),
     });
   }
 
@@ -451,9 +532,9 @@ class ApiService {
         return rawList.map((r: any) => ({
           id: r.id || r.placeTypeId || (r.name ? r.name.toLowerCase().replace(/\s+/g, '_') : 'standing_bar'),
           name: r.name || r.categoryName || (r.id === 'premium_lounge' ? 'Premium Lounge' : 'Standing Bar'),
-          ratePerPerson: r.ratePerPerson ?? r.pricePerPerson ?? r.rate ?? (r.id === 'premium_lounge' ? 1000 : 500),
-          baseTimeMinutes: r.baseTimeMinutes ?? r.durationMinutes ?? (r.id === 'premium_lounge' ? 180 : 120),
-          redemptionsPerPerson: r.redemptionsPerPerson ?? r.drinksPerPerson ?? (r.id === 'premium_lounge' ? 4 : 2),
+          ratePerPerson: r.ratePerPerson ?? r.pricePerPerson ?? r.rate ?? (r.id === 'premium_lounge' ? 1200 : 500),
+          baseTimeMinutes: r.baseTimeMinutes ?? r.durationMinutes ?? (r.id === 'premium_lounge' ? 30 : 20),
+          redemptionsPerPerson: r.redemptionsPerPerson ?? r.drinksPerPerson ?? (r.id === 'premium_lounge' ? 3 : 2),
         }));
       }
       return [];
@@ -484,6 +565,42 @@ class ApiService {
     }>('/attendance/quick', {
       method: 'POST',
       body: JSON.stringify({ photoBase64, employeeCode }),
+    });
+  }
+
+  // Reservation APIs
+  async getReservations(): Promise<any[]> {
+    try {
+      const res = await this.request<any>('/reservations');
+      return res.reservations || [];
+    } catch {
+      return [];
+    }
+  }
+
+  async createReservation(payload: { customerName: string; phoneNumber: string; email: string; personsCount: number; tableId: string }) {
+    return this.request<{ success: boolean; reservation: any }>('/reservations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async cancelReservation(id: string) {
+    return this.request<{ success: boolean }>(`/reservations/${id}/cancel`, {
+      method: 'POST',
+    });
+  }
+
+  async assignReservation(id: string) {
+    return this.request<{ success: boolean }>(`/reservations/${id}/assign`, {
+      method: 'POST',
+    });
+  }
+
+  async updateReservation(id: string, payload: { customerName?: string; phoneNumber?: string; email?: string; personsCount?: number; tableId?: string | null; bypassCapacity?: boolean }) {
+    return this.request<{ success: boolean; reservation: any }>(`/reservations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
     });
   }
 }
