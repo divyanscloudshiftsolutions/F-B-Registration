@@ -154,3 +154,5 @@
 {"timestamp":"2026-08-22T15:31:37.317Z","tokenNumber":"BAR-20260821-00002","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
 {"timestamp":"2026-08-22T15:31:37.327Z","tokenNumber":"BAR-20260821-00001","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
 {"timestamp":"2026-08-22T15:31:37.333Z","tokenNumber":"BAR-20260821-00003","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-08-22T16:40:25.199Z","tokenNumber":"BAR-20260822-00001","oldStatus":"PENDING_PAYMENT","newStatus":"ACTIVE","reason":"receptionist activation","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-08-22T16:42:23.711Z","tokenNumber":"BAR-20260822-00002","oldStatus":"PENDING_PAYMENT","newStatus":"ACTIVE","reason":"receptionist activation","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
