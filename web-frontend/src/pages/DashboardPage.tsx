@@ -163,12 +163,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     setIsSubmittingClose(true);
     try {
       await api.closeToken(closingToken.tokenNumber, closeReason);
-      showToast(`Session ${closingToken.tokenNumber} closed (${closeReason}).`, 'success');
+      showToast(`Session ${closingToken.tokenNumber} checked out (${closeReason}).`, 'success');
       setClosingToken(null);
       refreshTokens();
       refreshTables();
     } catch (err: any) {
-      showToast(err.message || 'Failed to close session.', 'danger');
+      showToast(err.message || 'Failed to checkout session.', 'danger');
     } finally {
       setIsSubmittingClose(false);
     }
@@ -689,7 +689,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                               <button
                                 onClick={() => setClosingToken(tk)}
                                 className="px-2 py-1 rounded dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 dark:text-red-400 text-red-700 text-[10px] font-bold border border-red-500/30 transition-all flex items-center gap-1 cursor-pointer"
-                                title="Close Session"
+                                title="Checkout"
                               >
                                 <LogOut size={10} /> Checkout
                               </button>
@@ -1118,7 +1118,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             </button>
 
             <div className="flex items-center gap-2 text-text-main font-bold text-sm">
-              <LogOut size={18} className="text-red-500" /> Checkout / Close Session
+              <LogOut size={18} className="text-red-500" /> Checkout
             </div>
 
             <p className="text-xs text-text-muted">
@@ -1127,7 +1127,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
             <form onSubmit={handleCloseSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-text-muted mb-1">Select Close Reason</label>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Select Checkout Reason</label>
                 <select
                   value={closeReason}
                   onChange={e => setCloseReason(e.target.value)}
