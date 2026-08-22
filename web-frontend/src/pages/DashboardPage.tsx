@@ -345,11 +345,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       {
         title: 'Active Guest Sessions',
         value: activeTokensCount,
-        sub: (
-          <span className="flex items-center gap-1 dark:text-emerald-400 text-emerald-700">
-            <TrendingUp size={10} /> 12% vs yesterday
-          </span>
-        ),
+        sub: <span className="text-text-muted">{occupiedTablesCount} occupied tables</span>,
         icon: Users,
         colorClass: 'border-l-primary dark:border-l-[#D4AF37] dark:bg-[#D4AF37]/5',
         iconBgClass: 'dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] text-primary'
@@ -357,11 +353,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       {
         title: 'Total Guests In-House',
         value: totalGuestsInHouse,
-        sub: (
-          <span className="flex items-center gap-1 dark:text-emerald-400 text-emerald-700">
-            <TrendingUp size={10} /> 8% vs yesterday
-          </span>
-        ),
+        sub: <span className="text-text-muted">Across {activeTokensCount} active sessions</span>,
         icon: Users,
         colorClass: 'border-l-emerald-500 bg-emerald-500/5',
         iconBgClass: 'dark:bg-emerald-500/10 dark:text-emerald-400 text-emerald-700'
