@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Wine, Search, RotateCcw, Camera, CheckCircle2, AlertCircle, RefreshCw, VideoOff, Clock, Users, Mail, Phone, QrCode, Plus, Minus, AlertTriangle } from 'lucide-react';
+import { Wine, Search, RotateCcw, Camera, CheckCircle2, AlertCircle, RefreshCw, VideoOff, Clock, Users, Mail, Phone, QrCode, Plus, Minus, AlertTriangle, LogOut } from 'lucide-react';
 import { api } from '../services/api';
 import { ExtendSessionModal } from '../components/modals/ExtendSessionModal';
 import { CancelReservationModal } from '../components/modals/CancelReservationModal';
@@ -901,12 +901,12 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
   </button>
 
   <button
-   onClick={() => setCancellingToken(tk)}
-   className="px-3 py-2.5 sm:py-2 rounded-xl dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 text-xs font-bold border border-red-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20 flex-1 sm:flex-none"
-   title="Cancel Session"
-   >
-   <AlertTriangle size={14} /> Cancel
-   </button>
+    onClick={() => setCancellingToken(tk)}
+    className="px-3 py-2.5 sm:py-2 rounded-xl dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 text-xs font-bold border border-red-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20 flex-1 sm:flex-none"
+    title="Checkout"
+    >
+    <LogOut size={14} /> Checkout
+    </button>
 
   <button
   onClick={() => {
