@@ -308,6 +308,8 @@ class ApiService {
         },
         tableId: t.tableId || t.table?.id || null,
         tableNumber: t.tableNumber || t.table?.number,
+        placeTypeId: t.placeTypeId || '',
+        placeType: t.placeType || '',
         startTime: t.startTime || new Date().toISOString(),
         endTime: t.endTime || new Date().toISOString(),
         createdAt: t.createdAt || new Date().toISOString(),

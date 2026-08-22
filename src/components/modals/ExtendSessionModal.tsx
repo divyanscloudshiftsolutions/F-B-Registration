@@ -24,7 +24,6 @@ export const ExtendSessionModal: React.FC<ExtendSessionModalProps> = ({
   const [selectedOption, setSelectedOption] = useState<string>('20');
   const [customHours, setCustomHours] = useState<number>(1);
   const [customMinutes, setCustomMinutes] = useState<number>(0);
-  const [customAmount, setCustomAmount] = useState<number>(0);
   const [customReason, setCustomReason] = useState<string>('');
   const [extensionPaymentMethod, setExtensionPaymentMethod] = useState<'CASH' | 'UPI' | 'COMPLIMENTARY'>('CASH');
   const [sendExtensionEmail, setSendExtensionEmail] = useState(false);
@@ -34,24 +33,29 @@ export const ExtendSessionModal: React.FC<ExtendSessionModalProps> = ({
 
   const emailYesButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  const rateConfig = rates?.find((r: any) => r.id === token?.placeTypeId);
-  const hourlyRate = rateConfig ? (rateConfig.ratePerPerson || 0) / ((rateConfig.baseTimeMinutes || 20) / 60) : 0;
+  const rateConfig = rates?.find((r: any) => 
+    (token?.placeTypeId && r.id === token.placeTypeId) ||
+    (token?.placeType && typeof token.placeType === 'string' && r.name?.toLowerCase() === token.placeType.toLowerCase())
+  );
+
+  const getExtensionAmount = (mins: number) => {
+    if (!rateConfig) return 0;
+    return Math.round((mins / rateConfig.baseTimeMinutes) * rateConfig.ratePerPerson * (token?.personsCount || 1));
+  };
+
+  const getExtensionDrinks = (mins: number) => {
+    if (!rateConfig) return 0;
+    const hourlyDrinksRate = rateConfig.redemptionsPerPerson / (rateConfig.baseTimeMinutes / 60);
+    return Math.floor((mins / 60) * hourlyDrinksRate * (token?.personsCount || 1));
+  };
 
   const effectiveMinutes = selectedOption === 'custom'
     ? (customHours * 60) + customMinutes
     : Number(selectedOption);
 
-  const calculatedAmount = Math.round(hourlyRate * (effectiveMinutes / 60) * ((token?.personsCount || 1)));
-
   const effectiveAmount = extensionPaymentMethod === 'COMPLIMENTARY'
     ? 0
-    : (selectedOption === 'custom' ? customAmount : calculatedAmount);
-
-  useEffect(() => {
-    if (selectedOption === 'custom' && extensionPaymentMethod !== 'COMPLIMENTARY') {
-      setCustomAmount(calculatedAmount);
-    }
-  }, [selectedOption, effectiveMinutes, extensionPaymentMethod, calculatedAmount]);
+    : getExtensionAmount(effectiveMinutes);
 
   useEffect(() => {
     if (showEmailConfirmModal) {
@@ -69,11 +73,15 @@ export const ExtendSessionModal: React.FC<ExtendSessionModalProps> = ({
 
   const handleExtendSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!rateConfig) {
+      showToast('Rate configuration not found for place type. Cannot calculate extension amount.', 'danger');
+      return;
+    }
     if (effectiveMinutes < 1) {
       showToast('Extension duration must be at least 1 minute.', 'warning');
       return;
     }
-    if (selectedOption === 'custom' && (isNaN(customAmount) || customAmount < 0)) {
+    if (selectedOption === 'custom' && (isNaN(effectiveAmount) || effectiveAmount < 0)) {
       showToast('Extension amount cannot be negative or invalid.', 'warning');
       return;
     }
@@ -147,9 +155,9 @@ export const ExtendSessionModal: React.FC<ExtendSessionModalProps> = ({
                 className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
                 required
               >
-                <option value={20}>+20 Minutes (₹{Math.round(hourlyRate * (20 / 60) * (token.personsCount || 1))})</option>
-                <option value={25}>+25 Minutes (₹{Math.round(hourlyRate * (25 / 60) * (token.personsCount || 1))})</option>
-                <option value={30}>+30 Minutes (₹{Math.round(hourlyRate * (30 / 60) * (token.personsCount || 1))})</option>
+                <option value={20}>+20 Minutes (₹{getExtensionAmount(20)})</option>
+                <option value={25}>+25 Minutes (₹{getExtensionAmount(25)})</option>
+                <option value={30}>+30 Minutes (₹{getExtensionAmount(30)})</option>
                 <option value="custom">Custom Duration...</option>
               </select>
             </div>
@@ -250,36 +258,24 @@ export const ExtendSessionModal: React.FC<ExtendSessionModalProps> = ({
                     </div>
                   </div>
                 </div>
-
-                {extensionPaymentMethod !== 'COMPLIMENTARY' && (
-                  <div>
-                    <label className="block text-xs font-semibold text-text-muted mb-1">Custom Amount (₹) <span className="text-red-500">*</span></label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={customAmount}
-                      onChange={e => {
-                        const val = parseInt(e.target.value, 10);
-                        setCustomAmount(isNaN(val) ? 0 : Math.max(0, val));
-                      }}
-                      className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
-                      required
-                    />
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-xs font-semibold text-text-muted mb-1">Reason for Extension</label>
-                  <input
-                    type="text"
-                    value={customReason}
-                    onChange={e => setCustomReason(e.target.value)}
-                    placeholder="e.g. Customer requested additional session time"
-                    className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
-                  />
-                </div>
               </div>
             )}
+
+            {/* Extension Amount & Additional Redemption Section */}
+            <div className="p-3 bg-bg-primary rounded-xl border border-border-main/50 space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-semibold text-text-muted">Extension Amount</span>
+                <span className="font-mono font-bold text-sm text-primary">
+                  {extensionPaymentMethod === 'COMPLIMENTARY' ? '₹0' : `₹${effectiveAmount}`}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-xs pt-1.5 border-t border-border-main/20">
+                <span className="font-semibold text-text-muted">Additional Redemption</span>
+                <span className="font-mono font-bold text-sm text-text-main">
+                  +{getExtensionDrinks(effectiveMinutes)} Drinks
+                </span>
+              </div>
+            </div>
 
             <div>
               <label className="block text-xs font-semibold text-text-muted mb-1">Payment Method <span className="text-red-500">*</span></label>
