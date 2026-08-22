@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Wine, Search, RotateCcw, Camera, CheckCircle2, AlertCircle, RefreshCw, VideoOff, Clock, Users, Mail, Phone, QrCode, Plus, Minus, AlertTriangle, LogOut } from 'lucide-react';
 import { api } from '../services/api';
 import { ExtendSessionModal } from '../components/modals/ExtendSessionModal';
-import { CancelReservationModal } from '../components/modals/CancelReservationModal';
+import { CheckoutConfirmationModal } from '../components/modals/CheckoutConfirmationModal';
 import { QuickAttendanceWebPage } from './QuickAttendanceWebPage';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -956,28 +956,26 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
   )}
 
     {cancellingToken && (
-    <CancelReservationModal
-      isOpen={!!cancellingToken}
-      reservation={{
-        id: '',
-        tableId: cancellingToken.tableId || '',
-        customerName: cancellingToken.customer?.name || 'Walk-in Guest',
-        phoneNumber: cancellingToken.customer?.phoneNumber || '',
-        table: cancellingToken.table,
-        tokenNumber: cancellingToken.tokenNumber
-      }}
-      onClose={() => setCancellingToken(null)}
-      onSuccess={() => {
-        setCancellingToken(null);
-        fetchActiveTokens();
-        refreshTokens();
-        refreshTables();
-        if (scannedToken?.tokenNumber === cancellingToken.tokenNumber) {
-          setScannedToken(null);
-        }
-      }}
-    />
-  )}
+      <CheckoutConfirmationModal
+        isOpen={!!cancellingToken}
+        session={{
+          tokenNumber: cancellingToken.tokenNumber,
+          customerName: cancellingToken.customer?.name || 'Walk-in Guest',
+          customerPhone: cancellingToken.customer?.phoneNumber || 'N/A',
+          tableNumber: cancellingToken.table?.tableNumber || 'N/A',
+        }}
+        onClose={() => setCancellingToken(null)}
+        onSuccess={() => {
+          setCancellingToken(null);
+          fetchActiveTokens();
+          refreshTokens();
+          refreshTables();
+          if (scannedToken?.tokenNumber === cancellingToken.tokenNumber) {
+            setScannedToken(null);
+          }
+        }}
+      />
+    )}
 
  </div>
  );
