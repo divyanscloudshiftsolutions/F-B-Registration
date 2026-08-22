@@ -51,7 +51,7 @@ export const CancelReservationModal: React.FC<CancelReservationModalProps> = ({
       }
       onSuccess();
     } catch (err: any) {
-      showToast(err.message || (reservation.tokenNumber ? 'Failed to close session.' : 'Failed to cancel reservation.'), 'danger');
+      showToast(err.message || (reservation.tokenNumber ? 'Failed to checkout session.' : 'Failed to cancel reservation.'), 'danger');
     } finally {
       setIsSubmittingCancel(false);
     }
@@ -71,7 +71,7 @@ export const CancelReservationModal: React.FC<CancelReservationModalProps> = ({
         <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-8 text-red-500">
           <AlertTriangle size={18} className="shrink-0" />
           <span className="truncate">
-            {reservation.tokenNumber ? 'Close Session' : 'Cancel Reservation'}
+            {reservation.tokenNumber ? 'Checkout' : 'Cancel Reservation'}
           </span>
         </div>
 
@@ -79,7 +79,7 @@ export const CancelReservationModal: React.FC<CancelReservationModalProps> = ({
           <div className="space-y-2">
             <p className="text-xs text-text-muted">
               {reservation.tokenNumber 
-                ? 'Are you sure you want to close this session:' 
+                ? 'Are you sure you want to checkout this session:' 
                 : 'Are you sure you want to cancel the reservation for:'}
             </p>
             <div className="p-3 bg-bg-primary rounded-xl space-y-1 text-xs">
@@ -146,7 +146,7 @@ export const CancelReservationModal: React.FC<CancelReservationModalProps> = ({
 
             <p className="text-[11px] text-red-500/80 italic pt-1">
               {reservation.tokenNumber 
-                ? 'This will close the active session and release the table back to "available" immediately.'
+                ? 'This will checkout the active session and release the table back to "available" immediately.'
                 : 'This will release the table back to "available" immediately.'}
             </p>
           </div>
@@ -165,8 +165,8 @@ export const CancelReservationModal: React.FC<CancelReservationModalProps> = ({
               className="flex-1 py-2.5 rounded-xl bg-red-500 text-white hover:bg-red-600 active:bg-red-700 text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer border-none"
             >
               {isSubmittingCancel 
-                ? (reservation.tokenNumber ? 'Closing...' : 'Cancelling...') 
-                : (reservation.tokenNumber ? 'Yes, Close Session' : 'Yes, Cancel')}
+                ? (reservation.tokenNumber ? 'Checking out...' : 'Cancelling...') 
+                : (reservation.tokenNumber ? 'Yes, Checkout' : 'Yes, Cancel')}
             </button>
           </div>
         </form>

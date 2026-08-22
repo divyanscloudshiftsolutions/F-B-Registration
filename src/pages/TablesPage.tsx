@@ -364,7 +364,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
         : closureReasonOption;
 
       await api.closeToken(token.tokenNumber, reasonDetail);
-      showToast(`Session for Table ${closingTableSession.tableNumber} closed successfully!`, 'success');
+      showToast(`Session for Table ${closingTableSession.tableNumber} checked out successfully!`, 'success');
       setClosingTableSession(null);
       setClosureCustomExplanation('');
       if (inspectingTable && inspectingTable.id === closingTableSession.id) {
@@ -373,7 +373,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
       refreshTables();
       refreshTokens();
     } catch (err: any) {
-      showToast(err.message || 'Failed to close session.', 'danger');
+      showToast(err.message || 'Failed to checkout session.', 'danger');
     } finally {
       setIsSubmittingCloseSession(false);
     }
@@ -1136,7 +1136,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
         onClick={() => setClosingTableSession(inspectingTable)}
         className="flex-1 py-2.5 rounded-md dark:rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 font-bold text-[13px] border border-red-500/30 transition-all text-center cursor-pointer"
       >
-        Close Session
+        Checkout
       </button>
       <button 
         onClick={() => {
@@ -1465,7 +1465,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
         </button>
 
         <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-8 text-red-500">
-          <AlertTriangle size={18} className="shrink-0" /> <span className="truncate">Close Table Session ({closingTableSession.tableNumber})</span>
+          <AlertTriangle size={18} className="shrink-0" /> <span className="truncate">Checkout Table Session ({closingTableSession.tableNumber})</span>
         </div>
 
         <form onSubmit={handleCloseSessionSubmit} className="space-y-4">
@@ -1485,7 +1485,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-text-muted mb-1">Reason for Closure <span className="text-red-500">*</span></label>
+            <label className="block text-xs font-semibold text-text-muted mb-1">Reason for Checkout <span className="text-red-500">*</span></label>
             <select
               value={closureReasonOption}
               onChange={e => setClosureReasonOption(e.target.value)}
@@ -1504,7 +1504,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               <textarea
                 value={closureCustomExplanation}
                 onChange={e => setClosureCustomExplanation(e.target.value)}
-                placeholder="Enter details about why this session is being closed..."
+                placeholder="Enter details about why this session is being checked out..."
                 className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary min-h-[60px]"
                 required
               />
@@ -1524,7 +1524,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               disabled={isSubmittingCloseSession}
               className="flex-1 py-2.5 rounded-xl bg-red-500 text-white hover:bg-red-600 active:bg-red-700 text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer border-none"
             >
-              {isSubmittingCloseSession ? 'Closing...' : 'Close Session'}
+              {isSubmittingCloseSession ? 'Checking out...' : 'Checkout'}
             </button>
           </div>
         </form>

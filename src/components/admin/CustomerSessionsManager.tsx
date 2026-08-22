@@ -47,14 +47,14 @@ export const CustomerSessionsManager: React.FC = () => {
     setIsSubmittingClose(true);
     try {
       await api.closeToken(deactivatingToken.tokenNumber, closeReason, closeReasonDetail);
-      showToast(`Session ${deactivatingToken.tokenNumber} closed successfully.`, 'success');
+      showToast(`Session ${deactivatingToken.tokenNumber} checked out successfully.`, 'success');
       setDeactivatingToken(null);
       setCloseReason('Customer Vacated Early');
       setCloseReasonDetail('');
       refreshAllSessions();
       refreshTables();
     } catch (err: any) {
-      showToast(err.message || 'Failed to close session.', 'danger');
+      showToast(err.message || 'Failed to checkout session.', 'danger');
     } finally {
       setIsSubmittingClose(false);
     }
@@ -253,9 +253,9 @@ export const CustomerSessionsManager: React.FC = () => {
               <X size={18} />
             </button>
 
-            <div className="flex items-start sm:items-center gap-2 dark:text-red-400 text-red-700 font-bold text-sm pr-8">
+             <div className="flex items-start sm:items-center gap-2 dark:text-red-400 text-red-700 font-bold text-sm pr-8">
               <LogOut size={18} className="shrink-0 mt-0.5 sm:mt-0" /> 
-              <span>Close Customer Session</span>
+              <span>Checkout Customer Session</span>
             </div>
 
             <p className="text-xs text-text-muted mt-1.5">
@@ -264,7 +264,7 @@ export const CustomerSessionsManager: React.FC = () => {
 
             <form onSubmit={handleDeactivateSubmit} className="space-y-4 mt-4">
               <div>
-                <label className="block text-xs font-semibold text-text-muted mb-1">Select Closure Reason <span className="text-red-500">*</span></label>
+                <label className="block text-xs font-semibold text-text-muted mb-1">Select Checkout Reason <span className="text-red-500">*</span></label>
                 <select
                   value={closeReason}
                   onChange={e => setCloseReason(e.target.value)}
@@ -282,7 +282,7 @@ export const CustomerSessionsManager: React.FC = () => {
                   <textarea
                     value={closeReasonDetail}
                     onChange={e => setCloseReasonDetail(e.target.value)}
-                    placeholder="Provide a brief explanation for closure..."
+                    placeholder="Provide a brief explanation for checkout..."
                     className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-red-500 h-20 resize-none"
                     maxLength={100}
                     required
@@ -306,7 +306,7 @@ export const CustomerSessionsManager: React.FC = () => {
                     isDark ? 'primary-btn bg-red-500' : 'bg-red-500/10 text-red-700 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/20'
                   }`}
                 >
-                  {isSubmittingClose ? 'Closing...' : 'Confirm Closure'}
+                  {isSubmittingClose ? 'Checking out...' : 'Confirm Checkout'}
                 </button>
               </div>
             </form>
