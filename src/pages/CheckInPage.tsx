@@ -1715,7 +1715,19 @@ setPersonsCount(preselectedTable.capacity);
  📲 UPI / Digital Pay
  </button>
  </div>
- </div>
+  
+  {paymentMode === 'UPI' && (
+    <div className="p-4 bg-bg-secondary-surface dark:bg-black/15 rounded-xl border border-border-main/55 space-y-2 flex flex-col items-center justify-center animate-fadeIn text-center mt-4">
+      <p className="text-xs font-bold text-text-main">Scan UPI QR to Pay ₹{calculatedTotal}</p>
+      <img 
+        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`upi://pay?pa=barmanagement@upi&pn=BarSystem&am=${calculatedTotal}&cu=INR`)}`}
+        alt="UPI Payment QR"
+        className="w-36 h-36 border-2 border-white rounded-lg p-1 bg-white"
+      />
+      <p className="text-[10px] text-text-muted">Awaiting merchant verification confirmation...</p>
+    </div>
+  )}
+  </div>
 
  <div className="pt-4 flex flex-col-reverse sm:flex-row items-center sm:justify-between gap-3 border-t border-border-main mt-4">
  <button
