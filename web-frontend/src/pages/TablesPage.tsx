@@ -5,6 +5,7 @@ import type { Table, Token } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { ExtendSessionModal } from '../components/modals/ExtendSessionModal';
+import { CheckoutConfirmationModal } from '../components/modals/CheckoutConfirmationModal';
 import { TableDiagram } from '../components/TableDiagram';
 import { SeatingRow } from '../components/SeatingRow';
 
@@ -1454,83 +1455,31 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   })()}
 
   {/* CLOSE SESSION MODAL */}
-  {closingTableSession && (
-    <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
-      <div className="bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
-        <button 
-          onClick={() => setClosingTableSession(null)}
-          className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
-        >
-          <X size={18} />
-        </button>
-
-        <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-8 text-red-500">
-          <AlertTriangle size={18} className="shrink-0" /> <span className="truncate">Checkout Table Session ({closingTableSession.tableNumber})</span>
-        </div>
-
-        <form onSubmit={handleCloseSessionSubmit} className="space-y-4">
-          <div className="p-3 bg-bg-primary rounded-xl space-y-1 text-xs">
-            <div className="flex justify-between">
-              <span className="text-text-muted">Customer:</span>
-              <span className="font-semibold text-text-main">
-                {tokens.find(tk => tk.tableId === closingTableSession.id || (tk.table && tk.table.id === closingTableSession.id))?.customer?.name || 'Guest'}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Session Token:</span>
-              <span className="font-mono text-text-main font-bold">
-                {tokens.find(tk => tk.tableId === closingTableSession.id || (tk.table && tk.table.id === closingTableSession.id))?.tokenNumber}
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-text-muted mb-1">Reason for Checkout <span className="text-red-500">*</span></label>
-            <select
-              value={closureReasonOption}
-              onChange={e => setClosureReasonOption(e.target.value)}
-              className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
-              required
-            >
-              <option value="Customer Vacated Early">Customer Vacated Early</option>
-              <option value="Session Opened by Mistake">Session Opened by Mistake</option>
-              <option value="Other / Administrative Closure">Other / Administrative Closure</option>
-            </select>
-          </div>
-
-          {closureReasonOption === 'Other / Administrative Closure' && (
-            <div>
-              <label className="block text-xs font-semibold text-text-muted mb-1">Explanation <span className="text-red-500">*</span></label>
-              <textarea
-                value={closureCustomExplanation}
-                onChange={e => setClosureCustomExplanation(e.target.value)}
-                placeholder="Enter details about why this session is being checked out..."
-                className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary min-h-[60px]"
-                required
-              />
-            </div>
-          )}
-
-          <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
-            <button
-              type="button"
-              onClick={() => setClosingTableSession(null)}
-              className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmittingCloseSession}
-              className="flex-1 py-2.5 rounded-xl bg-red-500 text-white hover:bg-red-600 active:bg-red-700 text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer border-none"
-            >
-              {isSubmittingCloseSession ? 'Checking out...' : 'Checkout'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )}
+  {(() => {
+    if (!closingTableSession) return null;
+    const sessionToken = tokens.find(tk => tk.tableId === closingTableSession.id || (tk.table && tk.table.id === closingTableSession.id));
+    if (!sessionToken) return null;
+    return (
+      <CheckoutConfirmationModal
+        isOpen={!!closingTableSession}
+        session={{
+          tokenNumber: sessionToken.tokenNumber,
+          customerName: sessionToken.customer?.name || 'Walk-in Guest',
+          customerPhone: sessionToken.customer?.phoneNumber || 'N/A',
+          tableNumber: closingTableSession.tableNumber || 'N/A',
+        }}
+        onClose={() => setClosingTableSession(null)}
+        onSuccess={() => {
+          setClosingTableSession(null);
+          if (inspectingTable && inspectingTable.id === closingTableSession.id) {
+            setInspectingTable(null);
+          }
+          refreshTables();
+          refreshTokens();
+        }}
+      />
+    );
+  })()}
 
 
 

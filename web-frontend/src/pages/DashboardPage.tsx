@@ -25,6 +25,7 @@ import type { Token, DashboardReport } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { ExtendSessionModal } from '../components/modals/ExtendSessionModal';
+import { CheckoutConfirmationModal } from '../components/modals/CheckoutConfirmationModal';
 
 interface LiveSessionTimerProps {
   endTime: string | Date;
@@ -1108,56 +1109,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       />
 
       {closingToken && (
-        <div className="fixed inset-0 z-[100] bg-black/75 flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
-            <button 
-              onClick={() => setClosingToken(null)}
-              className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
-            >
-              <X size={18} />
-            </button>
-
-            <div className="flex items-center gap-2 text-text-main font-bold text-sm">
-              <LogOut size={18} className="text-red-500" /> Checkout
-            </div>
-
-            <p className="text-xs text-text-muted">
-              Token Number: <span className="font-mono font-bold text-text-main">{closingToken.tokenNumber}</span> ({closingToken.customer?.name})
-            </p>
-
-            <form onSubmit={handleCloseSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-text-muted mb-1">Select Checkout Reason</label>
-                <select
-                  value={closeReason}
-                  onChange={e => setCloseReason(e.target.value)}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
-                >
-                  <option value="CHECKOUT">Standard Guest Checkout</option>
-                  <option value="EXPIRED">Session Time Expired</option>
-                  <option value="CANCELLED">Session Cancelled by Reception</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setClosingToken(null)}
-                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingClose}
-                  className="flex-1 py-3 rounded-xl dark:bg-red-500/20 bg-red-500/10 dark:hover:bg-red-600 hover:bg-red-600 dark:text-red-200 text-red-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-red-500/30 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20"
-                >
-                  {isSubmittingClose ? 'Closing...' : 'Close & Release'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <CheckoutConfirmationModal
+          isOpen={!!closingToken}
+          session={{
+            tokenNumber: closingToken.tokenNumber,
+            customerName: closingToken.customer?.name || 'Walk-in Guest',
+            customerPhone: closingToken.customer?.phoneNumber || 'N/A',
+            tableNumber: closingToken.table?.tableNumber || 'N/A',
+          }}
+          onClose={() => setClosingToken(null)}
+          onSuccess={() => {
+            setClosingToken(null);
+            refreshTokens();
+            if (isManagement) {
+              refreshAllSessions();
+            }
+          }}
+        />
       )}
     </div>
   );

@@ -4,6 +4,7 @@ import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { ExtendSessionModal } from '../modals/ExtendSessionModal';
+import { CheckoutConfirmationModal } from '../modals/CheckoutConfirmationModal';
 
 export const CustomerSessionsManager: React.FC = () => {
   const { showToast, isDark } = useAuth();
@@ -238,80 +239,22 @@ export const CustomerSessionsManager: React.FC = () => {
 
       {/* CLOSE SESSION MODAL */}
       {deactivatingToken && (
-        <div 
-          onClick={() => setDeactivatingToken(null)}
-          className="fixed inset-0 z-[100] dark:bg-transparent bg-black/75 flex items-center justify-end p-0 cursor-pointer animate-none"
-        >
-          <div 
-            onClick={e => e.stopPropagation()}
-            className="bg-bg-surface border border-border-main border-y-0 border-r-0 border-l-[1px] dark:border-[rgba(255,255,255,0.1)] dark:bg-[#121212] rounded-none p-5 w-full md:w-[380px] relative text-text-main h-[100dvh] flex flex-col cursor-default"
-          >
-            <button 
-              onClick={() => setDeactivatingToken(null)}
-              className="absolute top-4 sm:top-6 right-4 sm:right-6 text-text-muted hover:text-text-main bg-bg-surface rounded-full z-10 p-1.5 hover:bg-bg-card cursor-pointer"
-            >
-              <X size={18} />
-            </button>
-
-             <div className="flex items-start sm:items-center gap-2 dark:text-red-400 text-red-700 font-bold text-sm pr-8">
-              <LogOut size={18} className="shrink-0 mt-0.5 sm:mt-0" /> 
-              <span>Checkout Customer Session</span>
-            </div>
-
-            <p className="text-xs text-text-muted mt-1.5">
-              Token Number: <span className="font-mono font-bold text-text-main">{deactivatingToken.tokenNumber}</span> ({deactivatingToken.customer?.name})
-            </p>
-
-            <form onSubmit={handleDeactivateSubmit} className="space-y-4 mt-4">
-              <div>
-                <label className="block text-xs font-semibold text-text-muted mb-1">Select Checkout Reason <span className="text-red-500">*</span></label>
-                <select
-                  value={closeReason}
-                  onChange={e => setCloseReason(e.target.value)}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-red-500"
-                >
-                  <option value="Customer Vacated Early">Customer Vacated Early</option>
-                  <option value="Session Opened by Mistake">Session Opened by Mistake</option>
-                  <option value="Other / Administrative Closure">Other / Administrative Closure</option>
-                </select>
-              </div>
-
-              {closeReason === 'Other / Administrative Closure' && (
-                <div>
-                  <label className="block text-xs font-semibold text-text-muted mb-1">Explanation <span className="text-red-500">*</span></label>
-                  <textarea
-                    value={closeReasonDetail}
-                    onChange={e => setCloseReasonDetail(e.target.value)}
-                    placeholder="Provide a brief explanation for checkout..."
-                    className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-red-500 h-20 resize-none"
-                    maxLength={100}
-                    required
-                  />
-                </div>
-              )}
-
-              <div className="flex flex-row gap-3 pt-3 sm:pt-4">
-                <button
-                  type="button"
-                  onClick={() => setDeactivatingToken(null)}
-                  className="flex-1 py-2.5 sm:py-3 rounded-xl text-[11px] sm:text-xs font-semibold transition-all premium-btn-secondary cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingClose}
-                  title={isSubmittingClose ? "Request in progress" : undefined}
-                  className={`flex-1 py-2.5 sm:py-3 rounded-xl text-[11px] sm:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    isDark ? 'primary-btn bg-red-500' : 'bg-red-500/10 text-red-700 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/20'
-                  }`}
-                >
-                  {isSubmittingClose ? 'Checking out...' : 'Confirm Checkout'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <CheckoutConfirmationModal
+          isOpen={!!deactivatingToken}
+          session={{
+            tokenNumber: deactivatingToken.tokenNumber,
+            customerName: deactivatingToken.customer?.name || 'Walk-in Guest',
+            customerPhone: deactivatingToken.customer?.phoneNumber || 'N/A',
+            tableNumber: deactivatingToken.table?.tableNumber || 'N/A',
+          }}
+          onClose={() => setDeactivatingToken(null)}
+          onSuccess={() => {
+            setDeactivatingToken(null);
+            refreshAllSessions();
+            refreshTables();
+            refreshTokens();
+          }}
+        />
       )}
 
       {/* VIEW HISTORY / DETAILS MODAL */}
