@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Wine, Search, RotateCcw, Camera, CheckCircle2, AlertCircle, RefreshCw, VideoOff, Clock, LogOut, Users, Mail, Phone, X, QrCode, Plus, Minus } from 'lucide-react';
+import { Wine, Search, RotateCcw, Camera, CheckCircle2, AlertCircle, RefreshCw, VideoOff, Clock, Users, Mail, Phone, QrCode, Plus, Minus, AlertTriangle, LogOut } from 'lucide-react';
 import { api } from '../services/api';
+import { ExtendSessionModal } from '../components/modals/ExtendSessionModal';
+import { CheckoutConfirmationModal } from '../components/modals/CheckoutConfirmationModal';
+import { QuickAttendanceWebPage } from './QuickAttendanceWebPage';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import jsQR from 'jsqr';
@@ -11,9 +14,59 @@ interface BartenderPageProps {
  setActiveTab: (tab: string) => void;
 }
 
+interface LiveSessionTimerProps {
+  endTime: string | Date;
+  status: string;
+}
+
+const LiveSessionTimer: React.FC<LiveSessionTimerProps> = ({ endTime, status }) => {
+  const [timeLeft, setTimeLeft] = useState<number>(0);
+
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      const diffMs = new Date(endTime).getTime() - Date.now();
+      return Math.max(0, Math.floor(diffMs / 1000));
+    };
+
+    setTimeLeft(calculateTimeLeft());
+
+    const timer = setInterval(() => {
+      const remaining = calculateTimeLeft();
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        clearInterval(timer);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [endTime]);
+
+  const upperStatus = String(status).toUpperCase();
+  if (upperStatus === 'CLOSED' || upperStatus === 'COMPLETED') {
+    return <span className="text-text-muted font-bold">Closed</span>;
+  }
+  if (upperStatus === 'EXPIRED' || timeLeft <= 0) {
+    return <span className="text-red-500 font-bold">Expired</span>;
+  }
+
+  const hours = Math.floor(timeLeft / 3600);
+  const minutes = Math.floor((timeLeft % 3600) / 60);
+  const seconds = timeLeft % 60;
+
+  const paddedMins = String(minutes).padStart(2, '0');
+  const paddedSecs = String(seconds).padStart(2, '0');
+
+  if (hours > 0) {
+    const paddedHours = String(hours).padStart(2, '0');
+    return <span className="font-mono font-bold text-primary">{paddedHours}:{paddedMins}:{paddedSecs}</span>;
+  }
+
+  return <span className="font-mono font-bold text-primary">{paddedMins}:{paddedSecs}</span>;
+};
+
 export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActiveTab }) => {
  const { showToast } = useAuth();
- const { refreshTokens, refreshTables } = useData();
+ const { refreshTokens, refreshTables, rates } = useData();
  const [tokenInput, setTokenInput] = useState('');
  const [scannedToken, setScannedToken] = useState<Token | null>(null);
  const [isVerifying, setIsVerifying] = useState(false);
@@ -27,12 +80,8 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
  // Modal States
  const [extendingToken, setExtendingToken] = useState<Token | null>(null);
- const [closingToken, setClosingToken] = useState<Token | null>(null);
- const [extraMinutes, setExtraMinutes] = useState(60);
- const [additionalAmount, setAdditionalAmount] = useState(500);
- const [closeReason, setCloseReason] = useState('CHECKOUT');
- const [isSubmittingExtend, setIsSubmittingExtend] = useState(false);
- const [isSubmittingClose, setIsSubmittingClose] = useState(false);
+ const [cancellingToken, setCancellingToken] = useState<Token | null>(null);
+ 
 
  // Camera State
  const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -122,13 +171,21 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  setCameraActive(false);
  };
 
- const toggleFacingMode = () => {
- const nextMode = facingMode === 'user' ? 'environment' : 'user';
- setFacingMode(nextMode);
- if (cameraActive) {
- startCamera(nextMode);
- }
- };
+  const toggleFacingMode = () => {
+  const nextMode = facingMode === 'user' ? 'environment' : 'user';
+  setFacingMode(nextMode);
+  if (cameraActive) {
+  startCamera(nextMode);
+  }
+  };
+
+  const handleEnableCamera = () => {
+    if (scannedToken) {
+      setScannedToken(null);
+      setTokenInput('');
+    }
+    startCamera(facingMode);
+  };
 
  // Bind video stream whenever stream state or videoRef mounts
  useEffect(() => {
@@ -386,52 +443,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  }
  };
 
- // Close/Checkout modal submit handler
- const handleCloseSubmit = async (e: React.FormEvent) => {
- e.preventDefault();
- if (!closingToken) return;
- setIsSubmittingClose(true);
- try {
- await api.closeToken(closingToken.tokenNumber, closeReason);
- showToast(`Session ${closingToken.tokenNumber} checked out successfully.`, 'success');
- setClosingToken(null);
- fetchActiveTokens();
- refreshTokens();
- refreshTables();
- if (scannedToken?.tokenNumber === closingToken.tokenNumber) {
- setScannedToken(null);
- }
- } catch (err: any) {
- showToast(err.message || 'Checkout failed.', 'danger');
- } finally {
- setIsSubmittingClose(false);
- }
- };
-
- // Extend modal submit handler
- const handleExtendSubmit = async (e: React.FormEvent) => {
- e.preventDefault();
- if (!extendingToken) return;
- setIsSubmittingExtend(true);
- try {
- await api.extendToken(extendingToken.tokenNumber, extraMinutes, additionalAmount);
- showToast(`Session ${extendingToken.tokenNumber} extended by ${extraMinutes} mins.`, 'success');
- setExtendingToken(null);
- fetchActiveTokens();
- refreshTokens();
- refreshTables();
- if (scannedToken?.tokenNumber === extendingToken.tokenNumber) {
-   const verifyRes = await api.verifyQR(scannedToken.tokenNumber);
-   if (verifyRes.success && verifyRes.token) {
-     setScannedToken(verifyRes.token);
-   }
- }
- } catch (err: any) {
- showToast(err.message || 'Extension failed.', 'danger');
- } finally {
- setIsSubmittingExtend(false);
- }
- };
+ 
 
  // Filter Tokens list based on search query
  const filteredTokens = searchQuery.trim() === '' 
@@ -457,12 +469,43 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  return `${diffHours}h ${mins}m`;
  };
 
+ if (activeTab === 'bartender/attendance') {
+   return <QuickAttendanceWebPage />;
+ }
+
  const isScanTab = activeTab !== 'bartender/checkins';
 
  // Scanned Token redemptions helper
- const redemptionsUsed = scannedToken ? (scannedToken.redemptionsUsed || 0) : 0;
- const totalAllowed = scannedToken ? (scannedToken.totalRedemptionsAllowed || 2) : 2;
- const isQuotaDepleted = redemptionsUsed >= totalAllowed;
+  const redemptionsUsed = scannedToken ? (scannedToken.redemptionsUsed || 0) : 0;
+  const totalAllowed = scannedToken ? (scannedToken.totalRedemptionsAllowed || 2) : 2;
+  const isQuotaDepleted = redemptionsUsed >= totalAllowed;
+
+  const tokenStatus = scannedToken?.status?.toUpperCase();
+  const isActivePass = tokenStatus === 'ACTIVE' || tokenStatus === 'EXTENDED';
+
+  let badgeLabel = 'ACTIVE PASS';
+  let badgeClasses = 'dark:bg-emerald-500/20 bg-emerald-500/10 dark:text-emerald-300 text-emerald-700 border dark:border-emerald-500/40 border-emerald-500/30';
+  let badgeIcon = <CheckCircle2 size={12} />;
+
+  if (scannedToken) {
+    if (tokenStatus === 'EXPIRED') {
+      badgeLabel = 'EXPIRED PASS';
+      badgeClasses = 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-300 text-red-700 border dark:border-red-500/40 border-red-500/30';
+      badgeIcon = <AlertCircle size={12} />;
+    } else if (tokenStatus === 'COMPLETED' || tokenStatus === 'CLOSED') {
+      badgeLabel = 'COMPLETED PASS';
+      badgeClasses = 'dark:bg-gray-500/20 bg-gray-500/10 dark:text-gray-300 text-gray-700 border dark:border-gray-500/40 border-gray-500/30';
+      badgeIcon = <AlertCircle size={12} />;
+    } else if (tokenStatus === 'CANCELLED') {
+      badgeLabel = 'CANCELLED PASS';
+      badgeClasses = 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-300 text-red-700 border dark:border-red-500/40 border-red-500/30';
+      badgeIcon = <AlertCircle size={12} />;
+    } else if (isQuotaDepleted) {
+      badgeLabel = 'QUOTA DEPLETED';
+      badgeClasses = 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-300 text-red-700 border dark:border-red-500/40 border-red-500/30';
+      badgeIcon = <AlertCircle size={12} />;
+    }
+  }
 
  return (
  <div className="max-w-6xl mx-auto space-y-6">
@@ -501,7 +544,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
  {!cameraActive ? (
  <button
- onClick={() => startCamera(facingMode)}
+ onClick={handleEnableCamera}
  className="flex-1 sm:flex-none justify-center px-4 py-2 rounded-xl primary-btn bg-emerald-500 text-xs font-bold transition-all flex items-center gap-1.5"
  >
  <div className="nav-icon-badge">
@@ -635,16 +678,10 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  <span className="font-mono text-2xl font-black text-text-main break-all">{scannedToken.tokenNumber}</span>
  </div>
 
- <span
- className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${
- isQuotaDepleted
- ? 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-300 text-red-700 border dark:border-red-500/40 border-red-500/30'
- : 'dark:bg-emerald-500/20 bg-emerald-500/10 dark:text-emerald-300 text-emerald-700 border dark:border-emerald-500/40 border-emerald-500/30'
- }`}
- >
- {isQuotaDepleted ? <AlertCircle size={12} /> : <CheckCircle2 size={12} />}
- <span>{isQuotaDepleted ? 'QUOTA DEPLETED' : 'ACTIVE PASS'}</span>
- </span>
+ <span className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${badgeClasses}`}>
+    {badgeIcon}
+    <span>{badgeLabel}</span>
+  </span>
  </div>
 
  {/* Guest Details */}
@@ -689,49 +726,59 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  </div>
  </div>
 
- {/* Dispense & Revert Actions */}
- <div className="space-y-2 sm:space-y-3 pt-1 sm:pt-2">
- <div className="flex flex-row items-center gap-2 sm:gap-3">
-  <div className="flex items-center justify-between bg-bg-surface border border-border-main rounded-xl p-1 h-12 sm:h-[52px] w-32 shrink-0">
-    <button 
-      onClick={() => setRedeemQty(Math.max(1, redeemQty - 1))}
-      disabled={isRedeeming || isQuotaDepleted || redeemQty <= 1}
-      className="p-2 hover:bg-bg-card rounded-lg transition-all text-text-muted disabled:opacity-50 cursor-pointer"
-    >
-      <Minus size={16} />
-    </button>
-    <span className="font-bold text-text-main text-sm">{redeemQty}</span>
-    <button 
-      onClick={() => setRedeemQty(Math.min(Math.max(1, totalAllowed - redemptionsUsed), redeemQty + 1))}
-      disabled={isRedeeming || isQuotaDepleted || redeemQty >= (totalAllowed - redemptionsUsed)}
-      className="p-2 hover:bg-bg-card rounded-lg transition-all text-text-muted disabled:opacity-50 cursor-pointer"
-    >
-      <Plus size={16} />
-    </button>
-  </div>
-  
-  <button
-    onClick={handleRedeem}
-    disabled={isRedeeming || isQuotaDepleted}
-    title={isRedeeming ? "Dispensing..." : isQuotaDepleted ? "Drink quota limit reached for this session." : undefined}
-    className="flex-1 h-12 sm:h-[52px] rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-  >
-    <div className="nav-icon-badge">
-      <Wine size={14} />
-    </div>
-    <span>{isRedeeming ? 'Dispensing...' : `Dispense ${redeemQty}`}</span>
-  </button>
- </div>
+  {/* Dispense & Revert Actions */}
+  <div className="space-y-2 sm:space-y-3 pt-1 sm:pt-2">
+    {!isActivePass && (
+      <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-2.5 text-xs text-red-400">
+        <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+        <div>
+          <p className="font-extrabold uppercase tracking-wider">Redemption Blocked</p>
+          <p className="mt-0.5 text-text-muted">This token pass is no longer active (Current status: <span className="font-black text-text-main">{tokenStatus || 'UNKNOWN'}</span>). Dispensing and reverting drinks is locked.</p>
+        </div>
+      </div>
+    )}
 
- <div className="flex flex-row gap-2 sm:gap-3">
- {redemptionsUsed > 0 && (
- <button
- onClick={handleUndo}
- className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-[11px] sm:text-xs font-bold text-amber-300 border border-amber-500/30 flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer"
- >
- <RotateCcw size={14} /> <span className="hidden sm:inline">Revert Last Drink</span><span className="sm:hidden">Revert</span>
- </button>
- )}
+    <div className="flex flex-row items-center gap-2 sm:gap-3">
+      <div className="flex items-center justify-between bg-bg-surface border border-border-main rounded-xl p-1 h-12 sm:h-[52px] w-32 shrink-0">
+        <button 
+          onClick={() => setRedeemQty(Math.max(1, redeemQty - 1))}
+          disabled={isRedeeming || isQuotaDepleted || !isActivePass || redeemQty <= 1}
+          className="p-2 hover:bg-bg-card rounded-lg transition-all text-text-muted disabled:opacity-50 cursor-pointer"
+        >
+          <Minus size={16} />
+        </button>
+        <span className="font-bold text-text-main text-sm">{redeemQty}</span>
+        <button 
+          onClick={() => setRedeemQty(Math.min(Math.max(1, totalAllowed - redemptionsUsed), redeemQty + 1))}
+          disabled={isRedeeming || isQuotaDepleted || !isActivePass || redeemQty >= (totalAllowed - redemptionsUsed)}
+          className="p-2 hover:bg-bg-card rounded-lg transition-all text-text-muted disabled:opacity-50 cursor-pointer"
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+      
+      <button
+        onClick={handleRedeem}
+        disabled={isRedeeming || isQuotaDepleted || !isActivePass}
+        title={isRedeeming ? "Dispensing..." : !isActivePass ? `Redemption blocked. Token status is ${tokenStatus || 'INACTIVE'}.` : isQuotaDepleted ? "Drink quota limit reached for this session." : undefined}
+        className="flex-1 h-12 sm:h-[52px] rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+      >
+        <div className="nav-icon-badge">
+          <Wine size={14} />
+        </div>
+        <span>{isRedeeming ? 'Dispensing...' : `Dispense ${redeemQty}`}</span>
+      </button>
+    </div>
+
+    <div className="flex flex-row gap-2 sm:gap-3">
+      {redemptionsUsed > 0 && isActivePass && (
+        <button
+          onClick={handleUndo}
+          className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-[11px] sm:text-xs font-bold text-amber-300 border border-amber-500/30 flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer"
+        >
+          <RotateCcw size={14} /> <span className="hidden sm:inline">Revert Last Drink</span><span className="sm:hidden">Revert</span>
+        </button>
+      )}
  <button
  onClick={() => {
  setScannedToken(null);
@@ -756,7 +803,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  <div className="space-y-6">
  
  {/* Global Search Bar */}
- <div className="dark:bg-transparent glass-panel border border-border-main border-x-0 border-t-0 rounded-none p-0 pb-4 mb-6">
+ <div className="border-b border-border-main pb-4 mb-6">
  <div className="relative">
  <Search className="absolute left-4 top-3.5 text-text-muted" size={20} />
  <input
@@ -815,104 +862,103 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  {tk.deliveryMode || 'EMAIL_QR'}
  </span>
  </div>
-
- {/* Phone, Email, Table, and headcount grids */}
- <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-1 gap-x-4 text-xs text-text-muted">
- <div className="flex items-center gap-1.5 min-w-0">
- <Phone size={12} className="shrink-0 text-text-muted" />
- <span className="font-mono truncate">{tk.customer?.phoneNumber || 'N/A'}</span>
- </div>
- <div className="flex items-center gap-1.5 min-w-0">
- <Mail size={12} className="shrink-0 text-text-muted" />
- <span className="font-mono truncate" title={tk.customer?.email}>{tk.customer?.email || '—'}</span>
- </div>
- <div className="flex items-center gap-1.5">
- <Users size={12} className="shrink-0 text-text-muted" />
- <span>Party Size: <span className="font-bold text-text-main">{tk.personsCount} Guests</span></span>
- </div>
- </div>
-
- <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-1 gap-x-4 text-xs text-text-muted pt-1 border-t border-border-main/20">
- <div>
- Table/Zone: <span className="font-bold text-text-main">{tk.tableNumber || 'Walking / Bar'}</span>
- </div>
- <div>
- Checked In: <span className="font-bold text-text-main">{new Date(tk.createdAt || tk.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
- </div>
- <div>
- Session Duration: <span className="font-bold text-text-main">{getSessionDuration(tk.createdAt || tk.startTime)}</span>
- </div>
- </div>
- </div>
-
- {/* Pricing, Redemptions progress, and Actions layout */}
- <div className="flex flex-col sm:flex-row items-start sm:items-center lg:justify-end gap-4 sm:gap-6 shrink-0 pt-4 lg:pt-0 border-t lg:border-t-0 border-border-main/30 w-full lg:w-auto">
  
- <div className="flex items-center justify-between w-full sm:w-auto sm:justify-end gap-6 border-b sm:border-b-0 border-border-main/20 pb-4 sm:pb-0">
- {/* Drink Quota Status */}
- <div className="text-left sm:text-right space-y-1 flex-1 sm:flex-initial">
- <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Redemption Progress</span>
- <div className="flex items-center sm:justify-end gap-2">
- <span className={`text-sm font-black font-mono ${isTokenQuotaDepleted ? 'dark:text-red-400 text-red-700' : 'dark:text-emerald-400 text-emerald-700'}`}>
- {tk.redemptionsUsed} / {tk.totalRedemptionsAllowed}
- </span>
- <span className="text-[10px] text-text-muted font-semibold">Drinks Used</span>
- </div>
- <div className="w-full sm:w-24 h-1.5 rounded-full bg-bg-card overflow-hidden ml-0 sm:ml-auto mt-2">
- <div 
- className={`h-full ${isTokenQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'}`}
- style={{ width: `${Math.min(100, (tk.redemptionsUsed / tk.totalRedemptionsAllowed) * 100)}%` }}
- />
- </div>
- </div>
+  {/* Combined Phone, Email, Table, and headcount responsive grid */}
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-1.5 gap-x-4 text-xs text-text-muted pt-2 border-t border-border-main/10 mt-2">
+  <div className="flex items-center gap-1.5 min-w-0">
+  <Phone size={12} className="shrink-0 text-text-muted" />
+  <span className="font-mono truncate">{tk.customer?.phoneNumber || 'N/A'}</span>
+  </div>
+  <div className="flex items-center gap-1.5 min-w-0">
+  <Mail size={12} className="shrink-0 text-text-muted" />
+  <span className="font-mono truncate" title={tk.customer?.email}>{tk.customer?.email || '—'}</span>
+  </div>
+  <div className="flex items-center gap-1.5">
+  <Users size={12} className="shrink-0 text-text-muted" />
+  <span>Party Size: <span className="font-bold text-text-main">{tk.personsCount} Guests</span></span>
+  </div>
+  <div>
+  Table/Zone: <span className="font-bold text-text-main">{tk.tableNumber || 'Walking / Bar'}</span>
+  </div>
+  <div>
+  Checked In: <span className="font-bold text-text-main">{new Date(tk.createdAt || tk.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+  </div>
+  <div>
+  Session Duration: <span className="font-bold text-text-main">{getSessionDuration(tk.createdAt || tk.startTime)}</span>
+  </div>
+  <div className="flex items-center gap-1.5">
+  <Clock size={12} className="shrink-0 text-text-muted" />
+  <span>Remaining: <LiveSessionTimer endTime={tk.endTime} status={tk.status} /></span>
+  </div>
+  </div>
+  </div>
 
- {/* Total Amount Paid */}
- <div className="text-right space-y-1 flex-1 sm:flex-initial border-l border-border-main/20 pl-4 sm:border-l-0 sm:pl-0">
- <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Gate Payment</span>
- <span className="text-sm font-black text-text-main font-mono">₹{tk.amountPaid}</span>
- </div>
- </div>
+  {/* Pricing, Redemptions progress, and Actions layout */}
+  <div className="flex flex-col sm:flex-row items-start sm:items-center lg:justify-end gap-4 sm:gap-6 shrink-0 pt-4 lg:pt-0 border-t lg:border-t-0 border-border-main/30 w-full lg:w-auto">
+  
+  <div className="flex items-center justify-between w-full sm:w-auto sm:justify-end gap-6 border-b sm:border-b-0 border-border-main/20 pb-4 sm:pb-0">
+  {/* Drink Quota Status */}
+  <div className="text-left sm:text-right space-y-1 flex-1 sm:flex-initial">
+  <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Redemption Progress</span>
+  <div className="flex items-center sm:justify-end gap-2">
+  <span className={`text-sm font-black font-mono ${isTokenQuotaDepleted ? 'dark:text-red-400 text-red-700' : 'dark:text-emerald-400 text-emerald-700'}`}>
+  {tk.redemptionsUsed} / {tk.totalRedemptionsAllowed}
+  </span>
+  <span className="text-[10px] text-text-muted font-semibold">Drinks Used</span>
+  </div>
+  <div className="w-full sm:w-24 h-1.5 rounded-full bg-bg-card overflow-hidden ml-0 sm:ml-auto mt-2">
+  <div 
+  className={`h-full ${isTokenQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'}`}
+  style={{ width: `${Math.min(100, (tk.redemptionsUsed / tk.totalRedemptionsAllowed) * 100)}%` }}
+  />
+  </div>
+  </div>
 
- {/* Action Buttons */}
- <div className="flex flex-wrap gap-2 w-full sm:w-auto">
- <button
- onClick={() => handleRedeemForToken(tk)}
- disabled={isRedeeming || isTokenQuotaDepleted}
- title={isTokenQuotaDepleted ? "Drink quota limit reached for this session." : "Dispense 1 Drink"}
- className="px-3 py-2.5 sm:py-2 rounded-xl dark:bg-emerald-500/20 bg-emerald-500/10 dark:hover:bg-emerald-600 hover:bg-emerald-600 dark:text-emerald-200 text-emerald-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-emerald-500/30 transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 cursor-pointer flex-1 sm:flex-none"
- >
- <Wine size={14} /> Redeem
- </button>
+  {/* Total Amount Paid */}
+  <div className="text-right space-y-1 flex-1 sm:flex-initial border-l border-border-main/20 pl-4 sm:border-l-0 sm:pl-0">
+  <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Gate Payment</span>
+  <span className="text-sm font-black text-text-main font-mono">₹{tk.amountPaid}</span>
+  </div>
+  </div>
 
- <button
- onClick={() => setExtendingToken(tk)}
- className="px-3 py-2.5 sm:py-2 rounded-xl dark:bg-amber-500/10 bg-amber-500/5 hover:dark:bg-amber-500/20 hover:bg-amber-500/10 dark:text-amber-300 text-amber-700 text-xs font-bold border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer flex-1 sm:flex-none"
- title="Extend Session"
- >
- <Clock size={14} /> Extend
- </button>
+  {/* Action Buttons */}
+  <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+  <button
+  onClick={() => handleRedeemForToken(tk)}
+  disabled={isRedeeming || isTokenQuotaDepleted}
+  title={isTokenQuotaDepleted ? "Drink quota limit reached for this session." : "Dispense 1 Drink"}
+  className="px-3 py-2.5 sm:py-2 rounded-xl dark:bg-emerald-500/20 bg-emerald-500/10 dark:hover:bg-emerald-600 hover:bg-emerald-600 dark:text-emerald-200 text-emerald-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-emerald-500/30 transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 cursor-pointer flex-1 sm:flex-none"
+  >
+  <Wine size={14} /> Redeem
+  </button>
 
- <button
- onClick={() => setClosingToken(tk)}
- className="px-3 py-2.5 sm:py-2 rounded-xl dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 text-xs font-bold border border-red-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20 flex-1 sm:flex-none"
- title="Checkout Session"
- >
- <LogOut size={14} /> Checkout
- </button>
+  <button
+  onClick={() => setExtendingToken(tk)}
+  className="px-3 py-2.5 sm:py-2 rounded-xl dark:bg-amber-500/10 bg-amber-500/5 hover:dark:bg-amber-500/20 hover:bg-amber-500/10 dark:text-amber-300 text-amber-700 text-xs font-bold border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer flex-1 sm:flex-none"
+  >
+  <Clock size={14} /> Extend
+  </button>
 
- <button
- onClick={() => {
- setScannedToken(tk);
- setActiveTab('bartender/scan');
- }}
- className="px-3 py-3 sm:py-2 rounded-xl text-xs font-bold transition-all premium-btn-secondary flex items-center justify-center gap-1.5 cursor-pointer"
- title="Enable Focused QR Scan View"
- >
- <QrCode size={14} /> Scan Mode
- </button>
- </div>
+  <button
+    onClick={() => setCancellingToken(tk)}
+    className="px-3 py-2.5 sm:py-2 rounded-xl dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 text-xs font-bold border border-red-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20 flex-1 sm:flex-none"
+    title="Checkout"
+    >
+    <LogOut size={14} /> Checkout
+    </button>
 
- </div>
+  <button
+  onClick={() => {
+  setScannedToken(tk);
+  setActiveTab('bartender/scan');
+  }}
+  className="px-3 py-3 sm:py-2 rounded-xl text-xs font-bold transition-all premium-btn-secondary flex items-center justify-center gap-1.5 cursor-pointer flex-1 sm:flex-none"
+  title="Enable Focused QR Scan View"
+  >
+  <QrCode size={14} /> <span className="hidden sm:inline">Scan Mode</span><span className="sm:hidden">Scan</span>
+  </button>
+  </div>
+  </div>
  </div>
  );
  })}
@@ -926,135 +972,49 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  {/* MODALS */}
  {/* ======================================================== */}
 
- {/* 1. EXTEND SESSION MODAL */}
  {extendingToken && (
- <div className="fixed inset-0 z-50 dark:bg-transparent bg-black/75 flex items-center justify-end p-0 pointer-events-none animate-fadeIn">
- <div className="bg-bg-surface border border-border-main border-y-0 border-r-0 border-l-[1px] dark:border-[rgba(255,255,255,0.1)] dark:bg-[#121212] rounded-none p-5 w-full md:w-[380px] relative text-text-main animate-none h-[100dvh] pointer-events-auto flex flex-col">
- 
- <div className="flex items-center justify-between pb-4 dark:pb-5 border-b border-border-main dark:border-[rgba(255,255,255,0.1)] shrink-0">
- <div className="flex items-center gap-2 dark:text-amber-400 text-amber-700 font-bold text-sm">
- <Clock size={18} className="shrink-0" /> Extend Customer Session
- </div>
- <button 
- onClick={() => setExtendingToken(null)}
- className="p-0 rounded-lg dark:bg-transparent bg-bg-surface hover:bg-bg-card text-text-muted hover:text-text-main shrink-0 cursor-pointer"
- >
- <X size={18} />
- </button>
- </div>
+    <ExtendSessionModal
+      isOpen={!!extendingToken}
+      token={extendingToken}
+      rates={rates || []}
+      onClose={() => setExtendingToken(null)}
+      onSuccess={() => {
+        setExtendingToken(null);
+        fetchActiveTokens();
+        refreshTokens();
+        refreshTables();
+        if (scannedToken?.tokenNumber === extendingToken.tokenNumber) {
+          api.verifyQR(scannedToken.tokenNumber).then(verifyRes => {
+            if (verifyRes.success && verifyRes.token) {
+              setScannedToken(verifyRes.token);
+            }
+          }).catch(() => {});
+        }
+      }}
+    />
+  )}
 
- <div className="flex-1 overflow-y-auto py-5 space-y-4 no-scrollbar">
- <p className="text-xs text-text-muted">
- Token Number: <span className="font-mono font-bold text-text-main">{extendingToken.tokenNumber}</span> ({extendingToken.customer?.name})
- </p>
-
- <form onSubmit={handleExtendSubmit} className="space-y-4">
- <div>
- <label className="block text-xs font-semibold text-text-muted mb-1">Additional Minutes</label>
- <select
- value={extraMinutes}
- onChange={e => setExtraMinutes(Number(e.target.value))}
- className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
- >
- <option value={30}>30 Minutes</option>
- <option value={60}>60 Minutes (1 Hour)</option>
- <option value={120}>120 Minutes (2 Hours)</option>
- <option value={180}>180 Minutes (3 Hours)</option>
- </select>
- </div>
-
- <div>
- <label className="block text-xs font-semibold text-text-muted mb-1">Additional Extension Fee (₹)</label>
- <input
- type="number"
- value={additionalAmount}
- onChange={e => setAdditionalAmount(Number(e.target.value))}
- className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main font-mono focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
- required
- />
- </div>
-
- <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4 border-t border-border-main dark:border-[rgba(255,255,255,0.1)] shrink-0">
- <button
- type="button"
- onClick={() => setExtendingToken(null)}
- className="flex-1 py-2.5 rounded-md bg-transparent border border-border-main dark:border-[rgba(255,255,255,0.1)] text-xs font-bold text-text-muted hover:text-text-main cursor-pointer"
- >
- Cancel
- </button>
- <button
- type="submit"
- disabled={isSubmittingExtend}
- title={isSubmittingExtend ? "Request in progress" : undefined}
- className="flex-1 py-2.5 rounded-md primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer dark:text-black"
- >
- {isSubmittingExtend ? 'Extending...' : 'Confirm Extension'}
- </button>
- </div>
- </form>
- </div>
- </div>
- </div>
- )}
-
- {/* 2. CLOSE / CHECKOUT SESSION MODAL */}
- {closingToken && (
- <div className="fixed inset-0 z-50 dark:bg-transparent bg-black/75 flex items-center justify-end p-0 pointer-events-none animate-fadeIn">
- <div className="bg-bg-surface border border-border-main border-y-0 border-r-0 border-l-[1px] dark:border-[rgba(255,255,255,0.1)] dark:bg-[#121212] rounded-none p-5 w-full md:w-[380px] relative text-text-main animate-none h-[100dvh] pointer-events-auto flex flex-col">
- 
- <div className="flex items-center justify-between pb-4 dark:pb-5 border-b border-border-main dark:border-[rgba(255,255,255,0.1)] shrink-0">
- <div className="flex items-center gap-2 text-red-500 font-bold text-sm">
- <LogOut size={18} className="shrink-0" /> Checkout / Close Session
- </div>
- <button 
- onClick={() => setClosingToken(null)}
- className="p-0 rounded-lg dark:bg-transparent bg-bg-surface hover:bg-bg-card text-text-muted hover:text-text-main shrink-0 cursor-pointer"
- >
- <X size={18} />
- </button>
- </div>
-
- <div className="flex-1 overflow-y-auto py-5 space-y-4 no-scrollbar">
- <p className="text-xs text-text-muted">
- Token Number: <span className="font-mono font-bold text-text-main">{closingToken.tokenNumber}</span> ({closingToken.customer?.name})
- </p>
-
- <form onSubmit={handleCloseSubmit} className="space-y-4">
- <div>
- <label className="block text-xs font-semibold text-text-muted mb-1">Select Close Reason</label>
- <select
- value={closeReason}
- onChange={e => setCloseReason(e.target.value)}
- className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
- >
- <option value="CHECKOUT">Standard Guest Checkout</option>
- <option value="EXPIRED">Session Time Expired</option>
- <option value="CANCELLED">Session Cancelled by Reception</option>
- </select>
- </div>
-
- <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4 border-t border-border-main dark:border-[rgba(255,255,255,0.1)] shrink-0">
- <button
- type="button"
- onClick={() => setClosingToken(null)}
- className="flex-1 py-2.5 rounded-md bg-transparent border border-border-main dark:border-[rgba(255,255,255,0.1)] text-xs font-bold text-text-muted hover:text-text-main cursor-pointer"
- >
- Cancel
- </button>
- <button
- type="submit"
- disabled={isSubmittingClose}
- title={isSubmittingClose ? "Request in progress" : undefined}
- className="flex-1 py-2.5 rounded-md dark:bg-red-500/20 bg-red-500/10 dark:hover:bg-red-600 hover:bg-red-600 dark:text-red-200 text-red-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-red-500/30 transition-all cursor-pointer"
- >
- {isSubmittingClose ? 'Closing...' : 'Close Session'}
- </button>
- </div>
- </form>
- </div>
- </div>
- </div>
- )}
+    {cancellingToken && (
+      <CheckoutConfirmationModal
+        isOpen={!!cancellingToken}
+        session={{
+          tokenNumber: cancellingToken.tokenNumber,
+          customerName: cancellingToken.customer?.name || 'Walk-in Guest',
+          customerPhone: cancellingToken.customer?.phoneNumber || 'N/A',
+          tableNumber: cancellingToken.table?.tableNumber || 'N/A',
+        }}
+        onClose={() => setCancellingToken(null)}
+        onSuccess={() => {
+          setCancellingToken(null);
+          fetchActiveTokens();
+          refreshTokens();
+          refreshTables();
+          if (scannedToken?.tokenNumber === cancellingToken.tokenNumber) {
+            setScannedToken(null);
+          }
+        }}
+      />
+    )}
 
  </div>
  );

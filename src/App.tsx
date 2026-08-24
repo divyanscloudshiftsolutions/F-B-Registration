@@ -15,7 +15,7 @@ import { AlertTriangle, X } from 'lucide-react';
 import { useData } from './context/DataContext';
 
 const AppContent: React.FC = () => {
-  const { user, toasts, dismissToast } = useAuth();
+  const { user, toasts, dismissToast, isLoading } = useAuth();
   const { sessionAlerts, dismissAlert } = useData();
   const [activeTab, setActiveTabState] = useState<string>(() => {
     return localStorage.getItem('bar_web_active_tab') || 'dashboard';
@@ -38,6 +38,21 @@ const AppContent: React.FC = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      setActiveTabState('dashboard');
+      localStorage.setItem('bar_web_active_tab', 'dashboard');
+    }
+  }, [user, isLoading]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center dark:bg-[#141225] bg-[#F5F3FA] text-text-main font-bold">
+        <div className="text-sm text-text-muted">Loading session...</div>
+      </div>
+    );
+  }
 
   if (!user) {
     return <LoginPage />;

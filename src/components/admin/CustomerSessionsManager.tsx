@@ -3,10 +3,12 @@ import { Clock, Search, RefreshCw, LogOut, X, Eye } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
+import { ExtendSessionModal } from '../modals/ExtendSessionModal';
+import { CheckoutConfirmationModal } from '../modals/CheckoutConfirmationModal';
 
 export const CustomerSessionsManager: React.FC = () => {
   const { showToast, isDark } = useAuth();
-  const { allSessions, isLoading, refreshAllSessions, refreshTables } = useData();
+  const { allSessions, isLoading, refreshAllSessions, refreshTables, rates, refreshTokens } = useData();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
@@ -30,12 +32,17 @@ export const CustomerSessionsManager: React.FC = () => {
 
   // Extend Session Modal State
   const [extendingToken, setExtendingToken] = useState<any | null>(null);
-  const [extraMinutes, setExtraMinutes] = useState(20);
-  const [additionalAmount, setAdditionalAmount] = useState(500);
-  const [isSubmittingExtend, setIsSubmittingExtend] = useState(false);
 
   // History Details Modal State
   const [viewingHistoryToken, setViewingHistoryToken] = useState<any | null>(null);
+
+  const historyExtensionsTotal = viewingHistoryToken?.extensions?.reduce(
+    (sum: number, ext: any) => sum + ext.additionalAmount,
+    0
+  ) || 0;
+  const historyInitialAmount = viewingHistoryToken
+    ? viewingHistoryToken.amountPaid - historyExtensionsTotal
+    : 0;
 
   const handleDeactivateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,35 +56,20 @@ export const CustomerSessionsManager: React.FC = () => {
     setIsSubmittingClose(true);
     try {
       await api.closeToken(deactivatingToken.tokenNumber, closeReason, closeReasonDetail);
-      showToast(`Session ${deactivatingToken.tokenNumber} closed successfully.`, 'success');
+      showToast(`Session ${deactivatingToken.tokenNumber} checked out successfully.`, 'success');
       setDeactivatingToken(null);
       setCloseReason('Customer Vacated Early');
       setCloseReasonDetail('');
       refreshAllSessions();
       refreshTables();
     } catch (err: any) {
-      showToast(err.message || 'Failed to close session.', 'danger');
+      showToast(err.message || 'Failed to checkout session.', 'danger');
     } finally {
       setIsSubmittingClose(false);
     }
   };
 
-  const handleExtendSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!extendingToken) return;
 
-    setIsSubmittingExtend(true);
-    try {
-      await api.extendToken(extendingToken.tokenNumber, extraMinutes, additionalAmount, false, 'CASH');
-      showToast(`Session ${extendingToken.tokenNumber} extended by ${extraMinutes} mins.`, 'success');
-      setExtendingToken(null);
-      refreshAllSessions();
-    } catch (err: any) {
-      showToast(err.message || 'Failed to extend session.', 'danger');
-    } finally {
-      setIsSubmittingExtend(false);
-    }
-  };
 
   const filteredTokens = allSessions.filter(t => {
     const query = search.toLowerCase();
@@ -97,7 +89,7 @@ export const CustomerSessionsManager: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Search & Filter Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 dark:bg-transparent glass-panel border border-border-main border-x-0 border-t-0 rounded-none p-0 pb-4 mb-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 border-b border-border-main pb-4 mb-6">
         <div className="relative w-full md:w-auto md:flex-1 max-w-md">
           <Search className="absolute left-3.5 top-3 text-text-muted" size={16} />
           <input
@@ -105,7 +97,7 @@ export const CustomerSessionsManager: React.FC = () => {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search token, name, or phone..."
-            className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2 text-xs text-text-main placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
+            className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-xs text-text-main placeholder-gray-500 focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
           />
         </div>
 
@@ -152,7 +144,6 @@ export const CustomerSessionsManager: React.FC = () => {
                   <th className="pb-3 px-3">Contact Details</th>
                   <th className="pb-3 px-3">Guests</th>
                   <th className="pb-3 px-3">Redemptions</th>
-                  <th className="pb-3 px-3">Delivery Mode</th>
                   <th className="pb-3 px-3">Status</th>
                   <th className="pb-3 px-3">Admin Actions</th>
                 </tr>
@@ -173,11 +164,6 @@ export const CustomerSessionsManager: React.FC = () => {
                     <td className="py-3 px-3 font-semibold text-text-main">{tk.personsCount} Guests</td>
                     <td className="py-3 px-3">
                       <span className="font-mono dark:text-amber-300 text-amber-700 font-bold">{tk.redemptionsUsed}</span> / {tk.totalRedemptionsAllowed} Drinks
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-bg-card text-text-muted border border-border-main">
-                        {tk.deliveryMode}
-                      </span>
                     </td>
                     <td className="py-3 px-3">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold badge-active uppercase">
@@ -247,150 +233,48 @@ export const CustomerSessionsManager: React.FC = () => {
         )}
       </div>
 
-      {/* EXTEND SESSION MODAL */}
-      {extendingToken && (
-        <div className="fixed inset-0 z-[100] dark:bg-transparent bg-black/75 flex items-center justify-end p-0 animate-none">
-          <div className="bg-bg-surface border border-border-main border-y-0 border-r-0 border-l-[1px] dark:border-[rgba(255,255,255,0.1)] dark:bg-[#121212] rounded-none p-5 w-full md:w-[380px] relative text-text-main h-[100dvh] pointer-events-auto flex flex-col">
-            <button 
-              onClick={() => setExtendingToken(null)}
-              className="absolute top-4 sm:top-6 right-4 sm:right-6 text-text-muted hover:text-text-main bg-bg-surface rounded-full z-10 p-1.5 hover:bg-bg-card cursor-pointer"
-            >
-              <X size={18} />
-            </button>
-
-            <div className="flex items-start sm:items-center gap-2 dark:text-amber-400 text-amber-700 font-bold text-sm pr-8">
-              <Clock size={18} className="shrink-0 mt-0.5 sm:mt-0" /> 
-              <span>Admin Extend Session Time</span>
-            </div>
-
-            <p className="text-xs text-text-muted mt-1.5">
-              Token Number: <span className="font-mono font-bold text-text-main">{extendingToken.tokenNumber}</span> ({extendingToken.customer?.name})
-            </p>
-
-            <form onSubmit={handleExtendSubmit} className="space-y-4 mt-4">
-              <div>
-                <label className="block text-xs font-semibold text-text-muted mb-1">Additional Minutes</label>
-                <select
-                  value={extraMinutes}
-                  onChange={e => setExtraMinutes(Number(e.target.value))}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary"
-                >
-                  <option value={20}>20 Minutes</option>
-                  <option value={25}>25 Minutes</option>
-                  <option value={30}>30 Minutes</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-text-muted mb-1">Additional Fee (₹)</label>
-                <input
-                  type="number"
-                  value={additionalAmount}
-                  onChange={e => setAdditionalAmount(Number(e.target.value))}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#8D6CE5] focus:border-primary font-mono"
-                  min={0}
-                  required
-                />
-              </div>
-
-              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-3 sm:pt-4">
-                <button
-                  type="button"
-                  onClick={() => setExtendingToken(null)}
-                  className="flex-1 py-2.5 sm:py-3 rounded-xl text-[11px] sm:text-xs font-semibold transition-all premium-btn-secondary cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingExtend}
-                  title={isSubmittingExtend ? "Request in progress" : undefined}
-                  className="flex-1 py-2.5 sm:py-3 rounded-xl primary-btn text-[11px] sm:text-xs font-bold uppercase tracking-wider cursor-pointer"
-                >
-                  {isSubmittingExtend ? 'Extending...' : 'Confirm Extension'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ExtendSessionModal
+        isOpen={extendingToken !== null}
+        token={extendingToken!}
+        rates={rates}
+        onClose={() => setExtendingToken(null)}
+        onSuccess={() => {
+          setExtendingToken(null);
+          refreshAllSessions();
+          refreshTokens();
+        }}
+      />
 
       {/* CLOSE SESSION MODAL */}
       {deactivatingToken && (
-        <div className="fixed inset-0 z-[100] dark:bg-transparent bg-black/75 flex items-center justify-end p-0 animate-none">
-          <div className="bg-bg-surface border border-border-main border-y-0 border-r-0 border-l-[1px] dark:border-[rgba(255,255,255,0.1)] dark:bg-[#121212] rounded-none p-5 w-full md:w-[380px] relative text-text-main h-[100dvh] pointer-events-auto flex flex-col">
-            <button 
-              onClick={() => setDeactivatingToken(null)}
-              className="absolute top-4 sm:top-6 right-4 sm:right-6 text-text-muted hover:text-text-main bg-bg-surface rounded-full z-10 p-1.5 hover:bg-bg-card cursor-pointer"
-            >
-              <X size={18} />
-            </button>
-
-            <div className="flex items-start sm:items-center gap-2 dark:text-red-400 text-red-700 font-bold text-sm pr-8">
-              <LogOut size={18} className="shrink-0 mt-0.5 sm:mt-0" /> 
-              <span>Close Customer Session</span>
-            </div>
-
-            <p className="text-xs text-text-muted mt-1.5">
-              Token Number: <span className="font-mono font-bold text-text-main">{deactivatingToken.tokenNumber}</span> ({deactivatingToken.customer?.name})
-            </p>
-
-            <form onSubmit={handleDeactivateSubmit} className="space-y-4 mt-4">
-              <div>
-                <label className="block text-xs font-semibold text-text-muted mb-1">Select Closure Reason <span className="text-red-500">*</span></label>
-                <select
-                  value={closeReason}
-                  onChange={e => setCloseReason(e.target.value)}
-                  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-red-500"
-                >
-                  <option value="Customer Vacated Early">Customer Vacated Early</option>
-                  <option value="Session Opened by Mistake">Session Opened by Mistake</option>
-                  <option value="Other / Administrative Closure">Other / Administrative Closure</option>
-                </select>
-              </div>
-
-              {closeReason === 'Other / Administrative Closure' && (
-                <div>
-                  <label className="block text-xs font-semibold text-text-muted mb-1">Explanation <span className="text-red-500">*</span></label>
-                  <textarea
-                    value={closeReasonDetail}
-                    onChange={e => setCloseReasonDetail(e.target.value)}
-                    placeholder="Provide a brief explanation for closure..."
-                    className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none focus:border-red-500 h-20 resize-none"
-                    maxLength={100}
-                    required
-                  />
-                </div>
-              )}
-
-              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-3 sm:pt-4">
-                <button
-                  type="button"
-                  onClick={() => setDeactivatingToken(null)}
-                  className="flex-1 py-2.5 sm:py-3 rounded-xl text-[11px] sm:text-xs font-semibold transition-all premium-btn-secondary cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingClose}
-                  title={isSubmittingClose ? "Request in progress" : undefined}
-                  className={`flex-1 py-2.5 sm:py-3 rounded-xl text-[11px] sm:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    isDark ? 'primary-btn bg-red-500' : 'bg-red-500/10 text-red-700 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/20'
-                  }`}
-                >
-                  {isSubmittingClose ? 'Closing...' : 'Confirm Closure'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <CheckoutConfirmationModal
+          isOpen={!!deactivatingToken}
+          session={{
+            tokenNumber: deactivatingToken.tokenNumber,
+            customerName: deactivatingToken.customer?.name || 'Walk-in Guest',
+            customerPhone: deactivatingToken.customer?.phoneNumber || 'N/A',
+            tableNumber: deactivatingToken.table?.tableNumber || 'N/A',
+          }}
+          onClose={() => setDeactivatingToken(null)}
+          onSuccess={() => {
+            setDeactivatingToken(null);
+            refreshAllSessions();
+            refreshTables();
+            refreshTokens();
+          }}
+        />
       )}
 
       {/* VIEW HISTORY / DETAILS MODAL */}
       {viewingHistoryToken && (
-        <div className="fixed inset-0 z-[100] dark:bg-transparent bg-black/75 flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main dark:border-[rgba(255,255,255,0.1)] dark:bg-[#121212] rounded-3xl p-6 w-full max-w-2xl relative text-text-main max-h-[85vh] flex flex-col animate-fadeIn font-sans">
+        <div 
+          onClick={() => setViewingHistoryToken(null)}
+          className="fixed inset-0 z-[100] dark:bg-transparent bg-black/75 flex items-center justify-center p-4 cursor-pointer"
+        >
+          <div 
+            onClick={e => e.stopPropagation()}
+            className="bg-bg-surface border border-border-main dark:border-[rgba(255,255,255,0.1)] dark:bg-[#121212] rounded-3xl p-6 w-full max-w-2xl relative text-text-main max-h-[85vh] flex flex-col animate-fadeIn font-sans cursor-default"
+          >
             <button 
               onClick={() => setViewingHistoryToken(null)}
               className="absolute top-4 right-4 text-text-muted hover:text-text-main bg-bg-surface rounded-full p-1.5 hover:bg-bg-card cursor-pointer"
@@ -420,6 +304,15 @@ export const CustomerSessionsManager: React.FC = () => {
                     <span className="font-mono font-semibold text-text-main">{viewingHistoryToken.customer?.phoneNumber}</span>
                   </div>
                   <div>
+                    <span className="text-text-muted block">Email Address</span>
+                    <span className="font-mono font-semibold text-text-main truncate block" title={viewingHistoryToken.customer?.email}>{viewingHistoryToken.customer?.email || '—'}</span>
+                  </div>
+
+                  <div>
+                    <span className="text-text-muted block">Issued By</span>
+                    <span className="font-semibold text-text-main">{viewingHistoryToken.createdBy || '—'}</span>
+                  </div>
+                  <div>
                     <span className="text-text-muted block">Table Assigned</span>
                     <span className="font-bold text-text-main">{viewingHistoryToken.tableNumber ? `Table ${viewingHistoryToken.tableNumber}` : 'N/A'}</span>
                   </div>
@@ -433,10 +326,22 @@ export const CustomerSessionsManager: React.FC = () => {
                     <span className="text-text-muted block">Guests/Headcount</span>
                     <span className="font-semibold text-text-main">{viewingHistoryToken.personsCount} Guests</span>
                   </div>
+                  <div>
+                    <span className="text-text-muted block">Initial Cover Charge</span>
+                    <span className="font-bold text-text-main">₹{historyInitialAmount.toLocaleString()}</span>
+                  </div>
+                  <div>
+                    <span className="text-text-muted block">Extension Charges</span>
+                    <span className="font-bold text-text-main">₹{historyExtensionsTotal.toLocaleString()}</span>
+                  </div>
+                  <div>
+                    <span className="text-text-muted block">Total Amount Paid</span>
+                    <span className="font-bold text-text-main">₹{viewingHistoryToken.amountPaid.toLocaleString()}</span>
+                  </div>
                 </div>
                 <div className="border-t border-border-main/50 pt-2 grid grid-cols-2 gap-3 text-[11px] text-text-muted font-semibold">
-                  <div>Started At: <span className="text-text-main">{new Date(viewingHistoryToken.createdAt).toLocaleString()}</span></div>
-                  <div>Expires At: <span className="text-text-main">{new Date(viewingHistoryToken.expiresAt).toLocaleString()}</span></div>
+                  <div>Started At: <span className="text-text-main">{new Date(viewingHistoryToken.startTime || viewingHistoryToken.createdAt).toLocaleString()}</span></div>
+                  <div>Expires At: <span className="text-text-main">{new Date(viewingHistoryToken.endTime).toLocaleString()}</span></div>
                 </div>
               </div>
 
@@ -458,6 +363,35 @@ export const CustomerSessionsManager: React.FC = () => {
                         <div className="text-right text-[11px] text-text-muted shrink-0 self-end sm:self-center">
                           <div>Time: <span className="text-text-main font-semibold">{new Date(ext.extendedAt).toLocaleString()}</span></div>
                           <div>Approved By: <span className="text-text-main font-semibold">{ext.approvedBy}</span></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Drink Redemption Logs */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-text-muted">Drink Redemption Logs</h4>
+                {!viewingHistoryToken.redemptions || viewingHistoryToken.redemptions.length === 0 ? (
+                  <div className="text-xs text-text-muted italic bg-bg-primary/30 p-3 rounded-xl border border-border-main/50 text-center">No drink redemptions recorded for this session.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {viewingHistoryToken.redemptions.map((red: any, idx: number) => (
+                      <div key={idx} className="p-3 bg-bg-primary rounded-xl border border-border-main text-xs flex flex-col sm:flex-row justify-between gap-2">
+                        <div>
+                          <div className="font-semibold text-text-main">
+                            Redemption Sequence: <span className="text-primary">#{red.redemptionSequence || (idx + 1)}</span>
+                          </div>
+                          {red.notes && (
+                            <div className="text-[11px] text-text-muted mt-0.5 font-semibold">
+                              Notes: <span className="text-text-main">{red.notes}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right text-[11px] text-text-muted shrink-0 self-end sm:self-center">
+                          <div>Time: <span className="text-text-main font-semibold">{new Date(red.redeemedAt).toLocaleString()}</span></div>
+                          <div>Dispensed By: <span className="text-text-main font-semibold">{red.bartenderName || 'N/A'}</span></div>
                         </div>
                       </div>
                     ))}
