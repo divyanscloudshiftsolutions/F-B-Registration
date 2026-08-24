@@ -368,8 +368,8 @@ export class TokenService {
       const baseTime = currentEndTime.getTime() > Date.now() ? currentEndTime : new Date();
       const newEndTime = new Date(baseTime.getTime() + extraMinutes * 60 * 1000);
 
-      // If token was expired, set to extended
-      const newStatus = token.status === 'EXPIRED' ? TokenStatus.EXTENDED : (token.status as TokenStatus);
+      // All valid extensions set the token status to EXTENDED
+      const newStatus = TokenStatus.EXTENDED;
 
       const hourlyDrinksRate = placeType.redemptionsPerPerson / (placeType.baseTimeMinutes / 60);
       const extensionDrinks = Math.floor((extraMinutes / 60) * hourlyDrinksRate * tokenObj.personsCount);
@@ -396,6 +396,55 @@ export class TokenService {
           table: true
         }
       });
+
+      // If the token has an assigned table, restore or maintain its occupancy
+      if (tokenObj.tableId) {
+        const table = await tx.table.findUnique({ where: { id: tokenObj.tableId } });
+        if (table) {
+          // Verify table ownership before restoring occupancy to prevent table theft
+          if (table.currentTokenId !== null && table.currentTokenId !== token.id) {
+            throw new Error(`Table ${table.tableNumber} is already occupied by another active session.`);
+          }
+
+          await tx.table.update({
+            where: { id: tokenObj.tableId },
+            data: {
+              status: 'occupied',
+              currentTokenId: token.id,
+              occupiedSince: table.occupiedSince || new Date(),
+              lastAssignedAt: table.lastAssignedAt || new Date()
+            }
+          });
+
+          // Check if there is an active (non-vacated) occupancy log for this token/table
+          const activeLog = await tx.tableOccupancyLog.findFirst({
+            where: {
+              tableId: tokenObj.tableId,
+              tokenId: token.id,
+              vacatedAt: null
+            }
+          });
+
+          if (!activeLog) {
+            await tx.tableOccupancyLog.create({
+              data: {
+                tableId: tokenObj.tableId,
+                tokenId: token.id,
+                occupiedAt: new Date()
+              }
+            });
+          }
+
+          await redisService.del(`table:${tokenObj.tableId}:status`);
+        }
+      }
+
+      // Invalidate all related table caches
+      await redisService.del('table:available:all');
+      if (tokenObj.placeTypeId) {
+        await redisService.del(`table:available:${tokenObj.placeTypeId}`);
+      }
+      await redisService.del('tables:all').catch(() => {});
 
       logStateTransition(tokenNumber, token.status, newStatus, `extended by +${extraMinutes} mins`, approvedBy);
 
@@ -624,10 +673,17 @@ export class TokenService {
     if (expiredActiveTokens.length > 0) {
       await prisma.$transaction(async (tx) => {
         for (const token of expiredActiveTokens) {
-          const freshToken = await tx.token.findUnique({
-            where: { id: token.id }
-          });
-          if (freshToken && (freshToken.status === TokenStatus.ACTIVE || freshToken.status === TokenStatus.EXTENDED) && freshToken.endTime <= now) {
+          const freshTokens = await tx.$queryRaw<any[]>`
+            SELECT id, status, "end_time" as "endTime", "table_id" as "tableId", "token_number" as "tokenNumber"
+            FROM tokens
+            WHERE id = ${token.id}
+            LIMIT 1
+            FOR UPDATE
+          `;
+          const freshToken = freshTokens && freshTokens.length > 0 ? freshTokens[0] : null;
+          if (freshToken && 
+              (freshToken.status === TokenStatus.ACTIVE || freshToken.status === TokenStatus.EXTENDED) && 
+              new Date(freshToken.endTime).getTime() <= now.getTime()) {
             await tx.token.update({
               where: { id: token.id },
               data: {

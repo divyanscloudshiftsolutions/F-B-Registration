@@ -3908,9 +3908,26 @@ router.get('/reports/dashboard', authenticate, authorize(['admin', 'manager']), 
         startTime: { gte: startDate, lte: endDate },
         paymentVerified: true
       },
+      include: {
+        extensions: true
+      }
     });
 
-    const totalCollectionsDec = tokens.reduce((acc, t) => acc.add(t.amountPaid), new Decimal(0));
+    const extensionsToday = await prisma.tokenExtension.findMany({
+      where: {
+        extendedAt: { gte: startDate, lte: endDate }
+      }
+    });
+
+    let totalCollectionsDec = new Decimal(0);
+    for (const t of tokens) {
+      const extSum = t.extensions.reduce((sum, ext) => sum.add(ext.additionalAmount), new Decimal(0));
+      const coverCharge = t.amountPaid.minus(extSum);
+      totalCollectionsDec = totalCollectionsDec.add(coverCharge);
+    }
+    const totalExtensionsDec = extensionsToday.reduce((acc, ext) => acc.add(ext.additionalAmount), new Decimal(0));
+    totalCollectionsDec = totalCollectionsDec.add(totalExtensionsDec);
+
     const totalCollections = totalCollectionsDec.toNumber();
     const totalPersonsServed = tokens.reduce((acc, t) => acc + t.personsCount, 0);
 
@@ -4022,6 +4039,9 @@ router.get('/reports/dashboard', authenticate, authorize(['admin', 'manager']), 
           { closedAt: null },
           { closedAt: { gte: startDate } }
         ]
+      },
+      include: {
+        extensions: true
       }
     });
 
@@ -4060,12 +4080,30 @@ router.get('/reports/dashboard', authenticate, authorize(['admin', 'manager']), 
 
       const averageActiveTokens = dayCount > 0 ? Number((activeTokensSum / dayCount).toFixed(1)) : 0;
 
+      // 1. Cover charge revenue for tokens that started in this hour today
       const hrRevenueTokens = activeTokens.filter(t => 
         new Date(t.startTime).getHours() === hour && 
         t.startTime.getTime() >= startDate.getTime() && 
         t.startTime.getTime() <= endDate.getTime()
       );
-      const hrRevenue = hrRevenueTokens.reduce((acc, t) => acc + parseFloat(t.amountPaid.toString()), 0);
+      
+      let hrRevenue = 0;
+      for (const t of hrRevenueTokens) {
+        const extSum = t.extensions.reduce((sum, ext) => sum + parseFloat(ext.additionalAmount.toString()), 0);
+        const coverCharge = parseFloat(t.amountPaid.toString()) - extSum;
+        hrRevenue += coverCharge;
+      }
+
+      // 2. Extension revenue for extensions created in this hour today (across all active tokens)
+      for (const t of activeTokens) {
+        const hrExtensions = t.extensions.filter(ext => 
+          new Date(ext.extendedAt).getHours() === hour && 
+          ext.extendedAt.getTime() >= startDate.getTime() && 
+          ext.extendedAt.getTime() <= endDate.getTime()
+        );
+        const extRevenue = hrExtensions.reduce((sum, ext) => sum + parseFloat(ext.additionalAmount.toString()), 0);
+        hrRevenue += extRevenue;
+      }
 
       hourlyData.push({
         hour,
