@@ -36,6 +36,14 @@ export const CustomerSessionsManager: React.FC = () => {
   // History Details Modal State
   const [viewingHistoryToken, setViewingHistoryToken] = useState<any | null>(null);
 
+  const historyExtensionsTotal = viewingHistoryToken?.extensions?.reduce(
+    (sum: number, ext: any) => sum + ext.additionalAmount,
+    0
+  ) || 0;
+  const historyInitialAmount = viewingHistoryToken
+    ? viewingHistoryToken.amountPaid - historyExtensionsTotal
+    : 0;
+
   const handleDeactivateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!deactivatingToken) return;
@@ -318,10 +326,22 @@ export const CustomerSessionsManager: React.FC = () => {
                     <span className="text-text-muted block">Guests/Headcount</span>
                     <span className="font-semibold text-text-main">{viewingHistoryToken.personsCount} Guests</span>
                   </div>
+                  <div>
+                    <span className="text-text-muted block">Initial Cover Charge</span>
+                    <span className="font-bold text-text-main">₹{historyInitialAmount.toLocaleString()}</span>
+                  </div>
+                  <div>
+                    <span className="text-text-muted block">Extension Charges</span>
+                    <span className="font-bold text-text-main">₹{historyExtensionsTotal.toLocaleString()}</span>
+                  </div>
+                  <div>
+                    <span className="text-text-muted block">Total Amount Paid</span>
+                    <span className="font-bold text-text-main">₹{viewingHistoryToken.amountPaid.toLocaleString()}</span>
+                  </div>
                 </div>
                 <div className="border-t border-border-main/50 pt-2 grid grid-cols-2 gap-3 text-[11px] text-text-muted font-semibold">
-                  <div>Started At: <span className="text-text-main">{new Date(viewingHistoryToken.createdAt).toLocaleString()}</span></div>
-                  <div>Expires At: <span className="text-text-main">{new Date(viewingHistoryToken.expiresAt).toLocaleString()}</span></div>
+                  <div>Started At: <span className="text-text-main">{new Date(viewingHistoryToken.startTime || viewingHistoryToken.createdAt).toLocaleString()}</span></div>
+                  <div>Expires At: <span className="text-text-main">{new Date(viewingHistoryToken.endTime).toLocaleString()}</span></div>
                 </div>
               </div>
 
@@ -343,6 +363,35 @@ export const CustomerSessionsManager: React.FC = () => {
                         <div className="text-right text-[11px] text-text-muted shrink-0 self-end sm:self-center">
                           <div>Time: <span className="text-text-main font-semibold">{new Date(ext.extendedAt).toLocaleString()}</span></div>
                           <div>Approved By: <span className="text-text-main font-semibold">{ext.approvedBy}</span></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Drink Redemption Logs */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-text-muted">Drink Redemption Logs</h4>
+                {!viewingHistoryToken.redemptions || viewingHistoryToken.redemptions.length === 0 ? (
+                  <div className="text-xs text-text-muted italic bg-bg-primary/30 p-3 rounded-xl border border-border-main/50 text-center">No drink redemptions recorded for this session.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {viewingHistoryToken.redemptions.map((red: any, idx: number) => (
+                      <div key={idx} className="p-3 bg-bg-primary rounded-xl border border-border-main text-xs flex flex-col sm:flex-row justify-between gap-2">
+                        <div>
+                          <div className="font-semibold text-text-main">
+                            Redemption Sequence: <span className="text-primary">#{red.redemptionSequence || (idx + 1)}</span>
+                          </div>
+                          {red.notes && (
+                            <div className="text-[11px] text-text-muted mt-0.5 font-semibold">
+                              Notes: <span className="text-text-main">{red.notes}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right text-[11px] text-text-muted shrink-0 self-end sm:self-center">
+                          <div>Time: <span className="text-text-main font-semibold">{new Date(red.redeemedAt).toLocaleString()}</span></div>
+                          <div>Dispensed By: <span className="text-text-main font-semibold">{red.bartenderName || 'N/A'}</span></div>
                         </div>
                       </div>
                     ))}

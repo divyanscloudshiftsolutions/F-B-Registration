@@ -156,3 +156,11 @@
 {"timestamp":"2026-08-22T15:31:37.333Z","tokenNumber":"BAR-20260821-00003","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
 {"timestamp":"2026-08-22T16:40:25.199Z","tokenNumber":"BAR-20260822-00001","oldStatus":"PENDING_PAYMENT","newStatus":"ACTIVE","reason":"receptionist activation","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
 {"timestamp":"2026-08-22T16:42:23.711Z","tokenNumber":"BAR-20260822-00002","oldStatus":"PENDING_PAYMENT","newStatus":"ACTIVE","reason":"receptionist activation","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-08-24T13:43:16.321Z","tokenNumber":"BAR-20260822-00001","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-08-24T13:49:33.002Z","tokenNumber":"BAR-20260824-00001","oldStatus":"PENDING_PAYMENT","newStatus":"ACTIVE","reason":"receptionist activation","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-08-24T14:19:45.683Z","tokenNumber":"BAR-20260824-00001","oldStatus":"ACTIVE","newStatus":"ACTIVE","reason":"extended by +25 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-08-24T14:45:17.572Z","tokenNumber":"BAR-20260824-00001","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +20 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-08-24T15:14:44.706Z","tokenNumber":"BAR-20260824-00001","oldStatus":"EXTENDED","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-08-24T15:30:48.994Z","tokenNumber":"BAR-20260824-00002","oldStatus":"PENDING_PAYMENT","newStatus":"ACTIVE","reason":"receptionist activation","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-08-24T16:00:56.488Z","tokenNumber":"BAR-20260824-00002","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +20 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-08-24T16:31:02.212Z","tokenNumber":"BAR-20260824-00002","oldStatus":"EXTENDED","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}

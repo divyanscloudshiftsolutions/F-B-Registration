@@ -66,7 +66,9 @@ export const RevenueAnalyticsChart: React.FC = () => {
         const startHour = new Date(t.startTime).getHours();
         const idx = mapHourToBucketIndex(startHour);
         if (idx !== -1) {
-          template[idx].amount += Number(t.amountPaid || 0);
+          const extSum = t.extensions?.reduce((acc: number, ext: any) => acc + Number(ext.additionalAmount || 0), 0) || 0;
+          const coverCharge = Number(t.amountPaid || 0) - extSum;
+          template[idx].amount += coverCharge;
         }
       }
 
@@ -117,7 +119,7 @@ export const RevenueAnalyticsChart: React.FC = () => {
   const yAxisLabels = useMemo(() => {
     const formatYLabel = (val: number) => {
       if (val >= 100000) return `₹${(val / 1000).toFixed(0)}k`;
-      if (val >= 1000) return `₹${(val / 1000).toFixed(1)}k`;
+      if (val >= 1000) return `₹${(val / 1000).toFixed(1).replace('.0', '')}k`;
       return `₹${Math.round(val)}`;
     };
     return [
@@ -182,7 +184,7 @@ export const RevenueAnalyticsChart: React.FC = () => {
 
         <button
           onClick={handleExportCSV}
-          className="w-full sm:w-auto justify-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl primary-btn text-[11px] sm:text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 sm:gap-2 cursor-pointer shrink-0"
+          className="w-full sm:w-auto justify-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl primary-btn text-black dark:text-black text-[11px] sm:text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 sm:gap-2 cursor-pointer shrink-0"
         >
           <Download size={14} className="sm:w-4 sm:h-4" /> 
           <span className="hidden sm:inline">Export Sessions CSV</span>
@@ -194,7 +196,7 @@ export const RevenueAnalyticsChart: React.FC = () => {
       <div className="glass-panel p-3 sm:p-6 rounded-2xl border border-border-main space-y-4 sm:space-y-6">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5 md:gap-3 pb-3 border-b border-border-main">
           <div className="flex items-center gap-2 text-text-main font-bold text-sm animate-fadeIn min-w-0 w-full md:w-auto">
-            <BarChart3 size={18} className="shrink-0" /> <span className="truncate">Hourly Revenue Breakdown & Peak Collections</span>
+            <BarChart3 size={18} className="shrink-0" /> <span className="font-bold">Hourly Revenue Breakdown & Peak Collections</span>
           </div>
           <span className="text-xs font-bold dark:text-emerald-400 text-emerald-700 flex items-center gap-1 shrink-0">
             <TrendingUp size={14} /> {peakText}
@@ -242,7 +244,12 @@ export const RevenueAnalyticsChart: React.FC = () => {
 
  {/* Numerical Label on top of the Bar */}
  <span className="text-[9px] font-mono text-text-muted font-bold mb-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
- ₹{(d.amount / 1000).toFixed(0)}k
+    {d.amount === 0 
+      ? '' 
+      : d.amount < 1000 
+        ? `₹${d.amount}` 
+        : `₹${(d.amount / 1000).toFixed(1).replace('.0', '')}k`
+    }
  </span>
 
  {/* Bar Visual Element */}

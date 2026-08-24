@@ -872,13 +872,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             <div className="glass-panel p-4 sm:p-6 rounded-2xl border border-border-main flex flex-col justify-between min-h-[340px]">
               <div className="flex items-center justify-between pb-3 border-b border-border-main shrink-0 text-left">
                 <div className="flex items-center gap-2 text-text-main font-bold text-xs sm:text-sm">
-                  <BarChart3 size={16} className="shrink-0" /> <span>Hourly Revenue Trends</span>
+                  <BarChart3 size={16} className="shrink-0 text-[#D4AF37]" /> <span>REVENUE OVERVIEW</span>
                 </div>
-                <span className="text-[10px] font-bold dark:text-emerald-400 text-emerald-700 flex items-center gap-1 shrink-0">
-                  {selectedRevenueNode !== null 
-                    ? `₹${revenueTrends[selectedRevenueNode].value.toLocaleString()} at ${revenueTrends[selectedRevenueNode].time}`
-                    : peakSalesHourStr}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-[#D4AF37] flex items-center gap-1 shrink-0">
+                    {selectedRevenueNode !== null 
+                      ? `₹${revenueTrends[selectedRevenueNode].value.toLocaleString()} at ${revenueTrends[selectedRevenueNode].time}`
+                      : peakSalesHourStr}
+                  </span>
+                  <select className="bg-bg-surface dark:bg-black/20 text-[9px] font-bold text-text-muted border border-border-main/60 rounded px-1.5 py-0.5 outline-none select-none">
+                    <option>Today</option>
+                  </select>
+                </div>
               </div>
 
               <div className="flex flex-col space-y-2 mt-4 flex-1 justify-center overflow-x-auto custom-scrollbar">
@@ -888,6 +893,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                   </div>
                 ) : (
                   <div className="min-w-[280px]">
+                    {/* Top Legend Row */}
+                    <div className="flex items-center gap-1.5 text-[9px] font-bold text-text-muted select-none pb-2 pl-12">
+                      <div className="w-2.5 h-2.5 rounded bg-gradient-to-t from-[#D4AF37] to-[#F5E08B]" />
+                      <span>Revenue (₹)</span>
+                    </div>
+
                     {/* Main Chart Row */}
                     <div className="flex gap-2 items-stretch h-36">
                       {/* Y-Axis */}
@@ -926,10 +937,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                               </div>
                               <div 
                                 style={{ height: `${percent}%` }}
-                                className={`w-4 sm:w-6 rounded-t transition-all duration-300 cursor-pointer ${
+                                className={`w-full rounded-t transition-all duration-300 cursor-pointer ${
                                   isSelected || isPeak 
-                                    ? 'bg-gradient-to-t from-[#D4AF37] to-[#F5E08B] hover:scale-105' 
-                                    : 'analytics-bar-regular hover:scale-105'
+                                    ? 'bg-gradient-to-t from-[#D4AF37] to-[#F5E08B] hover:scale-105 active:scale-95' 
+                                    : 'analytics-bar-regular hover:scale-105 active:scale-95'
                                 }`}
                               />
                             </div>
@@ -938,13 +949,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                       </div>
                     </div>
 
-                    {/* X-Axis labels row (Responsive filter hidden odd entries on mobile) */}
-                    <div className="flex gap-2 pl-12 pr-2 pb-1 mt-1 text-[8px] font-mono text-text-muted font-bold">
-                      {revenueTrends.map((trend, idx) => (
-                        <span key={idx} className={`flex-1 text-center truncate ${idx % 2 === 0 ? 'inline' : 'hidden sm:inline'}`}>
-                          {trend.time.replace(':00', '')}
-                        </span>
-                      ))}
+                    {/* X-Axis labels row (Responsive filter for clean ticks) */}
+                    <div className="flex justify-between pl-12 pr-2 pb-1 mt-1 text-[8px] font-mono text-text-muted font-bold">
+                      {revenueTrends.map((trend, idx) => {
+                        const isTick = idx % 4 === 0;
+                        return (
+                          <span key={idx} className="flex-1 text-center whitespace-nowrap">
+                            {isTick ? trend.time.replace(':00', '') : ''}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -954,11 +968,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               <div className="flex items-center justify-center gap-4 pt-3 mt-2 border-t border-border-main text-[9px] font-bold text-text-muted shrink-0">
                 <div className="flex items-center gap-1.5">
                   <div className="w-2 h-2 rounded bg-gradient-to-t from-[#D4AF37] to-[#F5E08B]" />
-                  <span>Peak Hour</span>
+                  <span>Peak Hour Revenue</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <div className="w-2 h-2 rounded analytics-bar-regular border border-border-main" />
-                  <span>Regular</span>
+                  <span>Regular Shift Revenue</span>
                 </div>
               </div>
             </div>
