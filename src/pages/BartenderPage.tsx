@@ -171,13 +171,21 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  setCameraActive(false);
  };
 
- const toggleFacingMode = () => {
- const nextMode = facingMode === 'user' ? 'environment' : 'user';
- setFacingMode(nextMode);
- if (cameraActive) {
- startCamera(nextMode);
- }
- };
+  const toggleFacingMode = () => {
+  const nextMode = facingMode === 'user' ? 'environment' : 'user';
+  setFacingMode(nextMode);
+  if (cameraActive) {
+  startCamera(nextMode);
+  }
+  };
+
+  const handleEnableCamera = () => {
+    if (scannedToken) {
+      setScannedToken(null);
+      setTokenInput('');
+    }
+    startCamera(facingMode);
+  };
 
  // Bind video stream whenever stream state or videoRef mounts
  useEffect(() => {
@@ -468,9 +476,36 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  const isScanTab = activeTab !== 'bartender/checkins';
 
  // Scanned Token redemptions helper
- const redemptionsUsed = scannedToken ? (scannedToken.redemptionsUsed || 0) : 0;
- const totalAllowed = scannedToken ? (scannedToken.totalRedemptionsAllowed || 2) : 2;
- const isQuotaDepleted = redemptionsUsed >= totalAllowed;
+  const redemptionsUsed = scannedToken ? (scannedToken.redemptionsUsed || 0) : 0;
+  const totalAllowed = scannedToken ? (scannedToken.totalRedemptionsAllowed || 2) : 2;
+  const isQuotaDepleted = redemptionsUsed >= totalAllowed;
+
+  const tokenStatus = scannedToken?.status?.toUpperCase();
+  const isActivePass = tokenStatus === 'ACTIVE' || tokenStatus === 'EXTENDED';
+
+  let badgeLabel = 'ACTIVE PASS';
+  let badgeClasses = 'dark:bg-emerald-500/20 bg-emerald-500/10 dark:text-emerald-300 text-emerald-700 border dark:border-emerald-500/40 border-emerald-500/30';
+  let badgeIcon = <CheckCircle2 size={12} />;
+
+  if (scannedToken) {
+    if (tokenStatus === 'EXPIRED') {
+      badgeLabel = 'EXPIRED PASS';
+      badgeClasses = 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-300 text-red-700 border dark:border-red-500/40 border-red-500/30';
+      badgeIcon = <AlertCircle size={12} />;
+    } else if (tokenStatus === 'COMPLETED' || tokenStatus === 'CLOSED') {
+      badgeLabel = 'COMPLETED PASS';
+      badgeClasses = 'dark:bg-gray-500/20 bg-gray-500/10 dark:text-gray-300 text-gray-700 border dark:border-gray-500/40 border-gray-500/30';
+      badgeIcon = <AlertCircle size={12} />;
+    } else if (tokenStatus === 'CANCELLED') {
+      badgeLabel = 'CANCELLED PASS';
+      badgeClasses = 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-300 text-red-700 border dark:border-red-500/40 border-red-500/30';
+      badgeIcon = <AlertCircle size={12} />;
+    } else if (isQuotaDepleted) {
+      badgeLabel = 'QUOTA DEPLETED';
+      badgeClasses = 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-300 text-red-700 border dark:border-red-500/40 border-red-500/30';
+      badgeIcon = <AlertCircle size={12} />;
+    }
+  }
 
  return (
  <div className="max-w-6xl mx-auto space-y-6">
@@ -509,7 +544,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
  {!cameraActive ? (
  <button
- onClick={() => startCamera(facingMode)}
+ onClick={handleEnableCamera}
  className="flex-1 sm:flex-none justify-center px-4 py-2 rounded-xl primary-btn bg-emerald-500 text-xs font-bold transition-all flex items-center gap-1.5"
  >
  <div className="nav-icon-badge">
@@ -643,16 +678,10 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  <span className="font-mono text-2xl font-black text-text-main break-all">{scannedToken.tokenNumber}</span>
  </div>
 
- <span
- className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${
- isQuotaDepleted
- ? 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-300 text-red-700 border dark:border-red-500/40 border-red-500/30'
- : 'dark:bg-emerald-500/20 bg-emerald-500/10 dark:text-emerald-300 text-emerald-700 border dark:border-emerald-500/40 border-emerald-500/30'
- }`}
- >
- {isQuotaDepleted ? <AlertCircle size={12} /> : <CheckCircle2 size={12} />}
- <span>{isQuotaDepleted ? 'QUOTA DEPLETED' : 'ACTIVE PASS'}</span>
- </span>
+ <span className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${badgeClasses}`}>
+    {badgeIcon}
+    <span>{badgeLabel}</span>
+  </span>
  </div>
 
  {/* Guest Details */}
@@ -697,49 +726,59 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  </div>
  </div>
 
- {/* Dispense & Revert Actions */}
- <div className="space-y-2 sm:space-y-3 pt-1 sm:pt-2">
- <div className="flex flex-row items-center gap-2 sm:gap-3">
-  <div className="flex items-center justify-between bg-bg-surface border border-border-main rounded-xl p-1 h-12 sm:h-[52px] w-32 shrink-0">
-    <button 
-      onClick={() => setRedeemQty(Math.max(1, redeemQty - 1))}
-      disabled={isRedeeming || isQuotaDepleted || redeemQty <= 1}
-      className="p-2 hover:bg-bg-card rounded-lg transition-all text-text-muted disabled:opacity-50 cursor-pointer"
-    >
-      <Minus size={16} />
-    </button>
-    <span className="font-bold text-text-main text-sm">{redeemQty}</span>
-    <button 
-      onClick={() => setRedeemQty(Math.min(Math.max(1, totalAllowed - redemptionsUsed), redeemQty + 1))}
-      disabled={isRedeeming || isQuotaDepleted || redeemQty >= (totalAllowed - redemptionsUsed)}
-      className="p-2 hover:bg-bg-card rounded-lg transition-all text-text-muted disabled:opacity-50 cursor-pointer"
-    >
-      <Plus size={16} />
-    </button>
-  </div>
-  
-  <button
-    onClick={handleRedeem}
-    disabled={isRedeeming || isQuotaDepleted}
-    title={isRedeeming ? "Dispensing..." : isQuotaDepleted ? "Drink quota limit reached for this session." : undefined}
-    className="flex-1 h-12 sm:h-[52px] rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-  >
-    <div className="nav-icon-badge">
-      <Wine size={14} />
-    </div>
-    <span>{isRedeeming ? 'Dispensing...' : `Dispense ${redeemQty}`}</span>
-  </button>
- </div>
+  {/* Dispense & Revert Actions */}
+  <div className="space-y-2 sm:space-y-3 pt-1 sm:pt-2">
+    {!isActivePass && (
+      <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-2.5 text-xs text-red-400">
+        <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+        <div>
+          <p className="font-extrabold uppercase tracking-wider">Redemption Blocked</p>
+          <p className="mt-0.5 text-text-muted">This token pass is no longer active (Current status: <span className="font-black text-text-main">{tokenStatus || 'UNKNOWN'}</span>). Dispensing and reverting drinks is locked.</p>
+        </div>
+      </div>
+    )}
 
- <div className="flex flex-row gap-2 sm:gap-3">
- {redemptionsUsed > 0 && (
- <button
- onClick={handleUndo}
- className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-[11px] sm:text-xs font-bold text-amber-300 border border-amber-500/30 flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer"
- >
- <RotateCcw size={14} /> <span className="hidden sm:inline">Revert Last Drink</span><span className="sm:hidden">Revert</span>
- </button>
- )}
+    <div className="flex flex-row items-center gap-2 sm:gap-3">
+      <div className="flex items-center justify-between bg-bg-surface border border-border-main rounded-xl p-1 h-12 sm:h-[52px] w-32 shrink-0">
+        <button 
+          onClick={() => setRedeemQty(Math.max(1, redeemQty - 1))}
+          disabled={isRedeeming || isQuotaDepleted || !isActivePass || redeemQty <= 1}
+          className="p-2 hover:bg-bg-card rounded-lg transition-all text-text-muted disabled:opacity-50 cursor-pointer"
+        >
+          <Minus size={16} />
+        </button>
+        <span className="font-bold text-text-main text-sm">{redeemQty}</span>
+        <button 
+          onClick={() => setRedeemQty(Math.min(Math.max(1, totalAllowed - redemptionsUsed), redeemQty + 1))}
+          disabled={isRedeeming || isQuotaDepleted || !isActivePass || redeemQty >= (totalAllowed - redemptionsUsed)}
+          className="p-2 hover:bg-bg-card rounded-lg transition-all text-text-muted disabled:opacity-50 cursor-pointer"
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+      
+      <button
+        onClick={handleRedeem}
+        disabled={isRedeeming || isQuotaDepleted || !isActivePass}
+        title={isRedeeming ? "Dispensing..." : !isActivePass ? `Redemption blocked. Token status is ${tokenStatus || 'INACTIVE'}.` : isQuotaDepleted ? "Drink quota limit reached for this session." : undefined}
+        className="flex-1 h-12 sm:h-[52px] rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+      >
+        <div className="nav-icon-badge">
+          <Wine size={14} />
+        </div>
+        <span>{isRedeeming ? 'Dispensing...' : `Dispense ${redeemQty}`}</span>
+      </button>
+    </div>
+
+    <div className="flex flex-row gap-2 sm:gap-3">
+      {redemptionsUsed > 0 && isActivePass && (
+        <button
+          onClick={handleUndo}
+          className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-[11px] sm:text-xs font-bold text-amber-300 border border-amber-500/30 flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer"
+        >
+          <RotateCcw size={14} /> <span className="hidden sm:inline">Revert Last Drink</span><span className="sm:hidden">Revert</span>
+        </button>
+      )}
  <button
  onClick={() => {
  setScannedToken(null);
