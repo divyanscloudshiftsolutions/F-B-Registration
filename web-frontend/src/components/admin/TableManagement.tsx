@@ -1,25 +1,52 @@
 import React, { useState, useEffect } from 'react';
-import { Grid3X3, Plus, RefreshCw, X, CheckCircle2, Users, VideoOff } from 'lucide-react';
+import { Grid3X3, Plus, RefreshCw, X, CheckCircle2, Users, VideoOff, Lock, Unlock, AlertTriangle } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
-import type { Table } from '../../types';
+import type { Table, Token } from '../../types';
 import { TableDiagram } from '../TableDiagram';
 import { SeatingRow } from '../SeatingRow';
+import { ExtendSessionModal } from '../modals/ExtendSessionModal';
 
 export const TableManagement: React.FC = () => {
   const { user, showToast, isDark } = useAuth();
   const isAdmin = user?.role?.toLowerCase() === 'admin';
-  const { tables, tokens, isLoading, refreshTables, refreshTokens } = useData();
+  const { tables, tokens, allSessions, reservations, rates, isLoading, refreshTables, refreshTokens, refreshAllSessions, refreshReservations } = useData();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<'STANDING_BAR' | 'PREMIUM_LOUNGE'>('STANDING_BAR');
   const [filter, setFilter] = useState<string>('all');
 
-  // Fetch tables and tokens on component mount
+  // Fetch tables, tokens and reservations on component mount
   useEffect(() => {
     refreshTables();
     refreshTokens();
+    refreshAllSessions();
+    refreshReservations();
   }, []);
+
+  // Comprehensive active token resolution helper
+  const getActiveTokenForTable = (table: Table | null | undefined): Token | null => {
+    if (!table) return null;
+    const directMatch = tokens.find((tk: any) => 
+      (table.currentTokenId && (tk.id === table.currentTokenId || tk.tokenNumber === table.currentTokenId)) ||
+      (tk.tableId && tk.tableId === table.id) ||
+      (tk.table?.id && tk.table.id === table.id) ||
+      (tk.tableNumber && table.tableNumber && tk.tableNumber.toUpperCase() === table.tableNumber.toUpperCase()) ||
+      (tk.table?.number && table.tableNumber && tk.table.number.toUpperCase() === table.tableNumber.toUpperCase())
+    );
+    if (directMatch) return directMatch as Token;
+
+    const allSessionMatch = allSessions?.find((tk: any) => 
+      (tk.status?.toUpperCase() === 'ACTIVE' || tk.status?.toUpperCase() === 'EXTENDED') && (
+        (table.currentTokenId && (tk.id === table.currentTokenId || tk.tokenNumber === table.currentTokenId)) ||
+        (tk.tableId && tk.tableId === table.id) ||
+        (tk.table?.id && tk.table.id === table.id) ||
+        (tk.tableNumber && table.tableNumber && tk.tableNumber.toUpperCase() === table.tableNumber.toUpperCase()) ||
+        (tk.table?.number && table.tableNumber && tk.table.number.toUpperCase() === table.tableNumber.toUpperCase())
+      )
+    );
+    return (allSessionMatch as Token) || null;
+  };
 
   // Form State (Create)
   const [tableNumber, setTableNumber] = useState('S-01');
@@ -36,8 +63,14 @@ export const TableManagement: React.FC = () => {
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const [editSuggestions, setEditSuggestions] = useState<string[]>([]);
 
-  // Delete Confirmation State
+  // Delete & Release Confirmation State
   const [deletingTableForConfirm, setDeletingTableForConfirm] = useState<Table | null>(null);
+  const [releasingTableForConfirm, setReleasingTableForConfirm] = useState<Table | null>(null);
+  const [cancellingReservationForConfirm, setCancellingReservationForConfirm] = useState<Table | null>(null);
+  const [isSubmittingCancelRes, setIsSubmittingCancelRes] = useState(false);
+
+  // Extend Session State
+  const [extendingToken, setExtendingToken] = useState<Token | null>(null);
 
   // Inspection Dialog Modal State
   const [inspectingTable, setInspectingTable] = useState<Table | null>(null);
@@ -134,8 +167,8 @@ export const TableManagement: React.FC = () => {
 
   const handleRelease = async (tableId: string) => {
     try {
-      await api.releaseTable(tableId);
-      showToast('Table released successfully!', 'success');
+      const res = await api.releaseTable(tableId, 'MANUAL', 'This table was closed by Admin');
+      showToast(res.message || 'Table released and session closed successfully!', 'success');
       if (inspectingTable && inspectingTable.id === tableId) {
         setInspectingTable(null);
       }
@@ -143,6 +176,61 @@ export const TableManagement: React.FC = () => {
       refreshTokens();
     } catch (err: any) {
       showToast(err.message || 'Failed to release table.', 'danger');
+    }
+  };
+
+  const [isTogglingLock, setIsTogglingLock] = useState(false);
+
+  const handleToggleLockTable = async (tb: Table) => {
+    setIsTogglingLock(true);
+    try {
+      const isLocked = tb.status === 'in_checkin' || tb.status === 'maintenance';
+      if (isLocked) {
+        try {
+          await api.unlockTable(tb.id, true);
+        } catch {
+          await api.patchTableStatus(tb.id, 'available');
+        }
+
+        // Invalidate stale draft in localStorage if it references this table
+        try {
+          const draft = localStorage.getItem('bar_incomplete_checkin');
+          if (draft) {
+            const parsed = JSON.parse(draft);
+            if (parsed.selectedTableId === tb.id) {
+              localStorage.removeItem('bar_incomplete_checkin');
+            }
+          }
+          const target = localStorage.getItem('bar_checkin_assign_target');
+          if (target) {
+            const parsed = JSON.parse(target);
+            if (parsed.tableId === tb.id) {
+              localStorage.removeItem('bar_checkin_assign_target');
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to clear local draft on table release:', e);
+        }
+
+        showToast(`Table ${tb.tableNumber} released successfully!`, 'success');
+      } else {
+        try {
+          await api.lockTable(tb.id);
+        } catch {
+          await api.patchTableStatus(tb.id, 'maintenance');
+        }
+        showToast(`Table ${tb.tableNumber} locked successfully!`, 'success');
+      }
+
+      if (inspectingTable && inspectingTable.id === tb.id) {
+        setInspectingTable(prev => prev ? { ...prev, status: isLocked ? 'available' : 'in_checkin' } : null);
+      }
+      refreshTables();
+      refreshTokens();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update table lock status.', 'danger');
+    } finally {
+      setIsTogglingLock(false);
     }
   };
 
@@ -207,8 +295,8 @@ export const TableManagement: React.FC = () => {
   };
 
   const inspectingToken = inspectingTable 
-  ? tokens.find(tk => tk.tableId === inspectingTable.id || (tk.table && tk.table.id === inspectingTable.id))
-  : null;
+    ? getActiveTokenForTable(inspectingTable)
+    : null;
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -302,15 +390,14 @@ export const TableManagement: React.FC = () => {
             const capTables = filteredTables
             .filter(tb => (tb.capacity || 4) === cap)
             .sort((a, b) => a.tableNumber.localeCompare(b.tableNumber, undefined, { numeric: true, sensitivity: 'base' }));
-
-            if (capTables.length === 0) return null;
+          if (capTables.length === 0) return null;
 
             return (
               <SeatingRow key={cap} capacity={cap} tableCount={capTables.length}>
                 {capTables.map(tb => {
                   const isOccupied = tb.status === 'occupied';
                   const capacity = tb.capacity || 4;
-                  const assignedToken = tokens.find(tk => tk.tableId === tb.id || (tk.table && tk.table.id === tb.id));
+                  const assignedToken = getActiveTokenForTable(tb);
                   const occupiedCount = assignedToken ? (assignedToken.personsCount || 1) : (isOccupied ? capacity : 0);
                   const sizeCategory = capacity <= 2 ? 'Small' : capacity <= 4 ? 'Medium' : capacity <= 6 ? 'Large' : 'VIP Executive';
 
@@ -409,23 +496,58 @@ export const TableManagement: React.FC = () => {
                       {/* Card Action Row */}
                       <div className="pt-2 border-t border-border-main/50">
                         {tb.status === 'occupied' ? (
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReleasingTableForConfirm(tb);
+                              }}
+                              className={`py-2 rounded-xl text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 transition-all text-center cursor-pointer ${isDark ? 'primary-btn bg-red-500' : 'bg-red-500/10 text-red-700 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/20'}`}
+                            >
+                              <VideoOff size={11} />
+                              <span>Release</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const activeTok = getActiveTokenForTable(tb);
+                                if (activeTok) {
+                                  setExtendingToken(activeTok);
+                                } else {
+                                  showToast('No active session token found for this table.', 'warning');
+                                }
+                              }}
+                              className="py-2 rounded-xl bg-transparent border border-primary text-primary hover:bg-primary/5 font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-1 transition-all cursor-pointer"
+                            >
+                              <span>Extend</span>
+                            </button>
+                          </div>
+                        ) : tb.status === 'reserved' ? (
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleRelease(tb.id);
+                              setCancellingReservationForConfirm(tb);
                             }}
-                            className={`w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer ${isDark ? 'primary-btn bg-red-500' : 'bg-red-500/10 text-red-700 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/20'}`}
+                            className="w-full py-2.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-400 border border-blue-500/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer"
                           >
-                            <div className="nav-icon-badge">
-                              <VideoOff size={12} />
-                            </div>
+                            <X size={12} />
+                            <span>Release Reservation</span>
+                          </button>
+                        ) : tb.status === 'maintenance' || tb.status === 'in_checkin' ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setReleasingTableForConfirm(tb);
+                            }}
+                            className="w-full py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer"
+                          >
+                            <Unlock size={12} />
                             <span>Release Table</span>
                           </button>
-                        ) : tb.status === 'maintenance' ? (
-                          <div className="w-full py-2.5 text-center text-text-muted font-bold text-xs bg-bg-hover rounded-xl border border-border-main">
-                            Locked
-                          </div>
                         ) : (
                           <button
                             type="button"
@@ -456,6 +578,8 @@ export const TableManagement: React.FC = () => {
         const capacity = inspectingTable.capacity || 4;
         const isOccupied = inspectingTable.status === 'occupied';
         const occupiedCount = inspectingToken ? (inspectingToken.personsCount || 1) : (isOccupied ? capacity : 0);
+        const isTableReserved = inspectingTable.status === 'reserved' || !!reservations?.some(r => r.tableId === inspectingTable.id && (r.status === 'PENDING' || r.status === 'CONFIRMED'));
+        const isTableLocked = inspectingTable.status === 'in_checkin' || inspectingTable.status === 'maintenance';
 
         return (
           <div className="fixed inset-0 z-50 dark:bg-transparent bg-slate-900/40 flex items-center justify-end p-0 animate-fadeIn pointer-events-none">
@@ -510,6 +634,111 @@ export const TableManagement: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Table Lock Information for In-Checkin or Maintenance Tables */}
+                {(inspectingTable.status === 'in_checkin' || inspectingTable.status === 'maintenance') && (
+                  <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2 text-xs">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-400">
+                      <Lock size={14} className="shrink-0" />
+                      <span>Table Lock Information</span>
+                    </div>
+                    <div className="flex justify-between pt-1 border-t border-amber-500/20">
+                      <span className="text-text-muted">Locked By:</span>
+                      <span className="font-bold text-text-main">
+                        {inspectingTable.lockedBy || (inspectingTable.status === 'in_checkin' ? 'Receptionist (In Check-In)' : 'Administrator')}
+                      </span>
+                    </div>
+                    {inspectingTable.lockedByRole && (
+                      <div className="flex justify-between">
+                        <span className="text-text-muted">Role:</span>
+                        <span className="font-semibold text-text-main uppercase text-[11px]">{inspectingTable.lockedByRole}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Lock Status:</span>
+                      <span className="font-semibold text-text-main capitalize">
+                        {inspectingTable.status === 'in_checkin' ? 'Check-In Lock (In Progress)' : 'Maintenance Lock (Admin)'}
+                      </span>
+                    </div>
+                    {inspectingTable.lockedAt && (
+                      <div className="flex justify-between">
+                        <span className="text-text-muted">Locked Since:</span>
+                        <span className="font-mono text-text-main text-[11px]">
+                          {new Date(inspectingTable.lockedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Reservation Details for Reserved Table */}
+                {isTableReserved && (
+                  <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 space-y-2.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-blue-700 dark:text-blue-400">
+                        <CheckCircle2 size={14} className="shrink-0" />
+                        <span>Reservation Details</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCancellingReservationForConfirm(inspectingTable)}
+                        className="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30 font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer"
+                      >
+                        Release Res.
+                      </button>
+                    </div>
+                    {(() => {
+                      const res = reservations?.find(r => r.tableId === inspectingTable.id && (r.status === 'PENDING' || r.status === 'CONFIRMED'));
+                      const resUser = res?.user ? (res.user.fullName || res.user.username) : (res?.userId ? `User (${res.userId.substring(0, 6)})` : 'Receptionist');
+                      const resRole = res?.user?.role?.name || res?.user?.role || 'Receptionist';
+
+                      return res ? (
+                        <>
+                          <div className="flex justify-between pt-1 border-t border-blue-500/20">
+                            <span className="text-text-muted">Customer:</span>
+                            <span className="font-bold text-text-main">{res.customerName}</span>
+                          </div>
+                          {res.phoneNumber && (
+                            <div className="flex justify-between">
+                              <span className="text-text-muted">Phone:</span>
+                              <span className="font-mono text-text-main">{res.phoneNumber}</span>
+                            </div>
+                          )}
+                          {res.email && (
+                            <div className="flex justify-between">
+                              <span className="text-text-muted">Email:</span>
+                              <span className="font-mono text-text-main truncate max-w-[180px]">{res.email}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between">
+                            <span className="text-text-muted">Headcount:</span>
+                            <span className="font-bold text-text-main">{res.personsCount} Guests</span>
+                          </div>
+                          <div className="flex justify-between pt-1 border-t border-blue-500/20">
+                            <span className="text-text-muted">Reserved By:</span>
+                            <span className="font-bold text-primary font-mono">{resUser}</span>
+                          </div>
+                          {resRole && (
+                            <div className="flex justify-between">
+                              <span className="text-text-muted">Staff Role:</span>
+                              <span className="font-semibold text-text-main uppercase text-[10px]">{resRole}</span>
+                            </div>
+                          )}
+                          {res.createdAt && (
+                            <div className="flex justify-between">
+                              <span className="text-text-muted">Reserved At:</span>
+                              <span className="font-mono text-text-main text-[11px]">
+                                {new Date(res.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-text-muted text-[11px]">Reserved table details pending confirmation.</p>
+                      );
+                    })()}
+                  </div>
+                )}
+
                 {inspectingToken && (
                   <div className="p-4 rounded-2xl bg-bg-primary border border-border-main space-y-2 text-xs">
                     <div className="flex justify-between">
@@ -539,46 +768,105 @@ export const TableManagement: React.FC = () => {
                     <>
                       <button
                         type="button"
-                        onClick={() => handleRelease(inspectingTable.id)}
-                        className="w-full py-2.5 rounded-md dark:rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 font-bold text-[13px] border border-red-500/30 transition-all text-center cursor-pointer flex items-center justify-center gap-1.5"
+                        onClick={() => setReleasingTableForConfirm(inspectingTable)}
+                        className="w-full py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 text-red-700 dark:text-red-400 font-bold text-xs border border-red-500/30 transition-all text-center cursor-pointer flex items-center justify-center gap-1.5"
                       >
                         <VideoOff size={14} />
-                        Release Table
+                        <span>Release Table</span>
                       </button>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button className="py-2.5 rounded-md bg-transparent border border-primary text-primary font-bold text-[11px] transition-all cursor-pointer">Transfer</button>
-                        <button className="py-2.5 rounded-md bg-transparent border border-primary text-primary font-bold text-[11px] transition-all cursor-pointer">Extend</button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const activeTok = getActiveTokenForTable(inspectingTable);
+                          if (activeTok) {
+                            setExtendingToken(activeTok);
+                          } else {
+                            showToast('No active session token found for this table.', 'warning');
+                          }
+                        }}
+                        className="w-full py-2 rounded-xl bg-transparent border border-primary text-primary hover:bg-primary/5 font-bold text-xs transition-all cursor-pointer"
+                      >
+                        Extend Session
+                      </button>
                     </>
                   )}
 
                   {isAdmin && (
-                    <div className="grid grid-cols-2 gap-3 mt-1.5">
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(inspectingTable)}
-                        className="py-2.5 rounded-xl bg-transparent border border-primary text-primary hover:bg-primary/5 active:bg-primary/10 font-bold text-[11px] transition-all cursor-pointer text-center"
-                      >
-                        Edit Table
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeletingTableForConfirm(inspectingTable)}
-                        disabled={inspectingTable.status === 'occupied'}
-                        title={inspectingTable.status === 'occupied' ? "Cannot delete an occupied table" : undefined}
-                        className="py-2.5 rounded-xl bg-transparent border border-red-500/35 hover:bg-red-500/5 active:bg-red-500/10 text-red-600 dark:text-red-400 font-bold text-[11px] transition-all cursor-pointer text-center disabled:opacity-50"
-                      >
-                        Delete Table
-                      </button>
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(inspectingTable)}
+                          className="py-2.5 px-3 rounded-xl bg-transparent border border-primary text-primary hover:bg-primary/5 active:bg-primary/10 font-bold text-xs transition-all cursor-pointer text-center truncate flex items-center justify-center gap-1.5"
+                        >
+                          Edit Table
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeletingTableForConfirm(inspectingTable)}
+                          disabled={inspectingTable.status === 'occupied'}
+                          title={inspectingTable.status === 'occupied' ? "Cannot delete an occupied table" : undefined}
+                          className="py-2.5 px-3 rounded-xl bg-transparent border border-red-500/35 hover:bg-red-500/5 active:bg-red-500/10 text-red-600 dark:text-red-400 font-bold text-xs transition-all cursor-pointer text-center disabled:opacity-40 disabled:cursor-not-allowed truncate flex items-center justify-center gap-1.5"
+                        >
+                          Delete Table
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Clear Reservation Button */}
+                        <button
+                          type="button"
+                          disabled={!isTableReserved}
+                          onClick={() => setCancellingReservationForConfirm(inspectingTable)}
+                          title={isTableReserved ? "Force-cancel the pending reservation and release table" : "No active reservation on this table"}
+                          className={`py-2.5 px-3 rounded-xl border font-bold text-xs transition-all text-center truncate flex items-center justify-center gap-1.5 ${
+                            isTableReserved
+                              ? 'bg-blue-500/15 hover:bg-blue-500/25 active:bg-blue-500/30 text-blue-700 dark:text-blue-400 border-blue-500/40 cursor-pointer shadow-sm'
+                              : 'bg-transparent border-border-main/30 text-text-muted/40 opacity-40 cursor-not-allowed'
+                          }`}
+                        >
+                          <X size={13} className="shrink-0" />
+                          <span>Clear Reservation</span>
+                        </button>
+
+                        {/* Lock / Release Table Button */}
+                        {isTableLocked ? (
+                          <button
+                            type="button"
+                            disabled={isTogglingLock}
+                            onClick={() => setReleasingTableForConfirm(inspectingTable)}
+                            title="Release table lock and clear abandoned check-in drafts"
+                            className="py-2.5 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 active:bg-amber-500/30 text-amber-700 dark:text-amber-400 border border-amber-500/40 font-bold text-xs transition-all cursor-pointer text-center truncate flex items-center justify-center gap-1.5 shadow-sm"
+                          >
+                            <Unlock size={13} className="shrink-0" />
+                            <span>Release Table</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={inspectingTable.status === 'occupied' || isTogglingLock}
+                            onClick={() => handleToggleLockTable(inspectingTable)}
+                            title={inspectingTable.status === 'occupied' ? "Cannot lock an occupied table" : "Lock table for maintenance"}
+                            className={`py-2.5 px-3 rounded-xl border font-bold text-xs transition-all text-center truncate flex items-center justify-center gap-1.5 ${
+                              inspectingTable.status === 'occupied'
+                                ? 'bg-transparent border-border-main/30 text-text-muted/40 opacity-40 cursor-not-allowed'
+                                : 'bg-transparent border-border-main hover:bg-bg-primary text-text-muted hover:text-text-main cursor-pointer'
+                            }`}
+                          >
+                            <Lock size={13} className="shrink-0" />
+                            <span>Lock Table</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
 
                   <button
                     type="button"
                     onClick={() => setInspectingTable(null)}
-                    className="w-full py-2.5 rounded-md bg-transparent text-[11px] font-bold text-text-muted hover:text-text-main border border-border-main dark:border-[rgba(255,255,255,0.1)] cursor-pointer mt-2"
+                    className="w-full py-2.5 rounded-xl bg-transparent text-xs font-bold text-text-muted hover:text-text-main border border-border-main dark:border-[rgba(255,255,255,0.1)] cursor-pointer mt-1 transition-all"
                   >
-                    Close Drawer
+                    Close Panel
                   </button>
                 </div>
 
@@ -846,6 +1134,227 @@ export const TableManagement: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* RELEASE CONFIRMATION DIALOG MODAL */}
+      {releasingTableForConfirm && (() => {
+        const isOccupied = releasingTableForConfirm.status === 'occupied';
+        const activeTok = isOccupied
+          ? getActiveTokenForTable(releasingTableForConfirm)
+          : null;
+        const customerName = activeTok?.customerName || (activeTok?.customer as any)?.name || 'Guest Customer';
+        const customerPhone = activeTok?.phoneNumber || (activeTok?.customer as any)?.phoneNumber || '';
+        const customerEmail = activeTok?.email || (activeTok?.customer as any)?.email || '';
+        const personsCount = activeTok?.personsCount || (activeTok as any)?.persons || 1;
+        const initialAmount = activeTok?.amountPaid ? parseFloat(activeTok.amountPaid.toString()) : 0;
+        const extensionAmount = (activeTok as any)?.extensions?.reduce((sum: number, ext: any) => sum + (ext.amount ? parseFloat(ext.amount.toString()) : 0), 0) || 0;
+        const totalAmount = initialAmount + extensionAmount;
+
+        return (
+          <div className="fixed inset-0 z-[120] dark:bg-black/85 bg-slate-900/60 flex items-center justify-center p-4 animate-fadeIn pointer-events-auto">
+            <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-sm space-y-4 relative text-text-main">
+              <button 
+                onClick={() => setReleasingTableForConfirm(null)}
+                className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="text-text-main font-bold text-base flex items-center gap-2">
+                <AlertTriangle size={18} className="text-amber-500 shrink-0" />
+                <span>Release Table {releasingTableForConfirm.tableNumber}</span>
+              </div>
+
+              <p className="text-xs text-text-muted leading-relaxed">
+                {isOccupied ? (
+                  <>
+                    Are you sure you want to release Table <strong className="text-text-main font-bold font-mono">{releasingTableForConfirm.tableNumber}</strong>? This will checkout the session, archive all financial details, and mark the table available.
+                  </>
+                ) : (
+                  <>
+                    Are you sure you want to release the lock on Table <strong className="text-text-main font-bold font-mono">{releasingTableForConfirm.tableNumber}</strong>? This will clear any abandoned check-in draft and make the table available for new guests.
+                  </>
+                )}
+              </p>
+
+              {isOccupied && activeTok && (
+                <div className="p-3.5 bg-bg-primary border border-border-main rounded-2xl space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Customer:</span>
+                    <span className="font-bold text-text-main">{customerName}</span>
+                  </div>
+                  {customerPhone && (
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Phone:</span>
+                      <span className="font-mono text-text-main">{customerPhone}</span>
+                    </div>
+                  )}
+                  {customerEmail && (
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Email:</span>
+                      <span className="font-mono text-text-main truncate max-w-[180px]">{customerEmail}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Headcount:</span>
+                    <span className="font-semibold text-text-main">{personsCount} Guests</span>
+                  </div>
+                  <div className="flex justify-between pt-1 border-t border-border-main/50">
+                    <span className="text-text-muted">Initial Payment:</span>
+                    <span className="font-mono text-text-main">₹{initialAmount}</span>
+                  </div>
+                  {extensionAmount > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Extended Amount:</span>
+                      <span className="font-mono text-emerald-500 font-semibold">+₹{extensionAmount}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-1 border-t border-border-main font-bold">
+                    <span className="text-text-muted">Total Amount:</span>
+                    <span className="font-mono text-primary">₹{totalAmount}</span>
+                  </div>
+                  <div className="pt-1.5 border-t border-border-main/50 text-[11px] text-text-muted italic">
+                    Closure phrase: &ldquo;<strong className="text-text-main not-italic font-semibold">This table was closed by Admin</strong>&rdquo;
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReleasingTableForConfirm(null)}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isTogglingLock}
+                  onClick={async () => {
+                    const tb = releasingTableForConfirm;
+                    setReleasingTableForConfirm(null);
+                    if (tb.status === 'occupied') {
+                      await handleRelease(tb.id);
+                    } else {
+                      await handleToggleLockTable(tb);
+                    }
+                  }}
+                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  Confirm Release
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* CANCEL / CLEAR RESERVATION CONFIRMATION DIALOG MODAL */}
+      {cancellingReservationForConfirm && (() => {
+        const res = reservations?.find(r => r.tableId === cancellingReservationForConfirm.id && r.status === 'PENDING');
+        return (
+          <div className="fixed inset-0 z-[120] dark:bg-black/85 bg-slate-900/60 flex items-center justify-center p-4 animate-fadeIn pointer-events-auto">
+            <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-sm space-y-4 relative text-text-main">
+              <button 
+                onClick={() => setCancellingReservationForConfirm(null)}
+                className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="text-text-main font-bold text-base flex items-center gap-2 text-red-500">
+                <AlertTriangle size={18} className="shrink-0" />
+                <span>Release Reservation on T-{cancellingReservationForConfirm.tableNumber}</span>
+              </div>
+
+              <p className="text-xs text-text-muted leading-relaxed">
+                Are you sure you want to cancel the reservation on Table <strong className="text-text-main font-bold font-mono">{cancellingReservationForConfirm.tableNumber}</strong>? This will clear the reservation and immediately mark the table available.
+              </p>
+
+              {res && (() => {
+                const resUser = res.user ? (res.user.fullName || res.user.username) : (res.userId ? `User (${res.userId.substring(0, 6)})` : 'Receptionist');
+                const resRole = res.user?.role?.name || res.user?.role || 'Receptionist';
+                return (
+                  <div className="p-3 bg-bg-primary border border-border-main rounded-xl space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Customer:</span>
+                      <span className="font-semibold text-text-main">{res.customerName}</span>
+                    </div>
+                    {res.phoneNumber && (
+                      <div className="flex justify-between">
+                        <span className="text-text-muted">Phone:</span>
+                        <span className="font-mono text-text-main">{res.phoneNumber}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Headcount:</span>
+                      <span className="font-bold text-text-main">{res.personsCount} Guests</span>
+                    </div>
+                    <div className="flex justify-between pt-1 border-t border-border-main/50">
+                      <span className="text-text-muted">Reserved By:</span>
+                      <span className="font-bold text-primary font-mono">{resUser} ({resRole})</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setCancellingReservationForConfirm(null)}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all premium-btn-secondary cursor-pointer"
+                >
+                  Keep Reservation
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmittingCancelRes}
+                  onClick={async () => {
+                    setIsSubmittingCancelRes(true);
+                    try {
+                      const resToCancel = reservations?.find(r => r.tableId === cancellingReservationForConfirm.id && (r.status === 'PENDING' || r.status === 'CONFIRMED'));
+                      if (resToCancel) {
+                        await api.cancelReservation(resToCancel.id);
+                      } else {
+                        await api.patchTableStatus(cancellingReservationForConfirm.id, 'available');
+                      }
+                      showToast(`Reservation cancelled. Table ${cancellingReservationForConfirm.tableNumber} is now available.`, 'success');
+                      setCancellingReservationForConfirm(null);
+                      if (inspectingTable && inspectingTable.id === cancellingReservationForConfirm.id) {
+                        setInspectingTable(null);
+                      }
+                      refreshTables();
+                      refreshReservations();
+                    } catch (err: any) {
+                      showToast(err.message || 'Failed to cancel reservation.', 'danger');
+                    } finally {
+                      setIsSubmittingCancelRes(false);
+                    }
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white text-xs font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  {isSubmittingCancelRes ? 'Releasing...' : 'Confirm Release'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* EXTEND SESSION MODAL */}
+      {extendingToken && (
+        <ExtendSessionModal
+          isOpen={!!extendingToken}
+          token={extendingToken}
+          rates={rates || []}
+          onClose={() => setExtendingToken(null)}
+          onSuccess={() => {
+            setExtendingToken(null);
+            showToast('Session extended successfully!', 'success');
+            refreshTables();
+            refreshTokens();
+          }}
+        />
       )}
     </div>
   );

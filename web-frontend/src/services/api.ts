@@ -220,6 +220,9 @@ class ApiService {
         status: (t.status || 'available').toLowerCase() as any,
         isActive: t.isActive !== false,
         categoryName: t.categoryName || (t.tableNumber?.startsWith('L-') ? 'Premium Lounge' : 'Standing Bar'),
+        lockedBy: t.lockedBy || null,
+        lockedByRole: t.lockedByRole || null,
+        lockedAt: t.lockedAt || null,
       }));
     } catch {
       return [];
@@ -253,9 +256,10 @@ class ApiService {
     });
   }
 
-  async releaseTable(tableId: string) {
-    return this.request<{ success: boolean }>(`/tables/${tableId}/release`, {
+  async releaseTable(tableId: string, reason?: string, reasonDetail?: string) {
+    return this.request<{ success: boolean; data?: any; message?: string }>(`/tables/${tableId}/release`, {
       method: 'PUT',
+      body: JSON.stringify({ reason, reasonDetail }),
     });
   }
 

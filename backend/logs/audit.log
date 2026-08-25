@@ -164,3 +164,7 @@
 {"timestamp":"2026-08-24T15:30:48.994Z","tokenNumber":"BAR-20260824-00002","oldStatus":"PENDING_PAYMENT","newStatus":"ACTIVE","reason":"receptionist activation","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
 {"timestamp":"2026-08-24T16:00:56.488Z","tokenNumber":"BAR-20260824-00002","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +20 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
 {"timestamp":"2026-08-24T16:31:02.212Z","tokenNumber":"BAR-20260824-00002","oldStatus":"EXTENDED","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-08-25T17:26:32.077Z","tokenNumber":"BAR-20260825-00001","oldStatus":"PENDING_PAYMENT","newStatus":"ACTIVE","reason":"receptionist activation","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-08-25T17:30:57.099Z","tokenNumber":"BAR-20260825-00002","oldStatus":"PENDING_PAYMENT","newStatus":"ACTIVE","reason":"receptionist activation","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-08-25T17:56:51.142Z","tokenNumber":"BAR-20260825-00001","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +30 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-08-25T18:03:09.485Z","tokenNumber":"BAR-20260825-00002","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +20 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}

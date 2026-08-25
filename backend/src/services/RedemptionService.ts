@@ -152,9 +152,11 @@ export class RedemptionService {
           quantity
         );
 
-        // Invalidate table cache if needed
+        // Invalidate aggregate and table caches
+        await redisService.del('tokens:active').catch(() => {});
+        await redisService.del('tokens:all').catch(() => {});
         if (token.tableId) {
-          await redisService.del(`table:${token.tableId}:status`);
+          await redisService.del(`table:${token.tableId}:status`).catch(() => {});
         }
 
         return {
@@ -264,9 +266,11 @@ export class RedemptionService {
           -quantityToUndo
         );
 
-        // Invalidate table cache if needed
+        // Invalidate aggregate and table caches
+        await redisService.del('tokens:active').catch(() => {});
+        await redisService.del('tokens:all').catch(() => {});
         if (token.tableId) {
-          await redisService.del(`table:${token.tableId}:status`);
+          await redisService.del(`table:${token.tableId}:status`).catch(() => {});
         }
 
         return {

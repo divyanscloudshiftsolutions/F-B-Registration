@@ -92,7 +92,28 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
     const saved = localStorage.getItem('bar_incomplete_checkin');
     const savedTarget = localStorage.getItem('bar_checkin_assign_target');
 
-    if (saved && !hasCheckedIncomplete) {
+    let isValidDraft = false;
+    if (saved) {
+      try {
+        const state = JSON.parse(saved);
+        if (state.selectedTableId && tables.length > 0) {
+          const targetTable = tables.find(t => t.id === state.selectedTableId);
+          if (targetTable && targetTable.status !== 'in_checkin') {
+            localStorage.removeItem('bar_incomplete_checkin');
+            isValidDraft = false;
+          } else {
+            isValidDraft = true;
+          }
+        } else {
+          isValidDraft = true;
+        }
+      } catch (e) {
+        localStorage.removeItem('bar_incomplete_checkin');
+        isValidDraft = false;
+      }
+    }
+
+    if (isValidDraft && !hasCheckedIncomplete) {
       setShowContinuePrompt(true);
     } else if (savedTarget) {
       // If no draft, load target assignment directly
@@ -114,7 +135,29 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
       localStorage.removeItem('bar_checkin_assign_target');
     }
     setHasCheckedIncomplete(true);
-  }, []);
+  }, [tables]);
+
+  // Invalidate stale resume prompt if table lock was force-released by admin
+  useEffect(() => {
+    if (showContinuePrompt && tables.length > 0) {
+      const saved = localStorage.getItem('bar_incomplete_checkin');
+      if (saved) {
+        try {
+          const state = JSON.parse(saved);
+          if (state.selectedTableId) {
+            const currentTb = tables.find(t => t.id === state.selectedTableId);
+            if (currentTb && currentTb.status !== 'in_checkin') {
+              localStorage.removeItem('bar_incomplete_checkin');
+              setShowContinuePrompt(false);
+              showToast(`Table ${currentTb.tableNumber} lock was released. Stale check-in draft cleared.`, 'info');
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to parse draft on table sync:', e);
+        }
+      }
+    }
+  }, [tables, showContinuePrompt]);
 
   const handleStopCheckInWithConfirmation = (action: () => void) => {
     setOnConfirmStop(() => action);
@@ -917,45 +960,49 @@ setPersonsCount(preselectedTable.capacity);
  }, []);
 
  const handleVerifyQR = async (code: string) => {
- const cleanCode = code.trim();
- if (!cleanCode) return;
- setIsVerifyingQr(true);
- setQrVerificationError(null);
- setQrVerificationSuccess(false);
+    const cleanCode = code.trim();
+    if (!cleanCode) return;
+    setIsVerifyingQr(true);
+    setQrVerificationError(null);
+    setQrVerificationSuccess(false);
 
- try {
- const res = await api.verifyCheckInQR(cleanCode);
-  if (res.success && res.token) {
-  setQrVerificationSuccess(true);
-  setActivePendingToken(res.token); // Store scanned pending token
-  showToast(`Token #${res.token.tokenNumber} verified successfully!`, 'success');
-  
-  // Populate inputs if verified pre-registered session returned
-  const returnedName = res.token.customer?.name || (res.token as any).customerName;
-  const returnedPhone = res.token.customer?.phoneNumber || (res.token as any).phoneNumber;
-  const returnedEmail = res.token.customer?.email || (res.token as any).email;
-  const returnedPersons = res.token.personsCount || (res.token as any).persons;
+    try {
+      const res = await api.verifyCheckInQR(cleanCode);
+      if (res.success && res.token) {
+        setQrVerificationSuccess(true);
+        setActivePendingToken(res.token); // Store scanned pending token
+        showToast(`Token #${res.token.tokenNumber} verified successfully!`, 'success');
+        
+        // Populate inputs if verified pre-registered session returned
+        const returnedName = res.token.customer?.name || (res.token as any).customerName;
+        const returnedPhone = res.token.customer?.phoneNumber || (res.token as any).phoneNumber;
+        const returnedEmail = res.token.customer?.email || (res.token as any).email;
+        const returnedPersons = res.token.personsCount || (res.token as any).persons;
+        const returnedTableId = res.token.tableId || (res.token.table as any)?.id;
+        const returnedPlaceTypeId = res.token.placeTypeId || (res.token.placeType as any)?.id;
 
-  if (returnedName) setCustomerName(returnedName);
-  if (returnedPhone) setPhoneNumber(returnedPhone);
-  if (returnedEmail) setEmail(returnedEmail);
-  if (returnedPersons) setPersonsCount(returnedPersons);
-  
-  setStage(4); // Advance to payment
-  stopCamera();
-  } else {
-  setQrVerificationError('Token verification failed.');
-  showToast('Token QR verification failed.', 'danger');
-  }
- } catch (err: any) {
- setQrVerificationError(err.message || 'Invalid or expired QR token.');
- showToast(err.message || 'Token verification failed.', 'danger');
- } finally {
- setIsVerifyingQr(false);
- }
- };
+        if (returnedName) setCustomerName(returnedName);
+        if (returnedPhone) setPhoneNumber(returnedPhone);
+        if (returnedEmail) setEmail(returnedEmail);
+        if (returnedPersons) setPersonsCount(returnedPersons);
+        if (returnedTableId) setSelectedTableId(returnedTableId);
+        if (returnedPlaceTypeId) setSelectedPlaceTypeId(returnedPlaceTypeId);
+        
+        setStage(4); // Advance to payment
+        stopCamera();
+      } else {
+        setQrVerificationError('Token verification failed.');
+        showToast('Token QR verification failed.', 'danger');
+      }
+    } catch (err: any) {
+      setQrVerificationError(err.message || 'Invalid or expired QR token.');
+      showToast(err.message || 'Token verification failed.', 'danger');
+    } finally {
+      setIsVerifyingQr(false);
+    }
+  };
 
- const handleFinalCheckInSubmit = async (e: React.FormEvent) => {
+  const handleFinalCheckInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isStep1Valid) {
       showToast('Form inputs are invalid. Please check Stage 1 details.', 'danger');
@@ -972,8 +1019,19 @@ setPersonsCount(preselectedTable.capacity);
     try {
       let res;
       if (activePendingToken) {
-        const selectedTable = tables.find(t => t.id === selectedTableId);
-        const tableNumber = selectedTable ? selectedTable.tableNumber : '';
+        let tableNumber = '';
+        let finalTableId = selectedTableId || activePendingToken.tableId || (activePendingToken.table as any)?.id;
+        if (finalTableId) {
+          const selectedTable = tables.find(t => t.id === finalTableId);
+          if (selectedTable) {
+            tableNumber = selectedTable.tableNumber;
+          }
+        }
+        if (!tableNumber && activePendingToken.table?.tableNumber) {
+          tableNumber = activePendingToken.table.tableNumber;
+        } else if (!tableNumber && (activePendingToken as any).tableNumber) {
+          tableNumber = (activePendingToken as any).tableNumber;
+        }
 
         // 1. Update check-in and table allocation options inside pending state first
         await api.createPendingCheckIn({
@@ -981,8 +1039,8 @@ setPersonsCount(preselectedTable.capacity);
           customerName: customerName.trim(),
           email: email.trim() || '',
           personsCount: typeof personsCount === 'number' ? personsCount : 1,
-          placeTypeId: selectedPlaceTypeId,
-          tableId: selectedTableId || undefined,
+          placeTypeId: selectedPlaceTypeId || activePendingToken.placeTypeId,
+          tableId: finalTableId || undefined,
           tableNumber: tableNumber || undefined,
           tokenNumber: activePendingToken.tokenNumber
         });

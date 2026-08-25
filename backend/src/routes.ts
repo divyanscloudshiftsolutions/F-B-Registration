@@ -1114,14 +1114,37 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
     });
     
     // Map response keys for old client compatibility (e.g. number and placeType mapping)
-    const oldTables = tables.map(t => ({
-      id: t.id,
-      number: t.tableNumber,
-      placeType: t.placeType.name,
-      placeTypeId: t.placeTypeId,
-      capacity: t.capacity,
-      status: t.status.toUpperCase(),
-      isActive: t.isActive,
+    const oldTables = await Promise.all(tables.map(async (t) => {
+      let lockedBy: string | null = null;
+      let lockedByRole: string | null = null;
+      let lockedAt: number | null = null;
+
+      if (t.status === 'in_checkin' || t.status === 'maintenance') {
+        const lockKey = `table:lock:${t.id}`;
+        const lockDataStr = await redisService.get(lockKey).catch(() => null);
+        if (lockDataStr) {
+          try {
+            const parsed = JSON.parse(lockDataStr);
+            lockedBy = parsed.lockedByName || parsed.lockedBy || null;
+            lockedByRole = parsed.lockedByRole || null;
+            lockedAt = parsed.lockedAt || null;
+          } catch {}
+        }
+      }
+
+      return {
+        id: t.id,
+        tableNumber: t.tableNumber,
+        number: t.tableNumber,
+        placeType: t.placeType.name,
+        placeTypeId: t.placeTypeId,
+        capacity: t.capacity,
+        status: t.status.toUpperCase(),
+        isActive: t.isActive,
+        lockedBy: lockedBy || (t.status === 'maintenance' ? 'Administrator' : t.status === 'in_checkin' ? 'Receptionist' : null),
+        lockedByRole: lockedByRole || (t.status === 'maintenance' ? 'admin' : t.status === 'in_checkin' ? 'receptionist' : null),
+        lockedAt: lockedAt || null,
+      };
     }));
 
     await redisService.setex(cacheKey, 300, JSON.stringify(oldTables));
@@ -1230,11 +1253,16 @@ router.post('/tables/assign', authenticate, authorize(['receptionist', 'admin'])
   }
 });
 
-// Release Table
-router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
+// Release Table (and close active session if occupied)
+router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 'admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
   const { tableId } = req.params;
-  let { tokenId } = req.body;
+  let { tokenId, reason, reasonDetail } = req.body || {};
   
+  const finalReasonDetail = reasonDetail || 'This table was closed by Admin';
+  const finalReason = reason || 'MANUAL';
+  const closedBy = req.user?.id || 'admin';
+  const closedByName = req.user?.fullName || req.user?.username || 'Admin';
+
   if (!tokenId) {
     // Look up the table's current token ID if it is missing in the request payload
     try {
@@ -1254,9 +1282,33 @@ router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 
   }
 
   try {
+    // 1. Fetch token and customer details for comprehensive logging and closing
+    const tokenRecord = await prisma.token.findUnique({
+      where: { id: tokenId },
+      include: { customer: true, extensions: true, placeType: true, table: true }
+    });
+
+    let sessionSummary: any = null;
+
+    // 2. If token is active, extended, or pending, close it gracefully via tokenService
+    if (tokenRecord && tokenRecord.status !== TokenStatus.CLOSED) {
+      try {
+        sessionSummary = await tokenService.closeSession(
+          tokenRecord.tokenNumber,
+          closedBy,
+          CloseReason.MANUAL,
+          true,
+          finalReasonDetail
+        );
+      } catch (closeErr: any) {
+        console.warn(`[releaseTable] token closeSession note: ${closeErr.message}`);
+      }
+    }
+
+    // 3. Release the table state
     const table = await tableService.releaseTable(tableId, tokenId);
     
-    // Find duration if logged
+    // 4. Find duration if logged
     const logs = await prisma.tableOccupancyLog.findMany({
       where: { tableId, tokenId },
       orderBy: { occupiedAt: 'desc' },
@@ -1268,8 +1320,45 @@ router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 
       occupancyDurationMinutes = Math.floor((new Date(log.vacatedAt).getTime() - new Date(log.occupiedAt).getTime()) / 60000);
     }
 
+    // 5. Compute total financial metrics (initial payment + extensions)
+    const initialAmount = tokenRecord ? parseFloat(tokenRecord.amountPaid.toString()) : 0;
+    const extensionAmount = tokenRecord?.extensions ? tokenRecord.extensions.reduce((sum: number, ext: any) => sum + (ext.amount ? parseFloat(ext.amount.toString()) : 0), 0) : 0;
+    const totalAmount = initialAmount + extensionAmount;
+
+    // 6. Record comprehensive SyncLog / Audit Log
+    await prisma.syncLog.create({
+      data: {
+        operationId: `RELEASE-CLOSE-${table.id}-${Date.now()}`,
+        deviceId: 'server',
+        operationType: 'TABLE_RELEASE_CLOSE',
+        status: 'SUCCESS',
+        payload: {
+          tableId: table.id,
+          tableNumber: table.tableNumber,
+          tokenId: tokenRecord?.id || tokenId,
+          tokenNumber: tokenRecord?.tokenNumber,
+          customerName: tokenRecord?.customer?.name,
+          phoneNumber: tokenRecord?.customer?.phoneNumber,
+          email: tokenRecord?.customer?.email,
+          personsCount: tokenRecord?.personsCount,
+          initialAmount,
+          extensionAmount,
+          totalAmountPaid: totalAmount,
+          durationMinutes: occupancyDurationMinutes || sessionSummary?.sessionSummary?.totalTimeUsedMinutes || 0,
+          closedBy: closedByName,
+          closeReason: finalReason,
+          reasonDetail: finalReasonDetail,
+          closedAt: new Date().toISOString()
+        }
+      }
+    }).catch((err) => console.warn('[releaseTable] SyncLog write note:', err.message));
+
     await redisService.del('tables:all').catch(() => {});
     await redisService.del('tokens:active').catch(() => {});
+    if (tokenRecord?.customer?.phoneNumber) {
+      await redisService.del(`customer:active:${tokenRecord.customer.phoneNumber}`).catch(() => {});
+    }
+    await redisService.del(`table:${tableId}:status`).catch(() => {});
 
     return res.json({
       success: true,
@@ -1278,8 +1367,14 @@ router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 
         tableNumber: table.tableNumber,
         status: table.status,
         occupancyDurationMinutes,
+        customerName: tokenRecord?.customer?.name,
+        phoneNumber: tokenRecord?.customer?.phoneNumber,
+        email: tokenRecord?.customer?.email,
+        personsCount: tokenRecord?.personsCount,
+        totalAmountPaid: totalAmount,
+        reasonDetail: finalReasonDetail
       },
-      message: 'Table released successfully',
+      message: 'Table released and session closed successfully',
     });
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { code: 'RELEASE_ERR', message: err.message } });
@@ -1532,7 +1627,7 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
       where: { id },
       include: {
         tokens: {
-          where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.EXPIRED] } }
+          where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] } }
         }
       }
     }) as any;
@@ -1542,14 +1637,14 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
     }
 
     // 0. Business Rule: Prevent changes if table is locked for check-in
-    if (table.status === 'in_checkin') {
+    if (table.status === 'in_checkin' && targetStatus !== 'available') {
       return res.status(400).json({
         success: false,
         error: { code: 'CONFLICT_LOCKED', message: 'Table is currently locked for check-in and cannot be modified directly.' }
       });
     }
 
-    const hasActiveSession = table.tokens.length > 0;
+    const hasActiveSession = (table.status === 'occupied' && table.currentTokenId !== null) || (table.tokens && table.tokens.length > 0);
 
     // 1. Business Rule: Prevent maintenance changes during active sessions
     if (targetStatus === 'maintenance' && (table.status === 'occupied' || hasActiveSession)) {
@@ -1568,7 +1663,7 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
     }
 
     // 3. Business Rule: Prevent available if active sessions exist
-    if (targetStatus === 'available' && hasActiveSession) {
+    if (targetStatus === 'available' && table.status === 'occupied' && hasActiveSession) {
       return res.status(400).json({
         success: false,
         error: { code: 'CONFLICT_ACTIVE_SESSION', message: 'Cannot make table available while there is an active session. Release the session first.' }
@@ -1585,6 +1680,19 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
       },
       include: { placeType: true }
     });
+
+    if (targetStatus === 'maintenance') {
+      const lockKey = `table:lock:${id}`;
+      await redisService.setex(lockKey, 3600, JSON.stringify({
+        lockedBy: (req as any).user?.id || 'admin',
+        lockedByName: (req as any).user?.fullName || (req as any).user?.username || 'Administrator',
+        lockedByRole: (req as any).user?.role || 'admin',
+        originalStatus: table.status,
+        lockedAt: Date.now()
+      }));
+    } else if (targetStatus === 'available') {
+      await redisService.del(`table:lock:${id}`).catch(() => {});
+    }
 
     await redisService.del(`table:available:${updated.placeTypeId}`);
     await redisService.del('table:available:all');
@@ -1605,6 +1713,8 @@ router.post('/tables/:id/lock', authenticate, async (req: AuthenticatedRequest, 
   }
 
   const userId = req.user?.id || 'receptionist';
+  const userName = req.user?.fullName || req.user?.username || 'Receptionist';
+  const userRole = req.user?.role || 'receptionist';
 
   try {
     const updatedTable = await prisma.$transaction(async (tx) => {
@@ -1630,6 +1740,8 @@ router.post('/tables/:id/lock', authenticate, async (req: AuthenticatedRequest, 
       const lockKey = `table:lock:${id}`;
       await redisService.setex(lockKey, 3600, JSON.stringify({
         lockedBy: userId,
+        lockedByName: userName,
+        lockedByRole: userRole,
         originalStatus: table.status,
         lockedAt: Date.now()
       }));
@@ -2079,9 +2191,15 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
       }
 
       if (tableNumber) {
-        const table = await prisma.table.findFirst({
-          where: { tableNumber: tableNumber, placeTypeId: finalPlaceTypeId }
+        const normalizedTableNumber = tableNumber.trim().replace(/^([SL])(\d{2})$/i, '$1-$2').toUpperCase();
+        let table = await prisma.table.findFirst({
+          where: { tableNumber: normalizedTableNumber, placeTypeId: finalPlaceTypeId }
         });
+        if (!table) {
+          table = await prisma.table.findFirst({
+            where: { tableNumber: normalizedTableNumber }
+          });
+        }
         if (!table) {
           return res.status(404).json({ success: false, error: { message: `Table ${tableNumber} not found` } });
         }
@@ -2395,7 +2513,20 @@ router.get('/reservations', authenticate, async (req: AuthenticatedRequest, res:
   try {
     const activeReservations = await prisma.reservation.findMany({
       where: { status: 'PENDING' },
-      include: { table: true }
+      include: {
+        table: true,
+        user: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
+            role: {
+              select: { name: true }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
     });
     return res.json({ success: true, reservations: activeReservations });
   } catch (err: any) {
@@ -2868,10 +2999,14 @@ router.post('/redemptions', authenticate, authorize(['bartender', 'admin']), asy
       finalQuantity
     );
 
+    const updatedToken = result.redemption?.token;
     return res.json({
       success: true,
       message: 'Redemption recorded successfully',
-      data: result
+      data: result,
+      token: updatedToken,
+      remainingDrinks: result.remainingRedemptions,
+      redemptionsUsed: updatedToken?.redemptionsUsed
     });
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { message: err.message } });
@@ -2920,15 +3055,27 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
       orderBy: { startTime: 'desc' },
     });
     
-    // Map response for old client compatibility
+    // Map response for client compatibility
     const oldTokens = activeTokens.map((t: any) => ({
       id: t.id,
       tokenNumber: t.tokenNumber,
-      phoneNumber: t.customer.phoneNumber,
-      customerName: t.customer.name,
-      email: t.customer.email,
+      phoneNumber: t.customer?.phoneNumber || '',
+      customerName: t.customer?.name || '',
+      email: t.customer?.email || '',
+      customer: t.customer ? {
+        id: t.customer.id,
+        name: t.customer.name,
+        phoneNumber: t.customer.phoneNumber,
+        email: t.customer.email
+      } : {
+        id: '',
+        name: t.customerName || 'Guest',
+        phoneNumber: t.phoneNumber || '',
+        email: t.email || ''
+      },
       persons: t.personsCount,
-      placeType: t.placeType.name,
+      personsCount: t.personsCount,
+      placeType: t.placeType?.name || '',
       placeTypeId: t.placeTypeId,
       tableId: t.tableId,
       tableNumber: t.table?.tableNumber || null,
@@ -2936,6 +3083,8 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
       paymentVerified: t.paymentVerified,
       startTime: t.startTime.toISOString(),
       endTime: t.endTime.toISOString(),
+      totalRedemptionsAllowed: t.totalRedemptionsAllowed,
+      redemptionsUsed: t.redemptionsUsed,
       redemptionLimit: t.totalRedemptionsAllowed,
       redemptionCount: t.redemptionsUsed,
       status: t.status.toUpperCase(),
@@ -2945,7 +3094,7 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
       table: t.table ? {
         id: t.table.id,
         number: t.table.tableNumber,
-        placeType: t.placeType.name,
+        placeType: t.placeType?.name || '',
         status: t.table.status.toUpperCase(),
       } : null
     }));

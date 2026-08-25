@@ -1061,7 +1061,7 @@ export class TokenService {
     return await prisma.$transaction(async (tx) => {
       // 1. Lock/fetch the token row
       const tokens = await tx.$queryRaw<any[]>`
-        SELECT id, status, "payment_verified" as "paymentVerified", "persons_count" as "personsCount", "place_type_id" as "placeTypeId"
+        SELECT id, status, "payment_verified" as "paymentVerified", "persons_count" as "personsCount", "place_type_id" as "placeTypeId", "table_id" as "tableId"
         FROM tokens
         WHERE token_number = ${tokenNumber}
         LIMIT 1
@@ -1088,7 +1088,7 @@ export class TokenService {
       // Check if this customer already has another active session (by phone or email)
       const tokenWithCustomer = await tx.token.findUnique({
         where: { id: token.id },
-        include: { customer: true }
+        include: { customer: true, table: true }
       });
       if (!tokenWithCustomer || !tokenWithCustomer.customer) {
         throw new Error('Token customer details not found.');
@@ -1121,12 +1121,31 @@ export class TokenService {
         throw new Error(msg);
       }
 
-      // 2. Resolve the selected table for the place type of this token
-      const table = await tx.table.findFirst({
-        where: { tableNumber: normalizedTableNumber, placeTypeId: token.placeTypeId }
-      });
+      // 2. Resolve the selected table
+      let table = null;
+
+      // Priority A: If tableNumber was provided, resolve by tableNumber (with placeTypeId or by tableNumber alone)
+      if (normalizedTableNumber) {
+        table = await tx.table.findFirst({
+          where: { tableNumber: normalizedTableNumber, placeTypeId: token.placeTypeId }
+        });
+        if (!table) {
+          table = await tx.table.findFirst({
+            where: { tableNumber: normalizedTableNumber }
+          });
+        }
+      }
+
+      // Priority B: If not found by tableNumber or tableNumber was empty, resolve by token's pre-assigned tableId
+      if (!table && (token.tableId || tokenWithCustomer.tableId)) {
+        const assignedTableId = token.tableId || tokenWithCustomer.tableId;
+        table = await tx.table.findUnique({
+          where: { id: assignedTableId }
+        });
+      }
+
       if (!table) {
-        throw new Error(`Table '${tableNumber}' not found for this place type.`);
+        throw new Error(`Table '${tableNumber || 'assigned to token'}' not found.`);
       }
       if (table.status !== 'available' && table.status !== 'in_checkin' && table.currentTokenId !== token.id) {
         throw new Error(`Table '${tableNumber}' is not available.`);
