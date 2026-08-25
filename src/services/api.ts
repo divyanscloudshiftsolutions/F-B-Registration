@@ -1,4 +1,4 @@
-import type { User, Table, Token } from '../types';
+import type { User, Table, Token, DashboardReport } from '../types';
 
 export const DEPLOYED_API_BASE_URL = 'https://api.nfc-qr.app.cloudshiftsolutions.in/api';
 export const getLocalApiBaseUrl = () => {
@@ -67,14 +67,19 @@ class ApiService {
       headers,
     });
 
-    if (response.status === 401 || response.status === 403) {
+    const data = await response.json().catch(() => ({}));
+
+    if (response.status === 401) {
       localStorage.removeItem('bar_web_token');
       localStorage.removeItem('bar_web_user');
+      if (data && data.error && data.error.code === 'AUTH_DEACTIVATED') {
+        localStorage.setItem('auth_error_msg', 'Access denied. Contact your administrator.');
+      } else {
+        localStorage.setItem('auth_error_msg', data.message || (data.error && typeof data.error === 'object' ? data.error.message : data.error) || 'Session expired. Please log in again.');
+      }
       window.location.reload();
-      throw new Error('Session expired. Please log in again.');
+      throw new Error(data.message || 'Session expired. Please log in again.');
     }
-
-    const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
       const errMsg = data.message || 
@@ -215,6 +220,9 @@ class ApiService {
         status: (t.status || 'available').toLowerCase() as any,
         isActive: t.isActive !== false,
         categoryName: t.categoryName || (t.tableNumber?.startsWith('L-') ? 'Premium Lounge' : 'Standing Bar'),
+        lockedBy: t.lockedBy || null,
+        lockedByRole: t.lockedByRole || null,
+        lockedAt: t.lockedAt || null,
       }));
     } catch {
       return [];
@@ -228,6 +236,19 @@ class ApiService {
     });
   }
 
+  async updateTable(tableId: string, tableData: { tableNumber: string; placeTypeId: string; capacity: number }) {
+    return this.request<{ success: boolean; table: Table }>(`/tables/${tableId}`, {
+      method: 'PUT',
+      body: JSON.stringify(tableData),
+    });
+  }
+
+  async deleteTable(tableId: string) {
+    return this.request<{ success: boolean }>(`/tables/${tableId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async assignTable(tableId: string, tokenId: string) {
     return this.request<{ success: boolean }>('/tables/assign', {
       method: 'POST',
@@ -235,9 +256,10 @@ class ApiService {
     });
   }
 
-  async releaseTable(tableId: string) {
-    return this.request<{ success: boolean }>(`/tables/${tableId}/release`, {
+  async releaseTable(tableId: string, reason?: string, reasonDetail?: string) {
+    return this.request<{ success: boolean; data?: any; message?: string }>(`/tables/${tableId}/release`, {
       method: 'PUT',
+      body: JSON.stringify({ reason, reasonDetail }),
     });
   }
 
@@ -290,6 +312,8 @@ class ApiService {
         },
         tableId: t.tableId || t.table?.id || null,
         tableNumber: t.tableNumber || t.table?.number,
+        placeTypeId: t.placeTypeId || '',
+        placeType: t.placeType || '',
         startTime: t.startTime || new Date().toISOString(),
         endTime: t.endTime || new Date().toISOString(),
         createdAt: t.createdAt || new Date().toISOString(),
@@ -342,10 +366,18 @@ class ApiService {
 
 
 
-  async extendToken(tokenNumber: string, extraMinutes: number, amount: number, sendEmail?: boolean, paymentMethod?: string) {
+  async extendToken(
+    tokenNumber: string, 
+    extraMinutes: number, 
+    amount: number, 
+    sendEmail?: boolean, 
+    paymentMethod?: string,
+    extensionType?: string,
+    reason?: string
+  ) {
     return this.request<any>(`/tokens/${tokenNumber}/extend`, {
       method: 'PUT',
-      body: JSON.stringify({ extraMinutes, amount, sendEmail, paymentMethod }),
+      body: JSON.stringify({ extraMinutes, amount, sendEmail, paymentMethod, extensionType, reason }),
     });
   }
 
@@ -360,7 +392,19 @@ class ApiService {
   async getAllSessions(): Promise<any[]> {
     try {
       const res = await this.request<any>('/admin/sessions');
-      return Array.isArray(res) ? res : [];
+      const rawList = Array.isArray(res) ? res : [];
+      return rawList.map((t: any) => ({
+        ...t,
+        personsCount: t.persons || t.personsCount || 1,
+        redemptionsUsed: t.redemptionCount || t.redemptionsUsed || 0,
+        totalRedemptionsAllowed: t.redemptionLimit || t.totalRedemptionsAllowed || 2,
+        customer: {
+          id: t.customerId || '',
+          name: t.customerName || t.customer?.name || 'Walk-in Guest',
+          phoneNumber: t.phoneNumber || t.customer?.phoneNumber || t.customerPhone || 'N/A',
+          email: t.email || t.customer?.email || '',
+        }
+      }));
     } catch {
       return [];
     }
@@ -533,7 +577,7 @@ class ApiService {
           id: r.id || r.placeTypeId || (r.name ? r.name.toLowerCase().replace(/\s+/g, '_') : 'standing_bar'),
           name: r.name || r.categoryName || (r.id === 'premium_lounge' ? 'Premium Lounge' : 'Standing Bar'),
           ratePerPerson: r.ratePerPerson ?? r.pricePerPerson ?? r.rate ?? (r.id === 'premium_lounge' ? 1200 : 500),
-          baseTimeMinutes: r.baseTimeMinutes ?? r.durationMinutes ?? (r.id === 'premium_lounge' ? 30 : 20),
+          baseTimeMinutes: r.baseTimeMinutes ?? r.durationMinutes ?? (r.id === 'premium_lounge' ? 30 : 30),
           redemptionsPerPerson: r.redemptionsPerPerson ?? r.drinksPerPerson ?? (r.id === 'premium_lounge' ? 3 : 2),
         }));
       }
@@ -602,6 +646,10 @@ class ApiService {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
+  }
+
+  async getDashboardReport(filter: string = 'day') {
+    return this.request<DashboardReport>(`/reports/dashboard?filter=${filter}`);
   }
 }
 

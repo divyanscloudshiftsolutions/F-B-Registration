@@ -79,6 +79,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
   const [showCapacityWarning, setShowCapacityWarning] = useState(false);
   const [hasDismissedCapacityWarning, setHasDismissedCapacityWarning] = useState(false);
   const [attemptedPersonsCount, setAttemptedPersonsCount] = useState<number | null>(null);
+  const [showPaymentCollectedConfirm, setShowPaymentCollectedConfirm] = useState(false);
 
   // Load incomplete check-in state on mount
   useEffect(() => {
@@ -91,7 +92,28 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
     const saved = localStorage.getItem('bar_incomplete_checkin');
     const savedTarget = localStorage.getItem('bar_checkin_assign_target');
 
-    if (saved && !hasCheckedIncomplete) {
+    let isValidDraft = false;
+    if (saved) {
+      try {
+        const state = JSON.parse(saved);
+        if (state.selectedTableId && tables.length > 0) {
+          const targetTable = tables.find(t => t.id === state.selectedTableId);
+          if (targetTable && targetTable.status !== 'in_checkin') {
+            localStorage.removeItem('bar_incomplete_checkin');
+            isValidDraft = false;
+          } else {
+            isValidDraft = true;
+          }
+        } else {
+          isValidDraft = true;
+        }
+      } catch (e) {
+        localStorage.removeItem('bar_incomplete_checkin');
+        isValidDraft = false;
+      }
+    }
+
+    if (isValidDraft && !hasCheckedIncomplete) {
       setShowContinuePrompt(true);
     } else if (savedTarget) {
       // If no draft, load target assignment directly
@@ -113,7 +135,29 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
       localStorage.removeItem('bar_checkin_assign_target');
     }
     setHasCheckedIncomplete(true);
-  }, []);
+  }, [tables]);
+
+  // Invalidate stale resume prompt if table lock was force-released by admin
+  useEffect(() => {
+    if (showContinuePrompt && tables.length > 0) {
+      const saved = localStorage.getItem('bar_incomplete_checkin');
+      if (saved) {
+        try {
+          const state = JSON.parse(saved);
+          if (state.selectedTableId) {
+            const currentTb = tables.find(t => t.id === state.selectedTableId);
+            if (currentTb && currentTb.status !== 'in_checkin') {
+              localStorage.removeItem('bar_incomplete_checkin');
+              setShowContinuePrompt(false);
+              showToast(`Table ${currentTb.tableNumber} lock was released. Stale check-in draft cleared.`, 'info');
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to parse draft on table sync:', e);
+        }
+      }
+    }
+  }, [tables, showContinuePrompt]);
 
   const handleStopCheckInWithConfirmation = (action: () => void) => {
     setOnConfirmStop(() => action);
@@ -916,109 +960,128 @@ setPersonsCount(preselectedTable.capacity);
  }, []);
 
  const handleVerifyQR = async (code: string) => {
- const cleanCode = code.trim();
- if (!cleanCode) return;
- setIsVerifyingQr(true);
- setQrVerificationError(null);
- setQrVerificationSuccess(false);
+    const cleanCode = code.trim();
+    if (!cleanCode) return;
+    setIsVerifyingQr(true);
+    setQrVerificationError(null);
+    setQrVerificationSuccess(false);
 
- try {
- const res = await api.verifyCheckInQR(cleanCode);
-  if (res.success && res.token) {
-  setQrVerificationSuccess(true);
-  setActivePendingToken(res.token); // Store scanned pending token
-  showToast(`Token #${res.token.tokenNumber} verified successfully!`, 'success');
-  
-  // Populate inputs if verified pre-registered session returned
-  const returnedName = res.token.customer?.name || (res.token as any).customerName;
-  const returnedPhone = res.token.customer?.phoneNumber || (res.token as any).phoneNumber;
-  const returnedEmail = res.token.customer?.email || (res.token as any).email;
-  const returnedPersons = res.token.personsCount || (res.token as any).persons;
+    try {
+      const res = await api.verifyCheckInQR(cleanCode);
+      if (res.success && res.token) {
+        setQrVerificationSuccess(true);
+        setActivePendingToken(res.token); // Store scanned pending token
+        showToast(`Token #${res.token.tokenNumber} verified successfully!`, 'success');
+        
+        // Populate inputs if verified pre-registered session returned
+        const returnedName = res.token.customer?.name || (res.token as any).customerName;
+        const returnedPhone = res.token.customer?.phoneNumber || (res.token as any).phoneNumber;
+        const returnedEmail = res.token.customer?.email || (res.token as any).email;
+        const returnedPersons = res.token.personsCount || (res.token as any).persons;
+        const returnedTableId = res.token.tableId || (res.token.table as any)?.id;
+        const returnedPlaceTypeId = res.token.placeTypeId || (res.token.placeType as any)?.id;
 
-  if (returnedName) setCustomerName(returnedName);
-  if (returnedPhone) setPhoneNumber(returnedPhone);
-  if (returnedEmail) setEmail(returnedEmail);
-  if (returnedPersons) setPersonsCount(returnedPersons);
-  
-  setStage(4); // Advance to payment
-  stopCamera();
-  } else {
-  setQrVerificationError('Token verification failed.');
-  showToast('Token QR verification failed.', 'danger');
-  }
- } catch (err: any) {
- setQrVerificationError(err.message || 'Invalid or expired QR token.');
- showToast(err.message || 'Token verification failed.', 'danger');
- } finally {
- setIsVerifyingQr(false);
- }
- };
+        if (returnedName) setCustomerName(returnedName);
+        if (returnedPhone) setPhoneNumber(returnedPhone);
+        if (returnedEmail) setEmail(returnedEmail);
+        if (returnedPersons) setPersonsCount(returnedPersons);
+        if (returnedTableId) setSelectedTableId(returnedTableId);
+        if (returnedPlaceTypeId) setSelectedPlaceTypeId(returnedPlaceTypeId);
+        
+        setStage(4); // Advance to payment
+        stopCamera();
+      } else {
+        setQrVerificationError('Token verification failed.');
+        showToast('Token QR verification failed.', 'danger');
+      }
+    } catch (err: any) {
+      setQrVerificationError(err.message || 'Invalid or expired QR token.');
+      showToast(err.message || 'Token verification failed.', 'danger');
+    } finally {
+      setIsVerifyingQr(false);
+    }
+  };
 
- const handleFinalCheckInSubmit = async (e: React.FormEvent) => {
- e.preventDefault();
- if (!isStep1Valid) {
- showToast('Form inputs are invalid. Please check Stage 1 details.', 'danger');
- setStage(1);
- return;
- }
+  const handleFinalCheckInSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isStep1Valid) {
+      showToast('Form inputs are invalid. Please check Stage 1 details.', 'danger');
+      setStage(1);
+      return;
+    }
+    setShowPaymentCollectedConfirm(true);
+  };
 
- setIsSubmitting(true);
+  const executeFinalCheckIn = async () => {
+    setShowPaymentCollectedConfirm(false);
+    setIsSubmitting(true);
 
- try {
- let res;
- if (activePendingToken) {
- const selectedTable = tables.find(t => t.id === selectedTableId);
- const tableNumber = selectedTable ? selectedTable.tableNumber : '';
+    try {
+      let res;
+      if (activePendingToken) {
+        let tableNumber = '';
+        let finalTableId = selectedTableId || activePendingToken.tableId || (activePendingToken.table as any)?.id;
+        if (finalTableId) {
+          const selectedTable = tables.find(t => t.id === finalTableId);
+          if (selectedTable) {
+            tableNumber = selectedTable.tableNumber;
+          }
+        }
+        if (!tableNumber && activePendingToken.table?.tableNumber) {
+          tableNumber = activePendingToken.table.tableNumber;
+        } else if (!tableNumber && (activePendingToken as any).tableNumber) {
+          tableNumber = (activePendingToken as any).tableNumber;
+        }
 
- // 1. Update check-in and table allocation options inside pending state first
- await api.createPendingCheckIn({
- phoneNumber: phoneNumber.trim(),
- customerName: customerName.trim(),
- email: email.trim() || '',
- personsCount: typeof personsCount === 'number' ? personsCount : 1,
- placeTypeId: selectedPlaceTypeId,
- tableId: selectedTableId || undefined,
- tableNumber: tableNumber || undefined,
- tokenNumber: activePendingToken.tokenNumber
- });
+        // 1. Update check-in and table allocation options inside pending state first
+        await api.createPendingCheckIn({
+          phoneNumber: phoneNumber.trim(),
+          customerName: customerName.trim(),
+          email: email.trim() || '',
+          personsCount: typeof personsCount === 'number' ? personsCount : 1,
+          placeTypeId: selectedPlaceTypeId || activePendingToken.placeTypeId,
+          tableId: finalTableId || undefined,
+          tableNumber: tableNumber || undefined,
+          tokenNumber: activePendingToken.tokenNumber
+        });
 
- // 2. Activate token payment and seat occupation
- res = await api.activateSession(activePendingToken.tokenNumber, tableNumber, calculatedTotal);
- } else {
- res = await api.createCustomerCheckIn({
- phoneNumber: phoneNumber.trim(),
- customerName: customerName.trim(),
- email: email.trim() || undefined,
- personsCount,
- placeTypeId: selectedPlaceTypeId,
- deliveryMode
- });
- }
+        // 2. Activate token payment and seat occupation
+        res = await api.activateSession(activePendingToken.tokenNumber, tableNumber, calculatedTotal);
+      } else {
+        res = await api.createCustomerCheckIn({
+          phoneNumber: phoneNumber.trim(),
+          customerName: customerName.trim(),
+          email: email.trim() || undefined,
+          personsCount: typeof personsCount === 'number' ? personsCount : 1,
+          placeTypeId: selectedPlaceTypeId,
+          deliveryMode
+        });
+      }
 
- if (res.success && res.token) {
- setCreatedToken(res.token);
- if (!activePendingToken && selectedTableId) {
- await api.assignTable(selectedTableId, res.token.id).catch(() => {});
- }
- if (reservationId) {
-   await api.assignReservation(reservationId).catch(() => {});
-   setReservationId('');
- }
- showToast(`Guest ${customerName} checked in successfully! Token: ${res.token.tokenNumber}`, 'success');
- refreshTokens();
- refreshTables();
- refreshReservations();
- setActivePendingToken(null); // Reset pending check-in tracker
- setStage(5);
- } else {
- showToast('Check-in failed. Please try again.', 'danger');
- }
- } catch (err: any) {
- showToast(err.message || 'Check-in failed.', 'danger');
- } finally {
- setIsSubmitting(false);
- }
- };
+      if (res.success && res.token) {
+        setCreatedToken(res.token);
+        if (!activePendingToken && selectedTableId) {
+          await api.assignTable(selectedTableId, res.token.id).catch(() => {});
+        }
+        if (reservationId) {
+          await api.assignReservation(reservationId).catch(() => {});
+          setReservationId('');
+        }
+        showToast(`Guest ${customerName} checked in successfully! Token: ${res.token.tokenNumber}`, 'success');
+        refreshTokens();
+        refreshTables();
+        refreshReservations();
+        setActivePendingToken(null); // Reset pending check-in tracker
+        setStage(5);
+      } else {
+        showToast('Check-in failed. Please try again.', 'danger');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Check-in failed.', 'danger');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleResetWizard = async () => {
     const savedDraft = localStorage.getItem('bar_incomplete_checkin');
@@ -1710,7 +1773,19 @@ setPersonsCount(preselectedTable.capacity);
  📲 UPI / Digital Pay
  </button>
  </div>
- </div>
+  
+  {paymentMode === 'UPI' && (
+    <div className="p-4 bg-bg-secondary-surface dark:bg-black/15 rounded-xl border border-border-main/55 space-y-2 flex flex-col items-center justify-center animate-fadeIn text-center mt-4">
+      <p className="text-xs font-bold text-text-main">Scan UPI QR to Pay ₹{calculatedTotal}</p>
+      <img 
+        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`upi://pay?pa=barmanagement@upi&pn=BarSystem&am=${calculatedTotal}&cu=INR`)}`}
+        alt="UPI Payment QR"
+        className="w-36 h-36 border-2 border-white rounded-lg p-1 bg-white"
+      />
+      <p className="text-[10px] text-text-muted">Awaiting merchant verification confirmation...</p>
+    </div>
+  )}
+  </div>
 
  <div className="pt-4 flex flex-col-reverse sm:flex-row items-center sm:justify-between gap-3 border-t border-border-main mt-4">
  <button
@@ -2015,6 +2090,30 @@ setPersonsCount(preselectedTable.capacity);
 
       {renderStopCheckInConfirmModal}
       {renderCapacityWarningModal}
+      {showPaymentCollectedConfirm && (
+        <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
+          <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
+            <h3 className="text-base font-black uppercase tracking-wider text-primary">Confirm Payment Collection?</h3>
+            <p className="text-xs text-text-muted">
+              Payment has been collected. Do you want to proceed with Check-In?
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={executeFinalCheckIn}
+                className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer border-none"
+              >
+                YES — Proceed
+              </button>
+              <button
+                onClick={() => setShowPaymentCollectedConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card border border-border-main text-xs font-bold text-text-muted hover:text-text-main cursor-pointer"
+              >
+                NO — Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   </div>
  );

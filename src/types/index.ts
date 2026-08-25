@@ -47,6 +47,9 @@ export interface Table {
   occupiedSince?: string;
   lastAssignedAt?: string;
   isActive: boolean;
+  lockedBy?: string | null;
+  lockedByRole?: string | null;
+  lockedAt?: number | string | null;
 }
 
 export interface Token {
@@ -90,4 +93,50 @@ export interface NotificationItem {
   message: string;
   timestamp: string;
   read: boolean;
+}
+
+export interface DashboardReport {
+  success: boolean;
+  data: {
+    salesSummary: {
+      todaySales: number;
+      todayRedemptions: number;
+      totalCustomers: number;
+      checkoutCount: number;
+      period: {
+        startDate: string;
+        endDate: string;
+      };
+    };
+    tableUtilization: {
+      period: {
+        start: string;
+        end: string;
+      };
+      tables: Array<{
+        tableNumber: string;
+        placeType: string;
+        totalOccupancyHours: number;
+        averageOccupancyPerDay: number;
+        turnoverCount: number;
+        averageSessionDurationMinutes: number;
+      }>;
+      summary: {
+        totalTableHours: number;
+        averageOccupancyRate: number;
+      };
+    };
+    hourlyBreakdown: {
+      date: string;
+      hourlyData: Array<{
+        hour: number;
+        redemptions: number;
+        newTokens: number;
+        activeTokens: number;
+        revenue?: number;
+      }>;
+      peakHour: number;
+      peakRedemptions: number;
+    };
+  };
 }

@@ -71,6 +71,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  const [scannedToken, setScannedToken] = useState<Token | null>(null);
  const [isVerifying, setIsVerifying] = useState(false);
  const [isRedeeming, setIsRedeeming] = useState(false);
+ const [redeemingTokenIds, setRedeemingTokenIds] = useState<Set<string>>(new Set());
  const [redeemQty, setRedeemQty] = useState(1);
 
  // Search Active Customer Sessions State
@@ -377,71 +378,101 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  }
  };
 
- const handleRedeem = async () => {
- if (!scannedToken) return;
+  const handleRedeem = async () => {
+    if (!scannedToken || isRedeeming || scannedToken.redemptionsUsed >= scannedToken.totalRedemptionsAllowed) return;
 
- setIsRedeeming(true);
- try {
- const res = await api.redeemDrink(scannedToken.tokenNumber, redeemQty);
- if (res.success) {
- showToast(`Drink redemption (${redeemQty}) recorded successfully!`, 'success');
- setRedeemQty(1);
- fetchActiveTokens(); // Refresh background list
- refreshTokens();
- refreshTables();
- const verifyRes = await api.verifyQR(scannedToken.tokenNumber);
- if (verifyRes.success && verifyRes.token) {
-   setScannedToken(verifyRes.token);
- }
- }
- } catch (err: any) {
- showToast(err.message || 'Redemption failed. All drink quotas used or session closed.', 'danger');
- } finally {
- setIsRedeeming(false);
- }
- };
+    setIsRedeeming(true);
+    try {
+      const res: any = await api.redeemDrink(scannedToken.tokenNumber, redeemQty);
+      if (res.success) {
+        showToast(`Drink redemption (${redeemQty}) recorded successfully!`, 'success');
+        const newUsed = res.redemptionsUsed ?? (res.data?.redemption?.token?.redemptionsUsed ?? (scannedToken.redemptionsUsed + redeemQty));
+        
+        // Immediate local state synchronization
+        setScannedToken(prev => prev ? { ...prev, redemptionsUsed: newUsed } : null);
+        setActiveTokens(prev => prev.map(tk => 
+          tk.tokenNumber === scannedToken.tokenNumber 
+            ? { ...tk, redemptionsUsed: newUsed }
+            : tk
+        ));
+        setRedeemQty(1);
 
- const handleRedeemForToken = async (token: Token) => {
- setIsRedeeming(true);
- try {
- const res = await api.redeemDrink(token.tokenNumber, 1);
- if (res.success) {
- showToast(`Drink redemption recorded for ${token.customer?.name || 'Guest'}.`, 'success');
- fetchActiveTokens(); // Refresh list
- refreshTokens();
- refreshTables();
- if (scannedToken?.tokenNumber === token.tokenNumber) {
-   const verifyRes = await api.verifyQR(scannedToken.tokenNumber);
-   if (verifyRes.success && verifyRes.token) {
-     setScannedToken(verifyRes.token);
-   }
- }
- }
- } catch (err: any) {
- showToast(err.message || 'Redemption failed. All drink quotas used or session closed.', 'danger');
- } finally {
- setIsRedeeming(false);
- }
- };
+        // Background reconciliation
+        fetchActiveTokens();
+        refreshTokens();
+        refreshTables();
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Redemption failed. All drink quotas used or session closed.', 'danger');
+    } finally {
+      setIsRedeeming(false);
+    }
+  };
 
- const handleUndo = async () => {
- if (!scannedToken) return;
- try {
- const res = await api.undoRedeem(scannedToken.tokenNumber);
- if (res.success) {
- showToast('Drink redemption reverted successfully.', 'info');
- fetchActiveTokens(); // Refresh background list
- refreshTokens();
- refreshTables();
- const verifyRes = await api.verifyQR(scannedToken.tokenNumber);
- if (verifyRes.success && verifyRes.token) {
-   setScannedToken(verifyRes.token);
- }
- }
- } catch (err: any) {
- showToast(err.message || 'Failed to revert drink redemption.', 'danger');
- }
- };
+  const handleRedeemForToken = async (token: Token) => {
+    if (redeemingTokenIds.has(token.tokenNumber) || token.redemptionsUsed >= token.totalRedemptionsAllowed) {
+      return;
+    }
+
+    setRedeemingTokenIds(prev => new Set(prev).add(token.tokenNumber));
+    try {
+      const res: any = await api.redeemDrink(token.tokenNumber, 1);
+      if (res.success) {
+        showToast(`Drink redemption recorded for ${token.customer?.name || 'Guest'}.`, 'success');
+        const newUsed = res.redemptionsUsed ?? (res.data?.redemption?.token?.redemptionsUsed ?? (token.redemptionsUsed + 1));
+        
+        // Immediate local state synchronization
+        setActiveTokens(prev => prev.map(tk => 
+          tk.tokenNumber === token.tokenNumber 
+            ? { ...tk, redemptionsUsed: newUsed }
+            : tk
+        ));
+
+        if (scannedToken?.tokenNumber === token.tokenNumber) {
+          setScannedToken(prev => prev ? { ...prev, redemptionsUsed: newUsed } : null);
+        }
+
+        // Background reconciliation
+        fetchActiveTokens();
+        refreshTokens();
+        refreshTables();
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Redemption failed. All drink quotas used or session closed.', 'danger');
+    } finally {
+      setRedeemingTokenIds(prev => {
+        const next = new Set(prev);
+        next.delete(token.tokenNumber);
+        return next;
+      });
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!scannedToken) return;
+    try {
+      const res: any = await api.undoRedeem(scannedToken.tokenNumber);
+      if (res.success) {
+        showToast('Drink redemption reverted successfully.', 'info');
+        const newUsed = res.redemptionsUsed ?? (res.data?.redemption?.token?.redemptionsUsed ?? Math.max(0, scannedToken.redemptionsUsed - 1));
+        
+        // Immediate local state synchronization
+        setScannedToken(prev => prev ? { ...prev, redemptionsUsed: newUsed } : null);
+        setActiveTokens(prev => prev.map(tk => 
+          tk.tokenNumber === scannedToken.tokenNumber 
+            ? { ...tk, redemptionsUsed: newUsed }
+            : tk
+        ));
+
+        // Background reconciliation
+        fetchActiveTokens();
+        refreshTokens();
+        refreshTables();
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to revert drink redemption.', 'danger');
+    }
+  };
 
  
 
@@ -475,10 +506,15 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
  const isScanTab = activeTab !== 'bartender/checkins';
 
- // Scanned Token redemptions helper
+  // Scanned Token redemptions helper
   const redemptionsUsed = scannedToken ? (scannedToken.redemptionsUsed || 0) : 0;
   const totalAllowed = scannedToken ? (scannedToken.totalRedemptionsAllowed || 2) : 2;
+  const remainingDrinks = Math.max(0, totalAllowed - redemptionsUsed);
   const isQuotaDepleted = redemptionsUsed >= totalAllowed;
+
+  const scannedBasePerPerson = (scannedToken?.placeType && typeof scannedToken.placeType === 'object' && (scannedToken.placeType as any).redemptionsPerPerson) ? (scannedToken.placeType as any).redemptionsPerPerson : 2;
+  const scannedCurrentCheckIn = scannedToken ? Math.min(totalAllowed, (scannedToken.personsCount || 1) * scannedBasePerPerson) : 2;
+  const scannedCarriedForward = Math.max(0, totalAllowed - scannedCurrentCheckIn);
 
   const tokenStatus = scannedToken?.status?.toUpperCase();
   const isActivePass = tokenStatus === 'ACTIVE' || tokenStatus === 'EXTENDED';
@@ -707,24 +743,47 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  </div>
  </div>
 
- {/* Drink Quota Usage Progress Bar */}
- <div className="p-4 rounded-2xl bg-bg-primary border border-border-main space-y-2">
- <div className="flex justify-between text-xs font-bold">
- <span className="text-text-muted">Drink Quota Allowance:</span>
- <span className={isQuotaDepleted ? 'dark:text-red-400 text-red-700 font-extrabold' : 'dark:text-emerald-400 text-emerald-700 font-extrabold'}>
- {redemptionsUsed} / {totalAllowed} Drinks Used
- </span>
- </div>
+  {/* Drink Quota Usage Progress Bar & Cumulative Breakdown */}
+  <div className="p-4 rounded-2xl bg-bg-primary border border-border-main space-y-3">
+    <div className="flex items-center justify-between text-xs font-bold">
+      <span className="text-text-muted uppercase tracking-wider text-[11px]">Redemption Progress</span>
+      <div className="flex items-center gap-2">
+        <span className={`font-black font-mono text-sm ${isQuotaDepleted ? 'dark:text-red-400 text-red-700' : 'dark:text-emerald-400 text-emerald-700'}`}>
+          {redemptionsUsed} / {totalAllowed} USED
+        </span>
+        <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${remainingDrinks > 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'}`}>
+          {remainingDrinks} {remainingDrinks === 1 ? 'Drink' : 'Drinks'} Remaining
+        </span>
+      </div>
+    </div>
 
- <div className="w-full h-3 rounded-full bg-bg-card overflow-hidden">
- <div 
- className={`h-full transition-all duration-500 ${
- isQuotaDepleted ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'
- }`}
- style={{ width: `${Math.min(100, (redemptionsUsed / totalAllowed) * 100)}%` }}
- />
- </div>
- </div>
+    <div className="w-full h-2.5 rounded-full bg-bg-card overflow-hidden">
+      <div 
+        className={`h-full transition-all duration-500 ${
+          isQuotaDepleted ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'
+        }`}
+        style={{ width: `${Math.min(100, (redemptionsUsed / totalAllowed) * 100)}%` }}
+      />
+    </div>
+
+    {/* Cumulative Breakdown in Scan Mode */}
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-border-main/40 text-xs">
+      <div className="p-2 rounded-xl bg-bg-surface border border-border-main flex flex-col">
+        <span className="text-[10px] text-text-muted font-semibold uppercase">Current Check-In</span>
+        <span className="font-mono font-bold text-text-main text-xs">{scannedCurrentCheckIn} Drinks</span>
+      </div>
+      <div className="p-2 rounded-xl bg-bg-surface border border-border-main flex flex-col">
+        <span className="text-[10px] text-text-muted font-semibold uppercase">Carried Forward</span>
+        <span className={`font-mono font-bold text-xs ${scannedCarriedForward > 0 ? 'text-primary font-black' : 'text-text-muted'}`}>
+          {scannedCarriedForward > 0 ? `+${scannedCarriedForward} Drinks` : '0 Drinks'}
+        </span>
+      </div>
+      <div className="p-2 rounded-xl bg-bg-surface border border-border-main flex flex-col col-span-2 sm:col-span-1">
+        <span className="text-[10px] text-text-muted font-semibold uppercase">Total Entitlement</span>
+        <span className="font-mono font-black text-text-main text-xs">{totalAllowed} Drinks</span>
+      </div>
+    </div>
+  </div>
 
   {/* Dispense & Revert Actions */}
   <div className="space-y-2 sm:space-y-3 pt-1 sm:pt-2">
@@ -835,102 +894,121 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  ) : (
  <div className="space-y-4">
  {filteredTokens.map(tk => {
- const isTokenQuotaDepleted = tk.redemptionsUsed >= tk.totalRedemptionsAllowed;
- return (
- <div 
- key={tk.id} 
- className="glass-panel dark:bg-[#1C1C1E] p-4 sm:p-6 rounded-3xl dark:rounded-xl border border-border-main dark:border-[rgba(255,255,255,0.1)] flex flex-col lg:flex-row lg:items-center justify-between gap-6 transition-all duration-300 hover:border-border-main/80 relative overflow-hidden"
- >
- {/* Customer Info and Headcount Column */}
- <div className="space-y-2 flex-1 min-w-0">
- <div className="flex flex-wrap items-center gap-2">
- <h4 className="text-base font-black text-text-main truncate w-full sm:w-auto">
- {tk.customer?.name || 'Walk-in Guest'}
- </h4>
- 
- {/* Token Code Badge (White text) */}
- <span className="px-2 py-0.5 rounded bg-bg-card border border-border-main/50 text-[10px] font-mono font-bold text-text-main">
- {tk.tokenNumber}
- </span>
+          const isTokenQuotaDepleted = tk.redemptionsUsed >= tk.totalRedemptionsAllowed;
+          const tkRemainingDrinks = Math.max(0, tk.totalRedemptionsAllowed - tk.redemptionsUsed);
+          const tkBasePerPerson = (tk.placeType && typeof tk.placeType === 'object' && (tk.placeType as any).redemptionsPerPerson) ? (tk.placeType as any).redemptionsPerPerson : 2;
+          const tkCurrentCheckIn = Math.min(tk.totalRedemptionsAllowed, (tk.personsCount || 1) * tkBasePerPerson);
+          const tkCarriedForward = Math.max(0, tk.totalRedemptionsAllowed - tkCurrentCheckIn);
 
- {/* Status Badges */}
- <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider dark:bg-emerald-500/10 bg-emerald-500/10 dark:text-emerald-400 text-emerald-700 dark:border-emerald-500/20 border-emerald-500/30">
- {tk.status}
- </span>
+          return (
+          <div 
+            key={tk.id} 
+            className="glass-panel dark:bg-[#1C1C1E] p-4 sm:p-6 rounded-3xl dark:rounded-xl border border-border-main dark:border-[rgba(255,255,255,0.1)] flex flex-col lg:flex-row lg:items-center justify-between gap-6 transition-all duration-300 hover:border-border-main/80 relative overflow-hidden"
+          >
+            {/* Customer Info and Headcount Column */}
+            <div className="space-y-2 flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-base font-black text-text-main truncate w-full sm:w-auto">
+                  {tk.customer?.name || 'Walk-in Guest'}
+                </h4>
+                
+                {/* Token Code Badge (White text) */}
+                <span className="px-2 py-0.5 rounded bg-bg-card border border-border-main/50 text-[10px] font-mono font-bold text-text-main">
+                  {tk.tokenNumber}
+                </span>
 
- <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-primary/10 dark:text-[#D4AF37] text-primary border dark:border-[#D4AF37]/20 border-primary/20">
- {tk.deliveryMode || 'EMAIL_QR'}
- </span>
- </div>
- 
-  {/* Combined Phone, Email, Table, and headcount responsive grid */}
-  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-1.5 gap-x-4 text-xs text-text-muted pt-2 border-t border-border-main/10 mt-2">
-  <div className="flex items-center gap-1.5 min-w-0">
-  <Phone size={12} className="shrink-0 text-text-muted" />
-  <span className="font-mono truncate">{tk.customer?.phoneNumber || 'N/A'}</span>
-  </div>
-  <div className="flex items-center gap-1.5 min-w-0">
-  <Mail size={12} className="shrink-0 text-text-muted" />
-  <span className="font-mono truncate" title={tk.customer?.email}>{tk.customer?.email || '—'}</span>
-  </div>
-  <div className="flex items-center gap-1.5">
-  <Users size={12} className="shrink-0 text-text-muted" />
-  <span>Party Size: <span className="font-bold text-text-main">{tk.personsCount} Guests</span></span>
-  </div>
-  <div>
-  Table/Zone: <span className="font-bold text-text-main">{tk.tableNumber || 'Walking / Bar'}</span>
-  </div>
-  <div>
-  Checked In: <span className="font-bold text-text-main">{new Date(tk.createdAt || tk.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-  </div>
-  <div>
-  Session Duration: <span className="font-bold text-text-main">{getSessionDuration(tk.createdAt || tk.startTime)}</span>
-  </div>
-  <div className="flex items-center gap-1.5">
-  <Clock size={12} className="shrink-0 text-text-muted" />
-  <span>Remaining: <LiveSessionTimer endTime={tk.endTime} status={tk.status} /></span>
-  </div>
-  </div>
-  </div>
+                {/* Status Badges */}
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider dark:bg-emerald-500/10 bg-emerald-500/10 dark:text-emerald-400 text-emerald-700 dark:border-emerald-500/20 border-emerald-500/30">
+                  {tk.status}
+                </span>
 
-  {/* Pricing, Redemptions progress, and Actions layout */}
-  <div className="flex flex-col sm:flex-row items-start sm:items-center lg:justify-end gap-4 sm:gap-6 shrink-0 pt-4 lg:pt-0 border-t lg:border-t-0 border-border-main/30 w-full lg:w-auto">
-  
-  <div className="flex items-center justify-between w-full sm:w-auto sm:justify-end gap-6 border-b sm:border-b-0 border-border-main/20 pb-4 sm:pb-0">
-  {/* Drink Quota Status */}
-  <div className="text-left sm:text-right space-y-1 flex-1 sm:flex-initial">
-  <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Redemption Progress</span>
-  <div className="flex items-center sm:justify-end gap-2">
-  <span className={`text-sm font-black font-mono ${isTokenQuotaDepleted ? 'dark:text-red-400 text-red-700' : 'dark:text-emerald-400 text-emerald-700'}`}>
-  {tk.redemptionsUsed} / {tk.totalRedemptionsAllowed}
-  </span>
-  <span className="text-[10px] text-text-muted font-semibold">Drinks Used</span>
-  </div>
-  <div className="w-full sm:w-24 h-1.5 rounded-full bg-bg-card overflow-hidden ml-0 sm:ml-auto mt-2">
-  <div 
-  className={`h-full ${isTokenQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'}`}
-  style={{ width: `${Math.min(100, (tk.redemptionsUsed / tk.totalRedemptionsAllowed) * 100)}%` }}
-  />
-  </div>
-  </div>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-primary/10 dark:text-[#D4AF37] text-primary border dark:border-[#D4AF37]/20 border-primary/20">
+                  {tk.deliveryMode || 'EMAIL_QR'}
+                </span>
+              </div>
+              
+              {/* Combined Phone, Email, Table, and headcount responsive grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-1.5 gap-x-4 text-xs text-text-muted pt-2 border-t border-border-main/10 mt-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Phone size={12} className="shrink-0 text-text-muted" />
+                  <span className="font-mono truncate">{tk.customer?.phoneNumber || 'N/A'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Mail size={12} className="shrink-0 text-text-muted" />
+                  <span className="font-mono truncate" title={tk.customer?.email}>{tk.customer?.email || '—'}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Users size={12} className="shrink-0 text-text-muted" />
+                  <span>Party Size: <span className="font-bold text-text-main">{tk.personsCount} Guests</span></span>
+                </div>
+                <div>
+                  Table/Zone: <span className="font-bold text-text-main">{tk.tableNumber || 'Walking / Bar'}</span>
+                </div>
+                <div>
+                  Checked In: <span className="font-bold text-text-main">{new Date(tk.createdAt || tk.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <div>
+                  Session Duration: <span className="font-bold text-text-main">{getSessionDuration(tk.createdAt || tk.startTime)}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Clock size={12} className="shrink-0 text-text-muted" />
+                  <span>Remaining: <LiveSessionTimer endTime={tk.endTime} status={tk.status} /></span>
+                </div>
+              </div>
+            </div>
 
-  {/* Total Amount Paid */}
-  <div className="text-right space-y-1 flex-1 sm:flex-initial border-l border-border-main/20 pl-4 sm:border-l-0 sm:pl-0">
-  <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Gate Payment</span>
-  <span className="text-sm font-black text-text-main font-mono">₹{tk.amountPaid}</span>
-  </div>
-  </div>
+            {/* Pricing, Redemptions progress, and Actions layout */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center lg:justify-end gap-4 sm:gap-6 shrink-0 pt-4 lg:pt-0 border-t lg:border-t-0 border-border-main/30 w-full lg:w-auto">
+              
+              <div className="flex items-center justify-between w-full sm:w-auto sm:justify-end gap-6 border-b sm:border-b-0 border-border-main/20 pb-4 sm:pb-0">
+                {/* Drink Quota Status & Cumulative Breakdown */}
+                <div className="text-left sm:text-right space-y-1 flex-1 sm:flex-initial min-w-[155px]">
+                  <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Redemption Progress</span>
+                  <div className="flex items-center sm:justify-end gap-2">
+                    <span className={`text-sm font-black font-mono ${isTokenQuotaDepleted ? 'dark:text-red-400 text-red-700' : 'dark:text-emerald-400 text-emerald-700'}`}>
+                      {tk.redemptionsUsed} / {tk.totalRedemptionsAllowed} USED
+                    </span>
+                    <span className={`text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded ${tkRemainingDrinks > 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'}`}>
+                      {tkRemainingDrinks} {tkRemainingDrinks === 1 ? 'Drink' : 'Drinks'} Remaining
+                    </span>
+                  </div>
 
-  {/* Action Buttons */}
-  <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-  <button
-  onClick={() => handleRedeemForToken(tk)}
-  disabled={isRedeeming || isTokenQuotaDepleted}
-  title={isTokenQuotaDepleted ? "Drink quota limit reached for this session." : "Dispense 1 Drink"}
-  className="px-3 py-2.5 sm:py-2 rounded-xl dark:bg-emerald-500/20 bg-emerald-500/10 dark:hover:bg-emerald-600 hover:bg-emerald-600 dark:text-emerald-200 text-emerald-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-emerald-500/30 transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 cursor-pointer flex-1 sm:flex-none"
-  >
-  <Wine size={14} /> Redeem
-  </button>
+                  {/* Cumulative Breakdown Labels */}
+                  <div className="flex items-center justify-between sm:justify-end gap-2 text-[10.5px] text-text-muted pt-0.5">
+                    <span>Current Check-In: <strong className="text-text-main font-mono">{tkCurrentCheckIn}</strong></span>
+                    {tkCarriedForward > 0 && (
+                      <span className="text-primary font-bold">
+                        Carried Forward: <strong className="font-mono text-primary font-black">+{tkCarriedForward}</strong>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="w-full sm:w-36 h-1.5 rounded-full bg-bg-card overflow-hidden ml-0 sm:ml-auto mt-1">
+                    <div 
+                      className={`h-full ${isTokenQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'}`}
+                      style={{ width: `${Math.min(100, (tk.redemptionsUsed / tk.totalRedemptionsAllowed) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Total Amount Paid */}
+                <div className="text-right space-y-1 flex-1 sm:flex-initial border-l border-border-main/20 pl-4 sm:border-l-0 sm:pl-0">
+                  <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">Gate Payment</span>
+                  <span className="text-sm font-black text-text-main font-mono">₹{tk.amountPaid}</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                  <button
+                    onClick={() => handleRedeemForToken(tk)}
+                    disabled={redeemingTokenIds.has(tk.tokenNumber) || isTokenQuotaDepleted}
+                    title={isTokenQuotaDepleted ? "Drink quota limit reached for this session." : "Dispense 1 Drink"}
+                    className="px-3 py-2.5 sm:py-2 rounded-xl dark:bg-emerald-500/20 bg-emerald-500/10 dark:hover:bg-emerald-600 hover:bg-emerald-600 dark:text-emerald-200 text-emerald-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-emerald-500/30 transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 cursor-pointer flex-1 sm:flex-none"
+                  >
+                    <Wine size={14} />
+                    <span>{redeemingTokenIds.has(tk.tokenNumber) ? 'Redeeming...' : 'Redeem'}</span>
+                  </button>
 
   <button
   onClick={() => setExtendingToken(tk)}
