@@ -22,9 +22,14 @@ import s3Service from './services/S3Service';
 import emailNotificationService from './services/EmailNotificationService';
 import multer from 'multer';
 
+import { normalizeEmail, normalizePhone } from './utils/normalization';
+
 const prisma = new PrismaClient();
 const upload = multer();
-const jwtSecret = process.env.JWT_SECRET || 'bar_super_secret_key_123!';
+if (!process.env.JWT_SECRET) {
+  throw new Error("FATAL: JWT_SECRET environment variable is not defined.");
+}
+const jwtSecret = process.env.JWT_SECRET;
 const authApiUrl = process.env.AUTH_API_URL || 'https://authapi.cloudshiftsolutions.in';
 const configuredTenantId = process.env.TENANT_ID;
 const configuredTenantCode = process.env.TENANT_CODE;
@@ -93,7 +98,10 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
         }
       });
 
-      if (session && session.user && session.user.isActive) {
+      if (session && session.user) {
+        if (!session.user.isActive) {
+          return res.status(401).json({ success: false, error: { code: 'AUTH_DEACTIVATED', message: 'Access denied. Contact your administrator.' } });
+        }
         req.user = {
           id: session.user.id,
           username: session.user.username,
@@ -128,7 +136,10 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
             include: { role: true }
           });
 
-          if (localUser && localUser.isActive) {
+          if (localUser) {
+            if (!localUser.isActive) {
+              return res.status(401).json({ success: false, error: { code: 'AUTH_DEACTIVATED', message: 'Access denied. Contact your administrator.' } });
+            }
             req.user = {
               id: localUser.id,
               username: localUser.username,
@@ -302,7 +313,7 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       },
       body: JSON.stringify({ 
         Email: email, 
-        Password: password, 
+        Password: `${password}_CloudShiftPass!`, 
         tenant_code: 'cloud-shift-solutions' 
       })
     }, 2000);
@@ -375,7 +386,7 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       } else {
         return res.status(403).json({
           success: false,
-          error: { code: 'AUTH_006', message: 'Access Denied: User is not authorized for the Bar Management System' }
+          error: { code: 'AUTH_006', message: 'Access Denied: User is not authorized for Open the Bottle' }
         });
       }
     }
@@ -500,7 +511,7 @@ router.post('/auth/login', async (req: Request, res: Response) => {
     }
 
     if (!user.isActive) {
-      return res.status(403).json({ success: false, error: { code: 'AUTH_005', message: 'User account is deactivated' } });
+      return res.status(401).json({ success: false, error: { code: 'AUTH_DEACTIVATED', message: 'Access denied. Contact your administrator.' } });
     }
 
     await prisma.user.update({
@@ -667,7 +678,7 @@ router.post('/auth/register', authenticate, authorize(['admin']), async (req: Re
         },
         body: JSON.stringify({
           Email: email,
-          Password: finalPassword,
+          Password: `${finalPassword}_CloudShiftPass!`,
           full_name: finalFullName,
           tenant_code: 'cloud-shift-solutions'
         })
@@ -684,8 +695,13 @@ router.post('/auth/register', authenticate, authorize(['admin']), async (req: Re
         }
       } else {
         const errorText = await signupRes.text().catch(() => 'Signup request failed');
-        if (signupRes.status === 409 || (signupRes.status === 400 && errorText.includes('already exists'))) {
+        if (
+          signupRes.status === 409 || 
+          (signupRes.status === 400 && errorText.includes('already exists')) ||
+          (signupRes.status === 403 && (errorText.includes('does not allow open registration') || errorText.includes('invitation')))
+        ) {
           signupSucceeded = true;
+          console.warn(`External registration returned status ${signupRes.status} (${errorText}). Proceeding with local-only user registration.`);
         } else {
           return res.status(500).json({
             success: false,
@@ -1098,14 +1114,37 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
     });
     
     // Map response keys for old client compatibility (e.g. number and placeType mapping)
-    const oldTables = tables.map(t => ({
-      id: t.id,
-      number: t.tableNumber,
-      placeType: t.placeType.name,
-      placeTypeId: t.placeTypeId,
-      capacity: t.capacity,
-      status: t.status.toUpperCase(),
-      isActive: t.isActive,
+    const oldTables = await Promise.all(tables.map(async (t) => {
+      let lockedBy: string | null = null;
+      let lockedByRole: string | null = null;
+      let lockedAt: number | null = null;
+
+      if (t.status === 'in_checkin' || t.status === 'maintenance') {
+        const lockKey = `table:lock:${t.id}`;
+        const lockDataStr = await redisService.get(lockKey).catch(() => null);
+        if (lockDataStr) {
+          try {
+            const parsed = JSON.parse(lockDataStr);
+            lockedBy = parsed.lockedByName || parsed.lockedBy || null;
+            lockedByRole = parsed.lockedByRole || null;
+            lockedAt = parsed.lockedAt || null;
+          } catch {}
+        }
+      }
+
+      return {
+        id: t.id,
+        tableNumber: t.tableNumber,
+        number: t.tableNumber,
+        placeType: t.placeType.name,
+        placeTypeId: t.placeTypeId,
+        capacity: t.capacity,
+        status: t.status.toUpperCase(),
+        isActive: t.isActive,
+        lockedBy: lockedBy || (t.status === 'maintenance' ? 'Administrator' : t.status === 'in_checkin' ? 'Receptionist' : null),
+        lockedByRole: lockedByRole || (t.status === 'maintenance' ? 'admin' : t.status === 'in_checkin' ? 'receptionist' : null),
+        lockedAt: lockedAt || null,
+      };
     }));
 
     await redisService.setex(cacheKey, 300, JSON.stringify(oldTables));
@@ -1166,7 +1205,7 @@ router.get('/tables/occupancy', authenticate, async (req: Request, res: Response
 });
 
 // Assign Table
-router.post('/tables/assign', authenticate, authorize(['receptionist', 'admin']), async (req: Request, res: Response) => {
+router.post('/tables/assign', authenticate, authorize(['receptionist', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
   const { tableId, tokenId } = req.body;
   if (!tableId || !tokenId) {
     return res.status(400).json({ success: false, error: { code: 'VAL_005', message: 'tableId and tokenId are required' } });
@@ -1176,21 +1215,19 @@ router.post('/tables/assign', authenticate, authorize(['receptionist', 'admin'])
   }
 
   try {
-    const table = await tableService.assignTableToToken(tableId, tokenId);
+    const table = await tableService.assignTableToToken(tableId, tokenId, req.user?.id);
     const token = await prisma.token.findUnique({
       where: { id: tokenId },
       include: { customer: true }
     });
-    if (token && token.status === TokenStatus.PENDING_PAYMENT && token.deliveryMode === 'EMAIL_QR') {
-      emailNotificationService.enqueueEmailJob(token.customer.email!, token.tokenNumber, token.customer.name);
+    if (token && token.status === TokenStatus.PENDING_PAYMENT && token.deliveryMode === 'EMAIL_QR' && !token.emailSent && token.emailDeliveryStatus !== 'PENDING') {
       await prisma.token.update({
         where: { id: tokenId },
         data: {
-          emailSent: true,
-          emailSentAt: new Date(),
-          emailDeliveryStatus: 'SENT'
+          emailDeliveryStatus: 'PENDING'
         }
       });
+      emailNotificationService.enqueueEmailJob(token.customer.email!, token.tokenNumber, token.customer.name);
     }
     await redisService.del('tables:all').catch(() => {});
     await redisService.del('tokens:active').catch(() => {});
@@ -1216,21 +1253,62 @@ router.post('/tables/assign', authenticate, authorize(['receptionist', 'admin'])
   }
 });
 
-// Release Table
-router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
+// Release Table (and close active session if occupied)
+router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 'admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
   const { tableId } = req.params;
-  const { tokenId } = req.body;
+  let { tokenId, reason, reasonDetail } = req.body || {};
+  
+  const finalReasonDetail = reasonDetail || 'This table was closed by Admin';
+  const finalReason = reason || 'MANUAL';
+  const closedBy = req.user?.id || 'admin';
+  const closedByName = req.user?.fullName || req.user?.username || 'Admin';
+
   if (!tokenId) {
-    return res.status(400).json({ success: false, error: { code: 'VAL_006', message: 'tokenId is required' } });
+    // Look up the table's current token ID if it is missing in the request payload
+    try {
+      const tableRecord = await prisma.table.findUnique({
+        where: { id: tableId }
+      });
+      tokenId = tableRecord?.currentTokenId || undefined;
+    } catch {}
   }
+
+  if (!tokenId) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_006', message: 'tokenId is required or table is not occupied.' } });
+  }
+
   if (!isValidUUID(tableId) || !isValidUUID(tokenId)) {
     return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid tableId or tokenId UUID format.' } });
   }
 
   try {
+    // 1. Fetch token and customer details for comprehensive logging and closing
+    const tokenRecord = await prisma.token.findUnique({
+      where: { id: tokenId },
+      include: { customer: true, extensions: true, placeType: true, table: true }
+    });
+
+    let sessionSummary: any = null;
+
+    // 2. If token is active, extended, or pending, close it gracefully via tokenService
+    if (tokenRecord && tokenRecord.status !== TokenStatus.CLOSED) {
+      try {
+        sessionSummary = await tokenService.closeSession(
+          tokenRecord.tokenNumber,
+          closedBy,
+          CloseReason.MANUAL,
+          true,
+          finalReasonDetail
+        );
+      } catch (closeErr: any) {
+        console.warn(`[releaseTable] token closeSession note: ${closeErr.message}`);
+      }
+    }
+
+    // 3. Release the table state
     const table = await tableService.releaseTable(tableId, tokenId);
     
-    // Find duration if logged
+    // 4. Find duration if logged
     const logs = await prisma.tableOccupancyLog.findMany({
       where: { tableId, tokenId },
       orderBy: { occupiedAt: 'desc' },
@@ -1242,8 +1320,45 @@ router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 
       occupancyDurationMinutes = Math.floor((new Date(log.vacatedAt).getTime() - new Date(log.occupiedAt).getTime()) / 60000);
     }
 
+    // 5. Compute total financial metrics (initial payment + extensions)
+    const initialAmount = tokenRecord ? parseFloat(tokenRecord.amountPaid.toString()) : 0;
+    const extensionAmount = tokenRecord?.extensions ? tokenRecord.extensions.reduce((sum: number, ext: any) => sum + (ext.amount ? parseFloat(ext.amount.toString()) : 0), 0) : 0;
+    const totalAmount = initialAmount + extensionAmount;
+
+    // 6. Record comprehensive SyncLog / Audit Log
+    await prisma.syncLog.create({
+      data: {
+        operationId: `RELEASE-CLOSE-${table.id}-${Date.now()}`,
+        deviceId: 'server',
+        operationType: 'TABLE_RELEASE_CLOSE',
+        status: 'SUCCESS',
+        payload: {
+          tableId: table.id,
+          tableNumber: table.tableNumber,
+          tokenId: tokenRecord?.id || tokenId,
+          tokenNumber: tokenRecord?.tokenNumber,
+          customerName: tokenRecord?.customer?.name,
+          phoneNumber: tokenRecord?.customer?.phoneNumber,
+          email: tokenRecord?.customer?.email,
+          personsCount: tokenRecord?.personsCount,
+          initialAmount,
+          extensionAmount,
+          totalAmountPaid: totalAmount,
+          durationMinutes: occupancyDurationMinutes || sessionSummary?.sessionSummary?.totalTimeUsedMinutes || 0,
+          closedBy: closedByName,
+          closeReason: finalReason,
+          reasonDetail: finalReasonDetail,
+          closedAt: new Date().toISOString()
+        }
+      }
+    }).catch((err) => console.warn('[releaseTable] SyncLog write note:', err.message));
+
     await redisService.del('tables:all').catch(() => {});
     await redisService.del('tokens:active').catch(() => {});
+    if (tokenRecord?.customer?.phoneNumber) {
+      await redisService.del(`customer:active:${tokenRecord.customer.phoneNumber}`).catch(() => {});
+    }
+    await redisService.del(`table:${tableId}:status`).catch(() => {});
 
     return res.json({
       success: true,
@@ -1252,36 +1367,51 @@ router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 
         tableNumber: table.tableNumber,
         status: table.status,
         occupancyDurationMinutes,
+        customerName: tokenRecord?.customer?.name,
+        phoneNumber: tokenRecord?.customer?.phoneNumber,
+        email: tokenRecord?.customer?.email,
+        personsCount: tokenRecord?.personsCount,
+        totalAmountPaid: totalAmount,
+        reasonDetail: finalReasonDetail
       },
-      message: 'Table released successfully',
+      message: 'Table released and session closed successfully',
     });
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { code: 'RELEASE_ERR', message: err.message } });
   }
 });
 
+
 // Create Table (Admin Only)
 router.post('/tables', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
   const { tableNumber, number, placeTypeId, placeType, capacity, isActive } = req.body;
   
-  const finalTableNumber = tableNumber || number;
+  const finalTableNumber = (tableNumber || number || '').trim().toUpperCase();
   let finalPlaceTypeId = placeTypeId;
 
   if (!finalTableNumber) {
     return res.status(400).json({ success: false, error: { code: 'VAL_007', message: 'Table number is required' } });
   }
 
-  const tableNumRegex = /^(S|L)-\d{2}$/;
+  const tableNumRegex = /^[SL]-\d{2,4}$/;
   if (!tableNumRegex.test(finalTableNumber)) {
-    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Table number must match prefix and 2-digit format (S-01 to S-15, L-01 to L-10) and have length 4.' } });
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Table number must match prefix and numeric format (e.g., S-16, L-11).' } });
   }
 
   const finalCapacity = capacity ? parseInt(capacity, 10) : 2;
-  if (isNaN(finalCapacity) || finalCapacity < 1 || finalCapacity > 100) {
-    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Table capacity must be between 1 and 100.' } });
+  if (isNaN(finalCapacity) || finalCapacity < 1 || finalCapacity > 20) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Table capacity must be between 1 and 20.' } });
   }
 
   try {
+    // Resolve placeTypeId from name if it matches a known placeType name
+    if (finalPlaceTypeId && (finalPlaceTypeId === 'STANDING_BAR' || finalPlaceTypeId === 'PREMIUM_LOUNGE')) {
+      const ptObj = await prisma.placeTypeConfig.findUnique({
+        where: { name: finalPlaceTypeId }
+      });
+      if (ptObj) finalPlaceTypeId = ptObj.id;
+    }
+
     if (!finalPlaceTypeId && placeType) {
       const ptObj = await prisma.placeTypeConfig.findUnique({
         where: { name: placeType }
@@ -1295,6 +1425,25 @@ router.post('/tables', authenticate, authorize(['admin']), async (req: Request, 
 
     if (!isValidUUID(finalPlaceTypeId)) {
       return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid placeTypeId UUID format.' } });
+    }
+
+    // Enforce global case-insensitive uniqueness check for table number/name
+    const existingTable = await prisma.table.findFirst({
+      where: {
+        tableNumber: {
+          equals: finalTableNumber,
+          mode: 'insensitive'
+        }
+      }
+    });
+    if (existingTable) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VAL_ERR',
+          message: 'Table name already exists. Please use a different table name.'
+        }
+      });
     }
 
     const table = await prisma.table.create({
@@ -1355,23 +1504,70 @@ router.put('/tables/:id', authenticate, authorize(['admin']), async (req: Reques
       return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Table not found' } });
     }
 
-    // 2. Business Rule: Prevent editing occupied tables
-    if (table.status === 'occupied' || table.tokens.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: { code: 'CONFLICT_OCCUPIED', message: 'Cannot edit table details while it is occupied or has active sessions.' }
+    // 3. Resolve inputs
+    const finalTableNumber = (tableNumber || number) ? (tableNumber || number).trim().toUpperCase() : undefined;
+    let finalPlaceTypeId = placeTypeId;
+    if (finalPlaceTypeId && (finalPlaceTypeId === 'STANDING_BAR' || finalPlaceTypeId === 'PREMIUM_LOUNGE')) {
+      const ptObj = await prisma.placeTypeConfig.findUnique({
+        where: { name: finalPlaceTypeId }
       });
+      if (ptObj) finalPlaceTypeId = ptObj.id;
+    }
+    if (!finalPlaceTypeId && placeType) {
+      if (placeType === 'STANDING_BAR' || placeType === 'PREMIUM_LOUNGE') {
+        const ptObj = await prisma.placeTypeConfig.findUnique({
+          where: { name: placeType }
+        });
+        if (ptObj) finalPlaceTypeId = ptObj.id;
+      }
     }
 
-    // 3. Resolve inputs
-    const finalTableNumber = tableNumber || number;
-    let finalPlaceTypeId = placeTypeId;
+    // 2. Business Rule: Prevent editing occupied tables' critical fields (table number / place type) while occupied or active
+    const isOccupiedOrActive = table.status === 'occupied' || table.tokens.length > 0;
+    if (isOccupiedOrActive) {
+      const isTableNumberChanging = finalTableNumber !== undefined && finalTableNumber !== table.tableNumber.toUpperCase();
+      const isPlaceTypeChanging = finalPlaceTypeId !== undefined && finalPlaceTypeId !== table.placeTypeId;
+
+      if (isTableNumberChanging || isPlaceTypeChanging) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'CONFLICT_OCCUPIED', message: 'Cannot edit table details while it is occupied or has active sessions.' }
+        });
+      }
+    }
 
     if (finalTableNumber) {
-      const tableNumRegex = /^(S|L)-\d{2}$/;
+      const tableNumRegex = /^[SL]-\d{2,4}$/;
       if (!tableNumRegex.test(finalTableNumber)) {
-        return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Table number must match prefix and 2-digit format (S-01 to S-15, L-01 to L-10).' } });
+        return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Table number must match prefix and numeric format (e.g., S-16, L-11).' } });
       }
+
+      // Enforce global case-insensitive uniqueness check for table number/name on edit
+      const existingTable = await prisma.table.findFirst({
+        where: {
+          tableNumber: {
+            equals: finalTableNumber,
+            mode: 'insensitive'
+          },
+          id: { not: id }
+        }
+      });
+      if (existingTable) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VAL_ERR',
+            message: 'Table name already exists. Please use a different table name.'
+          }
+        });
+      }
+    }
+
+    if (finalPlaceTypeId && (finalPlaceTypeId === 'STANDING_BAR' || finalPlaceTypeId === 'PREMIUM_LOUNGE')) {
+      const ptObj = await prisma.placeTypeConfig.findUnique({
+        where: { name: finalPlaceTypeId }
+      });
+      if (ptObj) finalPlaceTypeId = ptObj.id;
     }
 
     if (!finalPlaceTypeId && placeType) {
@@ -1384,8 +1580,8 @@ router.put('/tables/:id', authenticate, authorize(['admin']), async (req: Reques
     }
 
     const finalCapacity = capacity ? parseInt(capacity, 10) : undefined;
-    if (finalCapacity !== undefined && (isNaN(finalCapacity) || finalCapacity < 1 || finalCapacity > 100)) {
-      return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Table capacity must be between 1 and 100.' } });
+    if (finalCapacity !== undefined && (isNaN(finalCapacity) || finalCapacity < 1 || finalCapacity > 20)) {
+      return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Table capacity must be between 1 and 20.' } });
     }
 
     const updated = await prisma.table.update({
@@ -1419,7 +1615,7 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
     return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid table ID UUID format.' } });
   }
 
-  const validStatuses = ['available', 'occupied', 'reserved', 'maintenance'];
+  const validStatuses = ['available', 'occupied', 'reserved', 'maintenance', 'in_checkin'];
   if (!status || !validStatuses.includes(status.toLowerCase())) {
     return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: `Invalid status. Must be one of: ${validStatuses.join(', ')}` } });
   }
@@ -1431,7 +1627,7 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
       where: { id },
       include: {
         tokens: {
-          where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.EXPIRED] } }
+          where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] } }
         }
       }
     }) as any;
@@ -1440,7 +1636,15 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
       return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Table not found' } });
     }
 
-    const hasActiveSession = table.tokens.length > 0;
+    // 0. Business Rule: Prevent changes if table is locked for check-in
+    if (table.status === 'in_checkin' && targetStatus !== 'available') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'CONFLICT_LOCKED', message: 'Table is currently locked for check-in and cannot be modified directly.' }
+      });
+    }
+
+    const hasActiveSession = (table.status === 'occupied' && table.currentTokenId !== null) || (table.tokens && table.tokens.length > 0);
 
     // 1. Business Rule: Prevent maintenance changes during active sessions
     if (targetStatus === 'maintenance' && (table.status === 'occupied' || hasActiveSession)) {
@@ -1459,7 +1663,7 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
     }
 
     // 3. Business Rule: Prevent available if active sessions exist
-    if (targetStatus === 'available' && hasActiveSession) {
+    if (targetStatus === 'available' && table.status === 'occupied' && hasActiveSession) {
       return res.status(400).json({
         success: false,
         error: { code: 'CONFLICT_ACTIVE_SESSION', message: 'Cannot make table available while there is an active session. Release the session first.' }
@@ -1477,6 +1681,19 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
       include: { placeType: true }
     });
 
+    if (targetStatus === 'maintenance') {
+      const lockKey = `table:lock:${id}`;
+      await redisService.setex(lockKey, 3600, JSON.stringify({
+        lockedBy: (req as any).user?.id || 'admin',
+        lockedByName: (req as any).user?.fullName || (req as any).user?.username || 'Administrator',
+        lockedByRole: (req as any).user?.role || 'admin',
+        originalStatus: table.status,
+        lockedAt: Date.now()
+      }));
+    } else if (targetStatus === 'available') {
+      await redisService.del(`table:lock:${id}`).catch(() => {});
+    }
+
     await redisService.del(`table:available:${updated.placeTypeId}`);
     await redisService.del('table:available:all');
     await redisService.del('tables:all').catch(() => {});
@@ -1485,6 +1702,194 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { code: 'STATUS_ERR', message: err.message } });
   }
+});
+
+// Lock Table for Check-In (Authenticated)
+router.post('/tables/:id/lock', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+
+  if (!isValidUUID(id)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid table ID UUID format.' } });
+  }
+
+  const userId = req.user?.id || 'receptionist';
+  const userName = req.user?.fullName || req.user?.username || 'Receptionist';
+  const userRole = req.user?.role || 'receptionist';
+
+  try {
+    const updatedTable = await prisma.$transaction(async (tx) => {
+      const tables = await tx.$queryRaw<any[]>`
+        SELECT id, status, "place_type_id" as "placeTypeId"
+        FROM tables
+        WHERE id = ${id}
+        LIMIT 1
+        FOR UPDATE
+      `;
+
+      if (!tables || tables.length === 0) {
+        throw new Error('Table not found');
+      }
+      const table = tables[0];
+
+      // Check current status in DB to ensure it is available or reserved
+      if (table.status !== 'available' && table.status !== 'reserved') {
+        throw new Error(`Table cannot be locked because its current status is '${table.status}'.`);
+      }
+
+      // Save lock metadata to Redis (authoritative lock)
+      const lockKey = `table:lock:${id}`;
+      await redisService.setex(lockKey, 3600, JSON.stringify({
+        lockedBy: userId,
+        lockedByName: userName,
+        lockedByRole: userRole,
+        originalStatus: table.status,
+        lockedAt: Date.now()
+      }));
+
+      // Update table status to in_checkin
+      const updated = await tx.table.update({
+        where: { id },
+        data: { status: 'in_checkin' },
+        include: { placeType: true }
+      });
+
+      return updated;
+    });
+
+    await redisService.del(`table:available:${updatedTable.placeTypeId}`);
+    await redisService.del('table:available:all');
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.json({ success: true, table: updatedTable });
+  } catch (err: any) {
+    const isTechnical = err.message.includes('Prisma') || err.message.includes('queryRaw') || err.message.includes('SQL') || err.message.includes('column') || err.message.includes('relation');
+    const friendlyMsg = isTechnical ? 'Failed to lock the table for check-in. Please try again.' : err.message;
+    return res.status(400).json({ success: false, error: { code: 'LOCK_ERR', message: friendlyMsg } });
+  }
+});
+
+// Unlock Table/Release Check-In (Authenticated)
+router.post('/tables/:id/unlock', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+
+  if (!isValidUUID(id)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid table ID UUID format.' } });
+  }
+
+  const userId = req.user?.id || 'receptionist';
+  const isAdmin = req.user?.role?.toLowerCase() === 'admin';
+  const isManager = req.user?.role?.toLowerCase() === 'manager';
+
+  try {
+    const updatedTable = await prisma.$transaction(async (tx) => {
+      const table = await tx.table.findUnique({
+        where: { id }
+      });
+
+      if (!table) {
+        throw new Error('Table not found');
+      }
+
+      // Must be currently in_checkin status to unlock
+      if (table.status !== 'in_checkin') {
+        throw new Error(`Table cannot be unlocked because its current status is '${table.status}'.`);
+      }
+
+      // Verify lock ownership in Redis
+      const lockKey = `table:lock:${id}`;
+      const lockDataStr = await redisService.get(lockKey);
+      let originalStatus = 'available';
+
+      if (lockDataStr) {
+        const lockData = JSON.parse(lockDataStr);
+        if (lockData.lockedBy !== userId && !isAdmin && !isManager) {
+          throw new Error('You do not own the lock on this table.');
+        }
+        originalStatus = lockData.originalStatus || 'available';
+      }
+
+      // Revert status to originalStatus
+      let finalStatus = originalStatus;
+      const forceAvailable = req.body.forceAvailable === true || req.query.forceAvailable === 'true';
+      if (finalStatus === 'available' && !forceAvailable) {
+        const activeRes = await tx.reservation.findFirst({
+          where: {
+            tableId: id,
+            status: 'PENDING'
+          }
+        });
+        if (activeRes) {
+          finalStatus = 'reserved';
+        }
+      }
+
+      // Delete lock metadata from Redis
+      await redisService.del(lockKey);
+
+      // Revert status to finalStatus
+      const updated = await tx.table.update({
+        where: { id },
+        data: { status: finalStatus },
+        include: { placeType: true }
+      });
+
+      return updated;
+    });
+
+    await redisService.del(`table:available:${updatedTable.placeTypeId}`);
+    await redisService.del('table:available:all');
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.json({ success: true, table: updatedTable });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { code: 'UNLOCK_ERR', message: err.message } });
+  }
+});
+
+router.post('/check-in/validate-duplicate', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { email, phoneNumber, tokenNumber } = req.body;
+
+  const normalizedPhone = normalizePhone(phoneNumber);
+  const normalizedEmail = normalizeEmail(email);
+
+  let excludeTokenId: string | undefined;
+  if (tokenNumber) {
+    const t = await prisma.token.findUnique({ where: { tokenNumber } });
+    if (t) excludeTokenId = t.id;
+  }
+
+  let emailConflict = false;
+  let phoneConflict = false;
+
+  if (normalizedPhone) {
+    const activePhoneToken = await prisma.token.findFirst({
+      where: {
+        id: excludeTokenId ? { not: excludeTokenId } : undefined,
+        status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
+        customer: { phoneNumber: normalizedPhone }
+      }
+    });
+    if (activePhoneToken) phoneConflict = true;
+  }
+
+  if (normalizedEmail) {
+    const activeEmailToken = await prisma.token.findFirst({
+      where: {
+        id: excludeTokenId ? { not: excludeTokenId } : undefined,
+        status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
+        customer: { email: normalizedEmail }
+      }
+    });
+    if (activeEmailToken) emailConflict = true;
+  }
+
+  return res.json({
+    success: true,
+    conflicts: {
+      email: emailConflict,
+      phone: phoneConflict
+    }
+  });
 });
 
 // ==========================================
@@ -1508,11 +1913,12 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
 
   const deliveryMode = 'EMAIL_QR';
 
+  const cleanedPhoneNumber = phoneNumber ? phoneNumber.trim().replace(/[^\d+]/g, '') : '';
   const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
-  if (!phoneNumber || !phoneRegex.test(phoneNumber)) {
+  if (!cleanedPhoneNumber || !phoneRegex.test(cleanedPhoneNumber)) {
     return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Please enter a valid 10-digit Indian phone number starting with 6-9.' } });
   }
-  const finalPhoneNumber = phoneNumber.startsWith('+91') ? phoneNumber : `+91${phoneNumber}`;
+  const finalPhoneNumber = normalizePhone(cleanedPhoneNumber);
 
   const nameRegex = /^[a-zA-Z\s.'-]{2,100}$/;
   if (!customerName || !nameRegex.test(customerName)) {
@@ -1527,7 +1933,7 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
   if (!validateEmail(email)) {
     return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Please enter a valid Gmail address using only lowercase letters, numbers, and dots.' } });
   }
-  let finalEmail = email.trim().toLowerCase();
+  let finalEmail = normalizeEmail(email);
 
   const finalPersonsCount = parseInt(personsCount || persons || '1', 10);
   if (isNaN(finalPersonsCount) || finalPersonsCount < 1) {
@@ -1570,7 +1976,7 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
 
     // Resolve Table ID
     if (!finalTableId && tableNumber) {
-      const normalizedTableNumber = tableNumber.trim().replace(/^([SL])(\d{2})$/i, '$1-$2').toUpperCase();
+      const normalizedTableNumber = tableNumber.trim().replace(/^([SL])(\d{2,4})$/i, '$1-$2').toUpperCase();
       const tableObj = await prisma.table.findFirst({
         where: { tableNumber: normalizedTableNumber, placeTypeId: finalPlaceTypeId }
       });
@@ -1652,6 +2058,15 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
     return res.status(201).json(responseData);
   } catch (err: any) {
     console.error(err);
+    if (err.code === 'ACTIVE_SESSION_EXISTS' || err.code === 'PENDING_SESSION_EXISTS') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'DUPLICATE_ACTIVE_SESSION',
+          message: err.message
+        }
+      });
+    }
     return res.status(400).json({ success: false, error: { message: err.message } });
   }
 };
@@ -1669,11 +2084,12 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
     tableNumber,
   } = req.body;
 
+  const cleanedPhoneNumber = phoneNumber ? phoneNumber.trim().replace(/[^\d+]/g, '') : '';
   const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
-  if (!phoneNumber || !phoneRegex.test(phoneNumber)) {
+  if (!cleanedPhoneNumber || !phoneRegex.test(cleanedPhoneNumber)) {
     return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Please enter a valid 10-digit Indian phone number starting with 6-9.' } });
   }
-  const finalPhoneNumber = phoneNumber.startsWith('+91') ? phoneNumber : `+91${phoneNumber}`;
+  const finalPhoneNumber = normalizePhone(cleanedPhoneNumber);
 
   const nameRegex = /^[a-zA-Z\s.'-]{2,100}$/;
   if (!customerName || !nameRegex.test(customerName)) {
@@ -1686,7 +2102,7 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
   if (!validateEmail(email)) {
     return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Please enter a valid Gmail address using only lowercase letters, numbers, and dots.' } });
   }
-  const finalEmail = email.trim().toLowerCase();
+  const finalEmail = normalizeEmail(email);
 
   const finalPersonsCount = parseInt(personsCount || persons || '1', 10);
   if (isNaN(finalPersonsCount) || finalPersonsCount < 1) {
@@ -1734,35 +2150,33 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
         return res.status(400).json({ success: false, error: { message: `Cannot update token with status ${existingToken.status}` } });
       }
 
-      // Check if this customer already has another active session (by phone or email)
-      const customerRecord = await prisma.customer.findUnique({
-        where: { id: existingToken.customerId }
+      // Check if another customer/token already has this phone or email active
+      const otherActiveOrPendingToken = await prisma.token.findFirst({
+        where: {
+          id: { not: existingToken.id },
+          status: {
+            in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT]
+          },
+          OR: [
+            { customer: { phoneNumber: finalPhoneNumber } },
+            finalEmail ? { customer: { email: finalEmail } } : undefined
+          ].filter(Boolean) as any
+        },
+        include: { customer: true }
       });
-      if (customerRecord) {
-        const orConditions: any[] = [
-          { customer: { phoneNumber: customerRecord.phoneNumber } }
-        ];
-        if (customerRecord.email && customerRecord.email.trim()) {
-          orConditions.push({ customer: { email: customerRecord.email.trim().toLowerCase() } });
-        }
 
-        const otherActiveOrPendingToken = await prisma.token.findFirst({
-          where: {
-            id: { not: existingToken.id },
-            OR: orConditions,
-            status: {
-              in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT]
-            }
+      if (otherActiveOrPendingToken) {
+        const isPending = otherActiveOrPendingToken.status === TokenStatus.PENDING_PAYMENT;
+        const msg = isPending
+          ? `A pending payment session already exists for this customer (Phone: ${otherActiveOrPendingToken.customer.phoneNumber}, Email: ${otherActiveOrPendingToken.customer.email || 'N/A'}).`
+          : `Customer already has an active session (Phone: ${otherActiveOrPendingToken.customer.phoneNumber}, Email: ${otherActiveOrPendingToken.customer.email || 'N/A'}).`;
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'DUPLICATE_ACTIVE_SESSION',
+            message: msg
           }
         });
-
-        if (otherActiveOrPendingToken) {
-          const isPending = otherActiveOrPendingToken.status === TokenStatus.PENDING_PAYMENT;
-          const msg = isPending
-            ? `A pending payment session already exists for this customer.`
-            : `Customer already has an active session.`;
-          return res.status(400).json({ success: false, error: { message: msg } });
-        }
       }
 
       // If assigning a table
@@ -1777,17 +2191,34 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
       }
 
       if (tableNumber) {
-        const table = await prisma.table.findFirst({
-          where: { tableNumber: tableNumber, placeTypeId: finalPlaceTypeId }
+        const normalizedTableNumber = tableNumber.trim().replace(/^([SL])(\d{2})$/i, '$1-$2').toUpperCase();
+        let table = await prisma.table.findFirst({
+          where: { tableNumber: normalizedTableNumber, placeTypeId: finalPlaceTypeId }
         });
+        if (!table) {
+          table = await prisma.table.findFirst({
+            where: { tableNumber: normalizedTableNumber }
+          });
+        }
         if (!table) {
           return res.status(404).json({ success: false, error: { message: `Table ${tableNumber} not found` } });
         }
-        if (table.status !== 'available' && table.currentTokenId !== existingToken.id) {
+        if (table.status !== 'available' && table.status !== 'in_checkin' && table.currentTokenId !== existingToken.id) {
           return res.status(400).json({ success: false, error: { message: `Table ${tableNumber} is not available.` } });
         }
         resolvedTableId = table.id;
       }
+
+      // Update customer details if they changed
+      await prisma.customer.update({
+        where: { id: existingToken.customerId },
+        data: {
+          name: customerName,
+          email: finalEmail
+        }
+      });
+
+      const emailPending = resolvedTableId && !existingToken.emailSent && existingToken.emailDeliveryStatus !== 'PENDING';
 
       // Update token tableId and check-in details
       const updatedToken = await prisma.token.update({
@@ -1796,16 +2227,13 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
           tableId: resolvedTableId,
           personsCount: finalPersonsCount,
           placeTypeId: finalPlaceTypeId,
+          ...(emailPending ? { emailDeliveryStatus: 'PENDING' } : {})
         },
         include: { customer: true, placeType: true, table: true }
       });
 
       // Send email if table is assigned now and email wasn't sent
-      if (resolvedTableId && !existingToken.emailSent) {
-        await prisma.token.update({
-          where: { id: existingToken.id },
-          data: { emailSent: true, emailDeliveryStatus: 'SENT', emailSentAt: new Date() }
-        });
+      if (emailPending) {
         emailNotificationService.enqueueEmailJob(finalEmail, existingToken.tokenNumber, customerName);
       }
 
@@ -1886,12 +2314,13 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
 
     return res.status(201).json(responseData);
   } catch (err: any) {
-    if (err.code === 'PENDING_SESSION_EXISTS') {
+    if (err.code === 'ACTIVE_SESSION_EXISTS' || err.code === 'PENDING_SESSION_EXISTS') {
       return res.status(400).json({
         success: false,
-        code: 'PENDING_SESSION_EXISTS',
-        error: { message: err.message },
-        tokenNumber: err.tokenNumber
+        error: {
+          code: 'DUPLICATE_ACTIVE_SESSION',
+          message: err.message
+        }
       });
     }
     console.error('Error in checkInPendingHandler:', err);
@@ -2001,7 +2430,7 @@ const verifyQrHandler = async (req: Request, res: Response) => {
 };
 
 const activateSessionHandler = async (req: AuthenticatedRequest, res: Response) => {
-  const { tokenNumber, tableNumber, amountPaid } = req.body;
+  const { tokenNumber, tableNumber, amountPaid, bypassCapacity } = req.body;
   const activatedBy = req.user?.id || 'receptionist';
 
   try {
@@ -2009,7 +2438,8 @@ const activateSessionHandler = async (req: AuthenticatedRequest, res: Response) 
       tokenNumber,
       tableNumber,
       amountPaid ? parseFloat(amountPaid) : 0,
-      activatedBy
+      activatedBy,
+      bypassCapacity === true || bypassCapacity === 'true'
     );
 
     const responseData = {
@@ -2033,13 +2463,11 @@ const activateSessionHandler = async (req: AuthenticatedRequest, res: Response) 
       createdAt: updatedToken.issuedAt.toISOString(),
     };
 
-    if (updatedToken.deliveryMode === 'EMAIL_QR' && updatedToken.customer.email && !updatedToken.emailSent) {
+    if (updatedToken.deliveryMode === 'EMAIL_QR' && updatedToken.customer.email && !updatedToken.emailSent && updatedToken.emailDeliveryStatus !== 'PENDING') {
       await prisma.token.update({
         where: { id: updatedToken.id },
         data: {
-          emailSent: true,
-          emailDeliveryStatus: 'SENT',
-          emailSentAt: new Date()
+          emailDeliveryStatus: 'PENDING'
         }
       }).catch(() => {});
 
@@ -2079,6 +2507,337 @@ const cancelSessionHandler = async (req: AuthenticatedRequest, res: Response) =>
     return res.status(400).json({ success: false, error: { message: err.message } });
   }
 };
+
+// Reservation endpoints
+router.get('/reservations', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const activeReservations = await prisma.reservation.findMany({
+      where: { status: 'PENDING' },
+      include: {
+        table: true,
+        user: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
+            role: {
+              select: { name: true }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    return res.json({ success: true, reservations: activeReservations });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+router.post('/reservations', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { customerName, phoneNumber, email, personsCount, tableId } = req.body;
+  const userId = req.user?.id;
+
+  if (!customerName || !phoneNumber || !email || !personsCount || !tableId) {
+    return res.status(400).json({ success: false, error: { message: 'All reservation details (Name, Phone, Email, Members, Table) are mandatory.' } });
+  }
+
+  const finalPhone = normalizePhone(phoneNumber);
+  const finalEmail = normalizeEmail(email);
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // Verify table exists and is available
+      const table = await tx.table.findUnique({
+        where: { id: tableId }
+      });
+
+      if (!table) {
+        throw new Error('Selected table was not found.');
+      }
+
+      if (parseInt(personsCount, 10) > table.capacity) {
+        throw new Error(`Group size of ${personsCount} exceeds table capacity of ${table.capacity}.`);
+      }
+
+      if (table.status !== 'available') {
+        throw new Error(`Table ${table.tableNumber} is not available for reservation (current status: ${table.status}).`);
+      }
+
+      // Update table status to reserved
+      await tx.table.update({
+        where: { id: tableId },
+        data: { status: 'reserved' }
+      });
+
+      // Create reservation
+      const reservation = await tx.reservation.create({
+        data: {
+          customerName,
+          phoneNumber: finalPhone,
+          email: finalEmail,
+          personsCount: parseInt(personsCount, 10),
+          tableId,
+          userId,
+          status: 'PENDING'
+        },
+        include: { table: true }
+      });
+
+      return reservation;
+    });
+
+    await redisService.del('tables:all').catch(() => {});
+    return res.status(201).json({ success: true, reservation: result });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+router.post('/reservations/:id/cancel', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const userId = req.user?.id;
+  const isAdmin = req.user?.role?.toLowerCase() === 'admin';
+  const isManager = req.user?.role?.toLowerCase() === 'manager';
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const reservations = await tx.$queryRaw<any[]>`
+        SELECT id, status, "user_id" as "userId", "table_id" as "tableId"
+        FROM reservations
+        WHERE id = ${id}
+        LIMIT 1
+        FOR UPDATE
+      `;
+
+      if (!reservations || reservations.length === 0) {
+        throw new Error('Reservation not found.');
+      }
+      const reservation = reservations[0];
+
+      if (reservation.status !== 'PENDING') {
+        throw new Error(`Reservation cannot be cancelled (current status: ${reservation.status}).`);
+      }
+
+      // Enforce ownership
+      if (reservation.userId && reservation.userId !== userId && !isAdmin && !isManager) {
+        throw new Error('You do not own this reservation.');
+      }
+
+      // If a table is mapped, verify it is not locked for check-in
+      if (reservation.tableId) {
+        const tables = await tx.$queryRaw<any[]>`
+          SELECT id, status
+          FROM tables
+          WHERE id = ${reservation.tableId}
+          LIMIT 1
+          FOR UPDATE
+        `;
+        if (tables && tables.length > 0) {
+          const table = tables[0];
+          if (table.status === 'in_checkin') {
+            throw new Error('Reservation cannot be cancelled while check-in is in progress.');
+          }
+        }
+      }
+
+      // Cancel reservation
+      await tx.reservation.update({
+        where: { id },
+        data: { status: 'CANCELLED' }
+      });
+
+      // Release table
+      if (reservation.tableId) {
+        await tx.table.update({
+          where: { id: reservation.tableId },
+          data: { status: 'available' }
+        });
+      }
+    });
+
+    await redisService.del('tables:all').catch(() => {});
+    return res.json({ success: true, message: 'Reservation cancelled successfully.' });
+  } catch (err: any) {
+    const isTechnical = err.message.includes('Prisma') || err.message.includes('queryRaw') || err.message.includes('SQL') || err.message.includes('column') || err.message.includes('relation');
+    const friendlyMsg = isTechnical ? 'Failed to cancel the reservation. Please verify the table status and try again.' : err.message;
+    return res.status(400).json({ success: false, error: { message: friendlyMsg } });
+  }
+});
+
+router.put('/reservations/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { customerName, phoneNumber, email, personsCount, tableId, bypassCapacity } = req.body;
+  const userId = req.user?.id;
+  const isAdmin = req.user?.role?.toLowerCase() === 'admin';
+  const isManager = req.user?.role?.toLowerCase() === 'manager';
+
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const reservation = await tx.reservation.findUnique({
+        where: { id },
+        include: { table: true }
+      });
+
+      if (!reservation) {
+        throw new Error('Reservation not found');
+      }
+
+      // Enforce ownership
+      if (reservation.userId && reservation.userId !== userId && !isAdmin && !isManager) {
+        throw new Error('You do not own this reservation.');
+      }
+
+      const finalPhone = phoneNumber ? normalizePhone(phoneNumber) : reservation.phoneNumber;
+      const finalEmail = email ? normalizeEmail(email) : reservation.email;
+      const finalPersons = personsCount ? parseInt(personsCount, 10) : reservation.personsCount;
+      const isClearingTable = tableId === null || tableId === '';
+      const targetTableId = isClearingTable ? null : (tableId || reservation.tableId);
+
+      if (targetTableId) {
+        const targetTable = targetTableId === reservation.tableId ? reservation.table : await tx.table.findUnique({ where: { id: targetTableId } });
+        if (!targetTable) {
+          throw new Error('Selected table was not found.');
+        }
+        const shouldBypass = bypassCapacity === true || bypassCapacity === 'true';
+        if (finalPersons > targetTable.capacity && !shouldBypass) {
+          throw new Error(`Group size of ${finalPersons} exceeds table capacity of ${targetTable.capacity}.`);
+        }
+
+        // Handle table switch if tableId changes
+        if (targetTableId !== reservation.tableId) {
+          const newTable = await tx.table.findUnique({ where: { id: targetTableId } });
+          if (!newTable) {
+            throw new Error('New table not found');
+          }
+          if (newTable.status !== 'in_checkin' && newTable.status !== 'available') {
+            throw new Error('New table is not available or locked for check-in.');
+          }
+
+          // Validate target Redis lock ownership if a lock exists
+          const newLockKey = `table:lock:${targetTableId}`;
+          const newLockDataStr = await redisService.get(newLockKey);
+          if (newLockDataStr) {
+            try {
+              const lockData = JSON.parse(newLockDataStr);
+              if (lockData.lockedBy && lockData.lockedBy !== userId && !isAdmin && !isManager) {
+                const customErr = new Error('You do not own the lock on the target table.') as any;
+                customErr.statusCode = 403;
+                customErr.code = 'TABLE_LOCK_NOT_OWNED';
+                throw customErr;
+              }
+            } catch (e: any) {
+              if (e.code === 'TABLE_LOCK_NOT_OWNED') {
+                throw e;
+              }
+            }
+          }
+
+          // Release old table to available
+          if (reservation.tableId) {
+            await tx.table.update({
+              where: { id: reservation.tableId },
+              data: { status: 'available' }
+            });
+
+            // Delete old table's Redis lock
+            await redisService.del(`table:lock:${reservation.tableId}`).catch(() => {});
+          }
+
+          // If table status was not locked yet by check-in, set it to in_checkin in DB
+          if (newTable.status === 'available') {
+            await tx.table.update({
+              where: { id: targetTableId },
+              data: { status: 'in_checkin' }
+            });
+          }
+
+          // Update new table's Redis lock metadata to have originalStatus = 'reserved'
+          let newLockData = { lockedBy: userId, originalStatus: 'reserved', lockedAt: Date.now() };
+          if (newLockDataStr) {
+            try {
+              const parsed = JSON.parse(newLockDataStr);
+              newLockData = { ...parsed, originalStatus: 'reserved' };
+            } catch {}
+          }
+          await redisService.setex(newLockKey, 3600, JSON.stringify(newLockData));
+        }
+      } else if (isClearingTable) {
+        // Release old table to available
+        if (reservation.tableId) {
+          await tx.table.update({
+            where: { id: reservation.tableId },
+            data: { status: 'available' }
+          });
+
+          // Delete old table's Redis lock
+          await redisService.del(`table:lock:${reservation.tableId}`).catch(() => {});
+        }
+      }
+
+      // Update details
+      const updatedRes = await tx.reservation.update({
+        where: { id },
+        data: {
+          customerName: customerName || reservation.customerName,
+          phoneNumber: finalPhone,
+          email: finalEmail,
+          personsCount: finalPersons,
+          tableId: targetTableId
+        },
+        include: { table: true }
+      });
+
+      return updatedRes;
+    });
+
+    await redisService.del('tables:all').catch(() => {});
+    return res.json({ success: true, reservation: updated });
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    const errorCode = err.code || 'RESERVATION_UPDATE_ERR';
+    return res.status(status).json({ success: false, error: { code: errorCode, message: err.message } });
+  }
+});
+
+router.post('/reservations/:id/assign', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const reservations = await tx.$queryRaw<any[]>`
+        SELECT id, status
+        FROM reservations
+        WHERE id = ${id}
+        LIMIT 1
+        FOR UPDATE
+      `;
+
+      if (!reservations || reservations.length === 0) {
+        throw new Error('Reservation not found.');
+      }
+      const reservation = reservations[0];
+
+      if (reservation.status !== 'PENDING') {
+        throw new Error(`Reservation is no longer active (current status: ${reservation.status}).`);
+      }
+
+      const updatedRes = await tx.reservation.update({
+        where: { id },
+        data: { status: 'ASSIGNED' }
+      });
+
+      return updatedRes;
+    });
+
+    await redisService.del('tables:all').catch(() => {});
+    return res.json({ success: true, message: 'Reservation assigned successfully.', reservation: updated });
+  } catch (err: any) {
+    const isTechnical = err.message.includes('Prisma') || err.message.includes('queryRaw') || err.message.includes('SQL') || err.message.includes('column') || err.message.includes('relation');
+    const friendlyMsg = isTechnical ? 'Failed to assign the reservation. Please try again.' : err.message;
+    return res.status(400).json({ success: false, error: { message: friendlyMsg } });
+  }
+});
 
 // Map receptionist check-in endpoints
 router.post('/check-in', authenticate, authorize(['receptionist', 'admin']), checkInHandler);
@@ -2213,7 +2972,7 @@ router.post('/qr/verify', authenticate, authorize(['bartender', 'receptionist', 
 
 // Unified Redemption Endpoint
 router.post('/redemptions', authenticate, authorize(['bartender', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
-  const { payload, presentationType, bartenderId } = req.body;
+  const { payload, presentationType, bartenderId, quantity } = req.body;
   
   if (!payload) {
     return res.status(400).json({ success: false, error: { message: 'payload is required.' } });
@@ -2229,18 +2988,25 @@ router.post('/redemptions', authenticate, authorize(['bartender', 'admin']), asy
     return res.status(400).json({ success: false, error: { message: 'Invalid bartenderId UUID format.' } });
   }
 
+  const finalQuantity = quantity ? parseInt(quantity.toString(), 10) : 1;
+
   try {
     const result = await redemptionService.processRedemption(
       payload,
       finalBartenderId,
       undefined,
-      finalPresentationType
+      finalPresentationType,
+      finalQuantity
     );
 
+    const updatedToken = result.redemption?.token;
     return res.json({
       success: true,
       message: 'Redemption recorded successfully',
-      data: result
+      data: result,
+      token: updatedToken,
+      remainingDrinks: result.remainingRedemptions,
+      redemptionsUsed: updatedToken?.redemptionsUsed
     });
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { message: err.message } });
@@ -2289,21 +3055,36 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
       orderBy: { startTime: 'desc' },
     });
     
-    // Map response for old client compatibility
+    // Map response for client compatibility
     const oldTokens = activeTokens.map((t: any) => ({
       id: t.id,
       tokenNumber: t.tokenNumber,
-      phoneNumber: t.customer.phoneNumber,
-      customerName: t.customer.name,
-      email: t.customer.email,
+      phoneNumber: t.customer?.phoneNumber || '',
+      customerName: t.customer?.name || '',
+      email: t.customer?.email || '',
+      customer: t.customer ? {
+        id: t.customer.id,
+        name: t.customer.name,
+        phoneNumber: t.customer.phoneNumber,
+        email: t.customer.email
+      } : {
+        id: '',
+        name: t.customerName || 'Guest',
+        phoneNumber: t.phoneNumber || '',
+        email: t.email || ''
+      },
       persons: t.personsCount,
-      placeType: t.placeType.name,
+      personsCount: t.personsCount,
+      placeType: t.placeType?.name || '',
+      placeTypeId: t.placeTypeId,
       tableId: t.tableId,
       tableNumber: t.table?.tableNumber || null,
       amountPaid: t.amountPaid,
       paymentVerified: t.paymentVerified,
       startTime: t.startTime.toISOString(),
       endTime: t.endTime.toISOString(),
+      totalRedemptionsAllowed: t.totalRedemptionsAllowed,
+      redemptionsUsed: t.redemptionsUsed,
       redemptionLimit: t.totalRedemptionsAllowed,
       redemptionCount: t.redemptionsUsed,
       status: t.status.toUpperCase(),
@@ -2313,7 +3094,7 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
       table: t.table ? {
         id: t.table.id,
         number: t.table.tableNumber,
-        placeType: t.placeType.name,
+        placeType: t.placeType?.name || '',
         status: t.table.status.toUpperCase(),
       } : null
     }));
@@ -2380,59 +3161,99 @@ router.get('/admin/sessions', authenticate, authorize(['admin', 'manager']), asy
       },
       orderBy: { issuedAt: 'desc' },
     });
+
+    // Fetch all SyncLogs for occupied table lifecycles in a single query
+    const auditLogs = await prisma.syncLog.findMany({
+      where: {
+        operationType: {
+          in: ['TOKEN_EXTENSION', 'TOKEN_CLOSE']
+        }
+      }
+    });
+
+    // Build maps indexed by tokenId for easy O(1) lookup to avoid N+1 queries
+    const extensionsByTokenId: Record<string, any[]> = {};
+    const closuresByTokenId: Record<string, any> = {};
+
+    for (const log of auditLogs) {
+      try {
+        const payload = typeof log.payload === 'string' ? JSON.parse(log.payload) : (log.payload as any);
+        if (!payload || !payload.tokenId) continue;
+
+        if (log.operationType === 'TOKEN_EXTENSION') {
+          if (!extensionsByTokenId[payload.tokenId]) {
+            extensionsByTokenId[payload.tokenId] = [];
+          }
+          extensionsByTokenId[payload.tokenId].push(payload);
+        } else if (log.operationType === 'TOKEN_CLOSE') {
+          closuresByTokenId[payload.tokenId] = payload;
+        }
+      } catch (e) {
+        console.warn('Failed to parse audit log payload:', e);
+      }
+    }
     
-    const mapped = sessions.map((t: any) => ({
-      id: t.id,
-      tokenNumber: t.tokenNumber,
-      phoneNumber: t.customer.phoneNumber,
-      customerName: t.customer.name,
-      email: t.customer.email,
-      persons: t.personsCount,
-      placeType: t.placeType.name,
-      tableId: t.tableId,
-      tableNumber: t.table?.tableNumber || null,
-      amountPaid: parseFloat(t.amountPaid.toString()),
-      paymentVerified: t.paymentVerified,
-      startTime: t.startTime.toISOString(),
-      endTime: t.endTime.toISOString(),
-      redemptionLimit: t.totalRedemptionsAllowed,
-      redemptionCount: t.redemptionsUsed,
-      status: t.status.toLowerCase(),
-      cardUid: null,
-      createdAt: t.issuedAt.toISOString(),
-      deliveryMode: t.deliveryMode,
-      table: t.table ? {
-        id: t.table.id,
-        number: t.table.tableNumber,
+    const mapped = sessions.map((t: any) => {
+      const tokenExtensions = extensionsByTokenId[t.id] || [];
+      const tokenClosure = closuresByTokenId[t.id] || null;
+
+      return {
+        id: t.id,
+        tokenNumber: t.tokenNumber,
+        phoneNumber: t.customer.phoneNumber,
+        customerName: t.customer.name,
+        email: t.customer.email,
+        persons: t.personsCount,
         placeType: t.placeType.name,
-        status: t.table.status.toUpperCase(),
-      } : null,
-      // Enhanced audit trail & history parameters
-      createdBy: t.creator?.fullName || t.issuedBy,
-      closedBy: t.closer?.fullName || t.closedBy || null,
-      closedAt: t.closedAt ? t.closedAt.toISOString() : null,
-      cancelledAt: t.cancelledAt ? t.cancelledAt.toISOString() : null,
-      cancelledBy: t.cancelledBy || null,
-      cancelReason: t.cancelReason || null,
-      customerId: t.customerId,
-      customerVisits: t.customer.totalVisits,
-      lastVisit: t.customer.lastVisit ? t.customer.lastVisit.toISOString() : null,
-      extensions: t.extensions.map((ext: any) => ({
-        id: ext.id,
-        extraMinutes: ext.extraMinutes,
-        additionalAmount: parseFloat(ext.additionalAmount.toString()),
-        approvedBy: ext.approver?.fullName || ext.approvedBy,
-        extendedAt: ext.extendedAt.toISOString(),
-        newEndTime: ext.newEndTime.toISOString()
-      })),
-      redemptions: t.redemptions.map((red: any) => ({
-        id: red.id,
-        redemptionSequence: red.redemptionSequence,
-        redeemedAt: red.redeemedAt.toISOString(),
-        bartenderName: red.bartender?.fullName || red.bartenderId,
-        notes: red.notes || null
-      }))
-    }));
+        placeTypeId: t.placeTypeId,
+        tableId: t.tableId,
+        tableNumber: t.table?.tableNumber || null,
+        amountPaid: parseFloat(t.amountPaid.toString()),
+        paymentVerified: t.paymentVerified,
+        startTime: t.startTime.toISOString(),
+        endTime: t.endTime.toISOString(),
+        redemptionLimit: t.totalRedemptionsAllowed,
+        redemptionCount: t.redemptionsUsed,
+        status: t.status.toLowerCase(),
+        cardUid: null,
+        createdAt: t.issuedAt.toISOString(),
+        deliveryMode: t.deliveryMode,
+        table: t.table ? {
+          id: t.table.id,
+          number: t.table.tableNumber,
+          placeType: t.placeType.name,
+          status: t.table.status.toUpperCase(),
+        } : null,
+        // Enhanced audit trail & history parameters
+        createdBy: t.creator?.fullName || t.issuedBy,
+        closedBy: t.closer?.fullName || t.closedBy || null,
+        closedAt: t.closedAt ? t.closedAt.toISOString() : null,
+        closeReason: t.closeReason || null,
+        cancelledAt: t.cancelledAt ? t.cancelledAt.toISOString() : null,
+        cancelledBy: t.cancelledBy || null,
+        cancelReason: t.cancelReason || null,
+        customerId: t.customerId,
+        customerVisits: t.customer.totalVisits,
+        lastVisit: t.customer.lastVisit ? t.customer.lastVisit.toISOString() : null,
+        extensions: tokenExtensions.length > 0 ? tokenExtensions : t.extensions.map((ext: any) => ({
+          id: ext.id,
+          extraMinutes: ext.extraMinutes,
+          additionalAmount: parseFloat(ext.additionalAmount.toString()),
+          approvedBy: ext.approver?.fullName || ext.approvedBy,
+          extendedAt: ext.extendedAt.toISOString(),
+          newEndTime: ext.newEndTime.toISOString(),
+          paymentMethod: 'CASH'
+        })),
+        redemptions: t.redemptions.map((red: any) => ({
+          id: red.id,
+          redemptionSequence: red.redemptionSequence,
+          redeemedAt: red.redeemedAt.toISOString(),
+          bartenderName: red.bartender?.fullName || red.bartenderId,
+          notes: red.notes || null
+        })),
+        closure: tokenClosure
+      };
+    });
 
     return res.json(mapped);
   } catch (err: any) {
@@ -2474,6 +3295,7 @@ const getTokenByIdentifier = async (req: Request, res: Response) => {
       email: token.customer.email,
       persons: token.personsCount,
       placeType: token.placeType.name,
+      placeTypeId: token.placeTypeId,
       tableId: token.tableId,
       tableNumber: token.table?.tableNumber || null,
       amountPaid: token.amountPaid,
@@ -2516,7 +3338,7 @@ router.get('/tokens/:tokenNumber', authenticate, async (req, res) => {
 
 // Extend Session
 const extendSessionHandler = async (req: AuthenticatedRequest, res: Response) => {
-  const { tokenNumber, additionalHours, extraMinutes, additionalAmount, approvedBy, additionalPersons } = req.body;
+  const { tokenNumber, additionalHours, extraMinutes, additionalAmount, approvedBy, additionalPersons, extensionType, reason } = req.body;
   const paramTokenNumber = req.params.tokenNumber;
 
   let finalTokenNumber = paramTokenNumber || tokenNumber;
@@ -2532,12 +3354,12 @@ const extendSessionHandler = async (req: AuthenticatedRequest, res: Response) =>
     return res.status(400).json({ error: 'Invalid approvedBy UUID format.' });
   }
 
-  let finalAmount = additionalAmount !== undefined ? new Decimal(additionalAmount) : new Decimal(0);
+  let finalAmount = additionalAmount !== undefined ? new Decimal(additionalAmount) : (req.body.amount !== undefined ? new Decimal(req.body.amount) : new Decimal(0));
   if (finalAmount.lt(0)) {
     return res.status(400).json({ error: 'Extension amount cannot be negative.' });
   }
 
-  if (finalAmount.eq(0) && additionalHours && finalTokenNumber) {
+  if (finalAmount.eq(0) && additionalHours && finalTokenNumber && extensionType !== 'CUSTOM') {
     try {
       const token = await prisma.token.findFirst({
         where: { tokenNumber: finalTokenNumber },
@@ -2558,13 +3380,65 @@ const extendSessionHandler = async (req: AuthenticatedRequest, res: Response) =>
       return res.status(400).json({ error: 'Token number is required' });
     }
 
+    const token = await prisma.token.findUnique({
+      where: { tokenNumber: finalTokenNumber }
+    });
+    if (!token) {
+      return res.status(404).json({ error: 'Token not found' });
+    }
+    const previousEndTime = token.endTime.toISOString();
+
     const updated = await tokenService.extendToken(
       finalTokenNumber,
       finalMinutes,
       finalAmount,
       approvedBy || req.user?.id || '',
-      additionalPersons ? parseInt(additionalPersons, 10) : 0
+      additionalPersons ? parseInt(additionalPersons, 10) : 0,
+      extensionType,
+      reason
     );
+
+    // Send extension email if requested and customer has an email
+    const { sendEmail, paymentMethod } = req.body;
+
+    // Create SyncLog for Extension
+    await prisma.syncLog.create({
+      data: {
+        operationId: `EXTENSION-${updated.id}-${Date.now()}`,
+        deviceId: 'server',
+        operationType: 'TOKEN_EXTENSION',
+        status: 'SUCCESS',
+        payload: {
+          tokenId: updated.id,
+          extraMinutes: finalMinutes,
+          additionalAmount: parseFloat(finalAmount.toString()),
+          paymentMethod: paymentMethod || 'CASH',
+          approvedBy: approvedBy || req.user?.id || 'receptionist',
+          extendedAt: new Date().toISOString(),
+          previousEndTime: previousEndTime,
+          newEndTime: updated.endTime.toISOString(),
+          extensionType: extensionType || 'PREDEFINED',
+          reason: reason || null
+        }
+      }
+    });
+
+    if (sendEmail === true && updated.customer?.email) {
+      try {
+        emailNotificationService.enqueueExtensionEmailJob(
+          updated.customer.email,
+          updated.tokenNumber,
+          updated.customer.name,
+          updated.table?.tableNumber || 'N/A',
+          finalMinutes,
+          updated.endTime,
+          parseFloat(finalAmount.toString()),
+          paymentMethod || 'Cash'
+        );
+      } catch (emailErr) {
+        console.warn('Failed to enqueue extension email:', emailErr);
+      }
+    }
 
     // Format output for compatibility
     const responseData = {
@@ -2595,12 +3469,12 @@ const extendSessionHandler = async (req: AuthenticatedRequest, res: Response) =>
   }
 };
 
-router.post('/extend', authenticate, authorize(['receptionist', 'admin']), extendSessionHandler);
-router.put('/tokens/:tokenNumber/extend', authenticate, authorize(['receptionist', 'admin']), extendSessionHandler);
+router.post('/extend', authenticate, authorize(['receptionist', 'admin', 'manager']), extendSessionHandler);
+router.put('/tokens/:tokenNumber/extend', authenticate, authorize(['receptionist', 'admin', 'bartender', 'manager']), extendSessionHandler);
 
 // Checkout Session
 const checkoutSessionHandler = async (req: AuthenticatedRequest, res: Response) => {
-  const { tokenNumber } = req.body;
+  const { tokenNumber, reason } = req.body;
   const paramTokenNumber = req.params.tokenNumber;
 
   let finalTokenNumber = paramTokenNumber || tokenNumber;
@@ -2617,11 +3491,34 @@ const checkoutSessionHandler = async (req: AuthenticatedRequest, res: Response) 
       return res.status(400).json({ error: 'Token number is required' });
     }
 
+    const { reason, reasonDetail } = req.body;
+    const finalCloseReason = CloseReason.MANUAL;
+
     const summary = await tokenService.closeSession(
       finalTokenNumber,
       req.user?.id || '',
-      CloseReason.CHECKOUT
+      finalCloseReason,
+      false,
+      reasonDetail || reason || undefined
     );
+
+    // Create SyncLog for Close
+    await prisma.syncLog.create({
+      data: {
+        operationId: `CLOSE-${summary.token.id}-${Date.now()}`,
+        deviceId: 'server',
+        operationType: 'TOKEN_CLOSE',
+        status: 'SUCCESS',
+        payload: {
+          tokenId: summary.token.id,
+          tokenNumber: summary.token.tokenNumber,
+          closeReason: reason || 'MANUAL',
+          reasonDetail: reasonDetail || '',
+          closedBy: req.user?.id || 'receptionist',
+          closedAt: new Date().toISOString()
+        }
+      }
+    });
 
     // Format return
     const responseData = {
@@ -2651,11 +3548,11 @@ const checkoutSessionHandler = async (req: AuthenticatedRequest, res: Response) 
   }
 };
 
-router.post('/checkout', authenticate, authorize(['receptionist', 'admin']), checkoutSessionHandler);
-router.put('/tokens/:tokenNumber/close', authenticate, authorize(['receptionist', 'admin']), checkoutSessionHandler);
+router.post('/checkout', authenticate, authorize(['receptionist', 'admin', 'manager']), checkoutSessionHandler);
+router.put('/tokens/:tokenNumber/close', authenticate, authorize(['receptionist', 'admin', 'bartender', 'manager']), checkoutSessionHandler);
 
 // Manual Close Section Route
-router.post('/sessions/:tokenNumber/close', authenticate, authorize(['admin', 'receptionist', 'bartender']), async (req: AuthenticatedRequest, res: Response) => {
+router.post('/sessions/:tokenNumber/close', authenticate, authorize(['admin', 'receptionist', 'bartender', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
   const { tokenNumber } = req.params;
   const { force } = req.body;
 
@@ -3160,9 +4057,26 @@ router.get('/reports/dashboard', authenticate, authorize(['admin', 'manager']), 
         startTime: { gte: startDate, lte: endDate },
         paymentVerified: true
       },
+      include: {
+        extensions: true
+      }
     });
 
-    const totalCollectionsDec = tokens.reduce((acc, t) => acc.add(t.amountPaid), new Decimal(0));
+    const extensionsToday = await prisma.tokenExtension.findMany({
+      where: {
+        extendedAt: { gte: startDate, lte: endDate }
+      }
+    });
+
+    let totalCollectionsDec = new Decimal(0);
+    for (const t of tokens) {
+      const extSum = t.extensions.reduce((sum, ext) => sum.add(ext.additionalAmount), new Decimal(0));
+      const coverCharge = t.amountPaid.minus(extSum);
+      totalCollectionsDec = totalCollectionsDec.add(coverCharge);
+    }
+    const totalExtensionsDec = extensionsToday.reduce((acc, ext) => acc.add(ext.additionalAmount), new Decimal(0));
+    totalCollectionsDec = totalCollectionsDec.add(totalExtensionsDec);
+
     const totalCollections = totalCollectionsDec.toNumber();
     const totalPersonsServed = tokens.reduce((acc, t) => acc + t.personsCount, 0);
 
@@ -3274,6 +4188,9 @@ router.get('/reports/dashboard', authenticate, authorize(['admin', 'manager']), 
           { closedAt: null },
           { closedAt: { gte: startDate } }
         ]
+      },
+      include: {
+        extensions: true
       }
     });
 
@@ -3312,11 +4229,37 @@ router.get('/reports/dashboard', authenticate, authorize(['admin', 'manager']), 
 
       const averageActiveTokens = dayCount > 0 ? Number((activeTokensSum / dayCount).toFixed(1)) : 0;
 
+      // 1. Cover charge revenue for tokens that started in this hour today
+      const hrRevenueTokens = activeTokens.filter(t => 
+        new Date(t.startTime).getHours() === hour && 
+        t.startTime.getTime() >= startDate.getTime() && 
+        t.startTime.getTime() <= endDate.getTime()
+      );
+      
+      let hrRevenue = 0;
+      for (const t of hrRevenueTokens) {
+        const extSum = t.extensions.reduce((sum, ext) => sum + parseFloat(ext.additionalAmount.toString()), 0);
+        const coverCharge = parseFloat(t.amountPaid.toString()) - extSum;
+        hrRevenue += coverCharge;
+      }
+
+      // 2. Extension revenue for extensions created in this hour today (across all active tokens)
+      for (const t of activeTokens) {
+        const hrExtensions = t.extensions.filter(ext => 
+          new Date(ext.extendedAt).getHours() === hour && 
+          ext.extendedAt.getTime() >= startDate.getTime() && 
+          ext.extendedAt.getTime() <= endDate.getTime()
+        );
+        const extRevenue = hrExtensions.reduce((sum, ext) => sum + parseFloat(ext.additionalAmount.toString()), 0);
+        hrRevenue += extRevenue;
+      }
+
       hourlyData.push({
         hour,
         redemptions: hrRedemptions,
         newTokens: hrNewTokens,
-        activeTokens: averageActiveTokens
+        activeTokens: averageActiveTokens,
+        revenue: hrRevenue
       });
     }
 
@@ -3716,11 +4659,19 @@ router.get('/reports/hourly-breakdown', authenticate, authorize(['admin', 'manag
 
       const averageActiveTokens = dayCount > 0 ? Number((activeTokensSum / dayCount).toFixed(1)) : 0;
 
+      const hrRevenueTokens = tokens.filter(t => 
+        new Date(t.startTime).getHours() === hour && 
+        t.startTime.getTime() >= startDate.getTime() && 
+        t.startTime.getTime() <= endDate.getTime()
+      );
+      const hrRevenue = hrRevenueTokens.reduce((acc, t) => acc + parseFloat(t.amountPaid.toString()), 0);
+
       hourlyData.push({
         hour,
         redemptions: hrRedemptions,
         newTokens: hrNewTokens,
-        activeTokens: averageActiveTokens
+        activeTokens: averageActiveTokens,
+        revenue: hrRevenue
       });
     }
 

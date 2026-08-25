@@ -1,5 +1,6 @@
 import { PrismaClient, CloseReason, ActivationMethod, CancelReason } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { normalizeEmail, normalizePhone } from '../utils/normalization';
 import redisService from './RedisService';
 import emailNotificationService from './EmailNotificationService';
 import jwt from 'jsonwebtoken';
@@ -111,6 +112,9 @@ export class TokenService {
       throw new Error('Email address is mandatory when system operates in EMAIL_QR mode.');
     }
 
+    const finalPhoneNumber = normalizePhone(request.phoneNumber);
+    const finalEmail = normalizeEmail(request.email);
+
     // Reconcile chronologically expired sessions first
     await this.reconcileSystemState();
 
@@ -119,10 +123,10 @@ export class TokenService {
     const token = await prisma.$transaction(async (tx) => {
       // Check for existing active or pending sessions by phone or email
       const orConditions: any[] = [
-        { customer: { phoneNumber: request.phoneNumber } }
+        { customer: { phoneNumber: finalPhoneNumber } }
       ];
-      if (request.email && request.email.trim()) {
-        orConditions.push({ customer: { email: request.email.trim().toLowerCase() } });
+      if (finalEmail) {
+        orConditions.push({ customer: { email: finalEmail } });
       }
 
       const activeOrPendingToken = await tx.token.findFirst({
@@ -149,7 +153,7 @@ export class TokenService {
 
       // Check for existing customer profile
       const existingCustomer = await tx.customer.findUnique({
-        where: { phoneNumber: request.phoneNumber }
+        where: { phoneNumber: finalPhoneNumber }
       }) as any;
 
       // Get or create customer
@@ -157,9 +161,9 @@ export class TokenService {
       if (!customer) {
         customer = await tx.customer.create({
           data: {
-            phoneNumber: request.phoneNumber,
+            phoneNumber: finalPhoneNumber,
             name: request.customerName,
-            email: request.email || null,
+            email: finalEmail || null,
             totalVisits: 1
           }
         });
@@ -170,7 +174,7 @@ export class TokenService {
             totalVisits: { increment: 1 },
             lastVisit: new Date(),
             name: request.customerName,
-            email: request.email || customer.email
+            email: finalEmail || customer.email
           }
         });
       }
@@ -191,6 +195,18 @@ export class TokenService {
       if (!table) {
         throw new Error('Table not found');
       }
+
+      if (table.status === 'in_checkin' && request.issuedBy) {
+        const lockKey = `table:lock:${table.id}`;
+        const lockDataStr = await redisService.get(lockKey);
+        if (lockDataStr) {
+          const lockData = JSON.parse(lockDataStr);
+          if (lockData.lockedBy !== request.issuedBy) {
+            throw new Error(`Table ${table.tableNumber} is already taken by another user.`);
+          }
+        }
+      }
+
       if (request.personsCount > table.capacity) {
         throw new Error(`Group size of ${request.personsCount} exceeds table capacity of ${table.capacity}.`);
       }
@@ -234,13 +250,14 @@ export class TokenService {
           paymentVerified: request.paymentVerified,
           startTime: start,
           endTime,
+          issuedAt: start,
           totalRedemptionsAllowed,
           redemptionsUsed: 0,
           status: TokenStatus.ACTIVE,
           issuedBy: request.issuedBy,
           deliveryMode: deliveryMode,
           emailSent: false,
-          emailDeliveryStatus: 'PENDING'
+          emailDeliveryStatus: request.tableId ? 'PENDING' : 'NOT_SENT'
         },
         include: {
           customer: true,
@@ -250,6 +267,18 @@ export class TokenService {
       });
 
       // Note: Table status and occupancy logs are updated automatically by trigger in PostgreSQL!
+      if (request.tableId) {
+        await tx.reservation.updateMany({
+          where: {
+            tableId: request.tableId,
+            status: 'PENDING'
+          },
+          data: {
+            status: 'ASSIGNED'
+          }
+        });
+      }
+
       // Invalidate caches manually to keep in sync
       await redisService.del(`table:available:${request.placeTypeId}`);
       await redisService.del('table:available:all');
@@ -283,7 +312,9 @@ export class TokenService {
     extraMinutes: number,
     additionalAmount: Decimal | number,
     approvedBy: string,
-    additionalPersons: number = 0
+    additionalPersons: number = 0,
+    extensionType?: string,
+    reason?: string
   ): Promise<any> {
     return await prisma.$transaction(async (tx) => {
       // Lock row
@@ -311,26 +342,34 @@ export class TokenService {
       const placeType = tokenObj.placeType;
       const additionalAmountDec = new Decimal(additionalAmount);
       
-      // Calculate server-side computed amount:
-      // cover fee for new persons + extension fee for existing group members
-      const newCoverFee = placeType.ratePerPerson.mul(additionalPersons);
-      const extensionFee = placeType.ratePerPerson
-        .mul(extraMinutes)
-        .mul(tokenObj.personsCount)
-        .div(placeType.baseTimeMinutes);
-      const computedAmount = extensionFee.add(newCoverFee);
+      let finalAdditionalAmount: Decimal;
+      if (extensionType === 'CUSTOM') {
+        if (isNaN(additionalAmountDec.toNumber()) || additionalAmountDec.lt(0)) {
+          throw new Error('Invalid custom extension amount.');
+        }
+        finalAdditionalAmount = additionalAmountDec;
+      } else {
+        // Calculate server-side computed amount:
+        // cover fee for new persons + extension fee for existing group members
+        const newCoverFee = placeType.ratePerPerson.mul(additionalPersons);
+        const extensionFee = placeType.ratePerPerson
+          .mul(extraMinutes)
+          .mul(tokenObj.personsCount)
+          .div(placeType.baseTimeMinutes);
+        const computedAmount = extensionFee.add(newCoverFee);
 
-      // If additionalAmount is explicitly 0, we treat it as a free extension (allowed by rules).
-      // Otherwise, the server is the single source of truth and recalculates it.
-      const finalAdditionalAmount = additionalAmountDec.eq(0) ? new Decimal(0) : computedAmount;
+        // If additionalAmount is explicitly 0, we treat it as a free extension (allowed by rules).
+        // Otherwise, the server is the single source of truth and recalculates it.
+        finalAdditionalAmount = additionalAmountDec.eq(0) ? new Decimal(0) : computedAmount;
+      }
 
       const currentEndTime = new Date(token.endTime);
       // Extend relative to current end_time if not expired yet, or from now if already expired
       const baseTime = currentEndTime.getTime() > Date.now() ? currentEndTime : new Date();
       const newEndTime = new Date(baseTime.getTime() + extraMinutes * 60 * 1000);
 
-      // If token was expired, set to extended
-      const newStatus = token.status === 'EXPIRED' ? TokenStatus.EXTENDED : (token.status as TokenStatus);
+      // All valid extensions set the token status to EXTENDED
+      const newStatus = TokenStatus.EXTENDED;
 
       const hourlyDrinksRate = placeType.redemptionsPerPerson / (placeType.baseTimeMinutes / 60);
       const extensionDrinks = Math.floor((extraMinutes / 60) * hourlyDrinksRate * tokenObj.personsCount);
@@ -357,6 +396,55 @@ export class TokenService {
           table: true
         }
       });
+
+      // If the token has an assigned table, restore or maintain its occupancy
+      if (tokenObj.tableId) {
+        const table = await tx.table.findUnique({ where: { id: tokenObj.tableId } });
+        if (table) {
+          // Verify table ownership before restoring occupancy to prevent table theft
+          if (table.currentTokenId !== null && table.currentTokenId !== token.id) {
+            throw new Error(`Table ${table.tableNumber} is already occupied by another active session.`);
+          }
+
+          await tx.table.update({
+            where: { id: tokenObj.tableId },
+            data: {
+              status: 'occupied',
+              currentTokenId: token.id,
+              occupiedSince: table.occupiedSince || new Date(),
+              lastAssignedAt: table.lastAssignedAt || new Date()
+            }
+          });
+
+          // Check if there is an active (non-vacated) occupancy log for this token/table
+          const activeLog = await tx.tableOccupancyLog.findFirst({
+            where: {
+              tableId: tokenObj.tableId,
+              tokenId: token.id,
+              vacatedAt: null
+            }
+          });
+
+          if (!activeLog) {
+            await tx.tableOccupancyLog.create({
+              data: {
+                tableId: tokenObj.tableId,
+                tokenId: token.id,
+                occupiedAt: new Date()
+              }
+            });
+          }
+
+          await redisService.del(`table:${tokenObj.tableId}:status`);
+        }
+      }
+
+      // Invalidate all related table caches
+      await redisService.del('table:available:all');
+      if (tokenObj.placeTypeId) {
+        await redisService.del(`table:available:${tokenObj.placeTypeId}`);
+      }
+      await redisService.del('tables:all').catch(() => {});
 
       logStateTransition(tokenNumber, token.status, newStatus, `extended by +${extraMinutes} mins`, approvedBy);
 
@@ -442,11 +530,50 @@ export class TokenService {
     }
   }
 
+  async cleanupStaleInCheckInTables(): Promise<void> {
+    try {
+      const inCheckInTables = await prisma.table.findMany({
+        where: { status: 'in_checkin' }
+      });
+
+      if (inCheckInTables.length > 0) {
+        await prisma.$transaction(async (tx) => {
+          for (const table of inCheckInTables) {
+            const lockKey = `table:lock:${table.id}`;
+            const hasLock = await redisService.get(lockKey);
+            if (!hasLock) {
+              let finalStatus = 'available';
+              const activeRes = await tx.reservation.findFirst({
+                where: {
+                  tableId: table.id,
+                  status: 'PENDING'
+                }
+              });
+              if (activeRes) {
+                finalStatus = 'reserved';
+              }
+              await tx.table.update({
+                where: { id: table.id },
+                data: { status: finalStatus }
+              });
+              console.log(`[Reconciler] Reverted stale in_checkin table ${table.tableNumber} to ${finalStatus}`);
+            }
+          }
+        }, { timeout: 20000 });
+        await redisService.del('table:available:all');
+        await redisService.del('tables:all').catch(() => {});
+      }
+    } catch (error) {
+      console.error('Error in cleanupStaleInCheckInTables background job:', error);
+    }
+  }
+
   async reconcileSystemState(): Promise<void> {
     const now = new Date();
 
     // 0. Clean up orphaned occupied tables (self-healing job)
     await this.cleanupOrphanedTables();
+    await this.cleanupStaleInCheckInTables();
 
     // 1. Reconcile maintenance tables
     const expiredTables = await prisma.table.findMany({
@@ -480,12 +607,13 @@ export class TokenService {
 
     // 2. Reconcile expired pending payment sessions (e.g. 20 minutes expiry)
     const expiryWindowMinutes = 20;
-    const expiryTime = new Date(now.getTime() - expiryWindowMinutes * 60 * 1000);
-    const expiredPendingTokens = await prisma.token.findMany({
+    const allPendingTokens = await prisma.token.findMany({
       where: {
-        status: TokenStatus.PENDING_PAYMENT,
-        issuedAt: { lte: expiryTime }
+        status: TokenStatus.PENDING_PAYMENT
       }
+    });
+    const expiredPendingTokens = allPendingTokens.filter(token => {
+      return now.getTime() > token.issuedAt.getTime() + expiryWindowMinutes * 60 * 1000;
     });
 
     if (expiredPendingTokens.length > 0) {
@@ -545,10 +673,17 @@ export class TokenService {
     if (expiredActiveTokens.length > 0) {
       await prisma.$transaction(async (tx) => {
         for (const token of expiredActiveTokens) {
-          const freshToken = await tx.token.findUnique({
-            where: { id: token.id }
-          });
-          if (freshToken && (freshToken.status === TokenStatus.ACTIVE || freshToken.status === TokenStatus.EXTENDED) && freshToken.endTime <= now) {
+          const freshTokens = await tx.$queryRaw<any[]>`
+            SELECT id, status, "end_time" as "endTime", "table_id" as "tableId", "token_number" as "tokenNumber"
+            FROM tokens
+            WHERE id = ${token.id}
+            LIMIT 1
+            FOR UPDATE
+          `;
+          const freshToken = freshTokens && freshTokens.length > 0 ? freshTokens[0] : null;
+          if (freshToken && 
+              (freshToken.status === TokenStatus.ACTIVE || freshToken.status === TokenStatus.EXTENDED) && 
+              new Date(freshToken.endTime).getTime() <= now.getTime()) {
             await tx.token.update({
               where: { id: token.id },
               data: {
@@ -603,7 +738,8 @@ export class TokenService {
     tokenNumber: string,
     closedBy: string,
     closeReason: CloseReason,
-    force: boolean = false
+    force: boolean = false,
+    reasonDetail?: string
   ): Promise<SessionSummary> {
     const now = new Date();
     return await prisma.$transaction(async (tx) => {
@@ -677,7 +813,7 @@ export class TokenService {
         }
       });
 
-      logStateTransition(tokenNumber, token.status, TokenStatus.CLOSED, `session closed: ${closeReason}`, closedBy);
+      logStateTransition(tokenNumber, token.status, TokenStatus.CLOSED, `session closed: ${closeReason}${reasonDetail ? ' - ' + reasonDetail : ''}`, closedBy);
 
       // Update table status
       if (token.tableId) {
@@ -747,6 +883,10 @@ export class TokenService {
     tableId?: string;
     tableNumber?: string;
   }): Promise<any> {
+    // Normalize inputs
+    const finalPhoneNumber = normalizePhone(request.phoneNumber);
+    const finalEmail = normalizeEmail(request.email);
+
     // Reconcile chronologically expired sessions first
     await this.reconcileSystemState();
 
@@ -756,10 +896,10 @@ export class TokenService {
     return await prisma.$transaction(async (tx) => {
       // Check for existing active or pending sessions by phone or email
       const orConditions: any[] = [
-        { customer: { phoneNumber: request.phoneNumber } }
+        { customer: { phoneNumber: finalPhoneNumber } }
       ];
-      if (request.email && request.email.trim()) {
-        orConditions.push({ customer: { email: request.email.trim().toLowerCase() } });
+      if (finalEmail) {
+        orConditions.push({ customer: { email: finalEmail } });
       }
 
       const activeOrPendingToken = await tx.token.findFirst({
@@ -786,7 +926,7 @@ export class TokenService {
 
       // Get or create customer
       const existingCustomer = await tx.customer.findUnique({
-        where: { phoneNumber: request.phoneNumber }
+        where: { phoneNumber: finalPhoneNumber }
       }) as any;
 
       // Get or create customer
@@ -794,9 +934,9 @@ export class TokenService {
       if (!customer) {
         customer = await tx.customer.create({
           data: {
-            phoneNumber: request.phoneNumber,
+            phoneNumber: finalPhoneNumber,
             name: request.customerName,
-            email: request.email,
+            email: finalEmail || null,
             totalVisits: 1
           }
         });
@@ -807,7 +947,7 @@ export class TokenService {
             totalVisits: { increment: 1 },
             lastVisit: new Date(),
             name: request.customerName,
-            email: request.email
+            email: finalEmail || customer.email
           }
         });
       }
@@ -849,7 +989,7 @@ export class TokenService {
         if (!table) {
           throw new Error('Table not found or does not match selected place type.');
         }
-        if (table.status !== 'available') {
+        if (table.status !== 'available' && table.status !== 'in_checkin') {
           throw new Error(`Table '${table.tableNumber}' is not available.`);
         }
         if (request.personsCount > table.capacity) {
@@ -869,13 +1009,14 @@ export class TokenService {
           paymentVerified: false,
           startTime: start,
           endTime,
+          issuedAt: start,
           totalRedemptionsAllowed,
           redemptionsUsed: 0,
           status: TokenStatus.PENDING_PAYMENT,
           issuedBy: request.issuedBy,
           deliveryMode: 'EMAIL_QR',
           emailSent: false,
-          emailDeliveryStatus: 'PENDING'
+          emailDeliveryStatus: resolvedTableId ? 'PENDING' : 'NOT_SENT'
         },
         include: {
           customer: true,
@@ -909,7 +1050,8 @@ export class TokenService {
     tokenNumber: string,
     tableNumber: string,
     amountPaid: number,
-    activatedBy: string
+    activatedBy: string,
+    bypassCapacity = false
   ): Promise<any> {
     const now = new Date();
     const activationMethod = ActivationMethod.EMAIL_QR;
@@ -919,7 +1061,7 @@ export class TokenService {
     return await prisma.$transaction(async (tx) => {
       // 1. Lock/fetch the token row
       const tokens = await tx.$queryRaw<any[]>`
-        SELECT id, status, "payment_verified" as "paymentVerified", "persons_count" as "personsCount", "place_type_id" as "placeTypeId"
+        SELECT id, status, "payment_verified" as "paymentVerified", "persons_count" as "personsCount", "place_type_id" as "placeTypeId", "table_id" as "tableId"
         FROM tokens
         WHERE token_number = ${tokenNumber}
         LIMIT 1
@@ -946,7 +1088,7 @@ export class TokenService {
       // Check if this customer already has another active session (by phone or email)
       const tokenWithCustomer = await tx.token.findUnique({
         where: { id: token.id },
-        include: { customer: true }
+        include: { customer: true, table: true }
       });
       if (!tokenWithCustomer || !tokenWithCustomer.customer) {
         throw new Error('Token customer details not found.');
@@ -979,17 +1121,46 @@ export class TokenService {
         throw new Error(msg);
       }
 
-      // 2. Resolve the selected table for the place type of this token
-      const table = await tx.table.findFirst({
-        where: { tableNumber: normalizedTableNumber, placeTypeId: token.placeTypeId }
-      });
-      if (!table) {
-        throw new Error(`Table '${tableNumber}' not found for this place type.`);
+      // 2. Resolve the selected table
+      let table = null;
+
+      // Priority A: If tableNumber was provided, resolve by tableNumber (with placeTypeId or by tableNumber alone)
+      if (normalizedTableNumber) {
+        table = await tx.table.findFirst({
+          where: { tableNumber: normalizedTableNumber, placeTypeId: token.placeTypeId }
+        });
+        if (!table) {
+          table = await tx.table.findFirst({
+            where: { tableNumber: normalizedTableNumber }
+          });
+        }
       }
-      if (table.status !== 'available' && table.currentTokenId !== token.id) {
+
+      // Priority B: If not found by tableNumber or tableNumber was empty, resolve by token's pre-assigned tableId
+      if (!table && (token.tableId || tokenWithCustomer.tableId)) {
+        const assignedTableId = token.tableId || tokenWithCustomer.tableId;
+        table = await tx.table.findUnique({
+          where: { id: assignedTableId }
+        });
+      }
+
+      if (!table) {
+        throw new Error(`Table '${tableNumber || 'assigned to token'}' not found.`);
+      }
+      if (table.status !== 'available' && table.status !== 'in_checkin' && table.currentTokenId !== token.id) {
         throw new Error(`Table '${tableNumber}' is not available.`);
       }
-      if (token.personsCount > table.capacity) {
+      if (table.status === 'in_checkin' && activatedBy) {
+        const lockKey = `table:lock:${table.id}`;
+        const lockDataStr = await redisService.get(lockKey);
+        if (lockDataStr) {
+          const lockData = JSON.parse(lockDataStr);
+          if (lockData.lockedBy !== activatedBy) {
+            throw new Error(`Table ${table.tableNumber} is already taken by another user.`);
+          }
+        }
+      }
+      if (token.personsCount > table.capacity && !bypassCapacity) {
         throw new Error(`Group size of ${token.personsCount} exceeds table capacity of ${table.capacity}.`);
       }
 
@@ -1048,7 +1219,19 @@ export class TokenService {
         }
       });
 
-      // 6. Invalidate caches
+      // 6. Update any pending reservation on this table to ASSIGNED
+      await tx.reservation.updateMany({
+        where: {
+          tableId: table.id,
+          status: 'PENDING'
+        },
+        data: {
+          status: 'ASSIGNED'
+        }
+      });
+
+      // 7. Invalidate caches
+      await redisService.del(`table:lock:${table.id}`);
       await redisService.del(`table:available:${token.placeTypeId}`);
       await redisService.del('table:available:all');
       await redisService.del(`table:${table.id}:status`);
