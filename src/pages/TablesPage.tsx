@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Grid3X3, RefreshCw, X, CheckCircle2, Users, ArrowRight, Search, UserPlus, AlertTriangle, Clock, Lock, Mail } from 'lucide-react';
+import { Grid3X3, RefreshCw, X, CheckCircle2, Users, ArrowRight, Search, UserPlus, AlertTriangle, Clock, Lock, Mail, User, Phone } from 'lucide-react';
 import { api } from '../services/api';
 import type { Table, Token } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -256,14 +256,92 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  // Centered Table Inspection Dialog Modal State
  const [inspectingTable, setInspectingTable] = useState<Table | null>(null);
 
- // Reserve Form State
- const [reservingTable, setReservingTable] = useState<Table | null>(null);
- const [resName, setResName] = useState('');
- const [resPhone, setResPhone] = useState('');
- const [resEmail, setResEmail] = useState('');
- const [resPersons, setResPersons] = useState(2);
- const [isSubmittingReserve, setIsSubmittingReserve] = useState(false);
- const [isAssignFlow, setIsAssignFlow] = useState(false);
+  // Reserve Form State
+  const [reservingTable, setReservingTable] = useState<Table | null>(null);
+  const [resName, setResName] = useState('');
+  const [resPhone, setResPhone] = useState('');
+  const [resEmail, setResEmail] = useState('');
+  const [resPersons, setResPersons] = useState(2);
+  const [resEmailConflict, setResEmailConflict] = useState(false);
+  const [resPhoneConflict, setResPhoneConflict] = useState(false);
+  const [isSubmittingReserve, setIsSubmittingReserve] = useState(false);
+  const [isAssignFlow, setIsAssignFlow] = useState(false);
+
+  // Real-time backend validation with 400ms debounce for Assign/Reserve Table Dialog
+  useEffect(() => {
+    if (!reservingTable) {
+      setResPhoneConflict(false);
+      setResEmailConflict(false);
+      return;
+    }
+
+    const p = resPhone.trim();
+    const e = resEmail.trim();
+
+    if (!p && !e) {
+      setResPhoneConflict(false);
+      setResEmailConflict(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const body: any = {};
+        if (p) body.phoneNumber = p;
+        if (e) body.email = e;
+
+        const res = await api.validateDuplicate(body);
+        if (res && res.conflicts) {
+          setResPhoneConflict(!!res.conflicts.phone);
+          setResEmailConflict(!!res.conflicts.email);
+        } else {
+          setResPhoneConflict(false);
+          setResEmailConflict(false);
+        }
+      } catch (err) {
+        console.error('Error during duplicate validation in Assign/Reserve Dialog:', err);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [resPhone, resEmail, reservingTable]);
+
+  // Validation functions matching CheckInPage exactly
+  const isValidName = (name: string): boolean => {
+    const trimmed = name.trim();
+    return /^[a-zA-Z\s.'-]{2,100}$/.test(trimmed);
+  };
+
+  const isValidPhone = (phone: string): boolean => {
+    const trimmed = phone.trim();
+    return /^(?:\+91)?[6-9]\d{9}$/.test(trimmed);
+  };
+
+  const isValidEmail = (emailStr: string): boolean => {
+    if (!emailStr || !emailStr.trim()) return true;
+    const trimmed = emailStr.trim().toLowerCase();
+    const regex = /^(?!.*\.\.)(?!\.)(?!.*\.$)[a-z0-9]+(\.[a-z0-9]+)*@gmail\.com$/;
+    return regex.test(trimmed);
+  };
+
+  // Active Check-in Duplicate Session Check for Dialog
+  const normalizedResPhone = resPhone.trim().startsWith('+91') ? resPhone.trim() : `+91${resPhone.trim()}`;
+  const isResPhoneActive = tokens.some(t => 
+    (t.customer?.phoneNumber === resPhone.trim() || t.customer?.phoneNumber === normalizedResPhone) &&
+    (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED')
+  );
+
+  const isResEmailActive = resEmail.trim() ? tokens.some(t =>
+    t.customer?.email?.toLowerCase() === resEmail.trim().toLowerCase() &&
+    (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED')
+  ) : false;
+
+  const isResNameOk = isValidName(resName);
+  const isResPhoneOk = isValidPhone(resPhone) && !isResPhoneActive && !resPhoneConflict;
+  const isResEmailOk = resEmail.trim().length > 0 && isValidEmail(resEmail) && !isResEmailActive && !resEmailConflict;
+  const isResCapacityOk = typeof resPersons === 'number' && resPersons > 0 && (!reservingTable || resPersons <= (reservingTable.capacity || 4));
+
+  const isResFormValid = isResNameOk && isResPhoneOk && isResEmailOk && isResCapacityOk;
 
  // Cancel Confirmation State
  const [cancellingReservation, setCancellingReservation] = useState<any | null>(null);
@@ -407,6 +485,8 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     setResName('');
     setResPhone('');
     setResEmail('');
+    setResPhoneConflict(false);
+    setResEmailConflict(false);
   };
 
   const handleReserveClick = (tb: Table) => {
@@ -416,11 +496,13 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     setResName('');
     setResPhone('');
     setResEmail('');
+    setResPhoneConflict(false);
+    setResEmailConflict(false);
   };
 
   const handleReserveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reservingTable) return;
+    if (!reservingTable || !isResFormValid) return;
 
     const trimmedName = resName.trim();
     const trimmedPhone = resPhone.trim();
@@ -1274,7 +1356,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  title={isSubmittingAssign ? "Assigning seat..." : !selectedTokenId ? "Select active token" : undefined}
  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
  >
- {isSubmittingAssign ? 'Assigning...' : 'Confirm Seating'}
+{isSubmittingAssign ? 'Assigning...' : 'Confirm Seating'}
  </button>
  </div>
  </form>
@@ -1282,92 +1364,167 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  </div>
  )}
 
- {/* RESERVE TABLE MODAL */}
- {reservingTable && (
-   <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
-     <div className="bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
-       <button 
-         onClick={() => setReservingTable(null)}
-         className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
-       >
-         <X size={18} />
-       </button>
+ {/* RESERVE / ASSIGN TABLE MODAL */}
+  {reservingTable && (
+    <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
+      <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn max-h-[90vh] overflow-y-auto custom-scrollbar">
+        <button 
+          onClick={() => setReservingTable(null)}
+          className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
+        >
+          <X size={18} />
+        </button>
 
-       <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-8">
-         <Grid3X3 size={18} className="shrink-0" /> <span className="truncate">{isAssignFlow ? 'Assign' : 'Reserve'} Table {reservingTable.tableNumber}</span>
-       </div>
+        <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-8">
+          <Grid3X3 size={18} className="shrink-0" /> <span className="truncate">{isAssignFlow ? 'Assign' : 'Reserve'} Table {reservingTable.tableNumber}</span>
+        </div>
 
-       <form onSubmit={handleReserveSubmit} className="space-y-4">
-         <div>
-           <label className="block text-xs font-semibold text-text-muted mb-1">Customer Name <span className="text-red-500">*</span></label>
-           <input
-             type="text"
-             value={resName}
-             onChange={e => setResName(e.target.value)}
-             placeholder="e.g. John Doe"
-             className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
-             required
-           />
-         </div>
+        <form onSubmit={handleReserveSubmit} className="space-y-4 text-left">
+          {/* 1. Customer Full Name */}
+          <div>
+            <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
+              <User size={14} className="text-text-main" /> Customer Full Name <span className="dark:text-red-400 text-red-700">*</span>
+            </label>
+            <input
+              type="text"
+              value={resName}
+              onChange={e => setResName(e.target.value)}
+              placeholder="e.g. First Last"
+              className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
+                resName.trim().length > 0 && !isResNameOk
+                  ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                  : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
+              }`}
+              required
+            />
+            {resName.trim().length > 0 && !isResNameOk && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>Full name must be 2-100 characters (letters, spaces, dots, apostrophes only).</span>
+              </div>
+            )}
+          </div>
 
-         <div>
-           <label className="block text-xs font-semibold text-text-muted mb-1">Phone Number <span className="text-red-500">*</span></label>
-           <input
-             type="tel"
-             value={resPhone}
-             onChange={e => setResPhone(e.target.value)}
-             placeholder="e.g. 9999999999"
-             className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
-             required
-           />
-         </div>
+          {/* 2. Phone Number */}
+          <div>
+            <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
+              <Phone size={14} className="text-text-main" /> Phone Number <span className="dark:text-red-400 text-red-700">*</span>
+            </label>
+            <input
+              type="tel"
+              value={resPhone}
+              onChange={e => setResPhone(e.target.value)}
+              placeholder="e.g. 9999999999"
+              className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
+                resPhone.trim().length > 0 && (!isValidPhone(resPhone) || resPhoneConflict || isResPhoneActive)
+                  ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                  : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
+              }`}
+              required
+            />
+            {resPhone.trim().length > 0 && !isValidPhone(resPhone) && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>Please enter a valid 10-digit Indian mobile number (starts with 6-9).</span>
+              </div>
+            )}
+            {isValidPhone(resPhone) && (resPhoneConflict || isResPhoneActive) && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>This phone number is already checked in.</span>
+              </div>
+            )}
+          </div>
 
-         <div>
-           <label className="block text-xs font-semibold text-text-muted mb-1">Email ID <span className="text-red-500">*</span></label>
-           <input
-             type="email"
-             value={resEmail}
-             onChange={e => setResEmail(e.target.value)}
-             placeholder="e.g. john@example.com"
-             className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
-             required
-           />
-         </div>
+          {/* 3. Email ID */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-text-muted flex items-center gap-1.5">
+                <Mail size={14} className="text-text-main" /> Email Address
+              </label>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider dark:text-red-400 text-red-700">
+                REQUIRED
+              </span>
+            </div>
+            <input
+              type="email"
+              value={resEmail}
+              onChange={e => setResEmail(e.target.value)}
+              placeholder="e.g. name@example.com"
+              className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
+                resEmail.trim().length === 0 || !isValidEmail(resEmail) || resEmailConflict || isResEmailActive
+                  ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                  : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
+              }`}
+              required
+            />
+            {resEmail.trim().length === 0 && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>Email address is strictly required for Digital Email QR Pass delivery.</span>
+              </div>
+            )}
+            {resEmail.trim().length > 0 && !isValidEmail(resEmail) && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>Please enter a valid email address (e.g. name@domain.com).</span>
+              </div>
+            )}
+            {isValidEmail(resEmail) && (resEmailConflict || isResEmailActive) && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>This email ID is already checked in.</span>
+              </div>
+            )}
+          </div>
 
-         <div>
-           <label className="block text-xs font-semibold text-text-muted mb-1">Number of Members <span className="text-red-500">*</span></label>
-           <select
-             value={resPersons}
-             onChange={e => setResPersons(Number(e.target.value))}
-             className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
-             required
-           >
-             {Array.from({ length: reservingTable.capacity || 4 }, (_, i) => i + 1).map(num => (
-               <option key={num} value={num}>{num} {num === 1 ? 'Guest' : 'Guests'}</option>
-             ))}
-           </select>
-         </div>
+          {/* 4. Number of Members */}
+          <div>
+            <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
+              <Users size={14} className="text-text-main" /> Number of Members <span className="dark:text-red-400 text-red-700">*</span>
+            </label>
+            <select
+              value={resPersons}
+              onChange={e => setResPersons(Number(e.target.value))}
+              className="w-full bg-bg-primary border border-border-main rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary cursor-pointer"
+              required
+            >
+              {Array.from({ length: reservingTable.capacity || 4 }, (_, i) => i + 1).map(num => (
+                <option key={num} value={num}>{num} {num === 1 ? 'Guest' : 'Guests'}</option>
+              ))}
+            </select>
+          </div>
 
-         <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
-           <button
-             type="button"
-             onClick={() => setReservingTable(null)}
-             className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
-           >
-             Cancel
-           </button>
-           <button
-             type="submit"
-             disabled={isSubmittingReserve}
-             className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
-           >
-             {isSubmittingReserve ? 'Confirming...' : isAssignFlow ? 'Confirm Assign & Check-In' : 'Confirm Reserve'}
-           </button>
-         </div>
-       </form>
-     </div>
-   </div>
- )}
+          {/* Step Validation Warning if incomplete */}
+          {!isResFormValid && (
+            <div className="pt-2 text-xs text-text-muted w-full text-center">
+              <span className="dark:text-amber-400 text-amber-700 flex items-center justify-center gap-1 text-[11px]">
+                <AlertTriangle size={14} className="shrink-0" /> Complete all required fields above to proceed
+              </span>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setReservingTable(null)}
+              className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!isResFormValid || isSubmittingReserve}
+              className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+            >
+              {isSubmittingReserve ? 'Confirming...' : isAssignFlow ? 'Confirm Assign & Check-In' : 'Confirm Reserve'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )}
 
  {/* CANCEL RESERVATION CONFIRMATION MODAL */}
  {cancellingReservation && (

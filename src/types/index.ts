@@ -47,6 +47,9 @@ export interface Table {
   occupiedSince?: string;
   lastAssignedAt?: string;
   isActive: boolean;
+  lockedBy?: string | null;
+  lockedByRole?: string | null;
+  lockedAt?: number | string | null;
 }
 
 export interface Token {
