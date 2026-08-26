@@ -13,39 +13,85 @@ is required, Antigravity MUST first read and follow this entire file.
 DO NOT make Git decisions based on assumptions.
 
 ===============================================================================
-1. PRIMARY OBJECTIVE — AUTOMATIC GIT SYNCHRONIZATION
+1. PRIMARY OBJECTIVE — GIT SYNCHRONIZATION
 ===============================================================================
 
-Antigravity is responsible for automatically performing the required Git
-synchronization.
+Antigravity is responsible for identifying, preparing, and synchronizing the
+required Git repositories according to the rules in this file.
 
-The user does NOT want Git commands merely displayed for manual copy/paste.
+The workflow is:
 
-Antigravity MUST:
-
-1. Read this GitRemember file.
+1. Read this GitRemember file completely.
 2. Identify the project changes that have actually been made.
 3. Determine which repository/repositories are affected.
-4. Synchronize each affected repository according to the repository mapping.
-5. Commit the changes using a meaningful commit message.
-6. Push the commit to the correct remote repository.
-7. Use ONLY the main branch.
-8. Report the repositories that were successfully synchronized.
+4. Verify the affected repository mapping.
+5. Prepare the appropriate changes for each affected repository.
+6. Create a meaningful, human-readable commit message.
+7. Commit directly to the existing `main` branch.
+8. DO NOT create any other branch.
+9. DO NOT push automatically unless push execution is explicitly authorized.
+10. When push is required/authorized, provide the push commands separately
+    from the commit/update commands.
+11. Push only the repositories that actually contain relevant changes.
+12. Report the exact repositories, commit messages, and synchronization state.
 
-DO NOT stop after generating commands.
+IMPORTANT:
 
-DO NOT ask the user to manually copy and paste Git commands.
+Git update/commit and Git push are TWO SEPARATE OPERATIONS.
 
-DO NOT ask the user to open multiple Git Bash windows.
+The user specifically wants:
 
-DO NOT require manual repository navigation when the synchronization can be
-performed automatically.
+    A. Repository update / commit preparation
+    B. Push commands separately
+
+Do NOT mix the push commands into the main implementation/update command block.
 
 ===============================================================================
-2. EXECUTION ENVIRONMENT
+2. USER GIT WORKFLOW PREFERENCE
 ===============================================================================
 
-All repository synchronization operations must be performed from the
+The user wants Git commit messages to be:
+
+    - Human-readable
+    - Professional
+    - Descriptive
+    - Based on the actual implementation
+    - Easy to understand from Git history
+    - Written as a real software-engineering commit
+
+Good:
+
+    fix: optimize bartender mobile session card layout
+
+    feat: improve responsive bartender check-in card workflow
+
+    fix: reduce mobile session card height and improve action visibility
+
+Bad:
+
+    update
+
+    changes
+
+    fixed
+
+    latest
+
+    test
+
+    work
+
+    done
+
+Do NOT use vague commit messages.
+
+Commit messages should explain WHAT was changed and, when useful, WHY.
+
+===============================================================================
+3. EXECUTION ENVIRONMENT
+===============================================================================
+
+All repository synchronization operations should be performed from the
 MONOREPO ROOT whenever possible.
 
 The project structure is:
@@ -60,10 +106,11 @@ PROJECT ROOT/
 Antigravity must work from the project root and use the appropriate Git
 mechanism to synchronize the dedicated repositories.
 
-Do NOT require the user to manually navigate between repositories.
+Do NOT require the user to manually navigate between repositories when the
+operation can safely be performed from the project root.
 
 ===============================================================================
-3. FOUR REQUIRED REPOSITORIES
+4. FOUR REQUIRED REPOSITORIES
 ===============================================================================
 
 There are FOUR repositories.
@@ -251,7 +298,15 @@ IMPORTANT:
 
 Only `main` is allowed.
 
-NEVER create any other branch.
+NEVER create:
+
+    dev
+    feature/*
+    fix/*
+    release/*
+    temporary/*
+    test/*
+    any other branch
 
 NEVER invent or use a deployment branch other than `main`.
 
@@ -262,7 +317,7 @@ NEVER synchronize:
     unrelated project files
 
 ===============================================================================
-4. ABSOLUTE BRANCH RULE
+5. ABSOLUTE BRANCH RULE
 ===============================================================================
 
 ALL FOUR REPOSITORIES MUST USE:
@@ -292,8 +347,11 @@ All pushes must target:
 
     origin main
 
+If a repository is currently on another existing branch, switch to the
+existing `main` branch only when it is safe and appropriate.
+
 ===============================================================================
-5. CHANGE → REPOSITORY MAPPING
+6. CHANGE → REPOSITORY MAPPING
 ===============================================================================
 
 Use this exact mapping.
@@ -328,7 +386,7 @@ WEB FRONTEND REPOSITORY
     = web-frontend/ CONTENTS ONLY
 
 ===============================================================================
-6. AUTOMATIC CHANGE DETECTION
+7. AUTOMATIC CHANGE DETECTION
 ===============================================================================
 
 Before committing, Antigravity must determine which project scopes contain
@@ -346,8 +404,14 @@ repositories.
 
 Do NOT push unchanged dedicated repositories merely because they exist.
 
+Do NOT commit unrelated files merely because they are present in the working
+tree.
+
+If unrelated pre-existing changes are detected, do not automatically include
+them unless they clearly belong to the current task.
+
 ===============================================================================
-7. REPOSITORY SELECTION RULE
+8. REPOSITORY SELECTION RULE
 ===============================================================================
 
 The Central Repository is always required when legitimate project changes
@@ -423,7 +487,7 @@ If changes exist in all three:
 Synchronize all four repositories.
 
 ===============================================================================
-8. CENTRAL REPOSITORY SYNCHRONIZATION
+9. CENTRAL REPOSITORY SYNCHRONIZATION
 ===============================================================================
 
 Repository:
@@ -442,15 +506,19 @@ The Central Repository must receive all legitimate project changes.
 
 Antigravity must:
 
-1. Stage the required project changes.
-2. Create a meaningful commit.
-3. Commit directly to main.
-4. Push directly to origin/main.
+1. Verify the repository is the correct central repository.
+2. Verify the branch is `main`.
+3. Review the actual changed files.
+4. Stage only legitimate changes belonging to the current task.
+5. Create a meaningful human-readable commit message.
+6. Commit directly to `main`.
+7. Do NOT create another branch.
+8. Push only when push execution is explicitly authorized.
 
-Do NOT create another branch.
+The Central Repository must remain the complete project.
 
 ===============================================================================
-9. WEB FRONTEND REPOSITORY SYNCHRONIZATION
+10. WEB FRONTEND REPOSITORY SYNCHRONIZATION
 ===============================================================================
 
 Repository:
@@ -484,12 +552,15 @@ NOT:
 Use Git subtree or another safe equivalent that publishes the contents of
 web-frontend/ directly to the dedicated repository root.
 
+Before committing, verify that backend/, frontend/, or unrelated monorepo
+folders are NOT being published into this repository.
+
 Commit directly to main.
 
-Push directly to origin/main.
+Push only when push execution is explicitly authorized.
 
 ===============================================================================
-10. BACKEND REPOSITORY SYNCHRONIZATION
+11. BACKEND REPOSITORY SYNCHRONIZATION
 ===============================================================================
 
 Repository:
@@ -521,12 +592,15 @@ NOT:
 
 Use Git subtree or another safe equivalent.
 
+Before committing, verify that frontend/, web-frontend/, or unrelated
+monorepo folders are NOT being published into this repository.
+
 Commit directly to main.
 
-Push directly to origin/main.
+Push only when push execution is explicitly authorized.
 
 ===============================================================================
-11. REACT NATIVE REPOSITORY SYNCHRONIZATION
+12. REACT NATIVE REPOSITORY SYNCHRONIZATION
 ===============================================================================
 
 Repository:
@@ -560,17 +634,26 @@ NOT:
 
 Use Git subtree or another safe equivalent.
 
+Before committing, verify that backend/, web-frontend/, or unrelated monorepo
+folders are NOT being published into this repository.
+
 Commit directly to main.
 
-Push directly to origin/main.
+Push only when push execution is explicitly authorized.
 
 ===============================================================================
-12. COMMIT MESSAGE RULE
+13. COMMIT MESSAGE RULE
 ===============================================================================
 
 Every repository that receives changes must receive a meaningful commit.
 
-Commit messages must describe the actual implementation.
+Commit messages must:
+
+    - Describe the actual implementation.
+    - Be human-readable.
+    - Be concise but informative.
+    - Follow conventional commit style where appropriate.
+    - Be understandable without opening the code.
 
 Good examples:
 
@@ -586,6 +669,12 @@ Good examples:
 
     feat: improve responsive tables layout
 
+    fix: optimize bartender mobile session card layout
+
+    feat: improve responsive bartender check-in workflow
+
+    fix: reduce mobile session card height and improve action visibility
+
 Do NOT use:
 
     update
@@ -593,12 +682,100 @@ Do NOT use:
     fixed
     latest
     test
+    work
+    done
 
 When the same logical feature is synchronized to multiple repositories, use
 the same logical commit description where appropriate.
 
 ===============================================================================
-13. NO UNRELATED FILES IN DEDICATED REPOSITORIES
+14. COMMIT / UPDATE AND PUSH ARE SEPARATE OPERATIONS
+===============================================================================
+
+This is a CRITICAL USER REQUIREMENT.
+
+Git update/commit and Git push must be treated as separate operations.
+
+The normal workflow is:
+
+    STEP 1 — Inspect actual changes
+    STEP 2 — Determine affected repositories
+    STEP 3 — Update/synchronize repository contents
+    STEP 4 — Commit with human-readable commit message
+    STEP 5 — Stop before push unless push is explicitly authorized
+    STEP 6 — Provide separate push commands when requested/authorized
+
+DO NOT combine the push commands into the main update/commit code block.
+
+When the user asks specifically for:
+
+    "push commands"
+
+provide ONLY the required push commands in a separate copyable code block.
+
+The push command section must be clearly separated from the commit/update
+instructions.
+
+===============================================================================
+15. PUSH COMMAND RULES
+===============================================================================
+
+When push commands are requested or explicitly authorized, provide commands
+ONLY for repositories that were actually affected by the current changes.
+
+All pushes must target:
+
+    origin main
+
+NEVER push:
+
+    origin dev
+    origin feature/*
+    origin fix/*
+    origin release/*
+    origin temporary/*
+    any other branch
+
+The preferred push command is:
+
+    git push origin main
+
+Do NOT include unnecessary push commands for unaffected repositories.
+
+===============================================================================
+16. PUSH COMMANDS MUST BE PROVIDED SEPARATELY
+===============================================================================
+
+When the user requests push commands, use a separate section such as:
+
+    PUSH COMMANDS — RUN FROM MONOREPO ROOT
+
+Then provide independent copyable command blocks for each affected
+repository.
+
+Example:
+
+    Central Repository
+    ```bash
+    git push origin main
+    ```
+
+    Web Frontend Repository
+    ```bash
+    git push origin main
+    ```
+
+If the dedicated repository requires a specific safe subtree synchronization
+sequence from the monorepo root, provide the exact required commands for that
+repository separately.
+
+Do NOT combine unrelated repository push operations into a single ambiguous
+command.
+
+Do NOT provide push commands for repositories that were not affected.
+
+===============================================================================
+17. NO UNRELATED FILES IN DEDICATED REPOSITORIES
 ===============================================================================
 
 Before synchronizing a dedicated repository, verify that only its mapped
@@ -628,39 +805,75 @@ Never publish:
     backend → React Native repository
     entire monorepo → dedicated repository
 
+Dedicated repositories must NEVER contain the monorepo wrapper directory.
+
 ===============================================================================
-14. AUTOMATIC EXECUTION — NO COPY/PASTE MODE
+18. WORKING TREE SAFETY
 ===============================================================================
 
-Antigravity must execute the required Git operations itself.
+Before committing, inspect the current Git state.
 
-The user does NOT need to manually run:
+Antigravity must determine:
+
+    - Current branch
+    - Current repository
+    - Changed files
+    - Staged files
+    - Untracked files relevant to the current task
+    - Whether unrelated pre-existing changes exist
+
+Do NOT blindly run:
+
+    git add .
+
+if doing so could include unrelated changes.
+
+Stage only the legitimate files belonging to the current implementation.
+
+If the repository contains unrelated user work, preserve it and do not
+accidentally commit it.
+
+===============================================================================
+19. NO COPY/PASTE MODE FOR COMMIT EXECUTION
+===============================================================================
+
+Antigravity should perform repository inspection and commit/update operations
+itself when execution access is available.
+
+The user should NOT be required to manually run:
 
     git add
     git commit
-    git push
     git subtree
     git checkout
     git switch
 
-Do not merely print command blocks when automatic execution is possible.
+Do not stop merely because commands can be generated.
 
-Do not ask the user to manually execute the generated commands.
+However:
 
-The Git synchronization task is considered incomplete until the required
-repositories have been committed and pushed successfully.
+PUSH IS A SEPARATE OPERATION.
+
+Do not automatically push unless push execution is explicitly authorized by
+the user/workflow.
+
+When the user specifically asks for push commands, provide those commands
+separately as copyable command blocks.
 
 ===============================================================================
-15. BRANCH SAFETY
+20. BRANCH SAFETY
 ===============================================================================
 
 Before committing:
 
     remain on main
 
-If a required repository is not currently on main, do NOT create a new branch.
+If a required repository is not currently on main:
 
-Switch to the existing main branch only when safe and appropriate.
+    - Do NOT create a new branch.
+    - Switch only to the existing `main` branch when safe.
+    - Verify the working tree before switching.
+    - Never discard user changes to force a branch switch.
 
 NEVER create a branch.
 
@@ -669,22 +882,29 @@ The final synchronization target for every repository is:
     main
 
 ===============================================================================
-16. GIT AUTHENTICATION
+21. GIT AUTHENTICATION
 ===============================================================================
 
 Use the Git credentials/authentication already configured in the execution
 environment.
 
-Do NOT ask the user to provide passwords, personal access tokens, or secrets
-in chat.
+Do NOT ask the user to provide:
+
+    - passwords
+    - personal access tokens
+    - SSH private keys
+    - secrets
 
 Do NOT expose credentials in command output.
 
-If authentication prevents a push, report the authentication failure clearly
-instead of inventing credentials or bypassing security.
+If authentication prevents a push, report the authentication failure clearly.
+
+Do NOT invent credentials.
+
+Do NOT bypass GitHub security.
 
 ===============================================================================
-17. NO UNNECESSARY TEST EMAILS
+22. NO UNNECESSARY TEST EMAILS
 ===============================================================================
 
 When synchronizing code related to:
@@ -703,7 +923,7 @@ DO NOT generate unnecessary QR emails.
 Git synchronization and application testing are separate operations.
 
 ===============================================================================
-18. EAS / EIS RULE
+23. EAS / EIS RULE
 ===============================================================================
 
 EAS/EIS commands may ONLY be executed from:
@@ -721,14 +941,30 @@ Never run EAS/EIS commands from:
     web-frontend/
 
 ===============================================================================
-19. COMPLETION REPORT
+24. TESTING VS GIT SYNCHRONIZATION
 ===============================================================================
 
-After synchronization, provide a concise report.
+Application verification and Git synchronization are separate tasks.
+
+Do not introduce unnecessary application-side test data merely to perform
+Git operations.
+
+When TypeScript/build verification has already been performed successfully,
+do not repeat expensive or unrelated tests solely because a Git commit is
+being created.
+
+Only perform relevant verification needed for confidence in the current
+implementation.
+
+===============================================================================
+25. COMPLETION REPORT
+===============================================================================
+
+After repository update/commit work, provide a concise report.
 
 The report must contain:
 
-    Git Synchronization Completed
+    Git Synchronization Status
 
     Updated repositories:
     - Central Repository
@@ -743,14 +979,54 @@ For each updated repository report:
     Repository
     Branch: main
     Commit message
-    Synchronization result
+    Commit result
+    Push status
 
-For repositories that were not affected, optionally report:
+IMPORTANT:
 
-    Not synchronized — no relevant changes in mapped source directory.
+If the commit succeeded but push was not executed, explicitly say:
+
+    Push: Not executed — push is a separate operation.
+
+If push succeeded, explicitly say:
+
+    Push: Successfully pushed to origin/main.
+
+If push failed, explicitly say:
+
+    Push: Failed — <reason>
+
+Do NOT falsely report a push as successful.
 
 ===============================================================================
-20. FAILURE HANDLING
+26. PUSH COMMAND COMPLETION REPORT
+===============================================================================
+
+When the user asks for push commands separately, provide:
+
+    PUSH COMMANDS — RUN FROM MONOREPO ROOT
+
+Then list ONLY the affected repositories and their required commands.
+
+Example:
+
+    Central Repository
+    ```bash
+    git push origin main
+    ```
+
+    Web Frontend Repository
+    ```bash
+    git push origin main
+    ```
+
+Do not include unaffected repositories.
+
+Do not mix commit commands into this section unless the user explicitly asks
+for the complete Git sequence.
+
+===============================================================================
+27. FAILURE HANDLING
 ===============================================================================
 
 If synchronization fails for one repository:
@@ -761,9 +1037,60 @@ If synchronization fails for one repository:
 4. Continue synchronizing other independent affected repositories when safe.
 5. Do not create another branch as a workaround.
 6. Do not push unrelated files to another repository.
+7. Do not claim a repository was updated if its commit failed.
+8. Do not claim a push succeeded if the push failed.
+9. Preserve unrelated user changes.
 
 ===============================================================================
-21. FINAL ABSOLUTE RULES
+28. MULTI-REPOSITORY COMMIT MESSAGE CONSISTENCY
+===============================================================================
+
+When one logical feature affects multiple repositories, use a consistent
+logical commit message across those repositories when appropriate.
+
+Example:
+
+    Central:
+    fix: optimize bartender mobile session card layout
+
+    Web Frontend:
+    fix: optimize bartender mobile session card layout
+
+If a repository requires a more specific message because the implementation
+differs substantially, make the message specific to that repository while
+retaining the same logical feature context.
+
+===============================================================================
+29. CURRENT EXAMPLE — BARTENDER MOBILE SESSION CARD
+===============================================================================
+
+For the Bartender mobile session-card responsive optimization, the affected
+source is expected to be:
+
+    web-frontend/
+
+Therefore the expected repositories are:
+
+    Central Repository
+    Web Frontend Repository
+
+The expected unaffected repositories are:
+
+    Backend Repository
+    React Native Frontend Repository
+
+A suitable human-readable commit message would be:
+
+    fix: optimize bartender mobile session card layout
+
+Possible more specific alternative:
+
+    feat: improve responsive bartender check-in session cards
+
+The final selection must reflect the actual implementation that was made.
+
+===============================================================================
+30. FINAL ABSOLUTE RULES
 ===============================================================================
 
 1. There are FOUR repositories.
@@ -779,8 +1106,23 @@ If synchronization fails for one repository:
 11. Dedicated repository contents must appear directly at repository root.
 12. Commit directly to main.
 13. Push directly to origin/main.
-14. Antigravity performs Git synchronization automatically.
-15. Do not merely generate copy/paste commands.
-16. Do not create unnecessary branches.
-17. Do not mix repository scopes.
-18. Report the actual synchronization result after execution.
+14. Human-readable commit messages are mandatory.
+15. Commit/update and push are separate operations.
+16. Do NOT automatically push unless push execution is explicitly authorized.
+17. When push commands are requested, provide them in a separate copyable
+    section.
+18. Do not provide push commands for unaffected repositories.
+19. Do not mix repository scopes.
+20. Do not commit unrelated working-tree changes.
+21. Do not expose Git credentials or secrets.
+22. Do not create unnecessary branches.
+23. Do not create unnecessary test emails, customers, or QR codes.
+24. EAS/EIS commands may only run from the React Native directory containing
+    eas.json.
+25. Never falsely report synchronization or push success.
+26. Preserve existing user changes that are unrelated to the current task.
+27. Always report the actual repository synchronization and push state.
+
+===============================================================================
+END OF GITREMEMBER
+===============================================================================
