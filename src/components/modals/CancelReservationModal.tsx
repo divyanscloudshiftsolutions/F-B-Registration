@@ -30,6 +30,29 @@ export const CancelReservationModal: React.FC<CancelReservationModalProps> = ({
   const [closureReasonOption, setClosureReasonOption] = useState('Customer Vacated Early');
   const [closureCustomExplanation, setClosureCustomExplanation] = useState('');
 
+  useEffect(() => {
+    if (!isOpen || !reservation) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && target.tagName === 'TEXTAREA') return;
+
+      if (e.key === 'Enter') {
+        if (!isSubmittingCancel) {
+          e.preventDefault();
+          const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+          handleFormSubmit(fakeEvent);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, reservation, isSubmittingCancel, closureReasonOption, closureCustomExplanation, onClose]);
+
   if (!isOpen || !reservation) return null;
 
   const handleFormSubmit = async (e: React.FormEvent) => {

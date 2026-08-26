@@ -125,6 +125,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
  return !user || allowedRoles.includes(userRoleLower);
  };
 
+ const handleNavClick = (tabId: string) => {
+   setActiveTab(tabId);
+   if (window.innerWidth < 1024) {
+     setCollapsed(true);
+   }
+ };
+
  const groups = [
  {
  id: 'tables',
@@ -132,8 +139,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
  icon: Grid3X3,
  roles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST, UserRole.BARTENDER],
  subItems: [
- { label: 'Table Layout', onClick: () => setActiveTab('tables/layout'), active: activeTab === 'tables/layout' },
- { label: 'Reservations', onClick: () => setActiveTab('tables/reservations'), active: activeTab === 'tables/reservations' }
+ { label: 'Table Layout', onClick: () => handleNavClick('tables/layout'), active: activeTab === 'tables/layout' },
+ { label: 'Reservations', onClick: () => handleNavClick('tables/reservations'), active: activeTab === 'tables/reservations' }
  ]
  },
  {
@@ -142,8 +149,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
  icon: Wine,
  roles: [UserRole.ADMIN, UserRole.BARTENDER],
  subItems: [
- { label: 'Check-ins', onClick: () => setActiveTab('bartender/checkins'), active: activeTab === 'bartender/checkins' },
- { label: 'QR Scan', onClick: () => setActiveTab('bartender/scan'), active: activeTab === 'bartender/scan' }
+ { label: 'Check-ins', onClick: () => handleNavClick('bartender/checkins'), active: activeTab === 'bartender/checkins' },
+ { label: 'QR Scan', onClick: () => handleNavClick('bartender/scan'), active: activeTab === 'bartender/scan' }
  ]
  },
  {
@@ -152,11 +159,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
  icon: ShieldCheck,
  roles: [UserRole.ADMIN, UserRole.MANAGER],
  subItems: [
- { label: 'Table Floor', onClick: () => setActiveTab('admin/tables'), active: activeTab === 'admin/tables' },
- { label: 'Staff Directory', onClick: () => setActiveTab('admin/staff'), active: activeTab === 'admin/staff' },
- { label: 'Revenue Analytics', onClick: () => setActiveTab('admin/chart'), active: activeTab === 'admin/chart' },
- { label: 'Rate Cards', onClick: () => setActiveTab('admin/rates'), active: activeTab === 'admin/rates' },
- { label: 'Customer Sessions', onClick: () => setActiveTab('admin/customers'), active: activeTab === 'admin/customers' }
+ { label: 'Table Floor', onClick: () => handleNavClick('admin/tables'), active: activeTab === 'admin/tables' },
+ { label: 'Staff Directory', onClick: () => handleNavClick('admin/staff'), active: activeTab === 'admin/staff' },
+ { label: 'Revenue Analytics', onClick: () => handleNavClick('admin/chart'), active: activeTab === 'admin/chart' },
+ { label: 'Rate Cards', onClick: () => handleNavClick('admin/rates'), active: activeTab === 'admin/rates' },
+ { label: 'Customer Sessions', onClick: () => handleNavClick('admin/customers'), active: activeTab === 'admin/customers' }
  ]
  }
  ];
@@ -167,10 +174,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
  
  return (
  <button
- onClick={() => setActiveTab(id)}
+ onClick={() => handleNavClick(id)}
  className={`w-full flex items-center justify-between ${
  collapsed ? 'justify-center px-0' : 'px-3'
- } py-2.5 text-[13px] overflow-hidden premium-menu-item ${
+ } py-2.5 text-[13px] overflow-hidden premium-menu-item cursor-pointer ${
  isActive ? 'active' : ''
  }`}
  title={collapsed ? label : undefined}

@@ -595,18 +595,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Live Customer Sessions Card */}
         <div className="lg:col-span-2 glass-panel rounded-2xl p-4 sm:p-6 border border-border-main space-y-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-border-main pb-3">
-            <div>
-              <h3 className="text-sm font-bold text-text-main">Live Customer Sessions</h3>
-              <p className="text-xs text-text-muted mt-0.5">Real-time QR active seating tickets</p>
+          <div className="flex items-center justify-between gap-3 border-b border-border-main pb-3">
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-text-main truncate">Live Customer Sessions</h3>
+              <p className="text-xs text-text-muted mt-0.5 truncate">Real-time QR active seating tickets</p>
             </div>
-            <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="flex items-center gap-2 shrink-0">
               <button 
                 onClick={() => { refreshTokens(); refreshTables(); if (isManagement) { refreshAllSessions(); fetchReport(); } }}
-                className="flex-1 sm:flex-none justify-center px-3 py-1.5 text-[10px] sm:text-xs font-semibold transition-all premium-btn-secondary flex items-center gap-1.5 cursor-pointer"
+                className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl transition-all premium-btn-secondary flex items-center justify-center cursor-pointer shrink-0"
+                title="Refresh Live Sessions"
+                aria-label="Refresh Live Sessions"
               >
-                <RefreshCw size={12} />
-                <span>Refresh</span>
+                <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
               </button>
             </div>
           </div>

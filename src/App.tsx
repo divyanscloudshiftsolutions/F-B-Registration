@@ -156,12 +156,12 @@ const AppContent: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 h-[100dvh] bg-bg-workspace border border-border-sidebar border-y-0 border-r-0 border-l-[1px] rounded-none overflow-hidden transition-all duration-300 z-10">
         <Header title={getTabTitle()} onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)} isSidebarCollapsed={sidebarCollapsed} />
         
-        <main className="p-4 md:p-6 flex-1 overflow-y-auto no-scrollbar">
+        <main className="p-3 sm:p-4 md:p-6 flex-1 overflow-y-auto no-scrollbar">
           {renderTabContent()}
         </main>
 
         {/* Session Expiry Warning Popups Container */}
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[70] flex flex-col gap-3 w-full max-w-md px-4 pointer-events-none">
+        <div className="fixed top-3 sm:top-4 inset-x-3 sm:inset-x-auto sm:left-1/2 sm:transform sm:-translate-x-1/2 z-[70] flex flex-col gap-3 w-auto sm:w-full sm:max-w-md px-0 sm:px-4 pointer-events-none">
           {sessionAlerts.filter(a => !a.dismissed).map(alert => (
             <div
               key={alert.id}
@@ -195,12 +195,12 @@ const AppContent: React.FC = () => {
           ))}
         </div>
 
-        {/* Global Toast Alert Notifications Container */}
-        <div className="fixed bottom-4 right-4 z-[75] space-y-2 max-w-sm w-full pointer-events-none">
+        {/* Global Toast Alert Notifications Container: Top on mobile, Bottom-Right on web */}
+        <div className="fixed top-4 inset-x-4 sm:top-auto sm:bottom-4 sm:right-4 sm:left-auto z-[120] space-y-2 sm:max-w-sm w-auto sm:w-full pointer-events-none">
           {toasts.map(toast => (
             <div
               key={toast.id}
-              className={`pointer-events-auto p-4 rounded-xl shadow-lg flex items-center justify-between border backdrop-blur-md transition-all ${
+              className={`pointer-events-auto p-3.5 sm:p-4 rounded-2xl shadow-2xl flex items-center justify-between border backdrop-blur-md transition-all animate-fadeIn ${
                 toast.type === 'success'
                   ? 'bg-status-success-bg border-status-success-border text-status-success'
                   : toast.type === 'danger'
@@ -208,10 +208,10 @@ const AppContent: React.FC = () => {
                   : 'bg-status-info-bg border-status-info-border text-status-info'
               }`}
             >
-              <span className="text-xs font-semibold">{toast.message}</span>
+              <span className="text-xs font-semibold leading-snug">{toast.message}</span>
               <button
                 onClick={() => dismissToast(toast.id)}
-                className="ml-4 text-xs opacity-70 hover:opacity-100 font-bold"
+                className="ml-3 text-xs opacity-70 hover:opacity-100 font-bold p-1 shrink-0 cursor-pointer"
               >
                 ✕
               </button>

@@ -68,6 +68,8 @@ export interface Token {
   endTime: string;
   totalRedemptionsAllowed: number;
   redemptionsUsed: number;
+  currentCheckInEntitlement?: number;
+  carriedForwardBalance?: number;
   status: 'PENDING_PAYMENT' | 'ACTIVE' | 'CLOSED' | 'CANCELLED' | 'EXPIRED' | 'EXTENDED';
   issuedBy: string;
   deliveryMode: 'NFC_CARD' | 'EMAIL_QR';
