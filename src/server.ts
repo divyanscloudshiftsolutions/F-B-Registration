@@ -75,10 +75,15 @@ app.use(cors({
              normalizedOrigin === `${normalizedAllowed}/`;
     });
     
+    // Allow local network IP addresses (e.g. 10.x.x.x, 192.168.x.x, 172.16-31.x.x, localhost)
+    const isLocalNetwork = Boolean(
+      normalizedOrigin.match(/^https?:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/)
+    );
+
     // Explicitly allow mobile app schemes if needed or local chrome extension for dev
     const isChromeExtension = normalizedOrigin.startsWith('chrome-extension://');
     
-    if (isAllowed || isChromeExtension) {
+    if (isAllowed || isLocalNetwork || isChromeExtension) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));

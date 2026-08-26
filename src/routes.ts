@@ -3055,49 +3055,57 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
       orderBy: { startTime: 'desc' },
     });
     
-    // Map response for client compatibility
-    const oldTokens = activeTokens.map((t: any) => ({
-      id: t.id,
-      tokenNumber: t.tokenNumber,
-      phoneNumber: t.customer?.phoneNumber || '',
-      customerName: t.customer?.name || '',
-      email: t.customer?.email || '',
-      customer: t.customer ? {
-        id: t.customer.id,
-        name: t.customer.name,
-        phoneNumber: t.customer.phoneNumber,
-        email: t.customer.email
-      } : {
-        id: '',
-        name: t.customerName || 'Guest',
-        phoneNumber: t.phoneNumber || '',
-        email: t.email || ''
-      },
-      persons: t.personsCount,
-      personsCount: t.personsCount,
-      placeType: t.placeType?.name || '',
-      placeTypeId: t.placeTypeId,
-      tableId: t.tableId,
-      tableNumber: t.table?.tableNumber || null,
-      amountPaid: t.amountPaid,
-      paymentVerified: t.paymentVerified,
-      startTime: t.startTime.toISOString(),
-      endTime: t.endTime.toISOString(),
-      totalRedemptionsAllowed: t.totalRedemptionsAllowed,
-      redemptionsUsed: t.redemptionsUsed,
-      redemptionLimit: t.totalRedemptionsAllowed,
-      redemptionCount: t.redemptionsUsed,
-      status: t.status.toUpperCase(),
-      cardUid: null,
-      createdAt: t.issuedAt.toISOString(),
-      deliveryMode: t.deliveryMode,
-      table: t.table ? {
-        id: t.table.id,
-        number: t.table.tableNumber,
+    // Map response for client compatibility with authoritative entitlement breakdown
+    const oldTokens = activeTokens.map((t: any) => {
+      const basePerPerson = t.placeType?.redemptionsPerPerson ?? 2;
+      const currentCheckInEntitlement = Math.min(t.totalRedemptionsAllowed, (t.personsCount || 1) * basePerPerson);
+      const carriedForwardBalance = Math.max(0, t.totalRedemptionsAllowed - currentCheckInEntitlement);
+
+      return {
+        id: t.id,
+        tokenNumber: t.tokenNumber,
+        phoneNumber: t.customer?.phoneNumber || '',
+        customerName: t.customer?.name || '',
+        email: t.customer?.email || '',
+        customer: t.customer ? {
+          id: t.customer.id,
+          name: t.customer.name,
+          phoneNumber: t.customer.phoneNumber,
+          email: t.customer.email
+        } : {
+          id: '',
+          name: t.customerName || 'Guest',
+          phoneNumber: t.phoneNumber || '',
+          email: t.email || ''
+        },
+        persons: t.personsCount,
+        personsCount: t.personsCount,
         placeType: t.placeType?.name || '',
-        status: t.table.status.toUpperCase(),
-      } : null
-    }));
+        placeTypeId: t.placeTypeId,
+        tableId: t.tableId,
+        tableNumber: t.table?.tableNumber || null,
+        amountPaid: t.amountPaid,
+        paymentVerified: t.paymentVerified,
+        startTime: t.startTime.toISOString(),
+        endTime: t.endTime.toISOString(),
+        totalRedemptionsAllowed: t.totalRedemptionsAllowed,
+        redemptionsUsed: t.redemptionsUsed,
+        redemptionLimit: t.totalRedemptionsAllowed,
+        redemptionCount: t.redemptionsUsed,
+        currentCheckInEntitlement,
+        carriedForwardBalance,
+        status: t.status.toUpperCase(),
+        cardUid: null,
+        createdAt: t.issuedAt.toISOString(),
+        deliveryMode: t.deliveryMode,
+        table: t.table ? {
+          id: t.table.id,
+          number: t.table.tableNumber,
+          placeType: t.placeType?.name || '',
+          status: t.table.status.toUpperCase(),
+        } : null
+      };
+    });
 
     await redisService.setex(cacheKey, 300, JSON.stringify(oldTokens));
 
