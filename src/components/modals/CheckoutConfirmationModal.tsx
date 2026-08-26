@@ -26,6 +26,29 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
   const [closeReasonDetail, setCloseReasonDetail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (!isOpen || !session) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && target.tagName === 'TEXTAREA') return;
+
+      if (e.key === 'Enter') {
+        if (!isSubmitting) {
+          e.preventDefault();
+          const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+          handleSubmit(fakeEvent);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, session, isSubmitting, closeReason, closeReasonDetail, onClose]);
+
   if (!isOpen || !session) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {

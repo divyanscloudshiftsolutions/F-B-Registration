@@ -113,152 +113,156 @@ export const Header: React.FC<HeaderProps> = ({ title, onSidebarToggle, onRefres
  };
 
  return (
- <header className="sticky top-0 z-20 bg-transparent border-b border-border-sidebar px-4 md:px-6 py-3.5 flex items-center justify-between text-text-primary shrink-0 min-w-0">
- {/* Title & Page Header */}
- <div className="flex items-center gap-3 min-w-0 flex-1 mr-4">
- {/* Hamburger Menu (Mobile Only) */}
- {onSidebarToggle && (
- <button 
- onClick={onSidebarToggle}
- className="lg:hidden p-2 -ml-2 rounded-xl premium-btn-secondary shrink-0 flex items-center justify-center cursor-pointer"
- title="Toggle Sidebar"
- >
- <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
- </button>
- )}
- <div className="min-w-0">
- <h2 className="text-xl md:text-2xl font-black text-text-primary dark:text-white tracking-wider uppercase leading-none truncate">{title}</h2>
- <p className="text-[10px] text-text-muted font-bold mt-1.5 uppercase tracking-widest truncate">Open the Bottle</p>
- </div>
- </div>
+    <header className="sticky top-0 z-20 bg-transparent border-b border-border-sidebar px-3 sm:px-4 md:px-6 py-3 sm:py-3.5 flex items-center justify-between text-text-primary shrink-0 min-w-0">
+      {/* Title & Page Header */}
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 mr-2 sm:mr-4">
+        {/* Hamburger Menu (Mobile Only) */}
+        {onSidebarToggle && (
+          <button 
+            onClick={onSidebarToggle}
+            className="lg:hidden w-9 h-9 sm:w-10 sm:h-10 -ml-1 rounded-xl premium-btn-secondary shrink-0 flex items-center justify-center cursor-pointer"
+            title="Toggle Sidebar"
+            aria-label="Toggle Navigation Menu"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          </button>
+        )}
+        <div className="min-w-0">
+          <h2 className="text-base sm:text-xl md:text-2xl font-black text-text-primary dark:text-white tracking-wider uppercase leading-none truncate">{title}</h2>
+          <p className="text-[9px] sm:text-[10px] text-text-muted font-bold mt-1 sm:mt-1.5 uppercase tracking-widest truncate">Open the Bottle</p>
+        </div>
+      </div>
 
- {/* System Status & Actions */}
- <div className="flex items-center gap-3 relative shrink-0">
- {/* System Status Capsule */}
- <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-status-success-bg border border-status-success-border text-status-success text-xs font-semibold shrink-0">
- <span className="w-2 h-2 rounded-full bg-status-success animate-pulse" />
- <span>System Active</span>
- </div>
+      {/* System Status & Actions */}
+      <div className="flex items-center gap-1.5 sm:gap-3 relative shrink-0">
+        {/* System Status Capsule */}
+        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-status-success-bg border border-status-success-border text-status-success text-xs font-semibold shrink-0">
+          <span className="w-2 h-2 rounded-full bg-status-success animate-pulse" />
+          <span>System Active</span>
+        </div>
 
- {/* Refresh Action Button */}
- {onRefresh && (
- <button
- onClick={onRefresh}
- disabled={isRefreshing}
- className="w-9 h-9 rounded-full transition-all disabled:opacity-50 premium-btn-secondary flex items-center justify-center cursor-pointer"
- title={isRefreshing ? "Refresh in progress" : "Refresh Data"}
- >
- <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
- </button>
- )}
+        {/* Refresh Action Button */}
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="w-9 h-9 rounded-full transition-all disabled:opacity-50 premium-btn-secondary flex items-center justify-center cursor-pointer"
+            title={isRefreshing ? "Refresh in progress" : "Refresh Data"}
+            aria-label="Refresh Data"
+          >
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+          </button>
+        )}
 
- {/* Notifications Icon with Dropdown */}
- <div ref={popoverRef} className="relative">
- <button 
- onClick={handleTogglePanel}
- className="w-9 h-9 rounded-full transition-all relative premium-btn-secondary flex items-center justify-center cursor-pointer"
- title="Notifications"
- >
- <Bell size={18} />
- {unreadNotifications > 0 && (
- <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-bg-surface" />
- )}
- </button>
+        {/* Notifications Icon with Dropdown */}
+        <div ref={popoverRef} className="relative">
+          <button 
+            onClick={handleTogglePanel}
+            className="w-9 h-9 rounded-full transition-all relative premium-btn-secondary flex items-center justify-center cursor-pointer"
+            title="Notifications"
+            aria-label="View Notifications"
+          >
+            <Bell size={16} />
+            {unreadNotifications > 0 && (
+              <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-bg-surface" />
+            )}
+          </button>
 
- {/* Notifications Dropdown Panel Overlay */}
- {isOpen && (
- <div className="fixed inset-x-4 top-[64px] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2.5 sm:w-80 rounded-3xl border border-border glass-panel overflow-hidden z-50 text-text-primary animate-fadeIn flex flex-col max-h-[85vh]">
- 
- {/* Popover Header */}
- <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
- <span className="font-bold text-xs uppercase tracking-wider text-text-primary">Notifications Log</span>
- {notifications.length > 0 && (
- <button 
- onClick={handleClearAll}
- className="px-2.5 py-1 text-[10px] font-bold flex items-center gap-1 transition-all premium-btn-secondary cancellation-btn dark:text-red-400 text-red-700 dark:border-red-500/30 border-red-500/30 dark:bg-red-500/5 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 active:scale-95 cursor-pointer"
- >
- <Trash2 size={11} /> Clear All
- </button>
- )}
- </div>
+          {/* Notifications Dropdown Panel Overlay */}
+          {isOpen && (
+            <div className="fixed inset-x-3 top-[56px] sm:top-[64px] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2.5 sm:w-80 rounded-2xl sm:rounded-3xl border border-border glass-panel overflow-hidden z-50 text-text-primary animate-fadeIn flex flex-col max-h-[calc(100dvh-80px)] sm:max-h-[85vh] shadow-2xl">
+              
+              {/* Popover Header */}
+              <div className="px-4 sm:px-5 py-3 sm:py-3.5 border-b border-border flex items-center justify-between">
+                <span className="font-bold text-xs uppercase tracking-wider text-text-primary">Notifications Log</span>
+                {notifications.length > 0 && (
+                  <button 
+                    onClick={handleClearAll}
+                    className="px-2.5 py-1 text-[10px] font-bold flex items-center gap-1 transition-all premium-btn-secondary cancellation-btn dark:text-red-400 text-red-700 dark:border-red-500/30 border-red-500/30 dark:bg-red-500/5 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 active:scale-95 cursor-pointer"
+                  >
+                    <Trash2 size={11} /> Clear All
+                  </button>
+                )}
+              </div>
 
- {/* Popover Body List */}
- <div className="flex-1 overflow-y-auto divide-y divide-border max-h-[60vh] sm:max-h-72">
- {notifications.length === 0 ? (
- <div className="px-5 py-8 text-center space-y-2">
- <CheckSquare className="mx-auto text-text-muted" size={24} />
- <p className="text-xs font-semibold text-text-primary">No Operational Alerts</p>
- <p className="text-[10px] text-text-muted">Your session activity log is currently clear.</p>
- </div>
- ) : (
- notifications.map(notif => (
- <div key={notif.id} className="p-4 bg-bg-secondary-surface dark:bg-black/10 hover:bg-bg-hover transition-all text-xs space-y-1 border-b border-border/30 last:border-b-0">
- <div className="flex justify-between items-start gap-2">
- <p className="font-bold text-text-primary text-[11px]">{notif.title}</p>
- <span className="text-[9px] text-text-muted font-mono">{notif.timestamp}</span>
- </div>
- <p className="text-[10px] text-text-muted leading-relaxed">{notif.message}</p>
- </div>
- ))
- )}
- </div>
+              {/* Popover Body List */}
+              <div className="flex-1 overflow-y-auto divide-y divide-border max-h-[50vh] sm:max-h-72">
+                {notifications.length === 0 ? (
+                  <div className="px-5 py-8 text-center space-y-2">
+                    <CheckSquare className="mx-auto text-text-muted" size={24} />
+                    <p className="text-xs font-semibold text-text-primary">No Operational Alerts</p>
+                    <p className="text-[10px] text-text-muted">Your session activity log is currently clear.</p>
+                  </div>
+                ) : (
+                  notifications.map(notif => (
+                    <div key={notif.id} className="p-3.5 sm:p-4 bg-bg-secondary-surface dark:bg-black/10 hover:bg-bg-hover transition-all text-xs space-y-1 border-b border-border/30 last:border-b-0">
+                      <div className="flex justify-between items-start gap-2">
+                        <p className="font-bold text-text-primary text-[11px]">{notif.title}</p>
+                        <span className="text-[9px] text-text-muted font-mono">{notif.timestamp}</span>
+                      </div>
+                      <p className="text-[10px] text-text-muted leading-relaxed">{notif.message}</p>
+                    </div>
+                  ))
+                )}
+              </div>
 
- {/* Popover Action Footer (Sign Out matching native shell overlay) */}
- <div className="p-3 bg-bg-primary border-t border-border">
- {user && (
- <div className="flex items-center justify-between px-2 pb-2">
- <span className="text-[10px] text-text-muted truncate max-w-[120px]">👤 {user.fullName}</span>
- <span className="text-[8px] text-primary border border-primary/30 px-2 py-0.5 rounded-full font-bold uppercase">{user.role}</span>
- </div>
- )}
- {showLogoutConfirm ? (
-    <div className="space-y-3 p-2 text-center">
-      <p className="text-[11px] font-bold text-text-primary">Are you sure you want to log out?</p>
-      <div className="flex gap-2">
+              {/* Popover Action Footer (Sign Out matching native shell overlay) */}
+              <div className="p-3 bg-bg-primary border-t border-border">
+                {user && (
+                  <div className="flex items-center justify-between px-2 pb-2">
+                    <span className="text-[10px] text-text-muted truncate max-w-[120px]">👤 {user.fullName}</span>
+                    <span className="text-[8px] text-primary border border-primary/30 px-2 py-0.5 rounded-full font-bold uppercase">{user.role}</span>
+                  </div>
+                )}
+                {showLogoutConfirm ? (
+                  <div className="space-y-3 p-2 text-center">
+                    <p className="text-[11px] font-bold text-text-primary">Are you sure you want to log out?</p>
+                    <div className="flex gap-2">
+                      <button
+                        autoFocus
+                        onClick={() => {
+                          setIsOpen(false);
+                          setShowLogoutConfirm(false);
+                          logout();
+                        }}
+                        className="flex-1 py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-[11px] font-black uppercase tracking-wider cursor-pointer"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        id="logout-confirm-no-btn"
+                        onClick={() => setShowLogoutConfirm(false)}
+                        className="flex-1 py-2.5 rounded-lg bg-bg-surface border border-border text-text-muted hover:text-text-main text-[11px] font-black uppercase tracking-wider cursor-pointer"
+                      >
+                        No
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowLogoutConfirm(true)}
+                    className="w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-primary border border-primary-hover text-white [box-shadow:0_0_8px_rgba(212,175,55,0.25)] hover:bg-primary-hover dark:hover:bg-primary-hover dark:hover:text-black dark:active:bg-primary-hover dark:active:text-black dark:focus:bg-primary-hover dark:focus:text-black focus:outline-none dark:focus:ring-2 dark:focus:ring-primary hover:[box-shadow:0_0_12px_rgba(212,175,55,0.35)] transition-all duration-200 cursor-pointer active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <LogOut size={14} />
+                    <span>Sign Out Shift Account</span>
+                  </button>
+                )}
+              </div>
+
+            </div>
+          )}
+        </div>
+
+        {/* Theme Toggle Button */}
         <button
-          autoFocus
-          onClick={() => {
-            setIsOpen(false);
-            setShowLogoutConfirm(false);
-            logout();
-          }}
-          className="flex-1 py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-[11px] font-black uppercase tracking-wider cursor-pointer"
+          onClick={toggleThemeWithWave}
+          className="w-9 h-9 rounded-full transition-all premium-btn-secondary flex items-center justify-center cursor-pointer"
+          title="Toggle Color Theme"
+          aria-label="Toggle Color Theme"
         >
-          Yes
-        </button>
-        <button
-          id="logout-confirm-no-btn"
-          onClick={() => setShowLogoutConfirm(false)}
-          className="flex-1 py-2.5 rounded-lg bg-bg-surface border border-border text-text-muted hover:text-text-main text-[11px] font-black uppercase tracking-wider cursor-pointer"
-        >
-          No
+          {isDark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} />}
         </button>
       </div>
-    </div>
-  ) : (
-    <button
-      onClick={() => setShowLogoutConfirm(true)}
-      className="w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-primary border border-primary-hover text-white [box-shadow:0_0_8px_rgba(212,175,55,0.25)] hover:bg-primary-hover dark:hover:bg-primary-hover dark:hover:text-black dark:active:bg-primary-hover dark:active:text-black dark:focus:bg-primary-hover dark:focus:text-black focus:outline-none dark:focus:ring-2 dark:focus:ring-primary hover:[box-shadow:0_0_12px_rgba(212,175,55,0.35)] transition-all duration-200 cursor-pointer active:scale-95 flex items-center justify-center gap-2"
-    >
-      <LogOut size={14} />
-      <span>Sign Out Shift Account</span>
-    </button>
-  )}
- </div>
-
- </div>
- )}
- </div>
-
- {/* Theme Toggle Button */}
- <button
- onClick={toggleThemeWithWave}
- className="p-2 transition-all premium-btn-secondary"
- title="Toggle Color Theme"
- >
- {isDark ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} />}
- </button>
- </div>
- </header>
+    </header>
  );
 };

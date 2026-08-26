@@ -133,12 +133,26 @@ export const QuickAttendanceWebPage: React.FC = () => {
  };
  }, []);
 
- useEffect(() => {
- if (cameraActive && streamRef.current && videoRef.current) {
- videoRef.current.srcObject = streamRef.current;
- videoRef.current.play().catch(() => {});
- }
- }, [cameraActive]);
+  useEffect(() => {
+    if (!attendanceResult && !errorMessage) return;
+
+    const handleResultKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        handleReset();
+      }
+    };
+
+    window.addEventListener('keydown', handleResultKeyDown);
+    return () => window.removeEventListener('keydown', handleResultKeyDown);
+  }, [attendanceResult, errorMessage]);
+
+  useEffect(() => {
+    if (cameraActive && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraActive]);
 
  const handleCaptureAndSubmit = async () => {
  if (isSubmitting || !cameraActive || !videoRef.current) return;

@@ -101,8 +101,8 @@ export const CustomerSessionsManager: React.FC = () => {
           />
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-3 w-full md:w-auto">
-          <div className="flex flex-nowrap overflow-x-auto custom-scrollbar gap-2 w-full sm:w-auto pb-1 sm:pb-0">
+        <div className="flex items-center justify-between sm:justify-end gap-2 w-full md:w-auto">
+          <div className="flex flex-nowrap overflow-x-auto custom-scrollbar gap-2 flex-1 sm:flex-initial pb-1 sm:pb-0">
             {['all', 'active', 'extended', 'expired', 'closed'].map(f => (
               <button
                 key={f}
@@ -118,12 +118,11 @@ export const CustomerSessionsManager: React.FC = () => {
 
           <button
             onClick={refreshAllSessions}
-            className="w-full sm:w-auto justify-center px-3 sm:px-4 py-2 text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0 whitespace-nowrap"
+            className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer"
+            title="Refresh Customer Sessions"
+            aria-label="Refresh Customer Sessions"
           >
-            <div className="nav-icon-badge">
-              <RefreshCw size={12} />
-            </div>
-            <span>Refresh</span>
+            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>

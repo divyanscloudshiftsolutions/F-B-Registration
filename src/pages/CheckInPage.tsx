@@ -1129,6 +1129,114 @@ setPersonsCount(preselectedTable.capacity);
     return isAvailable && isCapacitySuitable && matchesCategory;
   });
 
+  // Keyboard listener for Incomplete Check-In Draft Prompt
+  useEffect(() => {
+    if (!showContinuePrompt) return;
+
+    const handleDraftKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleContinueCheckIn();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        handleStopCheckInWithConfirmation(handleAbandonCheckIn);
+      }
+    };
+
+    window.addEventListener('keydown', handleDraftKeyDown);
+    return () => window.removeEventListener('keydown', handleDraftKeyDown);
+  }, [showContinuePrompt, tables]);
+
+  // Keyboard listener for Table Capacity Warning Modal
+  useEffect(() => {
+    if (!showCapacityWarning) return;
+
+    const handleCapacityKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleKeepTable();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        handleChangeTable();
+      }
+    };
+
+    window.addEventListener('keydown', handleCapacityKeyDown);
+    return () => window.removeEventListener('keydown', handleCapacityKeyDown);
+  }, [showCapacityWarning, selectedTableObj]);
+
+  // Keyboard listener for Payment Collected Confirmation Modal
+  useEffect(() => {
+    if (!showPaymentCollectedConfirm) return;
+
+    const handlePaymentConfirmKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        executeFinalCheckIn();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowPaymentCollectedConfirm(false);
+      }
+    };
+
+    window.addEventListener('keydown', handlePaymentConfirmKeyDown);
+    return () => window.removeEventListener('keydown', handlePaymentConfirmKeyDown);
+  }, [showPaymentCollectedConfirm, activePendingToken, selectedTableId, phoneNumber, customerName, email, personsCount, selectedPlaceTypeId, deliveryMode, calculatedTotal, reservationId]);
+
+  // Keyboard listener for Wizard Stage Progression
+  useEffect(() => {
+    if (showStopCheckInConfirmModal || showContinuePrompt || showCapacityWarning || showPaymentCollectedConfirm) {
+      return;
+    }
+
+    const handleStageKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && target.tagName === 'TEXTAREA') return;
+
+      if (e.key === 'Enter') {
+        if (stage === 1) {
+          if (isStep1Valid) {
+            e.preventDefault();
+            if (preselectedTable) {
+              setStage(3);
+            } else {
+              setStage(2);
+            }
+          }
+        } else if (stage === 2) {
+          e.preventDefault();
+          setStage(3);
+        } else if (stage === 3) {
+          if (qrVerificationSuccess) {
+            e.preventDefault();
+            setStage(4);
+          }
+        } else if (stage === 4) {
+          if (!isSubmitting && isStep1Valid) {
+            e.preventDefault();
+            setShowPaymentCollectedConfirm(true);
+          }
+        } else if (stage === 5) {
+          e.preventDefault();
+          handleResetWizard();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleStageKeyDown);
+    return () => window.removeEventListener('keydown', handleStageKeyDown);
+  }, [
+    stage,
+    isStep1Valid,
+    preselectedTable,
+    qrVerificationSuccess,
+    isSubmitting,
+    showStopCheckInConfirmModal,
+    showContinuePrompt,
+    showCapacityWarning,
+    showPaymentCollectedConfirm
+  ]);
+
   if (showContinuePrompt) {
     return (
       <>

@@ -101,17 +101,15 @@ export const StaffManagement: React.FC = () => {
  />
  </div>
 
- <div className="flex flex-row items-center gap-2 w-full md:w-auto shrink-0">
- <button
- onClick={refreshUsers}
- className="flex-1 sm:flex-none justify-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0 whitespace-nowrap"
- >
- <div className="nav-icon-badge">
- <RefreshCw size={12} />
- </div>
- <span className="hidden sm:inline">Refresh Data</span>
- <span className="sm:hidden">Refresh</span>
- </button>
+        <div className="flex flex-row items-center gap-2 w-full md:w-auto shrink-0 justify-end">
+          <button
+            onClick={refreshUsers}
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer"
+            title="Refresh Staff Data"
+            aria-label="Refresh Staff Data"
+          >
+            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+          </button>
 
  <button
  onClick={() => setIsModalOpen(true)}
