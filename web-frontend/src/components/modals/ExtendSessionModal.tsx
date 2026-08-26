@@ -65,8 +65,51 @@ export const ExtendSessionModal: React.FC<ExtendSessionModalProps> = ({
       setTimeout(() => {
         emailYesButtonRef.current?.focus();
       }, 50);
+
+      const handleEmailKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          setSendExtensionEmail(true);
+          setShowEmailConfirmModal(false);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          setSendExtensionEmail(false);
+          setShowEmailConfirmModal(false);
+        }
+      };
+      window.addEventListener('keydown', handleEmailKeyDown);
+      return () => window.removeEventListener('keydown', handleEmailKeyDown);
     }
   }, [showEmailConfirmModal]);
+
+  useEffect(() => {
+    if (!showExtendPaymentConfirm) return;
+
+    const handlePaymentKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        executeExtend();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowExtendPaymentConfirm(false);
+      }
+    };
+    window.addEventListener('keydown', handlePaymentKeyDown);
+    return () => window.removeEventListener('keydown', handlePaymentKeyDown);
+  }, [showExtendPaymentConfirm, token, effectiveMinutes, effectiveAmount, sendExtensionEmail, extensionPaymentMethod, selectedOption, customReason]);
+
+  useEffect(() => {
+    if (!isOpen || showEmailConfirmModal || showExtendPaymentConfirm) return;
+
+    const handleModalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleModalKeyDown);
+    return () => window.removeEventListener('keydown', handleModalKeyDown);
+  }, [isOpen, showEmailConfirmModal, showExtendPaymentConfirm, onClose]);
 
   if (!isOpen || !token) return null;
 

@@ -343,12 +343,32 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
   const isResFormValid = isResNameOk && isResPhoneOk && isResEmailOk && isResCapacityOk;
 
- // Cancel Confirmation State
- const [cancellingReservation, setCancellingReservation] = useState<any | null>(null);
- const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
+  // Cancel Confirmation State
+  const [cancellingReservation, setCancellingReservation] = useState<any | null>(null);
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
 
- // Extend Modal State
- const [extendingTable, setExtendingTable] = useState<Table | null>(null);
+  // Keyboard listener for Cancel Reservation Modal
+  useEffect(() => {
+    if (!cancellingReservation) return;
+
+    const handleCancelKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        if (!isSubmittingCancel) {
+          e.preventDefault();
+          handleCancelConfirm();
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setCancellingReservation(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleCancelKeyDown);
+    return () => window.removeEventListener('keydown', handleCancelKeyDown);
+  }, [cancellingReservation, isSubmittingCancel]);
+
+  // Extend Modal State
+  const [extendingTable, setExtendingTable] = useState<Table | null>(null);
 
 
  // Close Session Modal State
@@ -781,33 +801,32 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  </div>
  </div>
 
- {/* Tier 2: Secondary Status Filters & Refresh Action */}
- <div className="flex flex-wrap items-center justify-between gap-4 w-full px-4">
- <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
- <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 w-full sm:w-auto block mb-1 sm:mb-0">Status Filter:</span>
- {['all', 'available', 'occupied', 'reserved'].map(f => (
- <button
- key={f}
- onClick={() => setFilter(f)}
- className={`px-3 sm:px-3.5 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-secondary ${
- filter === f ? 'active' : ''
- }`}
- >
- {f}
- </button>
- ))}
- </div>
+        {/* Tier 2: Secondary Status Filters & Refresh Action */}
+        <div className="flex items-center justify-between gap-3 w-full px-4">
+          <div className="flex flex-nowrap overflow-x-auto custom-scrollbar items-center gap-2 flex-1 sm:flex-initial pb-1 sm:pb-0">
+            <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Status Filter:</span>
+            {['all', 'available', 'occupied', 'reserved'].map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-3 sm:px-3.5 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-secondary shrink-0 ${
+                  filter === f ? 'active' : ''
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
 
- <button
- onClick={handleRefresh}
- className="w-full sm:w-auto px-4 py-2.5 sm:py-2 text-xs font-bold flex items-center justify-center gap-2 whitespace-nowrap transition-all premium-btn-secondary active"
- >
- <div className="nav-icon-badge">
- <RefreshCw size={12} />
- </div>
- <span>Refresh Floor Plan</span>
- </button>
- </div>
+          <button
+            onClick={handleRefresh}
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer"
+            title="Refresh Floor Plan"
+            aria-label="Refresh Floor Plan"
+          >
+            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+          </button>
+        </div>
  </div>
 
   {/* Stable Table Cards Floor Plan Grid */}
@@ -1191,23 +1210,76 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  </div>
 
  {inspectingToken && (
-  <div className="dark:bg-transparent p-4 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] space-y-2 text-xs">
-  <div className="flex justify-between">
-  <span className="text-text-muted">Assigned Customer:</span>
-  <span className="font-bold text-text-main">{inspectingToken.customer?.name || 'Guest'} ({inspectingToken.customer?.phoneNumber || '—'})</span>
-  </div>
-  <div className="flex justify-between">
-  <span className="text-text-muted">Token Pass:</span>
-  <span className="font-mono text-text-main font-bold">{inspectingToken.tokenNumber}</span>
-  </div>
-  {inspectingTable.status === 'occupied' && (
-    <div className="flex justify-between">
-      <span className="text-text-muted">Time Remaining:</span>
-      <TableTimer endTime={inspectingToken.endTime} />
+    <div className="dark:bg-transparent p-4 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] space-y-2.5 text-xs">
+      <div className="flex justify-between items-center">
+        <span className="text-text-muted">Customer Name:</span>
+        <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={inspectingToken.customer?.name || 'Walk-in Guest'}>
+          {inspectingToken.customer?.name || 'Walk-in Guest'}
+        </span>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-text-muted">Phone Number:</span>
+        <span className="font-mono font-semibold text-text-main text-right">
+          {inspectingToken.customer?.phoneNumber || '—'}
+        </span>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-text-muted">Email ID:</span>
+        <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={inspectingToken.customer?.email || (inspectingToken as any).email || '—'}>
+          {inspectingToken.customer?.email || (inspectingToken as any).email || '—'}
+        </span>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-text-muted">Token Pass:</span>
+        <span className="font-mono text-text-main font-bold text-right">{inspectingToken.tokenNumber}</span>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-text-muted">Guests Headcount:</span>
+        <span className="font-bold text-text-main text-right">{inspectingToken.personsCount || 1} {inspectingToken.personsCount === 1 ? 'Guest' : 'Guests'}</span>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-text-muted">Drinks Used / Total:</span>
+        <span className="font-mono font-bold text-emerald-400 text-right">
+          {inspectingToken.redemptionsUsed} / {inspectingToken.totalRedemptionsAllowed} Used
+        </span>
+      </div>
+      {inspectingTable.status === 'occupied' && (
+        <div className="flex justify-between items-center pt-1 border-t border-border-main/50 dark:border-[rgba(255,255,255,0.1)]">
+          <span className="text-text-muted font-medium">Time Remaining:</span>
+          <TableTimer endTime={inspectingToken.endTime} />
+        </div>
+      )}
     </div>
   )}
-  </div>
-  )}
+
+  {inspectingTable.status === 'reserved' && (() => {
+    const res = realReservations.find((r: any) => r.tableId === inspectingTable.id && (r.status === 'PENDING' || r.status === 'CONFIRMED'));
+    if (!res) return null;
+    return (
+      <div className="dark:bg-transparent p-4 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] space-y-2.5 text-xs">
+        <div className="flex justify-between items-center">
+          <span className="text-text-muted">Reserved Customer:</span>
+          <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={res.customerName}>
+            {res.customerName}
+          </span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-text-muted">Phone Number:</span>
+          <span className="font-mono font-semibold text-text-main text-right">{res.phoneNumber || '—'}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-text-muted">Email ID:</span>
+          <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={res.email || '—'}>
+            {res.email || '—'}
+          </span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-text-muted">Guests Headcount:</span>
+          <span className="font-bold text-text-main text-right">{res.personsCount} Guests</span>
+        </div>
+      </div>
+    );
+  })()}
  </div>
 
  {/* Action Buttons (Footer) */}
@@ -1228,9 +1300,9 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
           setExtensionPaymentMethod('CASH');
           setSendExtensionEmail(false);
         }}
-        className="flex-1 py-2.5 rounded-md bg-transparent border border-primary text-primary font-bold text-[13px] transition-all cursor-pointer"
+        className="flex-1 py-2.5 rounded-md bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/25 text-purple-700 dark:text-purple-400 border border-purple-500/30 font-bold text-[13px] transition-all cursor-pointer"
       >
-        Extend
+        Extend Session
       </button>
     </div>
   ) : inspectingTable.status === 'in_checkin' ? (
@@ -1271,10 +1343,10 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               className={`w-full py-2.5 rounded-md font-bold text-[13px] border transition-all text-center ${
                 !isOwner 
                   ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed' 
-                  : 'bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30 cursor-pointer'
+                  : 'bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/25 text-rose-700 dark:text-rose-400 border border-rose-500/30 cursor-pointer'
               }`}
             >
-              Cancel Reservation
+              Clear Reservation
             </button>
           )}
 

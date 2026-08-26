@@ -61,24 +61,22 @@ export const RateManagement: React.FC = () => {
 
  return (
  <div className="space-y-6">
- {/* Top Header */}
- <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 border-b border-border-main pb-4 mb-6">
- <div>
- <h3 className="text-sm font-bold text-text-main uppercase tracking-wider">Place Type Rate Cards & Pricing Config</h3>
- <p className="text-xs text-text-muted">Configure cover charge rates, base hours, and drink allowances</p>
- </div>
+      {/* Top Header */}
+      <div className="flex items-center justify-between gap-3 border-b border-border-main pb-4 mb-6">
+        <div className="min-w-0">
+          <h3 className="text-sm font-bold text-text-main uppercase tracking-wider truncate">Place Type Rate Cards & Pricing Config</h3>
+          <p className="text-xs text-text-muted truncate">Configure cover charge rates, base hours, and drink allowances</p>
+        </div>
 
- <button
- onClick={refreshRates}
- className="w-full sm:w-auto justify-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 transition-all premium-btn-secondary shrink-0"
- >
- <div className="nav-icon-badge">
- <RefreshCw size={12} />
- </div>
- <span className="hidden sm:inline">Refresh Rates</span>
- <span className="sm:hidden">Refresh</span>
- </button>
- </div>
+        <button
+          onClick={refreshRates}
+          className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer"
+          title="Refresh Rates"
+          aria-label="Refresh Rates"
+        >
+          <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+        </button>
+      </div>
 
  {/* Rates Cards Grid */}
  {isLoading ? (

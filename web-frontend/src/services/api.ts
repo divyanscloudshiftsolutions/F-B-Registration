@@ -14,30 +14,19 @@ class ApiService {
   public async getBaseUrl(): Promise<string> {
     if (this.activeBaseUrl) return this.activeBaseUrl;
 
-    if (typeof window !== 'undefined' && (
-      window.location.hostname === 'localhost' || 
-      window.location.hostname === '127.0.0.1' ||
-      window.location.hostname.match(/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/)
-    )) {
-      try {
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      const isLocalOrNetworkHost = (
+        hostname === 'localhost' || 
+        hostname === '127.0.0.1' ||
+        hostname.match(/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/)
+      );
+
+      if (isLocalOrNetworkHost) {
         const localApiUrl = getLocalApiBaseUrl();
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 600);
-
-        // Ping the local backend to check if it is active and running
-        const res = await fetch(`${localApiUrl}/tables`, {
-          method: 'GET',
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (res.ok || res.status === 401 || res.status === 403) {
-          this.activeBaseUrl = localApiUrl;
-          console.log('[API] Auto-detected local backend active. Routing to local DB:', localApiUrl);
-          return localApiUrl;
-        }
-      } catch (e) {
-        // Local backend is offline or down
+        this.activeBaseUrl = localApiUrl;
+        console.log('[API] Local/Network host detected. Using local backend:', localApiUrl);
+        return localApiUrl;
       }
     }
 
@@ -301,6 +290,8 @@ class ApiService {
         personsCount: t.personsCount || t.persons || 1,
         redemptionsUsed: t.redemptionsUsed || t.redemptionCount || 0,
         totalRedemptionsAllowed: t.totalRedemptionsAllowed || t.maxDrinks || 2,
+        currentCheckInEntitlement: t.currentCheckInEntitlement,
+        carriedForwardBalance: t.carriedForwardBalance,
         deliveryMode: t.deliveryMode || 'EMAIL_QR',
         amountPaid: t.amountPaid || t.amount || 0,
         status: (t.status || 'active').toLowerCase() as any,

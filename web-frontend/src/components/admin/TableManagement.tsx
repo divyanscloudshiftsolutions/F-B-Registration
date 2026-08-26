@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Grid3X3, Plus, RefreshCw, X, CheckCircle2, Users, VideoOff, Lock, Unlock, AlertTriangle } from 'lucide-react';
+import { Grid3X3, Plus, RefreshCw, X, CheckCircle2, Users, VideoOff, Lock, Unlock, AlertTriangle, Edit3, Trash2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
@@ -82,6 +82,86 @@ export const TableManagement: React.FC = () => {
       setPlaceType(selectedPlace);
     }
   }, [isModalOpen]);
+
+  // Keyboard listener for Delete Table Confirmation Modal
+  useEffect(() => {
+    if (!deletingTableForConfirm) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        confirmDeleteTable();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setDeletingTableForConfirm(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [deletingTableForConfirm]);
+
+  // Keyboard listener for Release Table Confirmation Modal
+  useEffect(() => {
+    if (!releasingTableForConfirm) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const tb = releasingTableForConfirm;
+        setReleasingTableForConfirm(null);
+        if (tb.status === 'occupied') {
+          handleRelease(tb.id);
+        } else {
+          handleToggleLockTable(tb);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setReleasingTableForConfirm(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [releasingTableForConfirm]);
+
+  // Keyboard listener for Cancel Reservation Confirmation Modal
+  useEffect(() => {
+    if (!cancellingReservationForConfirm) return;
+
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const tb = cancellingReservationForConfirm;
+        setIsSubmittingCancelRes(true);
+        try {
+          const resToCancel = reservations?.find(r => r.tableId === tb.id && (r.status === 'PENDING' || r.status === 'CONFIRMED'));
+          if (resToCancel) {
+            await api.cancelReservation(resToCancel.id);
+          } else {
+            await api.patchTableStatus(tb.id, 'available');
+          }
+          showToast(`Reservation cancelled. Table ${tb.tableNumber} is now available.`, 'success');
+          setCancellingReservationForConfirm(null);
+          if (inspectingTable && inspectingTable.id === tb.id) {
+            setInspectingTable(null);
+          }
+          refreshTables();
+          refreshReservations();
+        } catch (err: any) {
+          showToast(err.message || 'Failed to cancel reservation.', 'danger');
+        } finally {
+          setIsSubmittingCancelRes(false);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setCancellingReservationForConfirm(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cancellingReservationForConfirm, reservations, inspectingTable]);
 
   // Helper to calculate next logical table number and suggestions based on placeType
   const getTableSuggestions = (type: string) => {
@@ -349,12 +429,11 @@ export const TableManagement: React.FC = () => {
           <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
             <button
               onClick={() => { refreshTables(); refreshTokens(); }}
-              className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 text-xs font-bold flex items-center justify-center gap-2 whitespace-nowrap transition-all premium-btn-secondary active"
+              className="w-9 h-9 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer"
+              title="Refresh Table Data"
+              aria-label="Refresh Table Data"
             >
-              <div className="nav-icon-badge">
-                <RefreshCw size={12} />
-              </div>
-              <span>Refresh Data</span>
+              <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
             </button>
 
             {isAdmin && (
@@ -519,7 +598,7 @@ export const TableManagement: React.FC = () => {
                                   showToast('No active session token found for this table.', 'warning');
                                 }
                               }}
-                              className="py-2 rounded-xl bg-transparent border border-primary text-primary hover:bg-primary/5 font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-1 transition-all cursor-pointer"
+                              className="py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/25 text-purple-700 dark:text-purple-400 border border-purple-500/30 font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-1 transition-all cursor-pointer"
                             >
                               <span>Extend</span>
                             </button>
@@ -531,7 +610,7 @@ export const TableManagement: React.FC = () => {
                               e.stopPropagation();
                               setCancellingReservationForConfirm(tb);
                             }}
-                            className="w-full py-2.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-400 border border-blue-500/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer"
+                            className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/25 text-rose-700 dark:text-rose-400 border border-rose-500/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer"
                           >
                             <X size={12} />
                             <span>Release Reservation</span>
@@ -543,7 +622,7 @@ export const TableManagement: React.FC = () => {
                               e.stopPropagation();
                               setReleasingTableForConfirm(tb);
                             }}
-                            className="w-full py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer"
+                            className="w-full py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/25 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer"
                           >
                             <Unlock size={12} />
                             <span>Release Table</span>
@@ -739,25 +818,39 @@ export const TableManagement: React.FC = () => {
                   </div>
                 )}
 
-                {inspectingToken && (
-                  <div className="p-4 rounded-2xl bg-bg-primary border border-border-main space-y-2 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-text-muted">Assigned Customer:</span>
-                      <span className="font-bold text-text-main">{inspectingToken.customer?.name || 'Guest'}</span>
+                               {inspectingToken && (
+                  <div className="p-4 rounded-2xl bg-bg-primary border border-border-main space-y-2.5 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-text-muted">Customer Name:</span>
+                      <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={inspectingToken.customer?.name || 'Walk-in Guest'}>
+                        {inspectingToken.customer?.name || 'Walk-in Guest'}
+                      </span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center">
                       <span className="text-text-muted">Phone Number:</span>
-                      <span className="font-mono text-text-main">{inspectingToken.customer?.phoneNumber || '—'}</span>
+                      <span className="font-mono font-semibold text-text-main text-right">
+                        {inspectingToken.customer?.phoneNumber || '—'}
+                      </span>
                     </div>
-                    {inspectingToken.customer?.email && (
-                      <div className="flex justify-between">
-                        <span className="text-text-muted">Email Address:</span>
-                        <span className="font-mono text-text-main">{inspectingToken.customer.email}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center">
+                      <span className="text-text-muted">Email ID:</span>
+                      <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={inspectingToken.customer?.email || (inspectingToken as any).email || '—'}>
+                        {inspectingToken.customer?.email || (inspectingToken as any).email || '—'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
                       <span className="text-text-muted">Token Pass:</span>
-                      <span className="font-mono text-text-main font-bold">{inspectingToken.tokenNumber}</span>
+                      <span className="font-mono text-text-main font-bold text-right">{inspectingToken.tokenNumber}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-text-muted">Guests Headcount:</span>
+                      <span className="font-bold text-text-main text-right">{inspectingToken.personsCount || 1} {inspectingToken.personsCount === 1 ? 'Guest' : 'Guests'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-text-muted">Drinks Used / Total:</span>
+                      <span className="font-mono font-bold text-emerald-400 text-right">
+                        {inspectingToken.redemptionsUsed} / {inspectingToken.totalRedemptionsAllowed} Used
+                      </span>
                     </div>
                   </div>
                 )}
@@ -784,9 +877,9 @@ export const TableManagement: React.FC = () => {
                             showToast('No active session token found for this table.', 'warning');
                           }
                         }}
-                        className="w-full py-2 rounded-xl bg-transparent border border-primary text-primary hover:bg-primary/5 font-bold text-xs transition-all cursor-pointer"
+                        className="w-full py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/25 text-purple-700 dark:text-purple-400 border border-purple-500/30 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
                       >
-                        Extend Session
+                        <span>Extend Session</span>
                       </button>
                     </>
                   )}
@@ -794,26 +887,31 @@ export const TableManagement: React.FC = () => {
                   {isAdmin && (
                     <div className="space-y-2">
                       <div className="grid grid-cols-2 gap-2">
+                        {/* Edit Table Button — Indigo */}
                         <button
                           type="button"
                           onClick={() => openEditModal(inspectingTable)}
-                          className="py-2.5 px-3 rounded-xl bg-transparent border border-primary text-primary hover:bg-primary/5 active:bg-primary/10 font-bold text-xs transition-all cursor-pointer text-center truncate flex items-center justify-center gap-1.5"
+                          className="py-2.5 px-3 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 active:bg-indigo-500/25 text-indigo-700 dark:text-indigo-400 border border-indigo-500/30 font-bold text-xs transition-all cursor-pointer text-center truncate flex items-center justify-center gap-1.5"
                         >
-                          Edit Table
+                          <Edit3 size={13} className="shrink-0" />
+                          <span>Edit Table</span>
                         </button>
+
+                        {/* Delete Table Button — Red */}
                         <button
                           type="button"
                           onClick={() => setDeletingTableForConfirm(inspectingTable)}
                           disabled={inspectingTable.status === 'occupied'}
                           title={inspectingTable.status === 'occupied' ? "Cannot delete an occupied table" : undefined}
-                          className="py-2.5 px-3 rounded-xl bg-transparent border border-red-500/35 hover:bg-red-500/5 active:bg-red-500/10 text-red-600 dark:text-red-400 font-bold text-xs transition-all cursor-pointer text-center disabled:opacity-40 disabled:cursor-not-allowed truncate flex items-center justify-center gap-1.5"
+                          className="py-2.5 px-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 text-red-700 dark:text-red-400 border border-red-500/30 font-bold text-xs transition-all cursor-pointer text-center disabled:opacity-40 disabled:cursor-not-allowed truncate flex items-center justify-center gap-1.5"
                         >
-                          Delete Table
+                          <Trash2 size={13} className="shrink-0" />
+                          <span>Delete Table</span>
                         </button>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2">
-                        {/* Clear Reservation Button */}
+                        {/* Clear Reservation Button — Rose */}
                         <button
                           type="button"
                           disabled={!isTableReserved}
@@ -821,7 +919,7 @@ export const TableManagement: React.FC = () => {
                           title={isTableReserved ? "Force-cancel the pending reservation and release table" : "No active reservation on this table"}
                           className={`py-2.5 px-3 rounded-xl border font-bold text-xs transition-all text-center truncate flex items-center justify-center gap-1.5 ${
                             isTableReserved
-                              ? 'bg-blue-500/15 hover:bg-blue-500/25 active:bg-blue-500/30 text-blue-700 dark:text-blue-400 border-blue-500/40 cursor-pointer shadow-sm'
+                              ? 'bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/25 text-rose-700 dark:text-rose-400 border-rose-500/30 cursor-pointer shadow-sm'
                               : 'bg-transparent border-border-main/30 text-text-muted/40 opacity-40 cursor-not-allowed'
                           }`}
                         >
@@ -829,14 +927,14 @@ export const TableManagement: React.FC = () => {
                           <span>Clear Reservation</span>
                         </button>
 
-                        {/* Lock / Release Table Button */}
+                        {/* Lock / Release Table Button — Amber Lock / Emerald Unlock */}
                         {isTableLocked ? (
                           <button
                             type="button"
                             disabled={isTogglingLock}
                             onClick={() => setReleasingTableForConfirm(inspectingTable)}
                             title="Release table lock and clear abandoned check-in drafts"
-                            className="py-2.5 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 active:bg-amber-500/30 text-amber-700 dark:text-amber-400 border border-amber-500/40 font-bold text-xs transition-all cursor-pointer text-center truncate flex items-center justify-center gap-1.5 shadow-sm"
+                            className="py-2.5 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/25 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 font-bold text-xs transition-all cursor-pointer text-center truncate flex items-center justify-center gap-1.5 shadow-sm"
                           >
                             <Unlock size={13} className="shrink-0" />
                             <span>Release Table</span>
@@ -850,7 +948,7 @@ export const TableManagement: React.FC = () => {
                             className={`py-2.5 px-3 rounded-xl border font-bold text-xs transition-all text-center truncate flex items-center justify-center gap-1.5 ${
                               inspectingTable.status === 'occupied'
                                 ? 'bg-transparent border-border-main/30 text-text-muted/40 opacity-40 cursor-not-allowed'
-                                : 'bg-transparent border-border-main hover:bg-bg-primary text-text-muted hover:text-text-main cursor-pointer'
+                                : 'bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/25 text-amber-700 dark:text-amber-400 border border-amber-500/30 cursor-pointer'
                             }`}
                           >
                             <Lock size={13} className="shrink-0" />
