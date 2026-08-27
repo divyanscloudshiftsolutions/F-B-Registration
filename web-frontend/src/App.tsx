@@ -16,7 +16,8 @@ import { useData } from './context/DataContext';
 
 const AppContent: React.FC = () => {
   const { user, toasts, dismissToast, isLoading } = useAuth();
-  const { sessionAlerts, dismissAlert } = useData();
+  const { sessionAlerts, dismissAlert, refreshAll } = useData();
+  const [isGlobalRefreshing, setIsGlobalRefreshing] = useState<boolean>(false);
   const [activeTab, setActiveTabState] = useState<string>(() => {
     return localStorage.getItem('bar_web_active_tab') || 'dashboard';
   });
@@ -25,6 +26,19 @@ const AppContent: React.FC = () => {
     localStorage.setItem('bar_web_active_tab', tab);
   };
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+
+  const handleGlobalRefresh = async () => {
+    if (isGlobalRefreshing) return;
+    setIsGlobalRefreshing(true);
+    const start = Date.now();
+    try {
+      await refreshAll();
+    } finally {
+      const elapsed = Date.now() - start;
+      const delay = Math.max(0, 500 - elapsed);
+      setTimeout(() => setIsGlobalRefreshing(false), delay);
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -154,7 +168,13 @@ const AppContent: React.FC = () => {
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-[100dvh] bg-bg-workspace border border-border-sidebar border-y-0 border-r-0 border-l-[1px] rounded-none overflow-hidden transition-all duration-300 z-10">
-        <Header title={getTabTitle()} onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)} isSidebarCollapsed={sidebarCollapsed} />
+        <Header
+          title={getTabTitle()}
+          onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+          isSidebarCollapsed={sidebarCollapsed}
+          onRefresh={handleGlobalRefresh}
+          isRefreshing={isGlobalRefreshing}
+        />
         
         <main className="p-3 sm:p-4 md:p-6 flex-1 overflow-y-auto no-scrollbar">
           {renderTabContent()}

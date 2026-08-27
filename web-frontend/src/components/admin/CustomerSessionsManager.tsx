@@ -29,6 +29,20 @@ export const CustomerSessionsManager: React.FC = () => {
   const [closeReason, setCloseReason] = useState('Customer Vacated Early');
   const [closeReasonDetail, setCloseReasonDetail] = useState('');
   const [isSubmittingClose, setIsSubmittingClose] = useState(false);
+  const [isRefreshingSessions, setIsRefreshingSessions] = useState(false);
+
+  const handleManualRefresh = async () => {
+    if (isRefreshingSessions) return;
+    setIsRefreshingSessions(true);
+    const start = Date.now();
+    try {
+      await refreshAllSessions();
+    } finally {
+      const elapsed = Date.now() - start;
+      const delay = Math.max(0, 500 - elapsed);
+      setTimeout(() => setIsRefreshingSessions(false), delay);
+    }
+  };
 
   // Extend Session Modal State
   const [extendingToken, setExtendingToken] = useState<any | null>(null);
@@ -117,12 +131,13 @@ export const CustomerSessionsManager: React.FC = () => {
           </div>
 
           <button
-            onClick={refreshAllSessions}
-            className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer"
+            onClick={handleManualRefresh}
+            disabled={isRefreshingSessions}
+            className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer disabled:opacity-50"
             title="Refresh Customer Sessions"
             aria-label="Refresh Customer Sessions"
           >
-            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+            <RefreshCw size={13} className={(isRefreshingSessions || isLoading) ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>

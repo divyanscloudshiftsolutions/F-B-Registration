@@ -467,6 +467,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
   // Fetch active tokens on mount and keep updated live in real time
   const fetchActiveTokens = async (silent: boolean = false) => {
+    const start = Date.now();
     if (!silent) setIsLoadingTokens(true);
     try {
       const tokensList = await api.getActiveTokens();
@@ -476,7 +477,11 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
     } catch (err) {
       console.error('Failed to fetch active tokens:', err);
     } finally {
-      if (!silent) setIsLoadingTokens(false);
+      if (!silent) {
+        const elapsed = Date.now() - start;
+        const delay = Math.max(0, 500 - elapsed);
+        setTimeout(() => setIsLoadingTokens(false), delay);
+      }
     }
   };
 

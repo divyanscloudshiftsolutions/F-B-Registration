@@ -376,9 +376,19 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  const [closureReasonOption, setClosureReasonOption] = useState('Customer Vacated Early');
  const [closureCustomExplanation, setClosureCustomExplanation] = useState('');
  const [isSubmittingCloseSession, setIsSubmittingCloseSession] = useState(false);
+ const [isRefreshingTables, setIsRefreshingTables] = useState(false);
 
   const handleRefresh = async () => {
-    await Promise.all([refreshTables(), refreshTokens(), refreshReservations()]);
+    if (isRefreshingTables) return;
+    setIsRefreshingTables(true);
+    const start = Date.now();
+    try {
+      await Promise.all([refreshTables(), refreshTokens(), refreshReservations()]);
+    } finally {
+      const elapsed = Date.now() - start;
+      const delay = Math.max(0, 500 - elapsed);
+      setTimeout(() => setIsRefreshingTables(false), delay);
+    }
   };
 
   useEffect(() => {
@@ -820,11 +830,12 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
           <button
             onClick={handleRefresh}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer"
+            disabled={isRefreshingTables}
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer disabled:opacity-50"
             title="Refresh Floor Plan"
             aria-label="Refresh Floor Plan"
           >
-            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+            <RefreshCw size={13} className={(isRefreshingTables || isLoading) ? 'animate-spin' : ''} />
           </button>
         </div>
  </div>

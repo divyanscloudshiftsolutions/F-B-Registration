@@ -131,6 +131,25 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const [reportData, setReportData] = useState<DashboardReport['data'] | null>(null);
   const [isReportLoading, setIsReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
+  const [isRefreshingLiveSessions, setIsRefreshingLiveSessions] = useState(false);
+
+  const handleLiveSessionsRefresh = async () => {
+    if (isRefreshingLiveSessions) return;
+    setIsRefreshingLiveSessions(true);
+    const start = Date.now();
+    try {
+      await Promise.all([
+        refreshTokens(),
+        refreshTables(),
+        isManagement ? refreshAllSessions() : Promise.resolve(),
+        isManagement ? fetchReport() : Promise.resolve()
+      ]);
+    } finally {
+      const elapsed = Date.now() - start;
+      const delay = Math.max(0, 500 - elapsed);
+      setTimeout(() => setIsRefreshingLiveSessions(false), delay);
+    }
+  };
 
   const fetchReport = async () => {
     setIsReportLoading(true);
@@ -602,12 +621,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <button 
-                onClick={() => { refreshTokens(); refreshTables(); if (isManagement) { refreshAllSessions(); fetchReport(); } }}
-                className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl transition-all premium-btn-secondary flex items-center justify-center cursor-pointer shrink-0"
+                onClick={handleLiveSessionsRefresh}
+                disabled={isRefreshingLiveSessions}
+                className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl transition-all premium-btn-secondary flex items-center justify-center cursor-pointer shrink-0 disabled:opacity-50"
                 title="Refresh Live Sessions"
                 aria-label="Refresh Live Sessions"
               >
-                <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+                <RefreshCw size={13} className={(isRefreshingLiveSessions || isLoading) ? 'animate-spin' : ''} />
               </button>
             </div>
           </div>

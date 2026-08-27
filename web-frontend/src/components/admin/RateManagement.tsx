@@ -59,6 +59,21 @@ export const RateManagement: React.FC = () => {
  }
  };
 
+  const [isRefreshingRates, setIsRefreshingRates] = useState<boolean>(false);
+
+  const handleManualRefresh = async () => {
+    if (isRefreshingRates) return;
+    setIsRefreshingRates(true);
+    const start = Date.now();
+    try {
+      await refreshRates();
+    } finally {
+      const elapsed = Date.now() - start;
+      const delay = Math.max(0, 500 - elapsed);
+      setTimeout(() => setIsRefreshingRates(false), delay);
+    }
+  };
+
  return (
  <div className="space-y-6">
       {/* Top Header */}
@@ -69,12 +84,13 @@ export const RateManagement: React.FC = () => {
         </div>
 
         <button
-          onClick={refreshRates}
-          className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer"
+          onClick={handleManualRefresh}
+          disabled={isRefreshingRates}
+          className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer disabled:opacity-50"
           title="Refresh Rates"
           aria-label="Refresh Rates"
         >
-          <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+          <RefreshCw size={13} className={(isRefreshingRates || isLoading) ? 'animate-spin' : ''} />
         </button>
       </div>
 

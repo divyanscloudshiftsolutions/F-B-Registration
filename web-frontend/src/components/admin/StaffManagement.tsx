@@ -21,6 +21,20 @@ export const StaffManagement: React.FC = () => {
  refreshUsers();
  }, []);
  const [isModalOpen, setIsModalOpen] = useState(false);
+ const [isRefreshingStaff, setIsRefreshingStaff] = useState(false);
+
+ const handleManualRefresh = async () => {
+   if (isRefreshingStaff) return;
+   setIsRefreshingStaff(true);
+   const start = Date.now();
+   try {
+     await refreshUsers();
+   } finally {
+     const elapsed = Date.now() - start;
+     const delay = Math.max(0, 500 - elapsed);
+     setTimeout(() => setIsRefreshingStaff(false), delay);
+   }
+ };
 
  // Form State
  const [fullName, setFullName] = useState('');
@@ -103,12 +117,13 @@ export const StaffManagement: React.FC = () => {
 
         <div className="flex flex-row items-center gap-2 w-full md:w-auto shrink-0 justify-end">
           <button
-            onClick={refreshUsers}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer"
+            onClick={handleManualRefresh}
+            disabled={isRefreshingStaff}
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer disabled:opacity-50"
             title="Refresh Staff Data"
             aria-label="Refresh Staff Data"
           >
-            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+            <RefreshCw size={13} className={(isRefreshingStaff || isLoading) ? 'animate-spin' : ''} />
           </button>
 
  <button

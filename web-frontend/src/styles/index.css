@@ -894,6 +894,21 @@ button[disabled]:hover {
   background: radial-gradient(circle at 50% 50%, transparent 65%, rgba(0, 0, 0, 0.06) 100%);
 }
 
+/* Rapid Smooth Refresh Spin Animation */
+@keyframes spin-rapid {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin-rapid 0.5s cubic-bezier(0.4, 0, 0.2, 1) infinite !important;
+  will-change: transform;
+}
+
 /* Light Theme Input Overrides for Premium Contrast */
 input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]),
 select,
