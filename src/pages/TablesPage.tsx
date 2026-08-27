@@ -1,0 +1,1717 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Grid3X3, RefreshCw, X, CheckCircle2, Users, ArrowRight, Search, UserPlus, AlertTriangle, Clock, Lock, Mail, User, Phone } from 'lucide-react';
+import { api } from '../services/api';
+import type { Table, Token } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
+import { ExtendSessionModal } from '../components/modals/ExtendSessionModal';
+import { CheckoutConfirmationModal } from '../components/modals/CheckoutConfirmationModal';
+import { TableDiagram } from '../components/TableDiagram';
+import { SeatingRow } from '../components/SeatingRow';
+
+interface TablesPageProps {
+ onNavigateToCheckIn?: () => void;
+ activeTab: string;
+ setActiveTab: (tab: string) => void;
+}
+
+export const TableTimer: React.FC<{ endTime: string }> = ({ endTime }) => {
+  const [remainingTime, setRemainingTime] = useState<string>('--:--:--');
+  const [isCloseToExpiry, setIsCloseToExpiry] = useState<boolean>(false);
+  const [isExpired, setIsExpired] = useState<boolean>(false);
+
+  useEffect(() => {
+    const calculate = () => {
+      const end = new Date(endTime).getTime();
+      const diffMs = end - Date.now();
+
+      if (diffMs <= 0) {
+        setRemainingTime('00:00:00');
+        setIsCloseToExpiry(false);
+        setIsExpired(true);
+        return;
+      }
+
+      setIsExpired(false);
+      
+      const totalSecs = Math.floor(diffMs / 1000);
+      const hours = Math.floor(totalSecs / 3600);
+      const minutes = Math.floor((totalSecs % 3600) / 60);
+      const seconds = totalSecs % 60;
+
+      // Close to expiry is defined as <= 10 minutes remaining (600 seconds)
+      const closeToExpiry = totalSecs <= 10 * 60;
+      setIsCloseToExpiry(closeToExpiry);
+
+      const hStr = String(hours).padStart(2, '0');
+      const mStr = String(minutes).padStart(2, '0');
+      const sStr = String(seconds).padStart(2, '0');
+
+      setRemainingTime(`${hStr}:${mStr}:${sStr}`);
+    };
+
+    calculate();
+    const interval = setInterval(calculate, 1000);
+    return () => clearInterval(interval);
+  }, [endTime]);
+
+  if (isExpired) {
+    return (
+      <span className="font-mono text-red-500 font-extrabold animate-pulse">
+        Expired
+      </span>
+    );
+  }
+
+  return (
+    <span className={`font-mono font-bold transition-colors ${
+      isCloseToExpiry ? 'text-red-500 font-black animate-pulse' : 'text-text-main font-bold'
+    }`}>
+      {remainingTime}
+    </span>
+  );
+};
+
+export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, activeTab, setActiveTab }) => {
+ const { showToast, user } = useAuth();
+ const { 
+    tables: realTables, 
+    tokens: realTokens, 
+    reservations: realReservations,
+    rates,
+    isLoading, 
+    refreshTables, 
+    refreshTokens,
+    refreshReservations
+  } = useData();
+
+ // Temporary mock data fallback for UI verification
+ const useMockFallback = false; // Set to false to disable and restore real data
+
+ const mockTables: Table[] = [
+ { id: 'mock-t1', tableNumber: 'M1', placeTypeId: 'standing_bar', capacity: 4, status: 'available', isActive: true },
+ { id: 'mock-t2', tableNumber: 'M2', placeTypeId: 'standing_bar', capacity: 4, status: 'occupied', isActive: true },
+ { id: 'mock-t3', tableNumber: 'M3', placeTypeId: 'standing_bar', capacity: 4, status: 'occupied', isActive: true },
+ { id: 'mock-t4', tableNumber: 'M4', placeTypeId: 'standing_bar', capacity: 4, status: 'available', isActive: true },
+ { id: 'mock-t5', tableNumber: 'M5', placeTypeId: 'standing_bar', capacity: 4, status: 'occupied', isActive: true },
+ { id: 'mock-t6', tableNumber: 'M6', placeTypeId: 'standing_bar', capacity: 4, status: 'occupied', isActive: true },
+ { id: 'mock-t7', tableNumber: 'ML1', placeTypeId: 'premium_lounge', capacity: 6, status: 'available', isActive: true },
+ { id: 'mock-t8', tableNumber: 'ML2', placeTypeId: 'premium_lounge', capacity: 6, status: 'occupied', isActive: true },
+ { id: 'mock-t9', tableNumber: 'ML3', placeTypeId: 'premium_lounge', capacity: 6, status: 'occupied', isActive: true },
+ ];
+
+ const mockTokens: Token[] = [
+ // Table 02: Partially Occupied -> 2/4 seats filled
+ {
+ id: 'mock-tk2',
+ tokenNumber: 'BAR-MOCK-02',
+ customerId: 'mock-c2',
+ customer: { id: 'mock-c2', name: 'Alice Smith', phoneNumber: '9876543210', totalVisits: 1 },
+ personsCount: 2,
+ placeTypeId: 'standing_bar',
+ amountPaid: 1000,
+ paymentVerified: true,
+ startTime: new Date().toISOString(),
+ endTime: new Date(Date.now() + 7200000).toISOString(),
+ totalRedemptionsAllowed: 4,
+ redemptionsUsed: 1,
+ status: 'ACTIVE',
+ issuedBy: 'admin',
+ deliveryMode: 'EMAIL_QR',
+ tableId: 'mock-t2'
+ },
+ // Table 03: Occupied -> 4/4 seats filled
+ {
+ id: 'mock-tk3',
+ tokenNumber: 'BAR-MOCK-03',
+ customerId: 'mock-c3',
+ customer: { id: 'mock-c3', name: 'Bob Johnson', phoneNumber: '9876543211', totalVisits: 2 },
+ personsCount: 4,
+ placeTypeId: 'standing_bar',
+ amountPaid: 2000,
+ paymentVerified: true,
+ startTime: new Date().toISOString(),
+ endTime: new Date(Date.now() + 7200000).toISOString(),
+ totalRedemptionsAllowed: 8,
+ redemptionsUsed: 3,
+ status: 'ACTIVE',
+ issuedBy: 'admin',
+ deliveryMode: 'EMAIL_QR',
+ tableId: 'mock-t3'
+ },
+ // Table 05: Partially Occupied -> 2/4 seats filled
+ {
+ id: 'mock-tk5',
+ tokenNumber: 'BAR-MOCK-05',
+ customerId: 'mock-c5',
+ customer: { id: 'mock-c5', name: 'Charlie Brown', phoneNumber: '9876543212', totalVisits: 3 },
+ personsCount: 2,
+ placeTypeId: 'standing_bar',
+ amountPaid: 1000,
+ paymentVerified: true,
+ startTime: new Date().toISOString(),
+ endTime: new Date(Date.now() + 7200000).toISOString(),
+ totalRedemptionsAllowed: 4,
+ redemptionsUsed: 0,
+ status: 'ACTIVE',
+ issuedBy: 'admin',
+ deliveryMode: 'EMAIL_QR',
+ tableId: 'mock-t5'
+ },
+ // Table 06: Occupied -> 4/4 seats filled
+ {
+ id: 'mock-tk6',
+ tokenNumber: 'BAR-MOCK-06',
+ customerId: 'mock-c6',
+ customer: { id: 'mock-c6', name: 'David Miller', phoneNumber: '9876543213', totalVisits: 1 },
+ personsCount: 4,
+ placeTypeId: 'standing_bar',
+ amountPaid: 2000,
+ paymentVerified: true,
+ startTime: new Date().toISOString(),
+ endTime: new Date(Date.now() + 7200000).toISOString(),
+ totalRedemptionsAllowed: 8,
+ redemptionsUsed: 4,
+ status: 'ACTIVE',
+ issuedBy: 'admin',
+ deliveryMode: 'EMAIL_QR',
+ tableId: 'mock-t6'
+ },
+ // Table 08: Partially Occupied -> 3/6 seats filled
+ {
+ id: 'mock-tk8',
+ tokenNumber: 'BAR-MOCK-08',
+ customerId: 'mock-c8',
+ customer: { id: 'mock-c8', name: 'Emma Wilson', phoneNumber: '9876543214', totalVisits: 2 },
+ personsCount: 3,
+ placeTypeId: 'premium_lounge',
+ amountPaid: 3000,
+ paymentVerified: true,
+ startTime: new Date().toISOString(),
+ endTime: new Date(Date.now() + 7200000).toISOString(),
+ totalRedemptionsAllowed: 6,
+ redemptionsUsed: 2,
+ status: 'ACTIVE',
+ issuedBy: 'admin',
+ deliveryMode: 'EMAIL_QR',
+ tableId: 'mock-t8'
+ },
+ // Table 09: Occupied -> 6/6 seats filled
+ {
+ id: 'mock-tk9',
+ tokenNumber: 'BAR-MOCK-09',
+ customerId: 'mock-c9',
+ customer: { id: 'mock-c9', name: 'Frank Thomas', phoneNumber: '9876543215', totalVisits: 5 },
+ personsCount: 6,
+ placeTypeId: 'premium_lounge',
+ amountPaid: 6000,
+ paymentVerified: true,
+ startTime: new Date().toISOString(),
+ endTime: new Date(Date.now() + 7200000).toISOString(),
+ totalRedemptionsAllowed: 12,
+ redemptionsUsed: 6,
+ status: 'ACTIVE',
+ issuedBy: 'admin',
+ deliveryMode: 'EMAIL_QR',
+ tableId: 'mock-t9'
+ }
+ ];
+
+ const tables = useMockFallback ? [...realTables, ...mockTables] : realTables;
+ const tokens = useMockFallback ? [...realTokens, ...mockTokens] : realTokens;
+ const [placeZone, setPlaceZoneState] = useState<'STANDING_BAR' | 'PREMIUM_LOUNGE'>(() => {
+ return (localStorage.getItem('bar_web_tables_zone') as 'STANDING_BAR' | 'PREMIUM_LOUNGE') || 'STANDING_BAR';
+ });
+const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
+ setPlaceZoneState(zone);
+ localStorage.setItem('bar_web_tables_zone', zone);
+ };
+ 
+ // Local layout filter for when the route is 'tables/layout'
+ const [layoutFilter, setLayoutFilter] = useState<string>('all');
+
+ // Compute actual filter based on the activeTab route
+ const filter = activeTab === 'tables/reservations' 
+   ? 'reserved' 
+   : activeTab === 'tables/occupied' 
+   ? 'occupied' 
+   : layoutFilter;
+
+ const setFilter = (val: string) => {
+ if (val === 'reserved') {
+ setActiveTab('tables/reservations');
+ } else if (val === 'occupied') {
+ setActiveTab('tables/occupied');
+ } else {
+ setLayoutFilter(val);
+ setActiveTab('tables/layout');
+ }
+ };
+
+ // Assign Modal State
+ const [assigningTable, setAssigningTable] = useState<Table | null>(null);
+ const [selectedTokenId, setSelectedTokenId] = useState('');
+ const [isSubmittingAssign, setIsSubmittingAssign] = useState(false);
+
+ // Centered Table Inspection Dialog Modal State
+ const [inspectingTable, setInspectingTable] = useState<Table | null>(null);
+
+  // Reserve Form State
+  const [reservingTable, setReservingTable] = useState<Table | null>(null);
+  const [resName, setResName] = useState('');
+  const [resPhone, setResPhone] = useState('');
+  const [resEmail, setResEmail] = useState('');
+  const [resPersons, setResPersons] = useState(2);
+  const [resEmailConflict, setResEmailConflict] = useState(false);
+  const [resPhoneConflict, setResPhoneConflict] = useState(false);
+  const [isSubmittingReserve, setIsSubmittingReserve] = useState(false);
+  const [isAssignFlow, setIsAssignFlow] = useState(false);
+
+  // Real-time backend validation with 400ms debounce for Assign/Reserve Table Dialog
+  useEffect(() => {
+    if (!reservingTable) {
+      setResPhoneConflict(false);
+      setResEmailConflict(false);
+      return;
+    }
+
+    const p = resPhone.trim();
+    const e = resEmail.trim();
+
+    if (!p && !e) {
+      setResPhoneConflict(false);
+      setResEmailConflict(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const body: any = {};
+        if (p) body.phoneNumber = p;
+        if (e) body.email = e;
+
+        const res = await api.validateDuplicate(body);
+        if (res && res.conflicts) {
+          setResPhoneConflict(!!res.conflicts.phone);
+          setResEmailConflict(!!res.conflicts.email);
+        } else {
+          setResPhoneConflict(false);
+          setResEmailConflict(false);
+        }
+      } catch (err) {
+        console.error('Error during duplicate validation in Assign/Reserve Dialog:', err);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [resPhone, resEmail, reservingTable]);
+
+  // Validation functions matching CheckInPage exactly
+  const isValidName = (name: string): boolean => {
+    const trimmed = name.trim();
+    return /^[a-zA-Z\s.'-]{2,100}$/.test(trimmed);
+  };
+
+  const isValidPhone = (phone: string): boolean => {
+    const trimmed = phone.trim();
+    return /^(?:\+91)?[6-9]\d{9}$/.test(trimmed);
+  };
+
+  const isValidEmail = (emailStr: string): boolean => {
+    if (!emailStr || !emailStr.trim()) return true;
+    const trimmed = emailStr.trim().toLowerCase();
+    const regex = /^(?!.*\.\.)(?!\.)(?!.*\.$)[a-z0-9]+(\.[a-z0-9]+)*@gmail\.com$/;
+    return regex.test(trimmed);
+  };
+
+  // Active Check-in Duplicate Session Check for Dialog
+  const normalizedResPhone = resPhone.trim().startsWith('+91') ? resPhone.trim() : `+91${resPhone.trim()}`;
+  const isResPhoneActive = tokens.some(t => 
+    (t.customer?.phoneNumber === resPhone.trim() || t.customer?.phoneNumber === normalizedResPhone) &&
+    (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED')
+  );
+
+  const isResEmailActive = resEmail.trim() ? tokens.some(t =>
+    t.customer?.email?.toLowerCase() === resEmail.trim().toLowerCase() &&
+    (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED')
+  ) : false;
+
+  const isResNameOk = isValidName(resName);
+  const isResPhoneOk = isValidPhone(resPhone) && !isResPhoneActive && !resPhoneConflict;
+  const isResEmailOk = resEmail.trim().length > 0 && isValidEmail(resEmail) && !isResEmailActive && !resEmailConflict;
+  const isResCapacityOk = typeof resPersons === 'number' && resPersons > 0 && (!reservingTable || resPersons <= (reservingTable.capacity || 4));
+
+  const isResFormValid = isResNameOk && isResPhoneOk && isResEmailOk && isResCapacityOk;
+
+  // Cancel Confirmation State
+  const [cancellingReservation, setCancellingReservation] = useState<any | null>(null);
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
+
+  // Keyboard listener for Cancel Reservation Modal
+  useEffect(() => {
+    if (!cancellingReservation) return;
+
+    const handleCancelKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        if (!isSubmittingCancel) {
+          e.preventDefault();
+          handleCancelConfirm();
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setCancellingReservation(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleCancelKeyDown);
+    return () => window.removeEventListener('keydown', handleCancelKeyDown);
+  }, [cancellingReservation, isSubmittingCancel]);
+
+  // Extend Modal State
+  const [extendingTable, setExtendingTable] = useState<Table | null>(null);
+
+
+ // Close Session Modal State
+ const [closingTableSession, setClosingTableSession] = useState<Table | null>(null);
+ const [closureReasonOption, setClosureReasonOption] = useState('Customer Vacated Early');
+ const [closureCustomExplanation, setClosureCustomExplanation] = useState('');
+ const [isSubmittingCloseSession, setIsSubmittingCloseSession] = useState(false);
+
+  const handleRefresh = async () => {
+    await Promise.all([refreshTables(), refreshTokens(), refreshReservations()]);
+  };
+
+  useEffect(() => {
+    handleRefresh();
+  }, [activeTab]);
+
+  const inspectTableById = (tableId: string) => {
+    if (realTables.length > 0) {
+      const targetTable = realTables.find(t => t.id === tableId);
+      if (targetTable) {
+        localStorage.removeItem('bar_auto_inspect_table_id');
+        if (targetTable.status === 'occupied') {
+          const targetZone = targetTable.tableNumber.startsWith('L-') ? 'PREMIUM_LOUNGE' : 'STANDING_BAR';
+          if (placeZone !== targetZone) {
+            setPlaceZone(targetZone);
+          }
+          if (activeTab !== 'tables/layout') {
+            setActiveTab('tables/layout');
+          }
+          setInspectingTable(targetTable);
+        } else {
+          showToast(`Table ${targetTable.tableNumber}'s session has already expired or is no longer active.`, 'info');
+          handleRefresh();
+        }
+      }
+    }
+  };
+
+  useEffect(() => {
+    const autoInspectId = localStorage.getItem('bar_auto_inspect_table_id');
+    if (autoInspectId) {
+      inspectTableById(autoInspectId);
+    }
+  }, [realTables, activeTab]);
+
+  useEffect(() => {
+    const handleAutoInspect = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const tableId = customEvent.detail?.tableId;
+      if (tableId) {
+        inspectTableById(tableId);
+      }
+    };
+    window.addEventListener('bar_auto_inspect', handleAutoInspect);
+    return () => {
+      window.removeEventListener('bar_auto_inspect', handleAutoInspect);
+    };
+  }, [realTables, placeZone, activeTab]);
+
+ const zoneFilteredTables = tables.filter(tb => {
+ const p = (tb.placeTypeId || tb.categoryName || tb.tableNumber || '').toUpperCase();
+ if (placeZone === 'STANDING_BAR') {
+ return p.includes('STANDING') || p.includes('BAR') || tb.tableNumber.startsWith('S-');
+ }
+ return p.includes('PREMIUM') || p.includes('LOUNGE') || tb.tableNumber.startsWith('L-');
+ });
+
+ const filteredTables = zoneFilteredTables.filter(t => {
+    if (filter === 'reserved') {
+      return t.status === 'reserved' || t.status === 'in_checkin';
+    } else if (filter === 'available') {
+      return t.status === 'available';
+    } else if (filter === 'occupied') {
+      return t.status === 'occupied';
+    }
+    return true;
+  });
+
+  const handleCloseSessionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!closingTableSession) return;
+    const token = tokens.find(tk => tk.tableId === closingTableSession.id || (tk.table && tk.table.id === closingTableSession.id));
+    if (!token) {
+      showToast('No active token session found for this table.', 'danger');
+      return;
+    }
+
+    setIsSubmittingCloseSession(true);
+    try {
+      const reasonDetail = closureReasonOption === 'Other / Administrative Closure' && closureCustomExplanation
+        ? `Other - ${closureCustomExplanation}`
+        : closureReasonOption;
+
+      await api.closeToken(token.tokenNumber, reasonDetail);
+      showToast(`Session for Table ${closingTableSession.tableNumber} checked out successfully!`, 'success');
+      setClosingTableSession(null);
+      setClosureCustomExplanation('');
+      if (inspectingTable && inspectingTable.id === closingTableSession.id) {
+        setInspectingTable(null);
+      }
+      refreshTables();
+      refreshTokens();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to checkout session.', 'danger');
+    } finally {
+      setIsSubmittingCloseSession(false);
+    }
+  };
+
+
+
+ const handleAssignSubmit = async (e: React.FormEvent) => {
+ e.preventDefault();
+ if (!assigningTable || !selectedTokenId) return;
+
+ setIsSubmittingAssign(true);
+ try {
+ await api.assignTable(assigningTable.id, selectedTokenId);
+ showToast(`Table ${assigningTable.tableNumber} assigned successfully!`, 'success');
+ setAssigningTable(null);
+ setSelectedTokenId('');
+ refreshTables();
+ refreshTokens();
+ } catch (err: any) {
+ showToast(err.message || 'Failed to assign table.', 'danger');
+ } finally {
+ setIsSubmittingAssign(false);
+ }
+ };
+  const handleAssignClick = (tb: Table) => {
+    setReservingTable(tb);
+    setIsAssignFlow(true);
+    setResPersons(tb.capacity || 4);
+    setResName('');
+    setResPhone('');
+    setResEmail('');
+    setResPhoneConflict(false);
+    setResEmailConflict(false);
+  };
+
+  const handleReserveClick = (tb: Table) => {
+    setReservingTable(tb);
+    setIsAssignFlow(false);
+    setResPersons(tb.capacity || 4);
+    setResName('');
+    setResPhone('');
+    setResEmail('');
+    setResPhoneConflict(false);
+    setResEmailConflict(false);
+  };
+
+  const handleReserveSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reservingTable || !isResFormValid) return;
+
+    const trimmedName = resName.trim();
+    const trimmedPhone = resPhone.trim();
+    const trimmedEmail = resEmail.trim();
+
+    const nameRegex = /^[a-zA-Z\s.'-]{2,100}$/;
+    const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
+    const emailRegex = /^(?!.*\.\.)(?!\.)(?!.*\.$)[a-z0-9]+(\.[a-z0-9]+)*@gmail\.com$/;
+
+    // 1. Mandatory & Format Validations
+    if (!trimmedName || !trimmedPhone || !trimmedEmail || !resPersons) {
+      showToast('All fields are mandatory to confirm the reservation.', 'warning');
+      return;
+    }
+
+    if (!nameRegex.test(trimmedName)) {
+      showToast('Please enter a valid customer full name (2-100 letters).', 'danger');
+      return;
+    }
+
+    if (!phoneRegex.test(trimmedPhone)) {
+      showToast('Please enter a valid 10-digit Indian mobile number.', 'danger');
+      return;
+    }
+
+    if (!emailRegex.test(trimmedEmail)) {
+      showToast('Please enter a valid email address.', 'danger');
+      return;
+    }
+
+    const countVal = Number(resPersons);
+    if (isNaN(countVal) || countVal <= 0 || countVal % 1 !== 0) {
+      showToast('Please enter a valid, non-decimal guest count.', 'warning');
+      return;
+    }
+
+    if (countVal > reservingTable.capacity) {
+      showToast(`Headcount cannot exceed Table maximum capacity of ${reservingTable.capacity} seats.`, 'warning');
+      return;
+    }
+
+    setIsSubmittingReserve(true);
+
+    try {
+      // 2. Local Duplicate Session Check against Active Tokens
+      const normalizedPhone = trimmedPhone.startsWith('+91') ? trimmedPhone : `+91${trimmedPhone}`;
+      const isPhoneActive = tokens.some(t => 
+        (t.customer?.phoneNumber === trimmedPhone || t.customer?.phoneNumber === normalizedPhone) &&
+        (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED')
+      );
+
+      const isEmailActive = trimmedEmail ? tokens.some(t =>
+        t.customer?.email?.toLowerCase() === trimmedEmail.toLowerCase() &&
+        (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED')
+      ) : false;
+
+      if (isPhoneActive) {
+        showToast('This phone number is already checked in.', 'danger');
+        setIsSubmittingReserve(false);
+        return;
+      }
+
+      if (isEmailActive) {
+        showToast('This email ID is already checked in.', 'danger');
+        setIsSubmittingReserve(false);
+        return;
+      }
+
+      // 3. Backend Duplicate Validation Check
+      try {
+        const validateRes = await api.validateDuplicate({
+          phoneNumber: trimmedPhone,
+          email: trimmedEmail
+        });
+
+        if (validateRes && validateRes.conflicts) {
+          if (validateRes.conflicts.phone) {
+            showToast('This phone number is already checked in.', 'danger');
+            setIsSubmittingReserve(false);
+            return;
+          }
+          if (validateRes.conflicts.email) {
+            showToast('This email ID is already checked in.', 'danger');
+            setIsSubmittingReserve(false);
+            return;
+          }
+        }
+      } catch (validateErr) {
+        console.warn('Backend duplicate validation check failed, relying on local state check:', validateErr);
+      }
+      if (isAssignFlow) {
+        // Direct table assignment: Lock the table directly (status becomes in_checkin, Redis lock created)
+        await api.lockTable(reservingTable.id);
+
+        localStorage.setItem('bar_checkin_assign_target', JSON.stringify({
+          customerName: resName.trim(),
+          phoneNumber: resPhone.trim(),
+          email: resEmail.trim(),
+          personsCount: Number(resPersons),
+          tableId: reservingTable.id,
+          tableNumber: reservingTable.tableNumber,
+          capacity: reservingTable.capacity || 4,
+          placeTypeId: reservingTable.placeTypeId || (reservingTable.tableNumber.startsWith('L-') ? 'PREMIUM_LOUNGE' : 'STANDING_BAR')
+        }));
+        localStorage.setItem('bar_checkin_original_status', 'available');
+
+        showToast(`Table ${reservingTable.tableNumber} locked! Proceeding to check-in.`, 'success');
+        setReservingTable(null);
+        setResName('');
+        setResPhone('');
+        setResEmail('');
+        if (onNavigateToCheckIn) {
+          onNavigateToCheckIn();
+        }
+        refreshTables();
+        refreshReservations();
+      } else {
+        // Normal reservation creation flow
+        const res = await api.createReservation({
+          customerName: resName.trim(),
+          phoneNumber: resPhone.trim(),
+          email: resEmail.trim(),
+          personsCount: Number(resPersons),
+          tableId: reservingTable.id
+        });
+        
+        if (res.success && res.reservation) {
+          showToast(`Reservation for Table ${reservingTable.tableNumber} confirmed!`, 'success');
+          setReservingTable(null);
+          setResName('');
+          setResPhone('');
+          setResEmail('');
+          refreshTables();
+          refreshReservations();
+        }
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to complete action.', 'danger');
+    } finally {
+      setIsSubmittingReserve(false);
+    }
+  };
+
+  const handleCancelClick = (tb: Table) => {
+    const res = realReservations.find((r: any) => r.tableId === tb.id && r.status === 'PENDING');
+    if (res) {
+      setCancellingReservation(res);
+    } else {
+      // Fallback
+      setCancellingReservation({
+        id: '',
+        tableId: tb.id,
+        customerName: 'Reserved Table',
+        table: tb
+      });
+    }
+  };
+
+  const handleCancelConfirm = async () => {
+    if (!cancellingReservation) return;
+    setIsSubmittingCancel(true);
+    try {
+      if (cancellingReservation.id) {
+        await api.cancelReservation(cancellingReservation.id);
+      } else {
+        await api.patchTableStatus(cancellingReservation.tableId, 'available');
+      }
+      showToast('Reservation cancelled successfully.', 'success');
+      setCancellingReservation(null);
+      if (inspectingTable && inspectingTable.id === cancellingReservation.tableId) {
+        setInspectingTable(null);
+      }
+      refreshTables();
+      refreshReservations();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to cancel reservation.', 'danger');
+    } finally {
+      setIsSubmittingCancel(false);
+    }
+  };
+
+  const handleAssignReservation = async (res: any) => {
+    try {
+      await api.lockTable(res.tableId);
+      
+      localStorage.setItem('bar_checkin_assign_target', JSON.stringify({
+        reservationId: res.id,
+        customerName: res.customerName,
+        phoneNumber: res.phoneNumber,
+        email: res.email,
+        personsCount: res.personsCount,
+        tableId: res.tableId,
+        tableNumber: res.table?.tableNumber || '',
+        capacity: res.table?.capacity || 4,
+        placeTypeId: res.table?.placeTypeId || 'standing_bar'
+      }));
+      localStorage.setItem('bar_checkin_original_status', 'reserved');
+      
+      setInspectingTable(null);
+      if (onNavigateToCheckIn) {
+        onNavigateToCheckIn();
+      }
+      refreshTables();
+      refreshReservations();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to lock table for check-in. It may have been selected by another user.', 'danger');
+    }
+  };
+
+  const handleCheckInReservedTable = (tb: Table) => {
+    const res = realReservations.find((r: any) => r.tableId === tb.id && r.status === 'PENDING');
+    if (res) {
+      handleAssignReservation(res);
+    } else {
+      handleRedirectToCheckIn(tb);
+    }
+  };
+
+  const handleRedirectToCheckIn = async (tb: Table) => {
+    try {
+      const originalStatus = tb.status; // 'available' or 'reserved'
+      await api.lockTable(tb.id);
+      
+      localStorage.setItem('bar_checkin_assign_target', JSON.stringify({
+        tableId: tb.id,
+        tableNumber: tb.tableNumber,
+        capacity: tb.capacity || 4,
+        placeTypeId: (tb.tableNumber.startsWith('S-') || tb.tableNumber.startsWith('M')) ? 'standing_bar' : 'premium_lounge'
+      }));
+      localStorage.setItem('bar_checkin_original_status', originalStatus);
+      
+      setInspectingTable(null);
+      if (onNavigateToCheckIn) {
+        onNavigateToCheckIn();
+      }
+      refreshTables();
+      refreshReservations();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to lock table for check-in. It may have been selected by another user.', 'danger');
+    }
+  };
+
+ const inspectingToken = inspectingTable 
+ ? tokens.find(tk => tk.tableId === inspectingTable.id || (tk.table && tk.table.id === inspectingTable.id))
+ : null;
+
+ return (
+ <div className="space-y-6 text-text-main">
+ 
+ {/* Non-Overlapping Structured Control Toolbar */}
+ <div className="dark:bg-transparent glass-panel border border-border-main border-x-0 border-t-0 rounded-none p-0 pb-4 mb-6 space-y-4">
+ {/* Tier 1: Primary Zone Switcher Tabs */}
+ <div className="flex flex-wrap items-center justify-between gap-4 pt-3 pb-4 border-b border-border-main w-full">
+ <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto px-4">
+ <button
+ onClick={() => setPlaceZone('STANDING_BAR')}
+ className={`w-full sm:w-auto px-4 py-2.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 ${
+ placeZone === 'STANDING_BAR' ? 'active' : ''
+ }`}
+ >
+ Standard Zone (Standing Bar)
+ </button>
+
+ <button
+ onClick={() => setPlaceZone('PREMIUM_LOUNGE')}
+ className={`w-full sm:w-auto px-4 py-2.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 ${
+ placeZone === 'PREMIUM_LOUNGE' ? 'active' : ''
+ }`}
+ >
+ Premium Zone (Lounge)
+ </button>
+ </div>
+
+ <div className="text-xs font-bold text-text-muted w-full sm:w-auto text-left sm:text-right flex items-center justify-between sm:block px-4">
+ <span>Total Tables:</span> <span className="text-text-main font-mono text-sm sm:text-xs">{filteredTables.length}</span>
+ </div>
+ </div>
+
+        {/* Tier 2: Secondary Status Filters & Refresh Action */}
+        <div className="flex items-center justify-between gap-3 w-full px-4">
+          <div className="flex flex-nowrap overflow-x-auto custom-scrollbar items-center gap-2 flex-1 sm:flex-initial pb-1 sm:pb-0">
+            <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Status Filter:</span>
+            {['all', 'available', 'occupied', 'reserved'].map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-3 sm:px-3.5 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-secondary shrink-0 ${
+                  filter === f ? 'active' : ''
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={handleRefresh}
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer"
+            title="Refresh Floor Plan"
+            aria-label="Refresh Floor Plan"
+          >
+            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+          </button>
+        </div>
+ </div>
+
+  {/* Stable Table Cards Floor Plan Grid */}
+  {activeTab === 'tables/reservations' ? (
+    isLoading ? (
+      <div className="py-20 text-center text-text-muted text-sm">Loading active reservations...</div>
+    ) : realReservations.filter((r: any) => r.status === 'PENDING').length === 0 ? (
+      <div className="glass-panel p-12 rounded-3xl border border-border-main text-center space-y-3">
+        <p className="text-text-muted text-sm">No active reservations found.</p>
+      </div>
+    ) : (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {realReservations
+          .filter((r: any) => r.status === 'PENDING')
+          .map((res: any) => (
+            <div
+              key={res.id}
+              className="p-5 rounded-3xl dark:rounded-xl border dark:border-white/10 dark:bg-[#1C1C1E] bg-bg-surface flex flex-col justify-between gap-4 animate-fadeIn"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-border-main/50">
+                <div>
+                  <h4 className="font-bold text-base text-text-main">{res.customerName}</h4>
+                  <p className="text-xs text-text-muted mt-0.5">{res.phoneNumber}</p>
+                </div>
+                <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider dark:bg-blue-500/15 bg-blue-500/10 dark:text-blue-400 text-blue-700 border border-blue-500/30">
+                  Reserved
+                </span>
+              </div>
+              
+              <div className="space-y-2 text-xs text-text-muted">
+                <div className="flex justify-between">
+                  <span>Email ID:</span>
+                  <span className="font-semibold text-text-main truncate max-w-[200px]">{res.email}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Guests count:</span>
+                  <span className="font-semibold text-text-main">{res.personsCount} members</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Table Number:</span>
+                  <span className="font-bold dark:text-primary text-primary font-mono text-sm">{res.table?.tableNumber || 'N/A'}</span>
+                </div>
+              </div>
+              {(() => {
+                const isOwner = !res.userId || res.userId === user?.id || user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+                const isTableInCheckin = res.table?.status === 'in_checkin';
+                
+                const assignDisabled = !isOwner || isTableInCheckin;
+                const assignTooltip = !isOwner 
+                  ? "This reservation is owned by another receptionist." 
+                  : isTableInCheckin 
+                  ? "Check-in is already in progress for this reservation."
+                  : undefined;
+
+                const cancelDisabled = !isOwner || isTableInCheckin;
+                const cancelTooltip = !isOwner 
+                  ? "This reservation is owned by another receptionist." 
+                  : isTableInCheckin 
+                  ? "Reservation cannot be cancelled while check-in is in progress."
+                  : undefined;
+
+                return (
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => handleAssignReservation(res)}
+                      disabled={assignDisabled}
+                      title={assignTooltip}
+                      className={`flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1 ${
+                        assignDisabled ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
+                    >
+                      <UserPlus size={14} /> Assign
+                    </button>
+                    <button
+                      onClick={() => setCancellingReservation(res)}
+                      disabled={cancelDisabled}
+                      title={cancelTooltip}
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
+                        cancelDisabled 
+                          ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40' 
+                          : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 border border-red-500/30 cursor-pointer'
+                      }`}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                );
+              })()}            </div>
+          ))}
+      </div>
+    )
+  ) : isLoading ? (
+  <div className="py-20 text-center text-text-muted text-sm">Loading floor layout & seat maps...</div>
+  ) : filteredTables.length === 0 ? (
+  <div className="glass-panel p-12 rounded-3xl border border-border-main text-center space-y-3">
+  <p className="text-text-muted text-sm">No tables match your filter parameters.</p>
+  </div>
+  ) : (
+ <div className="space-y-8">
+ {Array.from(new Set(filteredTables.map(tb => tb.capacity || 4)))
+ .sort((a, b) => b - a)
+ .map(cap => {
+ const capTables = filteredTables
+ .filter(tb => (tb.capacity || 4) === cap)
+ .sort((a, b) => a.tableNumber.localeCompare(b.tableNumber, undefined, { numeric: true, sensitivity: 'base' }));
+
+ if (capTables.length === 0) return null;
+
+ return (
+ <SeatingRow key={cap} capacity={cap} tableCount={capTables.length}>
+ {capTables.map(tb => {
+ const isOccupied = tb.status === 'occupied';
+ const capacity = tb.capacity || 4;
+ const assignedToken = tokens.find(tk => tk.tableId === tb.id || (tk.table && tk.table.id === tb.id));
+ const occupiedCount = assignedToken ? (assignedToken.personsCount || 1) : (isOccupied ? capacity : 0);
+ const sizeCategory = capacity <= 2 ? 'Small' : capacity <= 4 ? 'Medium' : capacity <= 6 ? 'Large' : 'VIP Executive';
+
+ const isFull = isOccupied && occupiedCount >= capacity;
+ const isPartial = isOccupied && occupiedCount > 0 && occupiedCount < capacity;
+
+ return (
+ <div
+ key={tb.id}
+ onClick={() => setInspectingTable(tb)}
+ className={`w-[290px] shrink-0 snap-start p-5 rounded-3xl dark:rounded-xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between gap-3 min-h-[295px] dark:bg-[#1C1C1E] ${
+ inspectingTable?.id === tb.id ? 'dark:border-primary' : 'dark:border-white/10'
+ } ${
+  isFull
+  ? 'bg-bg-surface/50 border-red-500/30 '
+  : isPartial
+  ? 'bg-bg-surface/50 border-amber-500/30 '
+  : tb.status === 'in_checkin'
+  ? 'bg-bg-surface/90 border-amber-500/40 opacity-90 '
+  : tb.status === 'reserved'
+  ? 'bg-bg-surface border-blue-500/20 '
+  : tb.status === 'maintenance'
+  ? 'bg-bg-surface/50 border-border-main opacity-60 '
+  : 'bg-bg-surface border-emerald-500/30 dark:hover:border-primary/50 hover:border-primary/50 dark: '
+  }`}
+  >
+  {/* Header: Table Number & Semantic Status Pill */}
+  <div className="flex items-center justify-between">
+  <div>
+  <span className="font-mono dark:text-[#D4AF37] text-primary font-black text-xl tracking-wide">{tb.tableNumber}</span>
+  <p className="text-[10px] text-text-muted font-semibold uppercase tracking-wider block mt-0.5">
+  {placeZone === 'STANDING_BAR' ? 'Standard Zone' : 'Premium Zone'}
+  </p>
+  </div>
+
+  <span
+  className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+  isFull
+  ? 'dark:bg-red-500/15 bg-red-500/10 dark:text-red-400 text-red-700 border border-red-500/30'
+  : isPartial
+  ? 'dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 border border-amber-500/30'
+  : tb.status === 'in_checkin'
+  ? 'dark:bg-amber-500/10 bg-amber-500/5 dark:text-amber-400 text-amber-600 border border-amber-500/25'
+  : tb.status === 'reserved'
+  ? 'dark:bg-blue-500/15 bg-blue-500/10 dark:text-blue-400 text-blue-700 border border-blue-500/30'
+  : tb.status === 'maintenance'
+  ? 'dark:bg-zinc-800/50 bg-zinc-200/50 text-text-muted border border-border-main'
+  : 'dark:bg-emerald-500/15 bg-emerald-500/10 dark:text-emerald-400 text-emerald-700 border border-emerald-500/30'
+  }`}
+  >
+  {isOccupied ? <Users size={12} /> : tb.status === 'in_checkin' ? <Lock size={12} /> : <CheckCircle2 size={12} />}
+  <span className="capitalize">
+  {isFull ? 'Occupied' : isPartial ? 'Partially Occupied' : tb.status === 'in_checkin' ? 'In Check-In' : tb.status}
+  </span>
+  </span>
+  </div>
+
+ {/* Central Dynamic Table Diagram Container */}
+ <div className="py-1 px-2 rounded-2xl bg-bg-primary/80 border border-border-main flex items-center justify-center h-28 relative">
+ <TableDiagram
+ capacity={capacity}
+ occupiedCount={occupiedCount}
+ status={tb.status}
+ tableNumber={tb.tableNumber}
+ />
+ </div>
+
+ {/* Info Bar - Size, Capacity & Token Metadata */}
+ <div className="space-y-1 text-xs px-1">
+ <div className="flex items-center justify-between text-[11px] font-bold text-text-muted">
+ <span className="uppercase text-[10px] tracking-wider">{sizeCategory} • {capacity} {capacity === 1 ? 'Person' : 'Persons'}</span>
+ <span className={
+ isFull
+ ? 'dark:text-red-400 text-red-700 font-extrabold'
+ : isPartial
+ ? 'dark:text-amber-400 text-amber-700 font-extrabold'
+ : tb.status === 'in_checkin'
+ ? 'dark:text-amber-400 text-amber-700 font-extrabold'
+ : tb.status === 'reserved'
+ ? 'dark:text-blue-400 text-blue-700 font-extrabold'
+ : 'dark:text-emerald-400 text-emerald-700 font-extrabold'
+ }>
+ {occupiedCount} / {capacity} Seats
+ </span>
+ </div>
+
+ {assignedToken ? (
+  <div className="space-y-1 border-t border-border-main/40 pt-1 text-text-muted">
+    <div className="flex items-center justify-between text-[11px]">
+      <span className="font-semibold truncate max-w-[120px]">👤 {assignedToken.customer?.name || 'Guest'}</span>
+      <span className="font-mono text-text-main font-bold">{assignedToken.tokenNumber}</span>
+    </div>
+    {tb.status === 'occupied' && (
+      <div className="mt-2 px-3 py-2 rounded-2xl bg-bg-secondary-surface dark:bg-black/25 border border-border-main/60 flex items-center justify-between text-xs font-semibold shadow-sm animate-fadeIn">
+        <span className="text-[10px] text-text-muted uppercase tracking-wider font-extrabold">Time Remaining</span>
+        <div className="text-[13px] font-black tracking-wide">
+          <TableTimer endTime={assignedToken.endTime} />
+        </div>
+      </div>
+    )}
+  </div>
+ ) : (
+ <div className="text-[10px] text-text-muted border-t border-border-main/30 pt-1 flex justify-between">
+ <span>Rate Allowance:</span>
+ <span className="font-mono font-bold text-text-main">₹500 / Session</span>
+ </div>
+ )}
+ </div>
+
+ {/* Card Action Row */}
+ <div className="flex flex-col sm:flex-row gap-2 pt-1 border-t border-border-main/50">
+    {tb.status === 'occupied' ? (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setInspectingTable(tb);
+        }}
+        className="w-full py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 dark:hover:bg-amber-500/20 dark:text-amber-300 text-amber-700 text-xs font-bold border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+      >
+        <Search size={14} /> Inspect Details
+      </button>
+    ) : tb.status === 'in_checkin' ? (
+      <button
+        disabled
+        onClick={(e) => e.stopPropagation()}
+        className="w-full py-2.5 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/30 text-xs font-bold transition-all text-center cursor-not-allowed"
+      >
+        In Check-In
+      </button>
+    ) : tb.status === 'reserved' ? (
+      (() => {
+        const res = realReservations.find((r: any) => r.tableId === tb.id && r.status === 'PENDING');
+        const isOwner = !res || !res.userId || res.userId === user?.id || user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+        return (
+          <>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCheckInReservedTable(tb);
+              }}
+              disabled={!isOwner}
+              title={!isOwner ? "This reservation is owned by another receptionist." : undefined}
+              className={`flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 ${
+                !isOwner ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
+              }`}
+            >
+              <UserPlus size={14} /> Check-In
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCancelClick(tb);
+              }}
+              disabled={!isOwner}
+              title={!isOwner ? "This reservation is owned by another receptionist." : undefined}
+              className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
+                !isOwner 
+                  ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed' 
+                  : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 border border-red-500/30 cursor-pointer'
+              }`}
+            >
+              Cancel
+            </button>
+          </>
+        );
+      })()
+    ) : tb.status === 'available' ? (
+      <>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleAssignClick(tb);
+          }}
+          className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+        >
+          <UserPlus size={14} /> Assign
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleReserveClick(tb);
+          }}
+          className="flex-1 py-2.5 rounded-xl text-xs font-bold border border-primary text-primary hover:bg-primary/5 transition-all cursor-pointer text-center"
+        >
+          Reserve
+        </button>
+      </>
+    ) : (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setInspectingTable(tb);
+        }}
+        className="w-full py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card border border-border-main text-text-muted hover:text-text-main transition-all cursor-pointer flex items-center justify-center gap-1.5"
+      >
+        <Search size={14} /> Inspect
+      </button>
+    )}
+ </div>
+ </div>
+ );
+ })}
+ </SeatingRow>
+ );
+ })}
+ </div>
+ )}
+
+ {/* INSPECT DETAILS MODAL */}
+ {(() => {
+ if (!inspectingTable) return null;
+ const capacity = inspectingTable.capacity || 4;
+ const assignedToken = tokens.find(tk => tk.tableId === inspectingTable.id || (tk.table && tk.table.id === inspectingTable.id));
+ const isOccupied = inspectingTable.status === 'occupied';
+ const occupiedCount = assignedToken ? (assignedToken.personsCount || 1) : (isOccupied ? capacity : 0);
+
+ return (
+ <div className="fixed inset-0 z-50 dark:bg-transparent bg-slate-900/40 flex items-center justify-end p-0 animate-fadeIn pointer-events-none">
+ <div className="w-full md:w-[380px] bg-bg-surface border border-border-main border-y-0 border-r-0 border-l-[1px] dark:border-[rgba(255,255,255,0.1)] dark:bg-[#121212] rounded-none p-5 relative text-text-main animate-none h-[100dvh] pointer-events-auto flex flex-col">
+ 
+ {/* Header */}
+ <div className="flex items-center justify-between pb-4 dark:pb-5 border-b border-border-main dark:border-[rgba(255,255,255,0.1)] shrink-0">
+ <div className="flex items-center gap-2 text-text-main font-bold text-sm sm:text-base pr-2 dark:text-white">
+ <span className="hidden dark:block w-2.5 h-2.5 rounded-full bg-red-400" />
+ <span className="truncate dark:text-lg">T-{inspectingTable.tableNumber.padStart(2, '0')}</span>
+ <span className="hidden dark:block text-[10px] text-primary ml-2 uppercase">VIP Lounge</span>
+ </div>
+ <button 
+ onClick={() => setInspectingTable(null)}
+ className="p-0 rounded-lg dark:bg-transparent bg-bg-surface hover:bg-bg-card hover:bg-transparent text-text-muted hover:text-text-main transition-all cursor-pointer shrink-0"
+ >
+ <X size={20} />
+ </button>
+ </div>
+
+ {/* Scrollable Content Area */}
+ <div className="flex-1 overflow-y-auto py-5 space-y-6 no-scrollbar">
+ {/* Top Center Visual Seating View using TableDiagram */}
+ <div className="dark:bg-transparent p-5 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] flex flex-col items-center justify-center space-y-3">
+ <p className="text-[10px] font-extrabold uppercase tracking-widest text-text-muted">
+ Visual Seating Alignment ({occupiedCount} / {capacity} Seats Occupied)
+ </p>
+
+ <div className="w-full max-w-sm h-36 flex items-center justify-center">
+ <TableDiagram
+ capacity={capacity}
+ occupiedCount={occupiedCount}
+ status={inspectingTable.status}
+ tableNumber={inspectingTable.tableNumber}
+ />
+ </div>
+ </div>
+
+ {/* Table & Session Metrics */}
+ <div className="grid grid-cols-2 gap-3 text-xs">
+ <div className="dark:bg-transparent p-3.5 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] space-y-1">
+ <span className="text-text-muted text-[10px] font-bold uppercase">Status</span>
+ <p className={`font-bold text-sm uppercase ${inspectingTable.status === 'occupied' ? 'dark:text-amber-400 text-amber-700' : 'dark:text-emerald-400 text-emerald-700'}`}>
+ {inspectingTable.status}
+ </p>
+ </div>
+
+ <div className="dark:bg-transparent p-3.5 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] space-y-1">
+ <span className="text-text-muted text-[10px] font-bold uppercase">Capacity Limit</span>
+ <p className="font-bold text-sm text-text-main">{inspectingTable.capacity} Guests Max</p>
+ </div>
+ </div>
+
+ {inspectingToken && (
+    <div className="dark:bg-transparent p-4 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] space-y-2.5 text-xs">
+      <div className="flex justify-between items-center">
+        <span className="text-text-muted">Customer Name:</span>
+        <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={inspectingToken.customer?.name || 'Walk-in Guest'}>
+          {inspectingToken.customer?.name || 'Walk-in Guest'}
+        </span>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-text-muted">Phone Number:</span>
+        <span className="font-mono font-semibold text-text-main text-right">
+          {inspectingToken.customer?.phoneNumber || '—'}
+        </span>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-text-muted">Email ID:</span>
+        <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={inspectingToken.customer?.email || (inspectingToken as any).email || '—'}>
+          {inspectingToken.customer?.email || (inspectingToken as any).email || '—'}
+        </span>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-text-muted">Token Pass:</span>
+        <span className="font-mono text-text-main font-bold text-right">{inspectingToken.tokenNumber}</span>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-text-muted">Guests Headcount:</span>
+        <span className="font-bold text-text-main text-right">{inspectingToken.personsCount || 1} {inspectingToken.personsCount === 1 ? 'Guest' : 'Guests'}</span>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-text-muted">Drinks Used / Total:</span>
+        <span className="font-mono font-bold text-emerald-400 text-right">
+          {inspectingToken.redemptionsUsed} / {inspectingToken.totalRedemptionsAllowed} Used
+        </span>
+      </div>
+      {inspectingTable.status === 'occupied' && (
+        <div className="flex justify-between items-center pt-1 border-t border-border-main/50 dark:border-[rgba(255,255,255,0.1)]">
+          <span className="text-text-muted font-medium">Time Remaining:</span>
+          <TableTimer endTime={inspectingToken.endTime} />
+        </div>
+      )}
+    </div>
+  )}
+
+  {inspectingTable.status === 'reserved' && (() => {
+    const res = realReservations.find((r: any) => r.tableId === inspectingTable.id && (r.status === 'PENDING' || r.status === 'CONFIRMED'));
+    if (!res) return null;
+    return (
+      <div className="dark:bg-transparent p-4 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] space-y-2.5 text-xs">
+        <div className="flex justify-between items-center">
+          <span className="text-text-muted">Reserved Customer:</span>
+          <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={res.customerName}>
+            {res.customerName}
+          </span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-text-muted">Phone Number:</span>
+          <span className="font-mono font-semibold text-text-main text-right">{res.phoneNumber || '—'}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-text-muted">Email ID:</span>
+          <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={res.email || '—'}>
+            {res.email || '—'}
+          </span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-text-muted">Guests Headcount:</span>
+          <span className="font-bold text-text-main text-right">{res.personsCount} Guests</span>
+        </div>
+      </div>
+    );
+  })()}
+ </div>
+
+ {/* Action Buttons (Footer) */}
+ <div className="pt-5 border-t border-border-main dark:border-[rgba(255,255,255,0.1)] flex flex-col gap-3 shrink-0">
+  {inspectingTable.status === 'occupied' ? (
+    <div className="flex flex-row gap-2">
+      <button
+        type="button"
+        onClick={() => setClosingTableSession(inspectingTable)}
+        className="flex-1 py-2.5 rounded-md dark:rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 font-bold text-[13px] border border-red-500/30 transition-all text-center cursor-pointer"
+      >
+        Checkout
+      </button>
+      <button 
+        onClick={() => {
+          setExtendingTable(inspectingTable);
+          setExtensionMinutes(20);
+          setExtensionPaymentMethod('CASH');
+          setSendExtensionEmail(false);
+        }}
+        className="flex-1 py-2.5 rounded-md bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/25 text-purple-700 dark:text-purple-400 border border-purple-500/30 font-bold text-[13px] transition-all cursor-pointer"
+      >
+        Extend Session
+      </button>
+    </div>
+  ) : inspectingTable.status === 'in_checkin' ? (
+    <button
+      type="button"
+      disabled
+      className="w-full py-3 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/30 text-[13px] font-bold text-center cursor-not-allowed"
+    >
+      In Check-In (Locked)
+    </button>
+  ) : (
+    (() => {
+      const res = realReservations.find((r: any) => r.tableId === inspectingTable.id && r.status === 'PENDING');
+      const isOwner = !res || !res.userId || res.userId === user?.id || user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+      const isReserved = inspectingTable.status === 'reserved';
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => isReserved ? handleCheckInReservedTable(inspectingTable) : handleAssignClick(inspectingTable)}
+            disabled={isReserved && !isOwner}
+            title={isReserved && !isOwner ? "This reservation is owned by another receptionist." : undefined}
+            className={`w-full py-3 rounded-md primary-btn text-[13px] font-black uppercase tracking-wider flex items-center justify-center gap-2 dark:text-black ${
+              isReserved && !isOwner ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
+            }`}
+          >
+            <span className="dark:hidden">Assign Guest & Check-In</span>
+            <span className="hidden dark:block">+ Add Order</span>
+            <ArrowRight size={16} className="dark:hidden" />
+          </button>
+          
+          {isReserved && (
+            <button
+              type="button"
+              onClick={() => handleCancelClick(inspectingTable)}
+              disabled={!isOwner}
+              title={!isOwner ? "This reservation is owned by another receptionist." : undefined}
+              className={`w-full py-2.5 rounded-md font-bold text-[13px] border transition-all text-center ${
+                !isOwner 
+                  ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed' 
+                  : 'bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/25 text-rose-700 dark:text-rose-400 border border-rose-500/30 cursor-pointer'
+              }`}
+            >
+              Clear Reservation
+            </button>
+          )}
+
+          {inspectingTable.status === 'available' && (
+            <button
+              type="button"
+              onClick={() => { setInspectingTable(null); handleReserveClick(inspectingTable); }}
+              className="w-full py-2 rounded-md bg-transparent border border-primary text-primary font-bold text-[11px] hover:bg-primary/5 transition-all text-center cursor-pointer"
+            >
+              Reserve Table
+            </button>
+          )}
+        </>
+      );
+    })()
+  )}
+
+ <button
+ type="button"
+ onClick={() => setInspectingTable(null)}
+ className="w-full py-2.5 rounded-md bg-transparent text-[11px] font-bold text-text-muted hover:text-text-main border border-border-main dark:border-[rgba(255,255,255,0.1)] cursor-pointer"
+ >
+ Close Drawer
+ </button>
+ </div>
+ </div>
+ </div>
+ );
+ })()}
+
+ {/* ASSIGN TABLE MODAL */}
+ {assigningTable && (
+ <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
+ <div className="bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
+ <button 
+ onClick={() => setAssigningTable(null)}
+ className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
+ >
+ <X size={18} />
+ </button>
+
+ <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-8">
+ <Grid3X3 size={18} className="shrink-0" /> <span className="truncate">Assign Table {assigningTable.tableNumber}</span>
+ </div>
+
+ <form onSubmit={handleAssignSubmit} className="space-y-4">
+ <div>
+ <label className="block text-xs font-semibold text-text-muted mb-1">Active Guest Token Pass</label>
+ {tokens.length === 0 ? (
+ <p className="text-xs text-text-muted p-2 bg-bg-primary rounded-xl">No active guest tokens available for assignment.</p>
+ ) : (
+ <select
+ value={selectedTokenId}
+ onChange={e => setSelectedTokenId(e.target.value)}
+ className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
+ required
+ >
+ <option value="">Select Token Pass...</option>
+ {tokens.map(tk => (
+ <option key={tk.id} value={tk.id}>
+ {tk.tokenNumber} — {tk.customer?.name || 'Guest'} ({tk.personsCount} Persons)
+ </option>
+ ))}
+ </select>
+ )}
+ </div>
+
+ <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+ <button
+ type="button"
+ onClick={() => setAssigningTable(null)}
+ className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
+ >
+ Cancel
+ </button>
+ <button
+ type="submit"
+ disabled={isSubmittingAssign || !selectedTokenId}
+ title={isSubmittingAssign ? "Assigning seat..." : !selectedTokenId ? "Select active token" : undefined}
+ className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+ >
+{isSubmittingAssign ? 'Assigning...' : 'Confirm Seating'}
+ </button>
+ </div>
+ </form>
+ </div>
+ </div>
+ )}
+
+ {/* RESERVE / ASSIGN TABLE MODAL */}
+  {reservingTable && (
+    <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
+      <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn max-h-[90vh] overflow-y-auto custom-scrollbar">
+        <button 
+          onClick={() => setReservingTable(null)}
+          className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
+        >
+          <X size={18} />
+        </button>
+
+        <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-8">
+          <Grid3X3 size={18} className="shrink-0" /> <span className="truncate">{isAssignFlow ? 'Assign' : 'Reserve'} Table {reservingTable.tableNumber}</span>
+        </div>
+
+        <form onSubmit={handleReserveSubmit} className="space-y-4 text-left">
+          {/* 1. Customer Full Name */}
+          <div>
+            <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
+              <User size={14} className="text-text-main" /> Customer Full Name <span className="dark:text-red-400 text-red-700">*</span>
+            </label>
+            <input
+              type="text"
+              value={resName}
+              onChange={e => setResName(e.target.value)}
+              placeholder="e.g. First Last"
+              className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
+                resName.trim().length > 0 && !isResNameOk
+                  ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                  : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
+              }`}
+              required
+            />
+            {resName.trim().length > 0 && !isResNameOk && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>Full name must be 2-100 characters (letters, spaces, dots, apostrophes only).</span>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Phone Number */}
+          <div>
+            <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
+              <Phone size={14} className="text-text-main" /> Phone Number <span className="dark:text-red-400 text-red-700">*</span>
+            </label>
+            <input
+              type="tel"
+              value={resPhone}
+              onChange={e => setResPhone(e.target.value)}
+              placeholder="e.g. 9999999999"
+              className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
+                resPhone.trim().length > 0 && (!isValidPhone(resPhone) || resPhoneConflict || isResPhoneActive)
+                  ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                  : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
+              }`}
+              required
+            />
+            {resPhone.trim().length > 0 && !isValidPhone(resPhone) && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>Please enter a valid 10-digit Indian mobile number (starts with 6-9).</span>
+              </div>
+            )}
+            {isValidPhone(resPhone) && (resPhoneConflict || isResPhoneActive) && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>This phone number is already checked in.</span>
+              </div>
+            )}
+          </div>
+
+          {/* 3. Email ID */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-text-muted flex items-center gap-1.5">
+                <Mail size={14} className="text-text-main" /> Email Address
+              </label>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider dark:text-red-400 text-red-700">
+                REQUIRED
+              </span>
+            </div>
+            <input
+              type="email"
+              value={resEmail}
+              onChange={e => setResEmail(e.target.value)}
+              placeholder="e.g. name@example.com"
+              className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
+                resEmail.trim().length === 0 || !isValidEmail(resEmail) || resEmailConflict || isResEmailActive
+                  ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                  : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
+              }`}
+              required
+            />
+            {resEmail.trim().length === 0 && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>Email address is strictly required for Digital Email QR Pass delivery.</span>
+              </div>
+            )}
+            {resEmail.trim().length > 0 && !isValidEmail(resEmail) && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>Please enter a valid email address (e.g. name@domain.com).</span>
+              </div>
+            )}
+            {isValidEmail(resEmail) && (resEmailConflict || isResEmailActive) && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>This email ID is already checked in.</span>
+              </div>
+            )}
+          </div>
+
+          {/* 4. Number of Members */}
+          <div>
+            <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
+              <Users size={14} className="text-text-main" /> Number of Members <span className="dark:text-red-400 text-red-700">*</span>
+            </label>
+            <select
+              value={resPersons}
+              onChange={e => setResPersons(Number(e.target.value))}
+              className="w-full bg-bg-primary border border-border-main rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary cursor-pointer"
+              required
+            >
+              {Array.from({ length: reservingTable.capacity || 4 }, (_, i) => i + 1).map(num => (
+                <option key={num} value={num}>{num} {num === 1 ? 'Guest' : 'Guests'}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Step Validation Warning if incomplete */}
+          {!isResFormValid && (
+            <div className="pt-2 text-xs text-text-muted w-full text-center">
+              <span className="dark:text-amber-400 text-amber-700 flex items-center justify-center gap-1 text-[11px]">
+                <AlertTriangle size={14} className="shrink-0" /> Complete all required fields above to proceed
+              </span>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setReservingTable(null)}
+              className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!isResFormValid || isSubmittingReserve}
+              className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+            >
+              {isSubmittingReserve ? 'Confirming...' : isAssignFlow ? 'Confirm Assign & Check-In' : 'Confirm Reserve'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )}
+
+ {/* CANCEL RESERVATION CONFIRMATION MODAL */}
+ {cancellingReservation && (
+   <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
+     <div className="bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
+       <button 
+         onClick={() => setCancellingReservation(null)}
+         className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
+       >
+         <X size={18} />
+       </button>
+
+       <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-8 text-red-500">
+         <AlertTriangle size={18} className="shrink-0" /> <span className="truncate">Cancel Reservation</span>
+       </div>
+
+       <div className="space-y-2">
+         <p className="text-xs text-text-muted">
+           Are you sure you want to cancel the reservation for:
+         </p>
+         <div className="p-3 bg-bg-primary rounded-xl space-y-1 text-xs">
+           <div className="flex justify-between">
+             <span className="text-text-muted">Customer:</span>
+             <span className="font-semibold text-text-main">{cancellingReservation.customerName}</span>
+           </div>
+           {cancellingReservation.phoneNumber && (
+             <div className="flex justify-between">
+               <span className="text-text-muted">Phone:</span>
+               <span className="font-semibold text-text-main">{cancellingReservation.phoneNumber}</span>
+             </div>
+           )}
+           <div className="flex justify-between">
+             <span className="text-text-muted">Table:</span>
+             <span className="font-bold dark:text-primary text-primary font-mono">{cancellingReservation.table?.tableNumber || 'N/A'}</span>
+           </div>
+         </div>
+         <p className="text-[11px] text-red-500/80 italic">
+           This will release the table back to "available" immediately.
+         </p>
+       </div>
+
+       <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+         <button
+           type="button"
+           onClick={() => setCancellingReservation(null)}
+           className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
+         >
+           No, Keep it
+         </button>
+         <button
+           onClick={handleCancelConfirm}
+           disabled={isSubmittingCancel}
+           className="flex-1 py-2.5 rounded-xl bg-red-500 text-white hover:bg-red-600 active:bg-red-700 text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer border-none"
+         >
+           {isSubmittingCancel ? 'Cancelling...' : 'Yes, Cancel'}
+         </button>
+       </div>
+     </div>
+   </div>
+ )}
+
+  {/* TRANSFER TABLE MODAL */}
+
+
+  {/* EXTEND SESSION MODAL */}
+  {extendingTable && (() => {
+    const token = tokens.find(tk => tk.tableId === extendingTable.id || (tk.table && tk.table.id === extendingTable.id));
+    if (!token) return null;
+    return (
+      <ExtendSessionModal
+        isOpen={extendingTable !== null}
+        token={token}
+        rates={rates}
+        onClose={() => setExtendingTable(null)}
+        onSuccess={() => {
+          setExtendingTable(null);
+          if (inspectingTable && inspectingTable.id === extendingTable.id) {
+            setInspectingTable(null);
+          }
+          refreshTables();
+          refreshTokens();
+        }}
+      />
+    );
+  })()}
+
+  {/* CLOSE SESSION MODAL */}
+  {(() => {
+    if (!closingTableSession) return null;
+    const sessionToken = tokens.find(tk => tk.tableId === closingTableSession.id || (tk.table && tk.table.id === closingTableSession.id));
+    if (!sessionToken) return null;
+    return (
+      <CheckoutConfirmationModal
+        isOpen={!!closingTableSession}
+        session={{
+          tokenNumber: sessionToken.tokenNumber,
+          customerName: sessionToken.customer?.name || 'Walk-in Guest',
+          customerPhone: sessionToken.customer?.phoneNumber || 'N/A',
+          tableNumber: closingTableSession.tableNumber || 'N/A',
+        }}
+        onClose={() => setClosingTableSession(null)}
+        onSuccess={() => {
+          setClosingTableSession(null);
+          if (inspectingTable && inspectingTable.id === closingTableSession.id) {
+            setInspectingTable(null);
+          }
+          refreshTables();
+          refreshTokens();
+        }}
+      />
+    );
+  })()}
+
+
+
+ </div>
+ );
+};
