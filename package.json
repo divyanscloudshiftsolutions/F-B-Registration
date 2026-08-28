@@ -1,30 +1,49 @@
 {
-  "name": "web-frontend",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "name": "bar-system-backend",
+  "version": "1.0.0",
+  "description": "NFC Bar System Management Backend",
+  "main": "dist/server.js",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "build": "prisma generate && tsc",
+    "start": "prisma generate && prisma migrate deploy && node dist/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "prisma db seed",
+    "test": "ts-node tests/email.test.ts && ts-node tests/sync.test.ts && ts-node tests/email-qr.test.ts",
+    "test:integration": "ts-node tests/api.integration.test.ts"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "@fontsource/inter": "^5.3.0",
-    "jsqr": "^1.4.0",
-    "lucide-react": "^1.27.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "@aws-sdk/client-s3": "^3.535.0",
+    "@prisma/client": "^5.10.2",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.3",
+    "express-rate-limit": "^7.2.0",
+    "ioredis": "^5.11.1",
+    "jimp": "^1.6.1",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.2.0",
+    "pg": "^8.11.3",
+    "prisma": "^5.10.2",
+    "rate-limit-redis": "^4.2.0"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^24.13.2",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.3",
-    "oxlint": "^1.71.0",
-    "tailwindcss": "^4.3.3",
-    "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "@types/bcrypt": "^6.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^20.11.24",
+    "@types/pg": "^8.11.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.3"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   }
 }

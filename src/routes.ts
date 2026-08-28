@@ -1,0 +1,4768 @@
+import { Router, Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import { PrismaClient, CloseReason, ActivationMethod, CancelReason } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
+import { tableService } from './services/TableService';
+import { tokenService } from './services/TokenService';
+import { redemptionService } from './services/RedemptionService';
+import redisService from './services/RedisService';
+import bcrypt from 'bcrypt';
+import syncService from './services/SyncService';
+
+const TokenStatus = {
+  PENDING_PAYMENT: 'PENDING_PAYMENT' as const,
+  ACTIVE: 'ACTIVE' as const,
+  CLOSED: 'CLOSED' as const,
+  CANCELLED: 'CANCELLED' as const,
+  EXPIRED: 'EXPIRED' as const,
+  EXTENDED: 'EXTENDED' as const,
+};
+type TokenStatus = (typeof TokenStatus)[keyof typeof TokenStatus];
+import s3Service from './services/S3Service';
+import emailNotificationService from './services/EmailNotificationService';
+import multer from 'multer';
+
+import { normalizeEmail, normalizePhone } from './utils/normalization';
+
+const prisma = new PrismaClient();
+const upload = multer();
+if (!process.env.JWT_SECRET) {
+  throw new Error("FATAL: JWT_SECRET environment variable is not defined.");
+}
+const jwtSecret = process.env.JWT_SECRET;
+const authApiUrl = process.env.AUTH_API_URL || 'https://authapi.cloudshiftsolutions.in';
+const configuredTenantId = process.env.TENANT_ID;
+const configuredTenantCode = process.env.TENANT_CODE;
+
+const fetchWithTimeout = async (url: string, options: any = {}, timeoutMs = 2000): Promise<any> => {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal as any
+    });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
+};
+
+const UUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+const isValidUUID = (uuid: string): boolean => {
+  if (!uuid) return false;
+  return UUID_REGEX.test(uuid);
+};
+
+export const validateEmail = (value?: string | null): boolean => {
+  if (!value || !value.trim()) return true;
+
+  const email = value.trim().toLowerCase();
+
+  const regex = /^(?!.*\.\.)(?!\.)(?!.*\.$)[a-z0-9]+(\.[a-z0-9]+)*@gmail\.com$/;
+
+  return regex.test(email);
+};
+
+export interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+    username: string;
+    role: string; // e.g. "admin", "receptionist", "bartender", "manager"
+    fullName: string;
+  };
+}
+
+// ==========================================
+// MIDDLEWARES
+// ==========================================
+
+export const authenticate = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+
+    try {
+      // 1. Try local session lookup
+      const session = await prisma.staffSession.findFirst({
+        where: {
+          id: token,
+          expiresAt: { gt: new Date() }
+        },
+        include: {
+          user: {
+            include: { role: true }
+          }
+        }
+      });
+
+      if (session && session.user) {
+        if (!session.user.isActive) {
+          return res.status(401).json({ success: false, error: { code: 'AUTH_DEACTIVATED', message: 'Access denied. Contact your administrator.' } });
+        }
+        req.user = {
+          id: session.user.id,
+          username: session.user.username,
+          role: session.user.role.name,
+          fullName: session.user.fullName
+        };
+        return next();
+      }
+    } catch (dbErr) {
+      console.warn(`Local session DB lookup failed: ${dbErr}`);
+    }
+
+    // 2. Fallback to external validation (e.g. federated auth api validation)
+    try {
+      const validateRes = await fetchWithTimeout(`${authApiUrl}/api/auth/validate`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      }, 2000);
+
+      if (validateRes.ok) {
+        const data = await validateRes.json();
+        if (data && data.valid && data.sub) {
+          const localUser = await prisma.user.findFirst({
+            where: {
+              OR: [
+                { id: data.sub },
+                { username: data.email ? data.email.split('@')[0] : undefined }
+              ]
+            },
+            include: { role: true }
+          });
+
+          if (localUser) {
+            if (!localUser.isActive) {
+              return res.status(401).json({ success: false, error: { code: 'AUTH_DEACTIVATED', message: 'Access denied. Contact your administrator.' } });
+            }
+            req.user = {
+              id: localUser.id,
+              username: localUser.username,
+              role: localUser.role.name,
+              fullName: localUser.fullName
+            };
+            return next();
+          }
+        }
+      }
+    } catch (extErr: any) {
+      console.warn(`External token validation failed/timed out: ${extErr.message}`);
+    }
+
+    return res.status(403).json({ success: false, error: { code: 'AUTH_002', message: 'Invalid or expired token' } });
+  } else {
+    res.status(401).json({ success: false, error: { code: 'AUTH_003', message: 'Authorization header missing' } });
+  }
+};
+
+export const authorize = (allowedRoles: string[]) => {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.user || !allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: { code: 'AUTH_004', message: 'Access denied: insufficient permissions' } });
+    }
+    next();
+  };
+};
+
+const router = Router();
+
+router.get('/debug-prisma-enums', (req: Request, res: Response) => {
+  try {
+    const { TokenStatus: originalTokenStatus } = require('@prisma/client');
+    return res.json({
+      success: true,
+      debugMessage: 'Prisma Client verification info',
+      importedTokenStatus: originalTokenStatus,
+      codebaseTokenStatus: TokenStatus,
+      env: {
+        DATABASE_URL: process.env.DATABASE_URL ? `${process.env.DATABASE_URL.split('@')[1].split('/')[0]}` : 'not-set',
+        PORT: process.env.PORT || 'default-4000',
+        NODE_ENV: process.env.NODE_ENV || 'not-set'
+      }
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// Quick Attendance Proxy -> FaceMark POST /api/attendance/quick
+router.post('/attendance/quick', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const facemarkBase = process.env.FACEMARK_API_BASE || 'https://api.facemark.app.cloudshiftsolutions.in';
+    const kioskToken = process.env.FACEMARK_BEARER_TOKEN || 'REDACTED_BEARER_TOKEN';
+
+    if (!kioskToken) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Quick Attendance service is not configured on backend. Missing FACEMARK_BEARER_TOKEN.' }
+      });
+    }
+
+    let imageBuffer: Buffer | null = null;
+    let employeeCode: string | undefined = req.body?.employee_code || req.body?.employeeCode;
+
+    if (req.file && req.file.buffer) {
+      imageBuffer = req.file.buffer;
+    } else if (req.body?.photoBase64) {
+      const base64Clean = req.body.photoBase64.replace(/^data:image\/\w+;base64,/, '');
+      imageBuffer = Buffer.from(base64Clean, 'base64');
+    }
+
+    if (!imageBuffer || imageBuffer.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Image file is required for attendance verification.' }
+      });
+    }
+
+    const form = new FormData();
+    const fileBlob = new Blob([imageBuffer], { type: 'image/jpeg' });
+    form.append('file', fileBlob, 'attendance_capture.jpg');
+
+    if (employeeCode && typeof employeeCode === 'string' && employeeCode.trim()) {
+      form.append('employee_code', employeeCode.trim());
+    }
+
+    const facemarkRes = await fetch(`${facemarkBase}/api/attendance/quick`, {
+      method: 'POST',
+      headers: {
+        'X-Kiosk-Token': kioskToken,
+      },
+      body: form as any,
+    });
+
+    const statusCode = facemarkRes.status;
+    let data: any = null;
+    try {
+      data = await facemarkRes.json();
+    } catch {
+      data = null;
+    }
+
+    if (facemarkRes.ok) {
+      return res.status(statusCode).json({
+        success: true,
+        action: data?.action || 'check-in',
+        userId: data?.userId,
+        userName: data?.userName,
+        userEmail: data?.userEmail,
+        confidence: data?.confidence,
+        matchType: data?.matchType || 'face',
+        timestamp: data?.timestamp || new Date().toISOString(),
+        message: data?.message || `Attendance recorded successfully as ${data?.action || 'check-in'}.`,
+        record: data?.record || null,
+      });
+    }
+
+    const rawDetail = data?.detail || data?.message || data?.error || 'Attendance verification failed.';
+
+    let userFriendlyMessage = rawDetail;
+    if (typeof rawDetail === 'string') {
+      if (statusCode === 404 && rawDetail.toLowerCase().includes('face not recognized')) {
+        userFriendlyMessage = 'Unable to recognize your face. Please look at the camera clearly and try again.';
+      } else if (statusCode === 404 && rawDetail.toLowerCase().includes('employee not found')) {
+        userFriendlyMessage = 'Employee record not found on attendance server.';
+      } else if (statusCode === 401 || statusCode === 403) {
+        userFriendlyMessage = 'Kiosk authentication token is invalid or unauthorized.';
+      } else if (statusCode === 409) {
+        userFriendlyMessage = 'Attendance registration is currently locked for this payroll period.';
+      } else if (statusCode >= 500) {
+        userFriendlyMessage = 'Face verification service is temporarily unavailable. Please try again.';
+      }
+    }
+
+    return res.status(statusCode).json({
+      success: false,
+      error: {
+        message: userFriendlyMessage,
+        detail: rawDetail,
+        statusCode,
+      }
+    });
+
+  } catch (err: any) {
+    console.error('Quick Attendance Proxy Error:', err);
+    return res.status(500).json({
+      success: false,
+      error: { message: 'Unable to connect to attendance verification service. Please check your network connection.' }
+    });
+  }
+});
+
+// Login
+router.post('/auth/login', async (req: Request, res: Response) => {
+  const { username, password, photoBase64 } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_001', message: 'Username and password are required' } });
+  }
+
+  const email = username.includes('@') ? username : `${username.toLowerCase()}@cloudshiftsolutions.in`;
+  let externalSuccess = false;
+  let externalUser: any = null;
+
+  try {
+    const response = await fetchWithTimeout(`${authApiUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ 
+        Email: email, 
+        Password: `${password}_CloudShiftPass!`, 
+        tenant_code: 'cloud-shift-solutions' 
+      })
+    }, 2000);
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.user) {
+        externalUser = data.user;
+        externalSuccess = true;
+      }
+    } else {
+      console.warn(`External Auth API login failed with status ${response.status}`);
+    }
+  } catch (err: any) {
+    console.warn(`External Auth API connection failed: ${err.message}. Falling back to local authentication.`);
+  }
+
+  if (externalSuccess && externalUser) {
+    if (configuredTenantId || configuredTenantCode) {
+      const externalTenant = externalUser.tenant;
+      if (!externalTenant) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'AUTH_009', message: 'Access Denied: User tenant is missing' }
+        });
+      }
+
+      const tenantIdMatches = !configuredTenantId || externalTenant.id === configuredTenantId;
+      const tenantCodeMatches = !configuredTenantCode || externalTenant.code === configuredTenantCode;
+
+      if (!tenantIdMatches || !tenantCodeMatches) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'AUTH_009',
+            message: `Access Denied: User belongs to tenant '${externalTenant.code || externalTenant.id}', but this system is configured for tenant '${configuredTenantCode || configuredTenantId}'`
+          }
+        });
+      }
+    }
+
+    let externalRole: string | undefined;
+    if (externalUser.apps && typeof externalUser.apps === 'object') {
+      for (const appKey of Object.keys(externalUser.apps)) {
+        const appAccess = externalUser.apps[appKey];
+        if (appAccess && typeof appAccess.role === 'string') {
+          const roleLower = appAccess.role.toLowerCase();
+          if (['admin', 'receptionist', 'bartender', 'manager'].includes(roleLower)) {
+            externalRole = roleLower;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!externalRole) {
+      const localUsername = username.includes('@') ? username.split('@')[0] : username;
+      const localUser = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { username: localUsername },
+            { username: username }
+          ]
+        },
+        include: { role: true }
+      });
+
+      if (localUser && localUser.isActive) {
+        externalRole = localUser.role.name;
+      } else {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'AUTH_006', message: 'Access Denied: User is not authorized for Open the Bottle' }
+        });
+      }
+    }
+
+    try {
+      const localUsername = username.includes('@') ? username.split('@')[0] : username;
+      const finalUser = await prisma.$transaction(async (tx) => {
+        const roleObj = await tx.role.findFirst({
+          where: { name: { equals: externalRole, mode: 'insensitive' } }
+        });
+        if (!roleObj) {
+          throw new Error(`Role ${externalRole} not configured in local database`);
+        }
+
+        const existingUser = await tx.user.findFirst({
+          where: {
+            OR: [
+              { username: localUsername },
+              { username: username }
+            ]
+          }
+        });
+
+        if (existingUser) {
+          return await tx.user.update({
+            where: { id: existingUser.id },
+            data: {
+              fullName: externalUser.full_name || existingUser.fullName,
+              roleId: roleObj.id,
+              isActive: true,
+              lastLogin: new Date()
+            },
+            include: { role: true }
+          });
+        } else {
+          return await tx.user.create({
+            data: {
+              username: localUsername,
+              fullName: externalUser.full_name || localUsername,
+              passwordHash: '', 
+              roleId: roleObj.id,
+              isActive: true,
+              lastLogin: new Date()
+            },
+            include: { role: true }
+          });
+        }
+      });
+
+      await prisma.syncLog.create({
+        data: {
+          operationId: `LOGIN-SYNC-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          deviceId: 'SERVER-API',
+          operationType: 'FEDERATED_LOGIN_SUCCESS',
+          payload: { username, email, role: externalRole },
+          status: 'SUCCESS'
+        }
+      }).catch(() => {});
+
+      const session = await prisma.staffSession.create({
+        data: {
+          userId: finalUser.id,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+        }
+      });
+
+      return res.json({
+        success: true,
+        token: session.id,
+        accessToken: session.id,
+        refreshToken: 'no-jwt-refresh-needed',
+        user: {
+          id: finalUser.id,
+          username: finalUser.username,
+          fullName: finalUser.fullName,
+          name: finalUser.fullName,
+          role: finalUser.role.name.toUpperCase(),
+          roleDetail: {
+            id: finalUser.role.id,
+            name: finalUser.role.name,
+            permissions: finalUser.role.permissions,
+          },
+        },
+        message: 'Login successful (Federated)',
+      });
+    } catch (dbErr: any) {
+      console.error('Database transaction sync failed:', dbErr);
+      await prisma.syncLog.create({
+        data: {
+          operationId: `LOGIN-SYNC-FAIL-${Date.now()}`,
+          deviceId: 'SERVER-API',
+          operationType: 'FEDERATED_LOGIN_FAIL',
+          payload: { username, error: dbErr.message },
+          status: 'ERROR',
+          conflictReason: dbErr.message
+        }
+      }).catch(() => {});
+      return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: dbErr.message } });
+    }
+  }
+
+  const usernameLower = username.toLowerCase();
+  const isLocalAllowed = 
+    ['admin', 'receptionist', 'bartender', 'manager'].includes(usernameLower) ||
+    /^(adm|rec|bar|mgr)-\d{2}$/.test(usernameLower);
+
+  if (!isLocalAllowed) {
+    return res.status(401).json({
+      success: false,
+      error: { code: 'AUTH_001', message: 'Invalid username or password (Federated authentication failed)' }
+    });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { username },
+      include: { role: true },
+    });
+
+    if (!user || !user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
+      return res.status(401).json({ success: false, error: { code: 'AUTH_001', message: 'Invalid username or password' } });
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({ success: false, error: { code: 'AUTH_DEACTIVATED', message: 'Access denied. Contact your administrator.' } });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLogin: new Date() },
+    });
+
+    await prisma.syncLog.create({
+      data: {
+        operationId: `LOGIN-FALLBACK-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        deviceId: 'SERVER-API',
+        operationType: 'LOCAL_FALLBACK_LOGIN',
+        payload: { username },
+        status: 'SUCCESS'
+      }
+    }).catch(() => {});
+
+    const session = await prisma.staffSession.create({
+      data: {
+        userId: user.id,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+      }
+    });
+
+    return res.json({
+      success: true,
+      token: session.id,
+      accessToken: session.id,
+      refreshToken: 'no-jwt-refresh-needed',
+      user: {
+        id: user.id,
+        username: user.username,
+        fullName: user.fullName,
+        name: user.fullName,
+        role: user.role.name.toUpperCase(),
+        roleDetail: {
+          id: user.role.id,
+          name: user.role.name,
+          permissions: user.role.permissions,
+        },
+      },
+      message: 'Login successful (Local fallback)',
+    });
+  } catch (err: any) {
+    console.error(err);
+    return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
+  }
+});
+
+// Logout User (Authenticated)
+router.post('/auth/logout', authenticate, async (req: Request, res: Response) => {
+  const { photoBase64 } = req.body;
+  const user = (req as AuthenticatedRequest).user;
+
+  if (!user) {
+    return res.status(401).json({ success: false, error: { code: 'AUTH_ERR', message: 'User not authenticated' } });
+  }
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      await prisma.staffSession.delete({
+        where: { id: token }
+      });
+    } catch (err) {
+      console.warn(`Logout: Session deletion failed (it might have already been deleted): ${err}`);
+    }
+  }
+  return res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// Register User (Admin Only)
+router.post('/auth/register', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
+  const { username, password, fullName, name, role, roleName } = req.body;
+  
+  const finalUsername = username;
+  const finalPassword = password;
+  const finalFullName = fullName || name;
+  const finalRoleName = (roleName || role || 'receptionist').toLowerCase();
+
+  if (!finalUsername || !finalPassword || !finalFullName) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_002', message: 'All fields are required' } });
+  }
+
+  const nameRegex = /^[a-zA-Z\s.'-]{2,100}$/;
+  if (!nameRegex.test(finalFullName)) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'VAL_ERR',
+        message: 'Full name must contain only letters, spaces, periods, apostrophes, or hyphens (2-100 characters).'
+      }
+    });
+  }
+
+  const allowedSeeded = ['admin', 'receptionist', 'bartender', 'manager'];
+  if (!allowedSeeded.includes(finalUsername.toLowerCase())) {
+    let prefixRegex: RegExp;
+    let expectedFormat: string;
+    if (finalRoleName === 'admin') {
+      prefixRegex = /^ADM-\d{2}$/;
+      expectedFormat = 'ADM-XX';
+    } else if (finalRoleName === 'receptionist') {
+      prefixRegex = /^REC-\d{2}$/;
+      expectedFormat = 'REC-XX';
+    } else if (finalRoleName === 'bartender') {
+      prefixRegex = /^BAR-\d{2}$/;
+      expectedFormat = 'BAR-XX';
+    } else if (finalRoleName === 'manager') {
+      prefixRegex = /^MGR-\d{2}$/;
+      expectedFormat = 'MGR-XX';
+    } else {
+      return res.status(400).json({ success: false, error: { code: 'VAL_004', message: 'Role does not exist' } });
+    }
+
+    if (!prefixRegex.test(finalUsername)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VAL_ERR',
+          message: `Username must match the role format ${expectedFormat} (e.g., ${expectedFormat.replace('XX', '01')})`
+        }
+      });
+    }
+  }
+
+  const pinRegex = /^\d{4}$/;
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,100}$/;
+  if (!pinRegex.test(finalPassword) && !passwordRegex.test(finalPassword)) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'VAL_ERR',
+        message: 'Password must be either a 4-digit PIN or a strong password (8-100 characters with uppercase, lowercase, digit, and special character).'
+      }
+    });
+  }
+
+  const roleObj = await prisma.role.findFirst({
+    where: {
+      name: { equals: finalRoleName, mode: 'insensitive' }
+    }
+  });
+
+  if (!roleObj) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_004', message: 'Role does not exist' } });
+  }
+
+  let signupSucceeded = false;
+  let createdExternalId: string | null = null;
+  const email = finalUsername.includes('@') ? finalUsername : `${finalUsername.toLowerCase()}@cloudshiftsolutions.in`;
+
+  let signupTenantId: string | null = null;
+  if (process.env.NODE_ENV === 'test') {
+    console.warn(`[test env] Bypassing external registration service. Performing local-only registration.`);
+    signupSucceeded = true;
+  } else {
+    try {
+      const signupRes = await fetchWithTimeout(`${authApiUrl}/api/auth/signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          Email: email,
+          Password: `${finalPassword}_CloudShiftPass!`,
+          full_name: finalFullName,
+          tenant_code: 'cloud-shift-solutions'
+        })
+      }, 2000);
+
+      if (signupRes.ok) {
+        signupSucceeded = true;
+        const data = await signupRes.json().catch(() => ({}));
+        if (data && data.user && data.user.id) {
+          createdExternalId = data.user.id;
+        }
+        if (data && data.tenant && data.tenant.id) {
+          signupTenantId = data.tenant.id;
+        }
+      } else {
+        const errorText = await signupRes.text().catch(() => 'Signup request failed');
+        if (
+          signupRes.status === 409 || 
+          (signupRes.status === 400 && errorText.includes('already exists')) ||
+          (signupRes.status === 403 && (errorText.includes('does not allow open registration') || errorText.includes('invitation')))
+        ) {
+          signupSucceeded = true;
+          console.warn(`External registration returned status ${signupRes.status} (${errorText}). Proceeding with local-only user registration.`);
+        } else {
+          return res.status(500).json({
+            success: false,
+            error: { code: 'AUTH_007', message: `External registration failed with status ${signupRes.status}: ${errorText}` }
+          });
+        }
+      }
+    } catch (err: any) {
+      const isUnreachable = 
+        err.code === 'ECONNREFUSED' || 
+        err.code === 'ENOTFOUND' || 
+        err.code === 'ETIMEDOUT' || 
+        err.name === 'AbortError' ||
+        err.message.includes('fetch failed');
+
+      if (isUnreachable || process.env.NODE_ENV === 'test') {
+        console.warn(`External registration service is unreachable (${err.message}). Performing local-only registration.`);
+        signupSucceeded = true;
+      } else {
+        console.error('External registration request failed:', err);
+        return res.status(500).json({
+          success: false,
+          error: { code: 'AUTH_008', message: `External registration service is unavailable: ${err.message}` }
+        });
+      }
+    }
+  }
+
+  try {
+    const newUser = await prisma.$transaction(async (tx) => {
+      const existing = await tx.user.findUnique({ where: { username: finalUsername } });
+      if (existing) {
+        throw new Error('Username is already taken');
+      }
+
+      const hashedPassword = await bcrypt.hash(finalPassword, 12);
+      return await tx.user.create({
+        data: {
+          username: finalUsername,
+          passwordHash: hashedPassword,
+          fullName: finalFullName,
+          roleId: roleObj.id,
+          isActive: true,
+        },
+        include: { role: true },
+      });
+    });
+
+    await prisma.syncLog.create({
+      data: {
+        operationId: `REG-SYNC-${Date.now()}`,
+        deviceId: 'SERVER-API',
+        operationType: 'EXTERNAL_REGISTRATION_SUCCESS',
+        payload: { username: finalUsername, email },
+        status: 'SUCCESS'
+      }
+    }).catch(() => {});
+
+    await redisService.del('users:all').catch(() => {});
+
+    return res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      user: {
+        id: newUser.id,
+        username: newUser.username,
+        name: newUser.fullName,
+        role: newUser.role.name.toUpperCase(),
+      }
+    });
+  } catch (dbErr: any) {
+    console.error('Local DB transaction failed for registration:', dbErr);
+    
+    if (signupSucceeded && createdExternalId) {
+      try {
+        console.warn(`[CRITICAL_SYNC_INCONSISTENCY] Local user database registration failed, but user was created on external Auth API with ID: ${createdExternalId}. Database Error: ${dbErr.message}`);
+        
+        const tenantId = signupTenantId || '2811fefd-f80d-47a3-b13a-c6ff576289be';
+        const cleanupRes = await fetchWithTimeout(`${authApiUrl}/api/tenants/${tenantId}/users/${createdExternalId}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }, 2000).catch(() => null);
+
+        if (cleanupRes && cleanupRes.ok) {
+          console.info(`Successfully cleaned up orphaned external user ${createdExternalId}`);
+        } else {
+          console.error(`[CRITICAL_SYNC_INCONSISTENCY] Failed to clean up orphaned external user ${createdExternalId} via API.`);
+        }
+      } catch (cleanupErr: any) {
+        console.error('[CRITICAL_SYNC_INCONSISTENCY] Failed to run compensating transaction for external user cleanup:', cleanupErr);
+      }
+    }
+
+    await prisma.syncLog.create({
+      data: {
+        operationId: `REG-SYNC-FAIL-${Date.now()}`,
+        deviceId: 'SERVER-API',
+        operationType: 'EXTERNAL_REGISTRATION_FAIL',
+        payload: { username: finalUsername, error: dbErr.message },
+        status: 'ERROR',
+        conflictReason: dbErr.message
+      }
+    }).catch(() => {});
+
+    return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: dbErr.message } });
+  }
+});
+
+// Get Me
+router.get('/auth/me', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, error: { code: 'AUTH_003', message: 'Unauthorized' } });
+  }
+  // format user for old/new client compatibility
+  return res.json({
+    success: true,
+    user: {
+      id: req.user.id,
+      username: req.user.username,
+      name: req.user.fullName,
+      role: req.user.role.toUpperCase(),
+    }
+  });
+});
+
+// GET /api/users (Admin Only)
+router.get('/users', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
+  try {
+    const cacheKey = 'users:all';
+    const cachedData = await redisService.get(cacheKey);
+    if (cachedData) {
+      try {
+        return res.json(JSON.parse(cachedData));
+      } catch (parseErr) {
+        console.warn('[Redis] Failed to parse cached users:', parseErr);
+      }
+    }
+
+    const users = await prisma.user.findMany({
+      include: { role: true },
+      orderBy: { username: 'asc' }
+    });
+    const formattedUsers = users.map(u => ({
+      id: u.id,
+      username: u.username,
+      fullName: u.fullName,
+      isActive: u.isActive,
+      roleId: u.roleId,
+      role: {
+        id: u.role.id,
+        name: u.role.name,
+        permissions: u.role.permissions
+      },
+      createdAt: u.createdAt,
+      lastLogin: u.lastLogin
+    }));
+    const resultPayload = { success: true, data: formattedUsers };
+    await redisService.setex(cacheKey, 3600, JSON.stringify(resultPayload));
+
+    return res.json(resultPayload);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
+  }
+});
+
+// PUT /api/users/:id (Admin Only)
+router.put('/users/:id', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { username, fullName, role, roleName, isActive, password } = req.body;
+  const authUser = (req as AuthenticatedRequest).user;
+
+  if (!authUser) {
+    return res.status(401).json({ success: false, error: { code: 'AUTH_003', message: 'Unauthorized' } });
+  }
+
+  const finalFullName = fullName;
+  const finalUsername = username;
+  const finalRoleName = (roleName || role || '').toLowerCase();
+
+  if (!finalUsername || !finalFullName || !finalRoleName) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_002', message: 'Username, Full Name, and Role are required' } });
+  }
+
+  const nameRegex = /^[a-zA-Z\s.'-]{2,100}$/;
+  if (!nameRegex.test(finalFullName)) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'VAL_ERR',
+        message: 'Full name must contain only letters, spaces, periods, apostrophes, or hyphens (2-100 characters).'
+      }
+    });
+  }
+
+  const allowedSeeded = ['admin', 'receptionist', 'bartender', 'manager'];
+  if (!allowedSeeded.includes(finalUsername.toLowerCase())) {
+    let prefixRegex: RegExp;
+    let expectedFormat: string;
+    if (finalRoleName === 'admin') {
+      prefixRegex = /^ADM-\d{2}$/;
+      expectedFormat = 'ADM-XX';
+    } else if (finalRoleName === 'receptionist') {
+      prefixRegex = /^REC-\d{2}$/;
+      expectedFormat = 'REC-XX';
+    } else if (finalRoleName === 'bartender') {
+      prefixRegex = /^BAR-\d{2}$/;
+      expectedFormat = 'BAR-XX';
+    } else if (finalRoleName === 'manager') {
+      prefixRegex = /^MGR-\d{2}$/;
+      expectedFormat = 'MGR-XX';
+    } else {
+      return res.status(400).json({ success: false, error: { code: 'VAL_004', message: 'Role does not exist' } });
+    }
+
+    if (!prefixRegex.test(finalUsername)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VAL_ERR',
+          message: `Username must match the role format ${expectedFormat} (e.g., ${expectedFormat.replace('XX', '01')})`
+        }
+      });
+    }
+  }
+
+  if (password) {
+    const pinRegex = /^\d{4}$/;
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,100}$/;
+    if (!pinRegex.test(password) && !passwordRegex.test(password)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VAL_ERR',
+          message: 'Password must be either a 4-digit PIN or a strong password (8-100 characters with uppercase, lowercase, digit, and special character).'
+        }
+      });
+    }
+  }
+
+  if (authUser.id === id && isActive === false) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'CONFLICT_SELF_DEACTIVATION',
+        message: 'You cannot deactivate your own account.'
+      }
+    });
+  }
+
+  try {
+    const userBefore = await prisma.user.findUnique({
+      where: { id },
+      include: { role: true }
+    });
+
+    if (!userBefore) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } });
+    }
+
+    if (finalUsername !== userBefore.username) {
+      const existing = await prisma.user.findUnique({ where: { username: finalUsername } });
+      if (existing) {
+        return res.status(400).json({ success: false, error: { code: 'VAL_003', message: 'Username is already taken' } });
+      }
+    }
+
+    const roleObj = await prisma.role.findFirst({
+      where: { name: { equals: finalRoleName, mode: 'insensitive' } }
+    });
+
+    if (!roleObj) {
+      return res.status(400).json({ success: false, error: { code: 'VAL_004', message: 'Role does not exist' } });
+    }
+
+    const updateData: any = {
+      username: finalUsername,
+      fullName: finalFullName,
+      roleId: roleObj.id,
+      isActive: isActive !== undefined ? isActive : userBefore.isActive
+    };
+
+    if (password) {
+      updateData.passwordHash = await bcrypt.hash(password, 12);
+    }
+
+    let createdRoleLog: any = null;
+
+    const updatedUser = await prisma.$transaction(async (tx) => {
+      if (userBefore.role.name.toLowerCase() !== roleObj.name.toLowerCase()) {
+        createdRoleLog = await tx.roleChangeLog.create({
+          data: {
+            targetUserId: id,
+            changedBy: authUser.id,
+            oldRole: userBefore.role.name,
+            newRole: roleObj.name
+          }
+        });
+      }
+
+      return await tx.user.update({
+        where: { id },
+        data: updateData,
+        include: { role: true }
+      });
+    });
+
+    if (createdRoleLog) {
+      try {
+        await s3Service.uploadAuditLog('role-changes', createdRoleLog.id, createdRoleLog);
+      } catch (s3Err) {
+        console.error('[S3 Role Change Log Archiver Error]:', s3Err);
+      }
+    }
+
+    await redisService.del('users:all').catch(() => {});
+
+    return res.json({
+      success: true,
+      message: 'User updated successfully',
+      user: {
+        id: updatedUser.id,
+        username: updatedUser.username,
+        fullName: updatedUser.fullName,
+        isActive: updatedUser.isActive,
+        role: updatedUser.role.name.toUpperCase()
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
+  }
+});
+
+// PATCH /api/users/:id/status (Admin Only)
+router.patch('/users/:id/status', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { isActive } = req.body;
+  const authUser = (req as AuthenticatedRequest).user;
+
+  if (!authUser) {
+    return res.status(401).json({ success: false, error: { code: 'AUTH_003', message: 'Unauthorized' } });
+  }
+
+  if (isActive === undefined) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_002', message: 'isActive status is required' } });
+  }
+
+  if (authUser.id === id && isActive === false) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'CONFLICT_SELF_DEACTIVATION',
+        message: 'You cannot deactivate your own account.'
+      }
+    });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: { isActive },
+      include: { role: true }
+    });
+
+    await redisService.del('users:all').catch(() => {});
+
+    return res.json({
+      success: true,
+      message: 'User status updated successfully',
+      user: {
+        id: updatedUser.id,
+        username: updatedUser.username,
+        fullName: updatedUser.fullName,
+        isActive: updatedUser.isActive,
+        role: updatedUser.role.name.toUpperCase()
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
+  }
+});
+
+// ==========================================
+// 2. TABLE MANAGEMENT ENDPOINTS
+// ==========================================
+
+// Get all tables
+router.get('/tables', authenticate, async (req: Request, res: Response) => {
+  try {
+    const cacheKey = 'tables:all';
+    const cachedData = await redisService.get(cacheKey);
+    if (cachedData) {
+      try {
+        return res.json(JSON.parse(cachedData));
+      } catch (parseErr) {
+        console.warn('[Redis] Failed to parse cached tables:', parseErr);
+      }
+    }
+
+    await tokenService.reconcileSystemState();
+    const tables = await prisma.table.findMany({
+      include: { placeType: true },
+      orderBy: { tableNumber: 'asc' },
+    });
+    
+    // Map response keys for old client compatibility (e.g. number and placeType mapping)
+    const oldTables = await Promise.all(tables.map(async (t) => {
+      let lockedBy: string | null = null;
+      let lockedByRole: string | null = null;
+      let lockedAt: number | null = null;
+
+      if (t.status === 'in_checkin' || t.status === 'maintenance') {
+        const lockKey = `table:lock:${t.id}`;
+        const lockDataStr = await redisService.get(lockKey).catch(() => null);
+        if (lockDataStr) {
+          try {
+            const parsed = JSON.parse(lockDataStr);
+            lockedBy = parsed.lockedByName || parsed.lockedBy || null;
+            lockedByRole = parsed.lockedByRole || null;
+            lockedAt = parsed.lockedAt || null;
+          } catch {}
+        }
+      }
+
+      return {
+        id: t.id,
+        tableNumber: t.tableNumber,
+        number: t.tableNumber,
+        placeType: t.placeType.name,
+        placeTypeId: t.placeTypeId,
+        capacity: t.capacity,
+        status: t.status.toUpperCase(),
+        isActive: t.isActive,
+        lockedBy: lockedBy || (t.status === 'maintenance' ? 'Administrator' : t.status === 'in_checkin' ? 'Receptionist' : null),
+        lockedByRole: lockedByRole || (t.status === 'maintenance' ? 'admin' : t.status === 'in_checkin' ? 'receptionist' : null),
+        lockedAt: lockedAt || null,
+      };
+    }));
+
+    await redisService.setex(cacheKey, 300, JSON.stringify(oldTables));
+
+    return res.json(oldTables);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
+  }
+});
+
+// Get available tables
+router.get('/tables/available', authenticate, async (req: Request, res: Response) => {
+  const { placeTypeId, placeType } = req.query;
+  try {
+    await tokenService.reconcileSystemState();
+    let finalPlaceTypeId = placeTypeId as string;
+    
+    // If client sent placeType string (e.g. "PREMIUM_LOUNGE"), resolve UUID
+    if (placeType && placeType !== 'STANDING_BAR' && placeType !== 'PREMIUM_LOUNGE') {
+      return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Place type must be either STANDING_BAR or PREMIUM_LOUNGE.' } });
+    }
+    if (!finalPlaceTypeId && placeType) {
+      const config = await prisma.placeTypeConfig.findUnique({
+        where: { name: placeType as string }
+      });
+      if (config) finalPlaceTypeId = config.id;
+    }
+
+    const tables = await tableService.getAvailableTables(finalPlaceTypeId);
+    
+    // Map response for compatibility
+    const oldTables = tables.map(t => ({
+      id: t.id,
+      number: t.tableNumber,
+      placeType: t.placeType.name,
+      capacity: t.capacity,
+      status: t.status.toUpperCase(),
+    }));
+
+    return res.json(oldTables);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
+  }
+});
+
+// Get occupancy
+router.get('/tables/occupancy', authenticate, async (req: Request, res: Response) => {
+  try {
+    await tokenService.reconcileSystemState();
+    const report = await tableService.getTableOccupancy();
+    return res.json({
+      success: true,
+      data: report,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
+  }
+});
+
+// Assign Table
+router.post('/tables/assign', authenticate, authorize(['receptionist', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
+  const { tableId, tokenId } = req.body;
+  if (!tableId || !tokenId) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_005', message: 'tableId and tokenId are required' } });
+  }
+  if (!isValidUUID(tableId) || !isValidUUID(tokenId)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid tableId or tokenId UUID format.' } });
+  }
+
+  try {
+    const table = await tableService.assignTableToToken(tableId, tokenId, req.user?.id);
+    const token = await prisma.token.findUnique({
+      where: { id: tokenId },
+      include: { customer: true }
+    });
+    if (token && token.status === TokenStatus.PENDING_PAYMENT && token.deliveryMode === 'EMAIL_QR' && !token.emailSent && token.emailDeliveryStatus !== 'PENDING') {
+      await prisma.token.update({
+        where: { id: tokenId },
+        data: {
+          emailDeliveryStatus: 'PENDING'
+        }
+      });
+      emailNotificationService.enqueueEmailJob(token.customer.email!, token.tokenNumber, token.customer.name);
+    }
+    await redisService.del('tables:all').catch(() => {});
+    await redisService.del('tokens:active').catch(() => {});
+
+    return res.json({
+      success: true,
+      data: {
+        table: {
+          id: table.id,
+          tableNumber: table.tableNumber,
+          status: table.status,
+          occupiedSince: table.occupiedSince,
+        },
+        token: {
+          id: token?.id,
+          tokenNumber: token?.tokenNumber,
+        },
+      },
+      message: 'Table assigned successfully',
+    });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { code: 'ASSIGN_ERR', message: err.message } });
+  }
+});
+
+// Release Table (and close active session if occupied)
+router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 'admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
+  const { tableId } = req.params;
+  let { tokenId, reason, reasonDetail } = req.body || {};
+  
+  const finalReasonDetail = reasonDetail || 'This table was closed by Admin';
+  const finalReason = reason || 'MANUAL';
+  const closedBy = req.user?.id || 'admin';
+  const closedByName = req.user?.fullName || req.user?.username || 'Admin';
+
+  if (!tokenId) {
+    // Look up the table's current token ID if it is missing in the request payload
+    try {
+      const tableRecord = await prisma.table.findUnique({
+        where: { id: tableId }
+      });
+      tokenId = tableRecord?.currentTokenId || undefined;
+    } catch {}
+  }
+
+  if (!tokenId) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_006', message: 'tokenId is required or table is not occupied.' } });
+  }
+
+  if (!isValidUUID(tableId) || !isValidUUID(tokenId)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid tableId or tokenId UUID format.' } });
+  }
+
+  try {
+    // 1. Fetch token and customer details for comprehensive logging and closing
+    const tokenRecord = await prisma.token.findUnique({
+      where: { id: tokenId },
+      include: { customer: true, extensions: true, placeType: true, table: true }
+    });
+
+    let sessionSummary: any = null;
+
+    // 2. If token is active, extended, or pending, close it gracefully via tokenService
+    if (tokenRecord && tokenRecord.status !== TokenStatus.CLOSED) {
+      try {
+        sessionSummary = await tokenService.closeSession(
+          tokenRecord.tokenNumber,
+          closedBy,
+          CloseReason.MANUAL,
+          true,
+          finalReasonDetail
+        );
+      } catch (closeErr: any) {
+        console.warn(`[releaseTable] token closeSession note: ${closeErr.message}`);
+      }
+    }
+
+    // 3. Release the table state
+    const table = await tableService.releaseTable(tableId, tokenId);
+    
+    // 4. Find duration if logged
+    const logs = await prisma.tableOccupancyLog.findMany({
+      where: { tableId, tokenId },
+      orderBy: { occupiedAt: 'desc' },
+      take: 1
+    });
+    const log = logs[0];
+    let occupancyDurationMinutes = 0;
+    if (log && log.vacatedAt) {
+      occupancyDurationMinutes = Math.floor((new Date(log.vacatedAt).getTime() - new Date(log.occupiedAt).getTime()) / 60000);
+    }
+
+    // 5. Compute total financial metrics (initial payment + extensions)
+    const initialAmount = tokenRecord ? parseFloat(tokenRecord.amountPaid.toString()) : 0;
+    const extensionAmount = tokenRecord?.extensions ? tokenRecord.extensions.reduce((sum: number, ext: any) => sum + (ext.amount ? parseFloat(ext.amount.toString()) : 0), 0) : 0;
+    const totalAmount = initialAmount + extensionAmount;
+
+    // 6. Record comprehensive SyncLog / Audit Log
+    await prisma.syncLog.create({
+      data: {
+        operationId: `RELEASE-CLOSE-${table.id}-${Date.now()}`,
+        deviceId: 'server',
+        operationType: 'TABLE_RELEASE_CLOSE',
+        status: 'SUCCESS',
+        payload: {
+          tableId: table.id,
+          tableNumber: table.tableNumber,
+          tokenId: tokenRecord?.id || tokenId,
+          tokenNumber: tokenRecord?.tokenNumber,
+          customerName: tokenRecord?.customer?.name,
+          phoneNumber: tokenRecord?.customer?.phoneNumber,
+          email: tokenRecord?.customer?.email,
+          personsCount: tokenRecord?.personsCount,
+          initialAmount,
+          extensionAmount,
+          totalAmountPaid: totalAmount,
+          durationMinutes: occupancyDurationMinutes || sessionSummary?.sessionSummary?.totalTimeUsedMinutes || 0,
+          closedBy: closedByName,
+          closeReason: finalReason,
+          reasonDetail: finalReasonDetail,
+          closedAt: new Date().toISOString()
+        }
+      }
+    }).catch((err) => console.warn('[releaseTable] SyncLog write note:', err.message));
+
+    await redisService.del('tables:all').catch(() => {});
+    await redisService.del('tokens:active').catch(() => {});
+    if (tokenRecord?.customer?.phoneNumber) {
+      await redisService.del(`customer:active:${tokenRecord.customer.phoneNumber}`).catch(() => {});
+    }
+    await redisService.del(`table:${tableId}:status`).catch(() => {});
+
+    return res.json({
+      success: true,
+      data: {
+        tableId: table.id,
+        tableNumber: table.tableNumber,
+        status: table.status,
+        occupancyDurationMinutes,
+        customerName: tokenRecord?.customer?.name,
+        phoneNumber: tokenRecord?.customer?.phoneNumber,
+        email: tokenRecord?.customer?.email,
+        personsCount: tokenRecord?.personsCount,
+        totalAmountPaid: totalAmount,
+        reasonDetail: finalReasonDetail
+      },
+      message: 'Table released and session closed successfully',
+    });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { code: 'RELEASE_ERR', message: err.message } });
+  }
+});
+
+
+// Create Table (Admin Only)
+router.post('/tables', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
+  const { tableNumber, number, placeTypeId, placeType, capacity, isActive } = req.body;
+  
+  const finalTableNumber = (tableNumber || number || '').trim().toUpperCase();
+  let finalPlaceTypeId = placeTypeId;
+
+  if (!finalTableNumber) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_007', message: 'Table number is required' } });
+  }
+
+  const tableNumRegex = /^[SL]-\d{2,4}$/;
+  if (!tableNumRegex.test(finalTableNumber)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Table number must match prefix and numeric format (e.g., S-16, L-11).' } });
+  }
+
+  const finalCapacity = capacity ? parseInt(capacity, 10) : 2;
+  if (isNaN(finalCapacity) || finalCapacity < 1 || finalCapacity > 20) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Table capacity must be between 1 and 20.' } });
+  }
+
+  try {
+    // Resolve placeTypeId from name if it matches a known placeType name
+    if (finalPlaceTypeId && (finalPlaceTypeId === 'STANDING_BAR' || finalPlaceTypeId === 'PREMIUM_LOUNGE')) {
+      const ptObj = await prisma.placeTypeConfig.findUnique({
+        where: { name: finalPlaceTypeId }
+      });
+      if (ptObj) finalPlaceTypeId = ptObj.id;
+    }
+
+    if (!finalPlaceTypeId && placeType) {
+      const ptObj = await prisma.placeTypeConfig.findUnique({
+        where: { name: placeType }
+      });
+      if (ptObj) finalPlaceTypeId = ptObj.id;
+    }
+
+    if (!finalPlaceTypeId) {
+      return res.status(400).json({ success: false, error: { code: 'VAL_008', message: 'placeTypeId is required' } });
+    }
+
+    if (!isValidUUID(finalPlaceTypeId)) {
+      return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid placeTypeId UUID format.' } });
+    }
+
+    // Enforce global case-insensitive uniqueness check for table number/name
+    const existingTable = await prisma.table.findFirst({
+      where: {
+        tableNumber: {
+          equals: finalTableNumber,
+          mode: 'insensitive'
+        }
+      }
+    });
+    if (existingTable) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VAL_ERR',
+          message: 'Table name already exists. Please use a different table name.'
+        }
+      });
+    }
+
+    const table = await prisma.table.create({
+      data: {
+        tableNumber: finalTableNumber,
+        placeTypeId: finalPlaceTypeId,
+        capacity: finalCapacity,
+        isActive: isActive !== undefined ? isActive : true,
+      },
+      include: { placeType: true }
+    });
+
+    await redisService.del(`table:available:${finalPlaceTypeId}`);
+    await redisService.del('table:available:all');
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.status(201).json(table); // compatible with admin crud return
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { code: 'CREATE_ERR', message: err.message } });
+  }
+});
+
+// Delete Table (Admin Only)
+router.delete('/tables/:id', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const table = await prisma.table.delete({ where: { id } });
+    await redisService.del(`table:available:${table.placeTypeId}`);
+    await redisService.del('table:available:all');
+    await redisService.del('tables:all').catch(() => {});
+    return res.json({ message: 'Table deleted successfully' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { code: 'DELETE_ERR', message: err.message } });
+  }
+});
+
+// Edit Table (Admin Only)
+router.put('/tables/:id', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { tableNumber, number, placeTypeId, placeType, capacity, isActive } = req.body;
+
+  if (!isValidUUID(id)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid table ID UUID format.' } });
+  }
+
+  try {
+    // 1. Find existing table
+    const table = await prisma.table.findUnique({
+      where: { id },
+      include: {
+        tokens: {
+          where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.EXPIRED] } }
+        }
+      }
+    }) as any;
+
+    if (!table) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Table not found' } });
+    }
+
+    // 3. Resolve inputs
+    const finalTableNumber = (tableNumber || number) ? (tableNumber || number).trim().toUpperCase() : undefined;
+    let finalPlaceTypeId = placeTypeId;
+    if (finalPlaceTypeId && (finalPlaceTypeId === 'STANDING_BAR' || finalPlaceTypeId === 'PREMIUM_LOUNGE')) {
+      const ptObj = await prisma.placeTypeConfig.findUnique({
+        where: { name: finalPlaceTypeId }
+      });
+      if (ptObj) finalPlaceTypeId = ptObj.id;
+    }
+    if (!finalPlaceTypeId && placeType) {
+      if (placeType === 'STANDING_BAR' || placeType === 'PREMIUM_LOUNGE') {
+        const ptObj = await prisma.placeTypeConfig.findUnique({
+          where: { name: placeType }
+        });
+        if (ptObj) finalPlaceTypeId = ptObj.id;
+      }
+    }
+
+    // 2. Business Rule: Prevent editing occupied tables' critical fields (table number / place type) while occupied or active
+    const isOccupiedOrActive = table.status === 'occupied' || table.tokens.length > 0;
+    if (isOccupiedOrActive) {
+      const isTableNumberChanging = finalTableNumber !== undefined && finalTableNumber !== table.tableNumber.toUpperCase();
+      const isPlaceTypeChanging = finalPlaceTypeId !== undefined && finalPlaceTypeId !== table.placeTypeId;
+
+      if (isTableNumberChanging || isPlaceTypeChanging) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'CONFLICT_OCCUPIED', message: 'Cannot edit table details while it is occupied or has active sessions.' }
+        });
+      }
+    }
+
+    if (finalTableNumber) {
+      const tableNumRegex = /^[SL]-\d{2,4}$/;
+      if (!tableNumRegex.test(finalTableNumber)) {
+        return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Table number must match prefix and numeric format (e.g., S-16, L-11).' } });
+      }
+
+      // Enforce global case-insensitive uniqueness check for table number/name on edit
+      const existingTable = await prisma.table.findFirst({
+        where: {
+          tableNumber: {
+            equals: finalTableNumber,
+            mode: 'insensitive'
+          },
+          id: { not: id }
+        }
+      });
+      if (existingTable) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VAL_ERR',
+            message: 'Table name already exists. Please use a different table name.'
+          }
+        });
+      }
+    }
+
+    if (finalPlaceTypeId && (finalPlaceTypeId === 'STANDING_BAR' || finalPlaceTypeId === 'PREMIUM_LOUNGE')) {
+      const ptObj = await prisma.placeTypeConfig.findUnique({
+        where: { name: finalPlaceTypeId }
+      });
+      if (ptObj) finalPlaceTypeId = ptObj.id;
+    }
+
+    if (!finalPlaceTypeId && placeType) {
+      const ptObj = await prisma.placeTypeConfig.findUnique({ where: { name: placeType } });
+      if (ptObj) finalPlaceTypeId = ptObj.id;
+    }
+
+    if (finalPlaceTypeId && !isValidUUID(finalPlaceTypeId)) {
+      return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid placeTypeId UUID format.' } });
+    }
+
+    const finalCapacity = capacity ? parseInt(capacity, 10) : undefined;
+    if (finalCapacity !== undefined && (isNaN(finalCapacity) || finalCapacity < 1 || finalCapacity > 20)) {
+      return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Table capacity must be between 1 and 20.' } });
+    }
+
+    const updated = await prisma.table.update({
+      where: { id },
+      data: {
+        tableNumber: finalTableNumber !== undefined ? finalTableNumber : undefined,
+        placeTypeId: finalPlaceTypeId !== undefined ? finalPlaceTypeId : undefined,
+        capacity: finalCapacity !== undefined ? finalCapacity : undefined,
+        isActive: isActive !== undefined ? isActive : undefined,
+      },
+      include: { placeType: true }
+    });
+
+    await redisService.del(`table:available:${updated.placeTypeId}`);
+    await redisService.del(`table:available:${table.placeTypeId}`);
+    await redisService.del('table:available:all');
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.json(updated);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { code: 'EDIT_ERR', message: err.message } });
+  }
+});
+
+// Update Table Status (Authenticated)
+router.patch('/tables/:id/status', authenticate, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  if (!isValidUUID(id)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid table ID UUID format.' } });
+  }
+
+  const validStatuses = ['available', 'occupied', 'reserved', 'maintenance', 'in_checkin'];
+  if (!status || !validStatuses.includes(status.toLowerCase())) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: `Invalid status. Must be one of: ${validStatuses.join(', ')}` } });
+  }
+
+  const targetStatus = status.toLowerCase();
+
+  try {
+    const table = await prisma.table.findUnique({
+      where: { id },
+      include: {
+        tokens: {
+          where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] } }
+        }
+      }
+    }) as any;
+
+    if (!table) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Table not found' } });
+    }
+
+    // 0. Business Rule: Prevent changes if table is locked for check-in
+    if (table.status === 'in_checkin' && targetStatus !== 'available') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'CONFLICT_LOCKED', message: 'Table is currently locked for check-in and cannot be modified directly.' }
+      });
+    }
+
+    const hasActiveSession = (table.status === 'occupied' && table.currentTokenId !== null) || (table.tokens && table.tokens.length > 0);
+
+    // 1. Business Rule: Prevent maintenance changes during active sessions
+    if (targetStatus === 'maintenance' && (table.status === 'occupied' || hasActiveSession)) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'CONFLICT_ACTIVE_SESSION', message: 'Cannot set table to maintenance while it has active sessions.' }
+      });
+    }
+
+    // 2. Business Rule: Prevent reservation conflicts
+    if (targetStatus === 'reserved' && (table.status === 'occupied' || hasActiveSession)) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'CONFLICT_ACTIVE_SESSION', message: 'Cannot reserve table while it is occupied or has active sessions.' }
+      });
+    }
+
+    // 3. Business Rule: Prevent available if active sessions exist
+    if (targetStatus === 'available' && table.status === 'occupied' && hasActiveSession) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'CONFLICT_ACTIVE_SESSION', message: 'Cannot make table available while there is an active session. Release the session first.' }
+      });
+    }
+
+    // Update status
+    const updated = await prisma.table.update({
+      where: { id },
+      data: {
+        status: targetStatus,
+        maintenanceStart: targetStatus !== 'maintenance' ? null : undefined,
+        maintenanceEnd: targetStatus !== 'maintenance' ? null : undefined,
+      },
+      include: { placeType: true }
+    });
+
+    if (targetStatus === 'maintenance') {
+      const lockKey = `table:lock:${id}`;
+      await redisService.setex(lockKey, 3600, JSON.stringify({
+        lockedBy: (req as any).user?.id || 'admin',
+        lockedByName: (req as any).user?.fullName || (req as any).user?.username || 'Administrator',
+        lockedByRole: (req as any).user?.role || 'admin',
+        originalStatus: table.status,
+        lockedAt: Date.now()
+      }));
+    } else if (targetStatus === 'available') {
+      await redisService.del(`table:lock:${id}`).catch(() => {});
+    }
+
+    await redisService.del(`table:available:${updated.placeTypeId}`);
+    await redisService.del('table:available:all');
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.json(updated);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { code: 'STATUS_ERR', message: err.message } });
+  }
+});
+
+// Lock Table for Check-In (Authenticated)
+router.post('/tables/:id/lock', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+
+  if (!isValidUUID(id)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid table ID UUID format.' } });
+  }
+
+  const userId = req.user?.id || 'receptionist';
+  const userName = req.user?.fullName || req.user?.username || 'Receptionist';
+  const userRole = req.user?.role || 'receptionist';
+
+  try {
+    const updatedTable = await prisma.$transaction(async (tx) => {
+      const tables = await tx.$queryRaw<any[]>`
+        SELECT id, status, "place_type_id" as "placeTypeId"
+        FROM tables
+        WHERE id = ${id}
+        LIMIT 1
+        FOR UPDATE
+      `;
+
+      if (!tables || tables.length === 0) {
+        throw new Error('Table not found');
+      }
+      const table = tables[0];
+
+      // Check current status in DB to ensure it is available or reserved
+      if (table.status !== 'available' && table.status !== 'reserved') {
+        throw new Error(`Table cannot be locked because its current status is '${table.status}'.`);
+      }
+
+      // Save lock metadata to Redis (authoritative lock)
+      const lockKey = `table:lock:${id}`;
+      await redisService.setex(lockKey, 3600, JSON.stringify({
+        lockedBy: userId,
+        lockedByName: userName,
+        lockedByRole: userRole,
+        originalStatus: table.status,
+        lockedAt: Date.now()
+      }));
+
+      // Update table status to in_checkin
+      const updated = await tx.table.update({
+        where: { id },
+        data: { status: 'in_checkin' },
+        include: { placeType: true }
+      });
+
+      return updated;
+    });
+
+    await redisService.del(`table:available:${updatedTable.placeTypeId}`);
+    await redisService.del('table:available:all');
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.json({ success: true, table: updatedTable });
+  } catch (err: any) {
+    const isTechnical = err.message.includes('Prisma') || err.message.includes('queryRaw') || err.message.includes('SQL') || err.message.includes('column') || err.message.includes('relation');
+    const friendlyMsg = isTechnical ? 'Failed to lock the table for check-in. Please try again.' : err.message;
+    return res.status(400).json({ success: false, error: { code: 'LOCK_ERR', message: friendlyMsg } });
+  }
+});
+
+// Unlock Table/Release Check-In (Authenticated)
+router.post('/tables/:id/unlock', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+
+  if (!isValidUUID(id)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid table ID UUID format.' } });
+  }
+
+  const userId = req.user?.id || 'receptionist';
+  const isAdmin = req.user?.role?.toLowerCase() === 'admin';
+  const isManager = req.user?.role?.toLowerCase() === 'manager';
+
+  try {
+    const updatedTable = await prisma.$transaction(async (tx) => {
+      const table = await tx.table.findUnique({
+        where: { id }
+      });
+
+      if (!table) {
+        throw new Error('Table not found');
+      }
+
+      // Must be currently in_checkin status to unlock
+      if (table.status !== 'in_checkin') {
+        throw new Error(`Table cannot be unlocked because its current status is '${table.status}'.`);
+      }
+
+      // Verify lock ownership in Redis
+      const lockKey = `table:lock:${id}`;
+      const lockDataStr = await redisService.get(lockKey);
+      let originalStatus = 'available';
+
+      if (lockDataStr) {
+        const lockData = JSON.parse(lockDataStr);
+        if (lockData.lockedBy !== userId && !isAdmin && !isManager) {
+          throw new Error('You do not own the lock on this table.');
+        }
+        originalStatus = lockData.originalStatus || 'available';
+      }
+
+      // Revert status to originalStatus
+      let finalStatus = originalStatus;
+      const forceAvailable = req.body.forceAvailable === true || req.query.forceAvailable === 'true';
+      if (finalStatus === 'available' && !forceAvailable) {
+        const activeRes = await tx.reservation.findFirst({
+          where: {
+            tableId: id,
+            status: 'PENDING'
+          }
+        });
+        if (activeRes) {
+          finalStatus = 'reserved';
+        }
+      }
+
+      // Delete lock metadata from Redis
+      await redisService.del(lockKey);
+
+      // Revert status to finalStatus
+      const updated = await tx.table.update({
+        where: { id },
+        data: { status: finalStatus },
+        include: { placeType: true }
+      });
+
+      return updated;
+    });
+
+    await redisService.del(`table:available:${updatedTable.placeTypeId}`);
+    await redisService.del('table:available:all');
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.json({ success: true, table: updatedTable });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { code: 'UNLOCK_ERR', message: err.message } });
+  }
+});
+
+router.post('/check-in/validate-duplicate', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { email, phoneNumber, tokenNumber } = req.body;
+
+  const normalizedPhone = normalizePhone(phoneNumber);
+  const normalizedEmail = normalizeEmail(email);
+
+  let excludeTokenId: string | undefined;
+  if (tokenNumber) {
+    const t = await prisma.token.findUnique({ where: { tokenNumber } });
+    if (t) excludeTokenId = t.id;
+  }
+
+  let emailConflict = false;
+  let phoneConflict = false;
+
+  if (normalizedPhone) {
+    const activePhoneToken = await prisma.token.findFirst({
+      where: {
+        id: excludeTokenId ? { not: excludeTokenId } : undefined,
+        status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
+        customer: { phoneNumber: normalizedPhone }
+      }
+    });
+    if (activePhoneToken) phoneConflict = true;
+  }
+
+  if (normalizedEmail) {
+    const activeEmailToken = await prisma.token.findFirst({
+      where: {
+        id: excludeTokenId ? { not: excludeTokenId } : undefined,
+        status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
+        customer: { email: normalizedEmail }
+      }
+    });
+    if (activeEmailToken) emailConflict = true;
+  }
+
+  return res.json({
+    success: true,
+    conflicts: {
+      email: emailConflict,
+      phone: phoneConflict
+    }
+  });
+});
+
+// ==========================================
+// 3. RECEPTIONIST CHECK-IN & SESSIONS
+// ==========================================
+
+const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
+  const {
+    phoneNumber,
+    customerName,
+    email,
+    persons,
+    personsCount,
+    placeType,
+    placeTypeId,
+    tableNumber,
+    tableId,
+    amountPaid,
+    paymentVerified,
+  } = req.body;
+
+  const deliveryMode = 'EMAIL_QR';
+
+  const cleanedPhoneNumber = phoneNumber ? phoneNumber.trim().replace(/[^\d+]/g, '') : '';
+  const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
+  if (!cleanedPhoneNumber || !phoneRegex.test(cleanedPhoneNumber)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Please enter a valid 10-digit Indian phone number starting with 6-9.' } });
+  }
+  const finalPhoneNumber = normalizePhone(cleanedPhoneNumber);
+
+  const nameRegex = /^[a-zA-Z\s.'-]{2,100}$/;
+  if (!customerName || !nameRegex.test(customerName)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Customer name must contain only letters, spaces, periods, apostrophes, or hyphens (2-100 characters).' } });
+  }
+  const finalCustomerName = customerName;
+
+  if (!email || !email.trim()) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Email address is mandatory when system operates in EMAIL_QR mode.' } });
+  }
+
+  if (!validateEmail(email)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Please enter a valid Gmail address using only lowercase letters, numbers, and dots.' } });
+  }
+  let finalEmail = normalizeEmail(email);
+
+  const finalPersonsCount = parseInt(personsCount || persons || '1', 10);
+  if (isNaN(finalPersonsCount) || finalPersonsCount < 1) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Persons count must be an integer greater than or equal to 1.' } });
+  }
+
+  if (placeType && placeType !== 'STANDING_BAR' && placeType !== 'PREMIUM_LOUNGE') {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Place type must be either STANDING_BAR or PREMIUM_LOUNGE.' } });
+  }
+
+  let finalPlaceTypeId = placeTypeId;
+  let finalTableId = tableId;
+
+  if (placeTypeId && !isValidUUID(placeTypeId)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid placeTypeId UUID format.' } });
+  }
+  if (tableId && !isValidUUID(tableId)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid tableId UUID format.' } });
+  }
+
+  if (!finalPhoneNumber || !finalCustomerName || !finalPersonsCount || !email || (!tableNumber && !tableId) || (!placeType && !placeTypeId)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_008', message: 'Check-in details are incomplete. Please fill out all required fields.' } });
+  }
+
+  try {
+    // Resolve Place Type ID
+    if (finalPlaceTypeId === 'undefined' || finalPlaceTypeId === 'null' || finalPlaceTypeId === '') {
+      finalPlaceTypeId = undefined;
+    }
+    if (finalPlaceTypeId) {
+      const exists = await prisma.placeTypeConfig.findUnique({ where: { id: finalPlaceTypeId } });
+      if (!exists) {
+        finalPlaceTypeId = undefined;
+      }
+    }
+    if (!finalPlaceTypeId && placeType) {
+      const ptObj = await prisma.placeTypeConfig.findUnique({ where: { name: placeType } });
+      if (ptObj) finalPlaceTypeId = ptObj.id;
+    }
+
+    // Resolve Table ID
+    if (!finalTableId && tableNumber) {
+      const normalizedTableNumber = tableNumber.trim().replace(/^([SL])(\d{2,4})$/i, '$1-$2').toUpperCase();
+      const tableObj = await prisma.table.findFirst({
+        where: { tableNumber: normalizedTableNumber, placeTypeId: finalPlaceTypeId }
+      });
+      if (tableObj) finalTableId = tableObj.id;
+    }
+
+    if (!finalPlaceTypeId || !finalTableId) {
+      return res.status(400).json({ success: false, error: { code: 'VAL_009', message: 'Invalid seating or table selection. Please verify and try again.' } });
+    }
+
+    // Find table to check capacity
+    const tableObj = await prisma.table.findUnique({ where: { id: finalTableId } });
+    if (!tableObj) {
+      return res.status(400).json({ success: false, error: { code: 'TABLE_ERR', message: 'Selected table was not found. Please select a valid table.' } });
+    }
+    if (finalPersonsCount > tableObj.capacity) {
+      return res.status(400).json({ success: false, error: { code: 'TABLE_ERR', message: `Group size of ${finalPersonsCount} exceeds table capacity of ${tableObj.capacity}.` } });
+    }
+
+    // Find place type config
+    const ptConfig = await prisma.placeTypeConfig.findUnique({ where: { id: finalPlaceTypeId } });
+    if (!ptConfig) {
+      return res.status(400).json({ success: false, error: { code: 'PT_001', message: 'Invalid seating selection. Please select a valid seating option.' } });
+    }
+
+    // Calculate details
+    const calculatedAmount = finalPersonsCount * parseFloat(ptConfig.ratePerPerson.toString());
+    const finalAmountPaid = amountPaid !== undefined ? parseFloat(amountPaid) : calculatedAmount;
+
+    let finalIssuedBy = req.user?.id || '';
+    if (finalIssuedBy) {
+      const userExists = await prisma.user.findUnique({ where: { id: finalIssuedBy } });
+      if (!userExists) {
+        finalIssuedBy = '';
+      }
+    }
+    if (!finalIssuedBy) {
+      const fallbackUser = await prisma.user.findFirst({ where: { role: { name: 'receptionist' } } });
+      finalIssuedBy = fallbackUser?.id || (await prisma.user.findFirst())?.id || '';
+    }
+
+    const token = await tokenService.createToken({
+      phoneNumber: finalPhoneNumber,
+      customerName: finalCustomerName,
+      email: finalEmail || undefined,
+      personsCount: finalPersonsCount,
+      placeTypeId: finalPlaceTypeId,
+      tableId: finalTableId,
+      amountPaid: finalAmountPaid,
+      paymentVerified: paymentVerified !== undefined ? paymentVerified : true,
+      issuedBy: finalIssuedBy,
+    });
+
+    // Match the old format that the React Native client expects
+    const responseData = {
+      id: token.id,
+      tokenNumber: token.tokenNumber,
+      phoneNumber: token.customer.phoneNumber,
+      customerName: token.customer.name,
+      email: token.customer.email,
+      persons: token.personsCount,
+      placeType: token.placeType.name,
+      tableId: token.tableId,
+      tableNumber: token.table?.tableNumber || null,
+      amountPaid: token.amountPaid,
+      paymentVerified: token.paymentVerified,
+      startTime: token.startTime.toISOString(),
+      endTime: token.endTime.toISOString(),
+      redemptionLimit: token.totalRedemptionsAllowed,
+      redemptionCount: token.redemptionsUsed,
+      status: token.status.toUpperCase(),
+      cardUid: null,
+      createdAt: token.issuedAt.toISOString(),
+    };
+
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.status(201).json(responseData);
+  } catch (err: any) {
+    console.error(err);
+    if (err.code === 'ACTIVE_SESSION_EXISTS' || err.code === 'PENDING_SESSION_EXISTS') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'DUPLICATE_ACTIVE_SESSION',
+          message: err.message
+        }
+      });
+    }
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+};
+
+const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) => {
+  const {
+    phoneNumber,
+    customerName,
+    email,
+    personsCount,
+    persons,
+    placeType,
+    placeTypeId,
+    tableId,
+    tableNumber,
+  } = req.body;
+
+  const cleanedPhoneNumber = phoneNumber ? phoneNumber.trim().replace(/[^\d+]/g, '') : '';
+  const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
+  if (!cleanedPhoneNumber || !phoneRegex.test(cleanedPhoneNumber)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Please enter a valid 10-digit Indian phone number starting with 6-9.' } });
+  }
+  const finalPhoneNumber = normalizePhone(cleanedPhoneNumber);
+
+  const nameRegex = /^[a-zA-Z\s.'-]{2,100}$/;
+  if (!customerName || !nameRegex.test(customerName)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Customer name must contain only letters, spaces, periods, apostrophes, or hyphens (2-100 characters).' } });
+  }
+
+  if (!email || !email.trim()) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Email address is mandatory when system operates in EMAIL_QR mode.' } });
+  }
+  if (!validateEmail(email)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Please enter a valid Gmail address using only lowercase letters, numbers, and dots.' } });
+  }
+  const finalEmail = normalizeEmail(email);
+
+  const finalPersonsCount = parseInt(personsCount || persons || '1', 10);
+  if (isNaN(finalPersonsCount) || finalPersonsCount < 1) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Persons count must be an integer greater than or equal to 1.' } });
+  }
+
+  if (placeType && placeType !== 'STANDING_BAR' && placeType !== 'PREMIUM_LOUNGE') {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Place type must be either STANDING_BAR or PREMIUM_LOUNGE.' } });
+  }
+
+  try {
+    let finalPlaceTypeId = placeTypeId;
+    if (finalPlaceTypeId === 'undefined' || finalPlaceTypeId === 'null' || finalPlaceTypeId === '') {
+      finalPlaceTypeId = undefined;
+    }
+    if (finalPlaceTypeId) {
+      const exists = await prisma.placeTypeConfig.findUnique({ where: { id: finalPlaceTypeId } });
+      if (!exists) {
+        finalPlaceTypeId = undefined;
+      }
+    }
+    if (!finalPlaceTypeId && placeType) {
+      const ptObj = await prisma.placeTypeConfig.findUnique({ where: { name: placeType } });
+      if (ptObj) finalPlaceTypeId = ptObj.id;
+    }
+    if (!finalPlaceTypeId) {
+      return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Invalid place type.' } });
+    }
+
+    const placeTypeObj = await prisma.placeTypeConfig.findUnique({ where: { id: finalPlaceTypeId } });
+    if (!placeTypeObj) {
+      return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Invalid seating selection. Please select a valid seating option.' } });
+    }
+
+    // If resuming/updating an existing pending token
+    const { tokenNumber } = req.body;
+    if (tokenNumber) {
+      const existingToken = await prisma.token.findUnique({
+        where: { tokenNumber }
+      });
+      if (!existingToken) {
+        return res.status(404).json({ success: false, error: { message: 'Pending token not found' } });
+      }
+      if (existingToken.status !== TokenStatus.PENDING_PAYMENT) {
+        return res.status(400).json({ success: false, error: { message: `Cannot update token with status ${existingToken.status}` } });
+      }
+
+      // Check if another customer/token already has this phone or email active
+      const otherActiveOrPendingToken = await prisma.token.findFirst({
+        where: {
+          id: { not: existingToken.id },
+          status: {
+            in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT]
+          },
+          OR: [
+            { customer: { phoneNumber: finalPhoneNumber } },
+            finalEmail ? { customer: { email: finalEmail } } : undefined
+          ].filter(Boolean) as any
+        },
+        include: { customer: true }
+      });
+
+      if (otherActiveOrPendingToken) {
+        const isPending = otherActiveOrPendingToken.status === TokenStatus.PENDING_PAYMENT;
+        const msg = isPending
+          ? `A pending payment session already exists for this customer (Phone: ${otherActiveOrPendingToken.customer.phoneNumber}, Email: ${otherActiveOrPendingToken.customer.email || 'N/A'}).`
+          : `Customer already has an active session (Phone: ${otherActiveOrPendingToken.customer.phoneNumber}, Email: ${otherActiveOrPendingToken.customer.email || 'N/A'}).`;
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'DUPLICATE_ACTIVE_SESSION',
+            message: msg
+          }
+        });
+      }
+
+      // If assigning a table
+      let resolvedTableId = existingToken.tableId;
+      if (resolvedTableId) {
+        const tableExists = await prisma.table.findUnique({
+          where: { id: resolvedTableId }
+        });
+        if (!tableExists) {
+          resolvedTableId = null;
+        }
+      }
+
+      if (tableNumber) {
+        const normalizedTableNumber = tableNumber.trim().replace(/^([SL])(\d{2})$/i, '$1-$2').toUpperCase();
+        let table = await prisma.table.findFirst({
+          where: { tableNumber: normalizedTableNumber, placeTypeId: finalPlaceTypeId }
+        });
+        if (!table) {
+          table = await prisma.table.findFirst({
+            where: { tableNumber: normalizedTableNumber }
+          });
+        }
+        if (!table) {
+          return res.status(404).json({ success: false, error: { message: `Table ${tableNumber} not found` } });
+        }
+        if (table.status !== 'available' && table.status !== 'in_checkin' && table.currentTokenId !== existingToken.id) {
+          return res.status(400).json({ success: false, error: { message: `Table ${tableNumber} is not available.` } });
+        }
+        resolvedTableId = table.id;
+      }
+
+      // Update customer details if they changed
+      await prisma.customer.update({
+        where: { id: existingToken.customerId },
+        data: {
+          name: customerName,
+          email: finalEmail
+        }
+      });
+
+      const emailPending = resolvedTableId && !existingToken.emailSent && existingToken.emailDeliveryStatus !== 'PENDING';
+
+      // Update token tableId and check-in details
+      const updatedToken = await prisma.token.update({
+        where: { id: existingToken.id },
+        data: {
+          tableId: resolvedTableId,
+          personsCount: finalPersonsCount,
+          placeTypeId: finalPlaceTypeId,
+          ...(emailPending ? { emailDeliveryStatus: 'PENDING' } : {})
+        },
+        include: { customer: true, placeType: true, table: true }
+      });
+
+      // Send email if table is assigned now and email wasn't sent
+      if (emailPending) {
+        emailNotificationService.enqueueEmailJob(finalEmail, existingToken.tokenNumber, customerName);
+      }
+
+      // Sync Redis cache
+      await redisService.setex(`token:${tokenNumber}`, 86400, JSON.stringify(updatedToken));
+
+      const responseData = {
+        id: updatedToken.id,
+        tokenNumber: updatedToken.tokenNumber,
+        phoneNumber: updatedToken.customer.phoneNumber,
+        customerName: updatedToken.customer.name,
+        email: updatedToken.customer.email,
+        persons: updatedToken.personsCount,
+        placeType: updatedToken.placeType.name,
+        tableId: updatedToken.tableId,
+        tableNumber: updatedToken.table?.tableNumber || null,
+        amountPaid: parseFloat(updatedToken.amountPaid.toString()),
+        paymentVerified: updatedToken.paymentVerified,
+        emailSent: updatedToken.emailSent,
+        startTime: updatedToken.startTime.toISOString(),
+        endTime: updatedToken.endTime.toISOString(),
+        redemptionLimit: updatedToken.totalRedemptionsAllowed,
+        redemptionCount: updatedToken.redemptionsUsed,
+        status: updatedToken.status.toUpperCase(),
+        createdAt: updatedToken.issuedAt.toISOString(),
+      };
+
+      return res.status(200).json(responseData);
+    }
+
+    let finalIssuedBy = req.user?.id || '';
+    if (finalIssuedBy) {
+      const userExists = await prisma.user.findUnique({ where: { id: finalIssuedBy } });
+      if (!userExists) {
+        finalIssuedBy = '';
+      }
+    }
+    if (!finalIssuedBy) {
+      const fallbackUser = await prisma.user.findFirst({ where: { role: { name: 'receptionist' } } });
+      finalIssuedBy = fallbackUser?.id || (await prisma.user.findFirst())?.id || '';
+    }
+
+    const token = await tokenService.createPendingToken({
+      phoneNumber: finalPhoneNumber,
+      customerName,
+      email: finalEmail,
+      personsCount: finalPersonsCount,
+      placeTypeId: finalPlaceTypeId,
+      issuedBy: finalIssuedBy,
+      tableId,
+      tableNumber
+    });
+
+    if (token.tableId) {
+      emailNotificationService.enqueueEmailJob(finalEmail, token.tokenNumber, customerName);
+    }
+
+    const responseData = {
+      id: token.id,
+      tokenNumber: token.tokenNumber,
+      phoneNumber: token.customer.phoneNumber,
+      customerName: token.customer.name,
+      email: token.customer.email,
+      persons: token.personsCount,
+      placeType: token.placeType.name,
+      tableId: token.tableId,
+      tableNumber: token.table?.tableNumber || null,
+      amountPaid: 0,
+      paymentVerified: token.paymentVerified,
+      startTime: token.startTime.toISOString(),
+      endTime: token.endTime.toISOString(),
+      redemptionLimit: token.totalRedemptionsAllowed,
+      redemptionCount: token.redemptionsUsed,
+      status: token.status.toUpperCase(),
+      cardUid: null,
+      createdAt: token.issuedAt.toISOString(),
+    };
+
+    return res.status(201).json(responseData);
+  } catch (err: any) {
+    if (err.code === 'ACTIVE_SESSION_EXISTS' || err.code === 'PENDING_SESSION_EXISTS') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'DUPLICATE_ACTIVE_SESSION',
+          message: err.message
+        }
+      });
+    }
+    console.error('Error in checkInPendingHandler:', err);
+    let friendlyMessage = 'Unable to complete the check-in. Please try again.';
+    if (err.message) {
+      if (err.message.includes('Foreign key constraint failed on the field')) {
+        friendlyMessage = 'The selected seating table or place type configuration is invalid.';
+      } else if (err.message.includes('prisma') || err.message.includes('invocation')) {
+        friendlyMessage = 'A database error occurred while updating the check-in details. Please try selecting the table again.';
+      } else {
+        friendlyMessage = err.message;
+      }
+    }
+    return res.status(400).json({ success: false, error: { message: friendlyMessage } });
+  }
+};
+
+const verifyQrHandler = async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber } = req.params;
+
+    const token = await prisma.token.findUnique({
+      where: { tokenNumber },
+      include: {
+        customer: true,
+        placeType: true,
+        table: true
+      }
+    });
+
+    if (!token) {
+      return res.status(404).json({ success: false, error: { message: 'QR token not found in database.' } });
+    }
+    if (token.deliveryMode !== 'EMAIL_QR') {
+      return res.status(400).json({ success: false, error: { message: 'Token is not an Email QR token.' } });
+    }
+    if (token.paymentVerified) {
+      return res.status(400).json({ success: false, error: { message: 'This QR session has already been activated.' } });
+    }
+    if (token.status !== TokenStatus.PENDING_PAYMENT) {
+      return res.status(400).json({ success: false, error: { message: `Token has status '${token.status}' and cannot be validated.` } });
+    }
+    const now = new Date();
+    const isPendingExpired = now.getTime() > token.issuedAt.getTime() + 20 * 60 * 1000;
+    if (isPendingExpired) {
+      await prisma.$transaction(async (tx) => {
+        await tx.token.update({
+          where: { id: token.id },
+          data: { status: TokenStatus.EXPIRED }
+        });
+
+        if (token.tableId) {
+          const table = await tx.table.findUnique({ where: { id: token.tableId } });
+          if (table && table.currentTokenId === token.id) {
+            await tx.table.update({
+              where: { id: token.tableId },
+              data: {
+                status: 'available',
+                currentTokenId: null,
+                occupiedSince: null,
+                maintenanceStart: null,
+                maintenanceEnd: null
+              }
+            });
+
+            await tx.tableOccupancyLog.updateMany({
+              where: {
+                tableId: token.tableId,
+                tokenId: token.id,
+                vacatedAt: null
+              },
+              data: { vacatedAt: now }
+            });
+            await redisService.del(`table:${token.tableId}:status`);
+          }
+        }
+      });
+      return res.status(400).json({ success: false, error: { message: 'QR token has expired.' } });
+    }
+
+    const responseData = {
+      id: token.id,
+      tokenNumber: token.tokenNumber,
+      phoneNumber: token.customer.phoneNumber,
+      customerName: token.customer.name,
+      email: token.customer.email,
+      persons: token.personsCount,
+      placeType: token.placeType.name,
+      tableId: token.tableId,
+      tableNumber: token.table?.tableNumber || null,
+      amountPaid: token.amountPaid,
+      paymentVerified: token.paymentVerified,
+      startTime: token.startTime.toISOString(),
+      endTime: token.endTime.toISOString(),
+      redemptionLimit: token.totalRedemptionsAllowed,
+      redemptionCount: token.redemptionsUsed,
+      status: token.status.toUpperCase(),
+      cardUid: null,
+      createdAt: token.issuedAt.toISOString(),
+    };
+
+    return res.status(200).json(responseData);
+  } catch (err: any) {
+    console.error(err);
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+};
+
+const activateSessionHandler = async (req: AuthenticatedRequest, res: Response) => {
+  const { tokenNumber, tableNumber, amountPaid, bypassCapacity } = req.body;
+  const activatedBy = req.user?.id || 'receptionist';
+
+  try {
+    const updatedToken = await tokenService.activatePendingSession(
+      tokenNumber,
+      tableNumber,
+      amountPaid ? parseFloat(amountPaid) : 0,
+      activatedBy,
+      bypassCapacity === true || bypassCapacity === 'true'
+    );
+
+    const responseData = {
+      id: updatedToken.id,
+      tokenNumber: updatedToken.tokenNumber,
+      phoneNumber: updatedToken.customer.phoneNumber,
+      customerName: updatedToken.customer.name,
+      email: updatedToken.customer.email,
+      persons: updatedToken.personsCount,
+      placeType: updatedToken.placeType.name,
+      tableId: updatedToken.tableId,
+      tableNumber: updatedToken.table.tableNumber,
+      amountPaid: updatedToken.amountPaid,
+      paymentVerified: updatedToken.paymentVerified,
+      startTime: updatedToken.startTime.toISOString(),
+      endTime: updatedToken.endTime.toISOString(),
+      redemptionLimit: updatedToken.totalRedemptionsAllowed,
+      redemptionCount: updatedToken.redemptionsUsed,
+      status: updatedToken.status.toUpperCase(),
+      cardUid: null,
+      createdAt: updatedToken.issuedAt.toISOString(),
+    };
+
+    if (updatedToken.deliveryMode === 'EMAIL_QR' && updatedToken.customer.email && !updatedToken.emailSent && updatedToken.emailDeliveryStatus !== 'PENDING') {
+      await prisma.token.update({
+        where: { id: updatedToken.id },
+        data: {
+          emailDeliveryStatus: 'PENDING'
+        }
+      }).catch(() => {});
+
+      emailNotificationService.enqueueEmailJob(
+        updatedToken.customer.email.trim().toLowerCase(),
+        updatedToken.tokenNumber,
+        updatedToken.customer.name
+      );
+    }
+
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.status(200).json(responseData);
+  } catch (err: any) {
+    if (err.code === 'CONFLICT') {
+      return res.status(409).json({ success: false, error: { message: err.message } });
+    }
+    console.error(err);
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+};
+
+const cancelSessionHandler = async (req: AuthenticatedRequest, res: Response) => {
+  const { tokenNumber, cancelReason } = req.body;
+  const cancelledBy = req.user?.id || 'receptionist';
+
+  try {
+    const cancelEnum = cancelReason === 'PAYMENT_CANCELLED' ? CancelReason.PAYMENT_CANCELLED : CancelReason.USER_CANCELLED;
+    const updatedToken = await tokenService.cancelPendingSession(tokenNumber, cancelledBy, cancelEnum);
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.status(200).json({ success: true, message: 'Session cancelled successfully.', data: updatedToken });
+  } catch (err: any) {
+    console.error(err);
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+};
+
+// Reservation endpoints
+router.get('/reservations', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const activeReservations = await prisma.reservation.findMany({
+      where: { status: 'PENDING' },
+      include: {
+        table: true,
+        user: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
+            role: {
+              select: { name: true }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    return res.json({ success: true, reservations: activeReservations });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+router.post('/reservations', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { customerName, phoneNumber, email, personsCount, tableId } = req.body;
+  const userId = req.user?.id;
+
+  if (!customerName || !phoneNumber || !email || !personsCount || !tableId) {
+    return res.status(400).json({ success: false, error: { message: 'All reservation details (Name, Phone, Email, Members, Table) are mandatory.' } });
+  }
+
+  const finalPhone = normalizePhone(phoneNumber);
+  const finalEmail = normalizeEmail(email);
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // Verify table exists and is available
+      const table = await tx.table.findUnique({
+        where: { id: tableId }
+      });
+
+      if (!table) {
+        throw new Error('Selected table was not found.');
+      }
+
+      if (parseInt(personsCount, 10) > table.capacity) {
+        throw new Error(`Group size of ${personsCount} exceeds table capacity of ${table.capacity}.`);
+      }
+
+      if (table.status !== 'available') {
+        throw new Error(`Table ${table.tableNumber} is not available for reservation (current status: ${table.status}).`);
+      }
+
+      // Update table status to reserved
+      await tx.table.update({
+        where: { id: tableId },
+        data: { status: 'reserved' }
+      });
+
+      // Create reservation
+      const reservation = await tx.reservation.create({
+        data: {
+          customerName,
+          phoneNumber: finalPhone,
+          email: finalEmail,
+          personsCount: parseInt(personsCount, 10),
+          tableId,
+          userId,
+          status: 'PENDING'
+        },
+        include: { table: true }
+      });
+
+      return reservation;
+    });
+
+    await redisService.del('tables:all').catch(() => {});
+    return res.status(201).json({ success: true, reservation: result });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+router.post('/reservations/:id/cancel', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const userId = req.user?.id;
+  const isAdmin = req.user?.role?.toLowerCase() === 'admin';
+  const isManager = req.user?.role?.toLowerCase() === 'manager';
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const reservations = await tx.$queryRaw<any[]>`
+        SELECT id, status, "user_id" as "userId", "table_id" as "tableId"
+        FROM reservations
+        WHERE id = ${id}
+        LIMIT 1
+        FOR UPDATE
+      `;
+
+      if (!reservations || reservations.length === 0) {
+        throw new Error('Reservation not found.');
+      }
+      const reservation = reservations[0];
+
+      if (reservation.status !== 'PENDING') {
+        throw new Error(`Reservation cannot be cancelled (current status: ${reservation.status}).`);
+      }
+
+      // Enforce ownership
+      if (reservation.userId && reservation.userId !== userId && !isAdmin && !isManager) {
+        throw new Error('You do not own this reservation.');
+      }
+
+      // If a table is mapped, verify it is not locked for check-in
+      if (reservation.tableId) {
+        const tables = await tx.$queryRaw<any[]>`
+          SELECT id, status
+          FROM tables
+          WHERE id = ${reservation.tableId}
+          LIMIT 1
+          FOR UPDATE
+        `;
+        if (tables && tables.length > 0) {
+          const table = tables[0];
+          if (table.status === 'in_checkin') {
+            throw new Error('Reservation cannot be cancelled while check-in is in progress.');
+          }
+        }
+      }
+
+      // Cancel reservation
+      await tx.reservation.update({
+        where: { id },
+        data: { status: 'CANCELLED' }
+      });
+
+      // Release table
+      if (reservation.tableId) {
+        await tx.table.update({
+          where: { id: reservation.tableId },
+          data: { status: 'available' }
+        });
+      }
+    });
+
+    await redisService.del('tables:all').catch(() => {});
+    return res.json({ success: true, message: 'Reservation cancelled successfully.' });
+  } catch (err: any) {
+    const isTechnical = err.message.includes('Prisma') || err.message.includes('queryRaw') || err.message.includes('SQL') || err.message.includes('column') || err.message.includes('relation');
+    const friendlyMsg = isTechnical ? 'Failed to cancel the reservation. Please verify the table status and try again.' : err.message;
+    return res.status(400).json({ success: false, error: { message: friendlyMsg } });
+  }
+});
+
+router.put('/reservations/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { customerName, phoneNumber, email, personsCount, tableId, bypassCapacity } = req.body;
+  const userId = req.user?.id;
+  const isAdmin = req.user?.role?.toLowerCase() === 'admin';
+  const isManager = req.user?.role?.toLowerCase() === 'manager';
+
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const reservation = await tx.reservation.findUnique({
+        where: { id },
+        include: { table: true }
+      });
+
+      if (!reservation) {
+        throw new Error('Reservation not found');
+      }
+
+      // Enforce ownership
+      if (reservation.userId && reservation.userId !== userId && !isAdmin && !isManager) {
+        throw new Error('You do not own this reservation.');
+      }
+
+      const finalPhone = phoneNumber ? normalizePhone(phoneNumber) : reservation.phoneNumber;
+      const finalEmail = email ? normalizeEmail(email) : reservation.email;
+      const finalPersons = personsCount ? parseInt(personsCount, 10) : reservation.personsCount;
+      const isClearingTable = tableId === null || tableId === '';
+      const targetTableId = isClearingTable ? null : (tableId || reservation.tableId);
+
+      if (targetTableId) {
+        const targetTable = targetTableId === reservation.tableId ? reservation.table : await tx.table.findUnique({ where: { id: targetTableId } });
+        if (!targetTable) {
+          throw new Error('Selected table was not found.');
+        }
+        const shouldBypass = bypassCapacity === true || bypassCapacity === 'true';
+        if (finalPersons > targetTable.capacity && !shouldBypass) {
+          throw new Error(`Group size of ${finalPersons} exceeds table capacity of ${targetTable.capacity}.`);
+        }
+
+        // Handle table switch if tableId changes
+        if (targetTableId !== reservation.tableId) {
+          const newTable = await tx.table.findUnique({ where: { id: targetTableId } });
+          if (!newTable) {
+            throw new Error('New table not found');
+          }
+          if (newTable.status !== 'in_checkin' && newTable.status !== 'available') {
+            throw new Error('New table is not available or locked for check-in.');
+          }
+
+          // Validate target Redis lock ownership if a lock exists
+          const newLockKey = `table:lock:${targetTableId}`;
+          const newLockDataStr = await redisService.get(newLockKey);
+          if (newLockDataStr) {
+            try {
+              const lockData = JSON.parse(newLockDataStr);
+              if (lockData.lockedBy && lockData.lockedBy !== userId && !isAdmin && !isManager) {
+                const customErr = new Error('You do not own the lock on the target table.') as any;
+                customErr.statusCode = 403;
+                customErr.code = 'TABLE_LOCK_NOT_OWNED';
+                throw customErr;
+              }
+            } catch (e: any) {
+              if (e.code === 'TABLE_LOCK_NOT_OWNED') {
+                throw e;
+              }
+            }
+          }
+
+          // Release old table to available
+          if (reservation.tableId) {
+            await tx.table.update({
+              where: { id: reservation.tableId },
+              data: { status: 'available' }
+            });
+
+            // Delete old table's Redis lock
+            await redisService.del(`table:lock:${reservation.tableId}`).catch(() => {});
+          }
+
+          // If table status was not locked yet by check-in, set it to in_checkin in DB
+          if (newTable.status === 'available') {
+            await tx.table.update({
+              where: { id: targetTableId },
+              data: { status: 'in_checkin' }
+            });
+          }
+
+          // Update new table's Redis lock metadata to have originalStatus = 'reserved'
+          let newLockData = { lockedBy: userId, originalStatus: 'reserved', lockedAt: Date.now() };
+          if (newLockDataStr) {
+            try {
+              const parsed = JSON.parse(newLockDataStr);
+              newLockData = { ...parsed, originalStatus: 'reserved' };
+            } catch {}
+          }
+          await redisService.setex(newLockKey, 3600, JSON.stringify(newLockData));
+        }
+      } else if (isClearingTable) {
+        // Release old table to available
+        if (reservation.tableId) {
+          await tx.table.update({
+            where: { id: reservation.tableId },
+            data: { status: 'available' }
+          });
+
+          // Delete old table's Redis lock
+          await redisService.del(`table:lock:${reservation.tableId}`).catch(() => {});
+        }
+      }
+
+      // Update details
+      const updatedRes = await tx.reservation.update({
+        where: { id },
+        data: {
+          customerName: customerName || reservation.customerName,
+          phoneNumber: finalPhone,
+          email: finalEmail,
+          personsCount: finalPersons,
+          tableId: targetTableId
+        },
+        include: { table: true }
+      });
+
+      return updatedRes;
+    });
+
+    await redisService.del('tables:all').catch(() => {});
+    return res.json({ success: true, reservation: updated });
+  } catch (err: any) {
+    const status = err.statusCode || 400;
+    const errorCode = err.code || 'RESERVATION_UPDATE_ERR';
+    return res.status(status).json({ success: false, error: { code: errorCode, message: err.message } });
+  }
+});
+
+router.post('/reservations/:id/assign', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const reservations = await tx.$queryRaw<any[]>`
+        SELECT id, status
+        FROM reservations
+        WHERE id = ${id}
+        LIMIT 1
+        FOR UPDATE
+      `;
+
+      if (!reservations || reservations.length === 0) {
+        throw new Error('Reservation not found.');
+      }
+      const reservation = reservations[0];
+
+      if (reservation.status !== 'PENDING') {
+        throw new Error(`Reservation is no longer active (current status: ${reservation.status}).`);
+      }
+
+      const updatedRes = await tx.reservation.update({
+        where: { id },
+        data: { status: 'ASSIGNED' }
+      });
+
+      return updatedRes;
+    });
+
+    await redisService.del('tables:all').catch(() => {});
+    return res.json({ success: true, message: 'Reservation assigned successfully.', reservation: updated });
+  } catch (err: any) {
+    const isTechnical = err.message.includes('Prisma') || err.message.includes('queryRaw') || err.message.includes('SQL') || err.message.includes('column') || err.message.includes('relation');
+    const friendlyMsg = isTechnical ? 'Failed to assign the reservation. Please try again.' : err.message;
+    return res.status(400).json({ success: false, error: { message: friendlyMsg } });
+  }
+});
+
+// Map receptionist check-in endpoints
+router.post('/check-in', authenticate, authorize(['receptionist', 'admin']), checkInHandler);
+router.post('/tokens/create', authenticate, authorize(['receptionist', 'admin']), checkInHandler);
+router.post('/check-in/pending', authenticate, authorize(['receptionist', 'admin']), checkInPendingHandler);
+router.get('/check-in/pending-list', authenticate, authorize(['receptionist', 'admin']), async (req: Request, res: Response) => {
+  try {
+    await tokenService.reconcileSystemState();
+    const pendingTokens = await prisma.token.findMany({
+      where: { status: TokenStatus.PENDING_PAYMENT },
+      include: { customer: true, placeType: true, table: true },
+      orderBy: { issuedAt: 'desc' },
+    });
+    
+    // Map response keys for old client compatibility
+    const oldTokens = pendingTokens.map((t: any) => ({
+      id: t.id,
+      tokenNumber: t.tokenNumber,
+      phoneNumber: t.customer.phoneNumber,
+      customerName: t.customer.name,
+      email: t.customer.email,
+      persons: t.personsCount,
+      placeType: t.placeType.name,
+      tableId: t.tableId,
+      tableNumber: t.table?.tableNumber || null,
+      amountPaid: parseFloat(t.amountPaid.toString()),
+      paymentVerified: t.paymentVerified,
+      emailSent: t.emailSent,
+      startTime: t.startTime.toISOString(),
+      endTime: t.endTime.toISOString(),
+      redemptionLimit: t.totalRedemptionsAllowed,
+      redemptionCount: t.redemptionsUsed,
+      status: t.status.toUpperCase(),
+      createdAt: t.issuedAt.toISOString(),
+    }));
+
+    return res.json(oldTokens);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+router.get('/check-in/verify-qr/:tokenNumber', authenticate, authorize(['receptionist', 'admin']), verifyQrHandler);
+router.post('/check-in/activate', authenticate, authorize(['receptionist', 'admin']), activateSessionHandler);
+router.post('/check-in/cancel', authenticate, authorize(['receptionist', 'admin']), cancelSessionHandler);
+
+// Generate QR Base64 or URL
+router.post('/tokens/:id/generate-qr', authenticate, authorize(['receptionist', 'admin']), async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const token = await prisma.token.findUnique({
+      where: { id },
+      include: { placeType: true, customer: true, table: true }
+    });
+    if (!token) {
+      return res.status(404).json({ success: false, error: { message: 'Token not found' } });
+    }
+    
+    const signedPayload = tokenService.generateQRTokenPayload(token.tokenNumber);
+    const qrImageURL = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(signedPayload)}`;
+    
+    return res.json({
+      success: true,
+      data: { qrImage: qrImageURL, expiresAt: token.endTime }
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// Trigger/Resend Email confirmation
+const sendEmailHandler = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const token = await prisma.token.findUnique({
+      where: { id },
+      include: { placeType: true, customer: true, table: true }
+    });
+    if (!token) {
+      return res.status(404).json({ success: false, error: { message: 'Token not found' } });
+    }
+    if (!token.customer.email) {
+      return res.status(400).json({ success: false, error: { message: 'Customer email is missing' } });
+    }
+
+    emailNotificationService.enqueueEmailJob(
+      token.customer.email,
+      token.tokenNumber,
+      token.customer.name
+    );
+
+    return res.json({
+      success: true,
+      data: { success: true, emailStatus: 'PENDING' }
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: { message: error.message } });
+  }
+};
+
+router.post('/tokens/:id/send-email', authenticate, authorize(['receptionist', 'admin']), sendEmailHandler);
+router.post('/tokens/:id/resend-email', authenticate, authorize(['receptionist', 'admin']), sendEmailHandler);
+
+// Verify signed QR token payload
+router.post('/qr/verify', authenticate, authorize(['bartender', 'receptionist', 'admin']), async (req: Request, res: Response) => {
+  const tokenVal = req.body.token || req.body.qrPayload;
+  if (!tokenVal) {
+    return res.status(400).json({ success: false, error: { message: 'token payload is required.' } });
+  }
+
+  try {
+    const tokenRecord = await tokenService.getTokenByNumber(tokenVal);
+    if (!tokenRecord) {
+      return res.status(404).json({ success: false, error: { message: 'Token not found' } });
+    }
+
+    return res.json({
+      success: true,
+      token: tokenRecord,
+      data: {
+        valid: tokenRecord.status === TokenStatus.ACTIVE || tokenRecord.status === TokenStatus.EXTENDED,
+        tokenNumber: tokenRecord.tokenNumber,
+        remaining: tokenRecord.totalRedemptionsAllowed - tokenRecord.redemptionsUsed,
+        totalAllowed: tokenRecord.totalRedemptionsAllowed,
+        status: tokenRecord.status,
+        endTime: tokenRecord.endTime
+      }
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: { code: 'QR_INVALID_SIGNATURE', message: 'QR Code signature is invalid or forged.' } });
+  }
+});
+
+// Unified Redemption Endpoint
+router.post('/redemptions', authenticate, authorize(['bartender', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
+  const { payload, presentationType, bartenderId, quantity } = req.body;
+  
+  if (!payload) {
+    return res.status(400).json({ success: false, error: { message: 'payload is required.' } });
+  }
+
+  const finalPresentationType = presentationType || 'QR_SCAN';
+  if (finalPresentationType !== 'QR_SCAN') {
+    return res.status(400).json({ success: false, error: { message: 'Invalid presentationType.' } });
+  }
+
+  const finalBartenderId = bartenderId || req.user?.id || '';
+  if (finalBartenderId && !isValidUUID(finalBartenderId)) {
+    return res.status(400).json({ success: false, error: { message: 'Invalid bartenderId UUID format.' } });
+  }
+
+  const finalQuantity = quantity ? parseInt(quantity.toString(), 10) : 1;
+
+  try {
+    const result = await redemptionService.processRedemption(
+      payload,
+      finalBartenderId,
+      undefined,
+      finalPresentationType,
+      finalQuantity
+    );
+
+    const updatedToken = result.redemption?.token;
+    return res.json({
+      success: true,
+      message: 'Redemption recorded successfully',
+      data: result,
+      token: updatedToken,
+      remainingDrinks: result.remainingRedemptions,
+      redemptionsUsed: updatedToken?.redemptionsUsed
+    });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// Admin update configurations
+router.put('/config/delivery-methods', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
+  return res.json({
+    success: true,
+    emailQrEnabled: true
+  });
+});
+
+// Admin get current configurations
+router.get('/config/delivery-methods', authenticate, async (req: Request, res: Response) => {
+  return res.json({ success: true, emailQrEnabled: true });
+});
+
+// Legacy Compatibility Aliases
+router.get('/config/delivery-mode', authenticate, async (req: Request, res: Response) => {
+  return res.json({ success: true, deliveryMode: 'EMAIL_QR' });
+});
+
+router.put('/config/delivery-mode', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
+  return res.json({ success: true, message: 'Token Delivery Mode updated to EMAIL_QR' });
+});
+
+// Get active tokens (list)
+router.get('/tokens/active', authenticate, async (req: Request, res: Response) => {
+  try {
+    const cacheKey = 'tokens:active';
+    const cachedData = await redisService.get(cacheKey);
+    if (cachedData) {
+      try {
+        return res.json(JSON.parse(cachedData));
+      } catch (parseErr) {
+        console.warn('[Redis] Failed to parse cached active tokens:', parseErr);
+      }
+    }
+
+    await tokenService.reconcileSystemState();
+    const activeTokens = await prisma.token.findMany({
+      where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] } },
+      include: { customer: true, placeType: true, table: true },
+      orderBy: { startTime: 'desc' },
+    });
+    
+    // Map response for client compatibility with authoritative entitlement breakdown
+    const oldTokens = activeTokens.map((t: any) => {
+      const basePerPerson = t.placeType?.redemptionsPerPerson ?? 2;
+      const currentCheckInEntitlement = Math.min(t.totalRedemptionsAllowed, (t.personsCount || 1) * basePerPerson);
+      const carriedForwardBalance = Math.max(0, t.totalRedemptionsAllowed - currentCheckInEntitlement);
+
+      return {
+        id: t.id,
+        tokenNumber: t.tokenNumber,
+        phoneNumber: t.customer?.phoneNumber || '',
+        customerName: t.customer?.name || '',
+        email: t.customer?.email || '',
+        customer: t.customer ? {
+          id: t.customer.id,
+          name: t.customer.name,
+          phoneNumber: t.customer.phoneNumber,
+          email: t.customer.email
+        } : {
+          id: '',
+          name: t.customerName || 'Guest',
+          phoneNumber: t.phoneNumber || '',
+          email: t.email || ''
+        },
+        persons: t.personsCount,
+        personsCount: t.personsCount,
+        placeType: t.placeType?.name || '',
+        placeTypeId: t.placeTypeId,
+        tableId: t.tableId,
+        tableNumber: t.table?.tableNumber || null,
+        amountPaid: t.amountPaid,
+        paymentVerified: t.paymentVerified,
+        startTime: t.startTime.toISOString(),
+        endTime: t.endTime.toISOString(),
+        totalRedemptionsAllowed: t.totalRedemptionsAllowed,
+        redemptionsUsed: t.redemptionsUsed,
+        redemptionLimit: t.totalRedemptionsAllowed,
+        redemptionCount: t.redemptionsUsed,
+        currentCheckInEntitlement,
+        carriedForwardBalance,
+        status: t.status.toUpperCase(),
+        cardUid: null,
+        createdAt: t.issuedAt.toISOString(),
+        deliveryMode: t.deliveryMode,
+        table: t.table ? {
+          id: t.table.id,
+          number: t.table.tableNumber,
+          placeType: t.placeType?.name || '',
+          status: t.table.status.toUpperCase(),
+        } : null
+      };
+    });
+
+    await redisService.setex(cacheKey, 300, JSON.stringify(oldTokens));
+
+    await redisService.setex(cacheKey, 300, JSON.stringify(oldTokens));
+
+    return res.json(oldTokens);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
+  }
+});
+
+// Export sessions as CSV (Admin/Manager allowed)
+router.get('/admin/sessions/export', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
+  try {
+    const { status, startDate, endDate, paymentVerified } = req.query;
+
+    const whereClause: any = {};
+    if (status && status !== 'all') {
+      whereClause.status = (status as string).toUpperCase() as any;
+    }
+    if (startDate || endDate) {
+      whereClause.startTime = {};
+      if (startDate) whereClause.startTime.gte = new Date(startDate as string);
+      if (endDate) whereClause.startTime.lte = new Date(endDate as string);
+    }
+    if (paymentVerified && paymentVerified !== 'all') {
+      whereClause.paymentVerified = paymentVerified === 'true';
+    }
+
+    const tokens = await prisma.token.findMany({
+      where: whereClause,
+      include: { customer: true, table: true },
+      orderBy: { issuedAt: 'desc' }
+    });
+
+    const headers = 'Token Number,Customer Name,Phone Number,Table,Status,Amount Paid,Guests,Start Time,End Time\n';
+    const rows = tokens.map(t => {
+      const tableStr = t.table ? t.table.tableNumber : 'N/A';
+      return `"${t.tokenNumber}","${t.customer.name.replace(/"/g, '""')}","${t.customer.phoneNumber}","${tableStr}","${t.status}","${t.amountPaid.toString()}","${t.personsCount}","${t.startTime.toISOString()}","${t.endTime.toISOString()}"`;
+    }).join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="sessions_export.csv"');
+    return res.status(200).send(headers + rows);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// Get all sessions (Admin/Manager allowed)
+router.get('/admin/sessions', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
+  try {
+    await tokenService.reconcileSystemState();
+    const sessions = await prisma.token.findMany({
+      include: { 
+        customer: true, 
+        placeType: true, 
+        table: true, 
+        redemptions: { include: { bartender: true } },
+        extensions: { include: { approver: true } },
+        creator: true,
+        closer: true
+      },
+      orderBy: { issuedAt: 'desc' },
+    });
+
+    // Fetch all SyncLogs for occupied table lifecycles in a single query
+    const auditLogs = await prisma.syncLog.findMany({
+      where: {
+        operationType: {
+          in: ['TOKEN_EXTENSION', 'TOKEN_CLOSE']
+        }
+      }
+    });
+
+    // Build maps indexed by tokenId for easy O(1) lookup to avoid N+1 queries
+    const extensionsByTokenId: Record<string, any[]> = {};
+    const closuresByTokenId: Record<string, any> = {};
+
+    for (const log of auditLogs) {
+      try {
+        const payload = typeof log.payload === 'string' ? JSON.parse(log.payload) : (log.payload as any);
+        if (!payload || !payload.tokenId) continue;
+
+        if (log.operationType === 'TOKEN_EXTENSION') {
+          if (!extensionsByTokenId[payload.tokenId]) {
+            extensionsByTokenId[payload.tokenId] = [];
+          }
+          extensionsByTokenId[payload.tokenId].push(payload);
+        } else if (log.operationType === 'TOKEN_CLOSE') {
+          closuresByTokenId[payload.tokenId] = payload;
+        }
+      } catch (e) {
+        console.warn('Failed to parse audit log payload:', e);
+      }
+    }
+    
+    const mapped = sessions.map((t: any) => {
+      const tokenExtensions = extensionsByTokenId[t.id] || [];
+      const tokenClosure = closuresByTokenId[t.id] || null;
+
+      return {
+        id: t.id,
+        tokenNumber: t.tokenNumber,
+        phoneNumber: t.customer.phoneNumber,
+        customerName: t.customer.name,
+        email: t.customer.email,
+        persons: t.personsCount,
+        placeType: t.placeType.name,
+        placeTypeId: t.placeTypeId,
+        tableId: t.tableId,
+        tableNumber: t.table?.tableNumber || null,
+        amountPaid: parseFloat(t.amountPaid.toString()),
+        paymentVerified: t.paymentVerified,
+        startTime: t.startTime.toISOString(),
+        endTime: t.endTime.toISOString(),
+        redemptionLimit: t.totalRedemptionsAllowed,
+        redemptionCount: t.redemptionsUsed,
+        status: t.status.toLowerCase(),
+        cardUid: null,
+        createdAt: t.issuedAt.toISOString(),
+        deliveryMode: t.deliveryMode,
+        table: t.table ? {
+          id: t.table.id,
+          number: t.table.tableNumber,
+          placeType: t.placeType.name,
+          status: t.table.status.toUpperCase(),
+        } : null,
+        // Enhanced audit trail & history parameters
+        createdBy: t.creator?.fullName || t.issuedBy,
+        closedBy: t.closer?.fullName || t.closedBy || null,
+        closedAt: t.closedAt ? t.closedAt.toISOString() : null,
+        closeReason: t.closeReason || null,
+        cancelledAt: t.cancelledAt ? t.cancelledAt.toISOString() : null,
+        cancelledBy: t.cancelledBy || null,
+        cancelReason: t.cancelReason || null,
+        customerId: t.customerId,
+        customerVisits: t.customer.totalVisits,
+        lastVisit: t.customer.lastVisit ? t.customer.lastVisit.toISOString() : null,
+        extensions: tokenExtensions.length > 0 ? tokenExtensions : t.extensions.map((ext: any) => ({
+          id: ext.id,
+          extraMinutes: ext.extraMinutes,
+          additionalAmount: parseFloat(ext.additionalAmount.toString()),
+          approvedBy: ext.approver?.fullName || ext.approvedBy,
+          extendedAt: ext.extendedAt.toISOString(),
+          newEndTime: ext.newEndTime.toISOString(),
+          paymentMethod: 'CASH'
+        })),
+        redemptions: t.redemptions.map((red: any) => ({
+          id: red.id,
+          redemptionSequence: red.redemptionSequence,
+          redeemedAt: red.redeemedAt.toISOString(),
+          bartenderName: red.bartender?.fullName || red.bartenderId,
+          notes: red.notes || null
+        })),
+        closure: tokenClosure
+      };
+    });
+
+    return res.json(mapped);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
+  }
+});
+
+// Get specific token by identifier (token number)
+const getTokenByIdentifier = async (req: Request, res: Response) => {
+  const { identifier } = req.params;
+  try {
+    let token = await prisma.token.findUnique({
+      where: { tokenNumber: identifier },
+      include: {
+        customer: true,
+        placeType: true,
+        table: true,
+        redemptions: {
+          include: {
+            bartender: true
+          }
+        }
+      }
+    });
+
+    if (!token) {
+      return res.status(404).json({ error: 'Token not found' });
+    }
+
+    const timeRemainingMinutes = Math.max(0, Math.floor((new Date(token.endTime).getTime() - Date.now()) / 60000));
+    const redemptionsRemaining = token.totalRedemptionsAllowed - token.redemptionsUsed;
+
+    // Map output for client compatibility
+    const responseData = {
+      id: token.id,
+      tokenNumber: token.tokenNumber,
+      phoneNumber: token.customer.phoneNumber,
+      customerName: token.customer.name,
+      email: token.customer.email,
+      persons: token.personsCount,
+      placeType: token.placeType.name,
+      placeTypeId: token.placeTypeId,
+      tableId: token.tableId,
+      tableNumber: token.table?.tableNumber || null,
+      amountPaid: token.amountPaid,
+      paymentVerified: token.paymentVerified,
+      startTime: token.startTime.toISOString(),
+      endTime: token.endTime.toISOString(),
+      timeRemainingMinutes,
+      redemptionLimit: token.totalRedemptionsAllowed,
+      redemptionCount: token.redemptionsUsed,
+      redemptionsRemaining,
+      status: token.status.toUpperCase(),
+      cardUid: null,
+      createdAt: token.issuedAt.toISOString(),
+      deliveryMode: token.deliveryMode,
+      table: token.table ? {
+        id: token.table.id,
+        number: token.table.tableNumber,
+        status: token.table.status.toUpperCase(),
+      } : null,
+      redemptions: token.redemptions.map(r => ({
+        id: r.id,
+        tokenId: r.tokenId,
+        bartenderId: r.bartenderId,
+        bartenderName: r.bartender.fullName,
+        timestamp: r.redeemedAt.toISOString(),
+      }))
+    };
+
+    return res.json(responseData);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+router.get('/token/:identifier', authenticate, getTokenByIdentifier);
+router.get('/tokens/:tokenNumber', authenticate, async (req, res) => {
+  req.params.identifier = req.params.tokenNumber;
+  return getTokenByIdentifier(req, res);
+});
+
+// Extend Session
+const extendSessionHandler = async (req: AuthenticatedRequest, res: Response) => {
+  const { tokenNumber, additionalHours, extraMinutes, additionalAmount, approvedBy, additionalPersons, extensionType, reason } = req.body;
+  const paramTokenNumber = req.params.tokenNumber;
+
+  let finalTokenNumber = paramTokenNumber || tokenNumber;
+  const finalMinutes = extraMinutes ? parseInt(extraMinutes, 10) : (parseFloat(additionalHours || '0') * 60);
+
+  if (finalTokenNumber) {
+    const tokenRegex = /^BAR-\d{8}-\d{5}$/;
+    if (!tokenRegex.test(finalTokenNumber) || finalTokenNumber.length !== 18) {
+      return res.status(400).json({ error: 'Token number must be exactly 18 characters in format BAR-YYYYMMDD-XXXXX.' });
+    }
+  }
+  if (approvedBy && !isValidUUID(approvedBy)) {
+    return res.status(400).json({ error: 'Invalid approvedBy UUID format.' });
+  }
+
+  let finalAmount = additionalAmount !== undefined ? new Decimal(additionalAmount) : (req.body.amount !== undefined ? new Decimal(req.body.amount) : new Decimal(0));
+  if (finalAmount.lt(0)) {
+    return res.status(400).json({ error: 'Extension amount cannot be negative.' });
+  }
+
+  if (finalAmount.eq(0) && additionalHours && finalTokenNumber && extensionType !== 'CUSTOM') {
+    try {
+      const token = await prisma.token.findFirst({
+        where: { tokenNumber: finalTokenNumber },
+        include: { placeType: true }
+      });
+      if (token) {
+        const hourlyRate = token.placeType.ratePerPerson.div(token.placeType.baseTimeMinutes / 60);
+        const persons = token.personsCount;
+        finalAmount = hourlyRate.mul(additionalHours).mul(persons);
+      }
+    } catch (e) {
+      console.error('Failed to calculate extension rate:', e);
+    }
+  }
+
+  try {
+    if (!finalTokenNumber) {
+      return res.status(400).json({ error: 'Token number is required' });
+    }
+
+    const token = await prisma.token.findUnique({
+      where: { tokenNumber: finalTokenNumber }
+    });
+    if (!token) {
+      return res.status(404).json({ error: 'Token not found' });
+    }
+    const previousEndTime = token.endTime.toISOString();
+
+    const updated = await tokenService.extendToken(
+      finalTokenNumber,
+      finalMinutes,
+      finalAmount,
+      approvedBy || req.user?.id || '',
+      additionalPersons ? parseInt(additionalPersons, 10) : 0,
+      extensionType,
+      reason
+    );
+
+    // Send extension email if requested and customer has an email
+    const { sendEmail, paymentMethod } = req.body;
+
+    // Create SyncLog for Extension
+    await prisma.syncLog.create({
+      data: {
+        operationId: `EXTENSION-${updated.id}-${Date.now()}`,
+        deviceId: 'server',
+        operationType: 'TOKEN_EXTENSION',
+        status: 'SUCCESS',
+        payload: {
+          tokenId: updated.id,
+          extraMinutes: finalMinutes,
+          additionalAmount: parseFloat(finalAmount.toString()),
+          paymentMethod: paymentMethod || 'CASH',
+          approvedBy: approvedBy || req.user?.id || 'receptionist',
+          extendedAt: new Date().toISOString(),
+          previousEndTime: previousEndTime,
+          newEndTime: updated.endTime.toISOString(),
+          extensionType: extensionType || 'PREDEFINED',
+          reason: reason || null
+        }
+      }
+    });
+
+    if (sendEmail === true && updated.customer?.email) {
+      try {
+        emailNotificationService.enqueueExtensionEmailJob(
+          updated.customer.email,
+          updated.tokenNumber,
+          updated.customer.name,
+          updated.table?.tableNumber || 'N/A',
+          finalMinutes,
+          updated.endTime,
+          parseFloat(finalAmount.toString()),
+          paymentMethod || 'Cash'
+        );
+      } catch (emailErr) {
+        console.warn('Failed to enqueue extension email:', emailErr);
+      }
+    }
+
+    // Format output for compatibility
+    const responseData = {
+      message: 'Session extended successfully',
+      token: {
+        id: updated.id,
+        tokenNumber: updated.tokenNumber,
+        phoneNumber: updated.customer.phoneNumber,
+        customerName: updated.customer.name,
+        persons: updated.personsCount,
+        placeType: updated.placeType.name,
+        tableId: updated.tableId,
+        tableNumber: updated.table?.tableNumber || null,
+        amountPaid: parseFloat(updated.amountPaid.toString()), // convert when preparing API response
+        endTime: updated.endTime.toISOString(),
+        redemptionLimit: updated.totalRedemptionsAllowed,
+        redemptionCount: updated.redemptionsUsed,
+        status: updated.status.toUpperCase(),
+      }
+    };
+
+    await redisService.del('tokens:active').catch(() => {});
+
+    return res.json(responseData);
+  } catch (err: any) {
+    console.error(err);
+    return res.status(400).json({ error: err.message });
+  }
+};
+
+router.post('/extend', authenticate, authorize(['receptionist', 'admin', 'manager']), extendSessionHandler);
+router.put('/tokens/:tokenNumber/extend', authenticate, authorize(['receptionist', 'admin', 'bartender', 'manager']), extendSessionHandler);
+
+// Checkout Session
+const checkoutSessionHandler = async (req: AuthenticatedRequest, res: Response) => {
+  const { tokenNumber, reason } = req.body;
+  const paramTokenNumber = req.params.tokenNumber;
+
+  let finalTokenNumber = paramTokenNumber || tokenNumber;
+
+  if (finalTokenNumber) {
+    const tokenRegex = /^BAR-\d{8}-\d{5}$/;
+    if (!tokenRegex.test(finalTokenNumber) || finalTokenNumber.length !== 18) {
+      return res.status(400).json({ error: 'Token number must be exactly 18 characters in format BAR-YYYYMMDD-XXXXX.' });
+    }
+  }
+
+  try {
+    if (!finalTokenNumber) {
+      return res.status(400).json({ error: 'Token number is required' });
+    }
+
+    const { reason, reasonDetail } = req.body;
+    const finalCloseReason = CloseReason.MANUAL;
+
+    const summary = await tokenService.closeSession(
+      finalTokenNumber,
+      req.user?.id || '',
+      finalCloseReason,
+      false,
+      reasonDetail || reason || undefined
+    );
+
+    // Create SyncLog for Close
+    await prisma.syncLog.create({
+      data: {
+        operationId: `CLOSE-${summary.token.id}-${Date.now()}`,
+        deviceId: 'server',
+        operationType: 'TOKEN_CLOSE',
+        status: 'SUCCESS',
+        payload: {
+          tokenId: summary.token.id,
+          tokenNumber: summary.token.tokenNumber,
+          closeReason: reason || 'MANUAL',
+          reasonDetail: reasonDetail || '',
+          closedBy: req.user?.id || 'receptionist',
+          closedAt: new Date().toISOString()
+        }
+      }
+    });
+
+    // Format return
+    const responseData = {
+      message: 'Session closed successfully',
+      summary: {
+        tokenNumber: summary.token.tokenNumber,
+        customerName: summary.token.customer.name,
+        tableNumber: summary.token.table?.tableNumber || null,
+        durationMinutes: summary.sessionSummary.totalTimeUsedMinutes,
+        allocatedMinutes: summary.sessionSummary.timeAllocatedMinutes,
+        redemptionsUsed: summary.sessionSummary.totalRedemptionsUsed,
+        redemptionLimit: summary.token.totalRedemptionsAllowed,
+        amountPaid: parseFloat(summary.token.amountPaid.toString()),
+      }
+    };
+
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.json(responseData);
+  } catch (err: any) {
+    console.error(err);
+    if (err.code === 'CONFLICT' || err.message === 'This session has already been closed.') {
+      return res.status(409).json({ error: 'This session has already been closed.' });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+};
+
+router.post('/checkout', authenticate, authorize(['receptionist', 'admin', 'manager']), checkoutSessionHandler);
+router.put('/tokens/:tokenNumber/close', authenticate, authorize(['receptionist', 'admin', 'bartender', 'manager']), checkoutSessionHandler);
+
+// Manual Close Section Route
+router.post('/sessions/:tokenNumber/close', authenticate, authorize(['admin', 'receptionist', 'bartender', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
+  const { tokenNumber } = req.params;
+  const { force } = req.body;
+
+  const tokenRegex = /^BAR-\d{8}-\d{5}$/;
+  if (!tokenNumber || !tokenRegex.test(tokenNumber) || tokenNumber.length !== 18) {
+    return res.status(400).json({ error: 'Token number must be in format BAR-YYYYMMDD-XXXXX.' });
+  }
+
+  try {
+    const summary = await tokenService.closeSession(
+      tokenNumber,
+      req.user?.id || '',
+      CloseReason.MANUAL,
+      force === true
+    );
+
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.json({
+      success: true,
+      message: 'Section closed successfully',
+      summary: {
+        tokenNumber: summary.token.tokenNumber,
+        customerName: summary.token.customer.name,
+        tableNumber: summary.token.table?.tableNumber || null,
+        durationMinutes: summary.sessionSummary.totalTimeUsedMinutes,
+        allocatedMinutes: summary.sessionSummary.timeAllocatedMinutes,
+        redemptionsUsed: summary.sessionSummary.totalRedemptionsUsed,
+        redemptionLimit: summary.token.totalRedemptionsAllowed,
+        amountPaid: parseFloat(summary.token.amountPaid.toString()),
+      }
+    });
+  } catch (err: any) {
+    console.error(err);
+    if (err.code === 'CONFLICT' || err.message === 'This session has already been closed.') {
+      return res.status(409).json({ error: 'This session has already been closed.' });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// QR Code Assisted Close Section Route
+router.post('/sessions/close-by-qr', authenticate, authorize(['admin', 'receptionist', 'bartender']), async (req: AuthenticatedRequest, res: Response) => {
+  const { qrData } = req.body;
+
+  if (!qrData) {
+    return res.status(400).json({ error: 'QR data is required.' });
+  }
+
+  // Direct token validation
+  const tokenNumber = qrData;
+
+  const tokenRegex = /^BAR-\d{8}-\d{5}$/;
+  if (!tokenRegex.test(tokenNumber) || tokenNumber.length !== 18) {
+    return res.status(400).json({ error: 'Scanned QR does not contain a valid token number.' });
+  }
+
+  try {
+    // 1. Validation Checks before closing
+    const token = await prisma.token.findUnique({
+      where: { tokenNumber },
+      include: { table: true }
+    });
+
+    if (!token) {
+      return res.status(404).json({ error: 'Token not found.' });
+    }
+
+    if (token.status === TokenStatus.CLOSED) {
+      return res.status(409).json({ error: 'This session has already been closed.' });
+    }
+
+    if (token.deliveryMode === 'EMAIL_QR' && !token.paymentVerified) {
+      return res.status(400).json({ error: 'Cannot close an unpaid pending QR session.' });
+    }
+
+    if (token.status !== TokenStatus.ACTIVE && token.status !== TokenStatus.EXTENDED && token.status !== TokenStatus.EXPIRED) {
+      return res.status(400).json({ error: `Cannot close token with status: ${token.status}` });
+    }
+
+    // Verify section is currently occupied
+    const table = token.table;
+    if (!table || table.status !== 'occupied') {
+      return res.status(400).json({ error: 'Assigned table/section is not currently marked occupied.' });
+    }
+
+    // 2. Perform closure using centralized service
+    const summary = await tokenService.closeSession(
+      tokenNumber,
+      req.user?.id || '',
+      CloseReason.QR_SCAN
+    );
+
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+
+    return res.json({
+      success: true,
+      message: 'Section successfully closed via QR scan',
+      summary: {
+        tokenNumber: summary.token.tokenNumber,
+        customerName: summary.token.customer.name,
+        tableNumber: summary.token.table?.tableNumber || null,
+        durationMinutes: summary.sessionSummary.totalTimeUsedMinutes,
+        allocatedMinutes: summary.sessionSummary.timeAllocatedMinutes,
+        redemptionsUsed: summary.sessionSummary.totalRedemptionsUsed,
+        redemptionLimit: summary.token.totalRedemptionsAllowed,
+        amountPaid: parseFloat(summary.token.amountPaid.toString()),
+      }
+    });
+  } catch (err: any) {
+    console.error(err);
+    if (err.code === 'CONFLICT' || err.message === 'This session has already been closed.') {
+      return res.status(409).json({ error: 'This session has already been closed.' });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 4. BARTENDER / REDEMPTION ENDPOINTS
+// ==========================================
+
+// Process Redemption
+const redeemHandler = async (req: AuthenticatedRequest, res: Response) => {
+  const { tokenNumber } = req.body;
+  if (tokenNumber) {
+    const tokenRegex = /^BAR-\d{8}-\d{5}$/;
+    if (!tokenRegex.test(tokenNumber) || tokenNumber.length !== 18) {
+      return res.status(400).json({ error: 'Token number must be exactly 18 characters in format BAR-YYYYMMDD-XXXXX.' });
+    }
+  }
+
+  try {
+    if (!tokenNumber) {
+      return res.status(400).json({ error: 'Token number is required' });
+    }
+
+    const bartenderId = req.user?.id || req.body.bartenderId || '';
+    if (bartenderId && !isValidUUID(bartenderId)) {
+      return res.status(400).json({ error: 'Invalid bartenderId UUID format.' });
+    }
+    const result = await redemptionService.processRedemption(tokenNumber, bartenderId, undefined, 'QR_SCAN');
+
+    // compat old return shape
+    return res.json({
+      success: true,
+      message: 'Redemption recorded successfully',
+      redemptionCount: result.redemption.token?.redemptionsUsed || result.redemption.redemptionSequence,
+      redemptionLimit: result.redemption.token?.totalRedemptionsAllowed,
+      remaining: result.remainingRedemptions,
+    });
+  } catch (err: any) {
+    console.error(err);
+    return res.status(400).json({ error: err.message });
+  }
+};
+
+const undoRedeemHandler = async (req: AuthenticatedRequest, res: Response) => {
+  const { tokenNumber } = req.body;
+  if (tokenNumber) {
+    const tokenRegex = /^BAR-\d{8}-\d{5}$/;
+    if (!tokenRegex.test(tokenNumber) || tokenNumber.length !== 18) {
+      return res.status(400).json({ error: 'Token number must be exactly 18 characters in format BAR-YYYYMMDD-XXXXX.' });
+    }
+  }
+
+  try {
+    if (!tokenNumber) {
+      return res.status(400).json({ error: 'Token number is required' });
+    }
+
+    const result = await redemptionService.undoRedemption(tokenNumber);
+
+    return res.json({
+      success: true,
+      message: 'Redemption undone successfully',
+      redemptionCount: result.redemption.token?.redemptionsUsed || result.redemption.redemptionSequence - 1,
+      redemptionLimit: result.redemption.token?.totalRedemptionsAllowed,
+      remaining: result.remainingRedemptions,
+    });
+  } catch (err: any) {
+    console.error(err);
+    return res.status(400).json({ error: err.message });
+  }
+};
+
+router.post('/token/redeem', authenticate, authorize(['bartender', 'admin']), redeemHandler);
+router.post('/token/redeem/undo', authenticate, authorize(['bartender', 'admin']), undoRedeemHandler);
+
+// Get redemptions
+router.get('/tokens/:tokenNumber/redemptions', authenticate, async (req: Request, res: Response) => {
+  const { tokenNumber } = req.params;
+  try {
+    const token = await prisma.token.findUnique({ where: { tokenNumber } });
+    if (!token) return res.status(404).json({ error: 'Token not found' });
+    
+    const redemptions = await prisma.redemption.findMany({
+      where: { tokenId: token.id },
+      include: { bartender: true },
+      orderBy: { redemptionSequence: 'asc' }
+    });
+
+    return res.json(redemptions.map(r => ({
+      id: r.id,
+      tokenId: r.tokenId,
+      bartenderId: r.bartenderId,
+      bartenderName: r.bartender.fullName,
+      timestamp: r.redeemedAt.toISOString()
+    })));
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
+
+
+
+// ==========================================
+// 6. CUSTOMERS ENDPOINTS
+// ==========================================
+
+router.post('/customers', authenticate, async (req: Request, res: Response) => {
+  const { phoneNumber, name, email } = req.body;
+
+  const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
+  if (!phoneNumber || !phoneRegex.test(phoneNumber)) {
+    return res.status(400).json({ error: 'Please enter a valid 10-digit Indian phone number starting with 6-9.' });
+  }
+  const finalPhoneNumber = phoneNumber.startsWith('+91') ? phoneNumber : `+91${phoneNumber}`;
+
+  const nameRegex = /^[a-zA-Z\s.'-]{2,100}$/;
+  if (!name || !nameRegex.test(name)) {
+    return res.status(400).json({ error: 'Customer name must contain only letters, spaces, periods, apostrophes, or hyphens (2-100 characters).' });
+  }
+
+  if (email && email.trim()) {
+    if (!validateEmail(email)) {
+      return res.status(400).json({ error: 'Please enter a valid Gmail address using only lowercase letters, numbers, and dots.' });
+    }
+  }
+  let finalEmail = email ? email.trim().toLowerCase() : null;
+
+  try {
+    let customer = await prisma.customer.findUnique({ where: { phoneNumber: finalPhoneNumber } });
+    if (!customer) {
+      customer = await prisma.customer.create({
+        data: { phoneNumber: finalPhoneNumber, name, email: finalEmail || null }
+      });
+    }
+    return res.json({ success: true, data: { customer } });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/customers/:phoneNumber', authenticate, async (req: Request, res: Response) => {
+  const { phoneNumber } = req.params;
+  const searchPhone = phoneNumber.startsWith('+91') ? phoneNumber : `+91${phoneNumber}`;
+  try {
+    const customer = await prisma.customer.findUnique({
+      where: { phoneNumber: searchPhone },
+      include: {
+        tokens: {
+          where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.EXPIRED] } },
+          take: 1
+        }
+      }
+    });
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    return res.json({
+      success: true,
+      data: {
+        customer: {
+          id: customer.id,
+          phoneNumber: customer.phoneNumber,
+          name: customer.name,
+          email: customer.email,
+          totalVisits: customer.totalVisits,
+          lastVisit: customer.lastVisit,
+          activeToken: customer.tokens[0] || null
+        }
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 7. RATE CARDS ENDPOINTS
+// ==========================================
+
+router.get('/rate-card', authenticate, async (req: Request, res: Response) => {
+  try {
+    const rates = await prisma.placeTypeConfig.findMany();
+    // format response for compatibility
+    return res.json(rates.map(r => ({
+      id: r.id,
+      placeType: r.name,
+      ratePerPerson: Number(r.ratePerPerson),
+      baseDurationHours: Math.round(r.baseTimeMinutes / 60),
+      maxDrinksPerPerson: r.redemptionsPerPerson,
+    })));
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+const updateRateCardHandler = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { name, placeType, ratePerPerson, baseTimeMinutes, baseDurationHours, redemptionsPerPerson, maxDrinksPerPerson, changedBy } = req.body;
+  if (!isValidUUID(id)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid rate-card placeType ID UUID format.' } });
+  }
+  if (changedBy && !isValidUUID(changedBy)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_UUID', message: 'Invalid changedBy UUID format.' } });
+  }
+
+  const finalPlaceType = (name || placeType || '').trim();
+  const finalRate = ratePerPerson !== undefined ? new Decimal(ratePerPerson) : undefined;
+  const finalMinutes = baseTimeMinutes ? parseInt(baseTimeMinutes, 10) : (baseDurationHours ? parseInt(baseDurationHours, 10) * 60 : undefined);
+  const finalRedemptions = redemptionsPerPerson ? parseInt(redemptionsPerPerson, 10) : (maxDrinksPerPerson ? parseInt(maxDrinksPerPerson, 10) : undefined);
+
+  if (finalPlaceType !== '' && finalPlaceType !== 'STANDING_BAR' && finalPlaceType !== 'PREMIUM_LOUNGE') {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Place type must be either STANDING_BAR or PREMIUM_LOUNGE.' } });
+  }
+  if (finalRate !== undefined && (finalRate.isNaN() || finalRate.lt(0))) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Rate per person must be a non-negative number.' } });
+  }
+  if (finalMinutes !== undefined && (isNaN(finalMinutes) || finalMinutes < 30 || finalMinutes > 1440)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Base duration must be between 30 minutes and 24 hours.' } });
+  }
+  if (finalRedemptions !== undefined && (isNaN(finalRedemptions) || finalRedemptions < 0 || finalRedemptions > 50)) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: 'Drinks allotment must be between 0 and 50.' } });
+  }
+
+  try {
+    let createdRateLog: any = null;
+    const pt = await prisma.$transaction(async (tx) => {
+      const oldPT = await tx.placeTypeConfig.findUnique({ where: { id } });
+      if (!oldPT) throw new Error('Rate card not found');
+
+      if (finalPlaceType !== '' && finalPlaceType.toLowerCase() !== oldPT.name.toLowerCase()) {
+        const existing = await tx.placeTypeConfig.findFirst({
+          where: { name: { equals: finalPlaceType, mode: 'insensitive' } }
+        });
+        if (existing) {
+          throw new Error('Place type name is already taken');
+        }
+      }
+
+      const updated = await tx.placeTypeConfig.update({
+        where: { id },
+        data: {
+          name: finalPlaceType || oldPT.name,
+          ratePerPerson: finalRate !== undefined ? finalRate : oldPT.ratePerPerson,
+          baseTimeMinutes: finalMinutes !== undefined ? finalMinutes : oldPT.baseTimeMinutes,
+          redemptionsPerPerson: finalRedemptions !== undefined ? finalRedemptions : oldPT.redemptionsPerPerson,
+        }
+      });
+
+      createdRateLog = await tx.rateLog.create({
+        data: {
+          placeTypeId: id,
+          oldRate: oldPT.ratePerPerson,
+          newRate: finalRate !== undefined ? finalRate : oldPT.ratePerPerson,
+          changedBy: changedBy || (req as AuthenticatedRequest).user?.id || '',
+        }
+      });
+
+      return updated;
+    });
+
+    if (createdRateLog) {
+      try {
+        await s3Service.uploadAuditLog('rate-changes', createdRateLog.id, createdRateLog);
+      } catch (s3Err) {
+        console.error('[S3 Rate Change Log Archiver Error]:', s3Err);
+      }
+    }
+
+    await redisService.del('rates:all').catch(() => {});
+
+    return res.json({
+      id: pt.id,
+      placeType: pt.name,
+      ratePerPerson: Number(pt.ratePerPerson),
+      baseDurationHours: Math.round(pt.baseTimeMinutes / 60),
+      maxDrinksPerPerson: pt.redemptionsPerPerson,
+    });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { code: 'VAL_ERR', message: err.message } });
+  }
+};
+
+const getRateCardsHandler = async (req: Request, res: Response) => {
+  try {
+    const cacheKey = 'rates:all';
+    const cachedData = await redisService.get(cacheKey);
+    if (cachedData) {
+      try {
+        return res.json(JSON.parse(cachedData));
+      } catch (parseErr) {
+        console.warn('[Redis] Failed to parse cached rates:', parseErr);
+      }
+    }
+
+    const rates = await prisma.placeTypeConfig.findMany();
+    const resultPayload = {
+      success: true,
+      data: { placeTypes: rates },
+      placeTypes: rates,
+      rates: rates.map(r => ({
+        id: r.id,
+        name: r.name,
+        placeType: r.name,
+        ratePerPerson: Number(r.ratePerPerson),
+        baseTimeMinutes: r.baseTimeMinutes,
+        redemptionsPerPerson: r.redemptionsPerPerson,
+      }))
+    };
+
+    await redisService.setex(cacheKey, 3600, JSON.stringify(resultPayload));
+
+    return res.json(resultPayload);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+router.get('/rate-cards', authenticate, getRateCardsHandler);
+router.get('/rate-card', authenticate, getRateCardsHandler);
+router.get('/config/rates', authenticate, getRateCardsHandler);
+router.get('/place-types', authenticate, getRateCardsHandler);
+
+router.put('/rate-card/:id', authenticate, authorize(['admin']), updateRateCardHandler);
+router.put('/rate-cards/:id', authenticate, authorize(['admin']), updateRateCardHandler);
+router.put('/config/rates/:id', authenticate, authorize(['admin']), updateRateCardHandler);
+router.put('/place-types/:id', authenticate, authorize(['admin']), updateRateCardHandler);
+
+// ==========================================
+// 8. ADMIN REPORTS ENDPOINTS
+// ==========================================
+
+function getDateRangeFromFilter(filter?: string, queryStart?: string, queryEnd?: string) {
+  const now = new Date();
+  let startDate = new Date();
+  let endDate = new Date();
+
+  if (filter === 'hour') {
+    startDate = new Date(now.getTime() - 60 * 60 * 1000);
+    endDate = now;
+  } else if (filter === 'day') {
+    startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
+    endDate = new Date();
+    endDate.setHours(23, 59, 59, 999);
+  } else if (filter === 'week') {
+    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    endDate = now;
+  } else if (filter === 'month') {
+    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    endDate = now;
+  } else if (filter === 'custom' || (!filter && queryStart)) {
+    if (queryStart) {
+      startDate = new Date(queryStart);
+      startDate.setHours(0, 0, 0, 0);
+    } else {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      startDate.setHours(0, 0, 0, 0);
+    }
+    if (queryEnd) {
+      endDate = new Date(queryEnd);
+      endDate.setHours(23, 59, 59, 999);
+    } else {
+      endDate = now;
+    }
+  } else {
+    // Default to 'day' (today)
+    startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
+    endDate = new Date();
+    endDate.setHours(23, 59, 59, 999);
+  }
+
+  return { startDate, endDate };
+}
+
+// GET /reports/dashboard (Admin/Manager allowed)
+router.get('/reports/dashboard', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
+  try {
+    await tokenService.reconcileSystemState();
+    const { filter, startDate: qStart, endDate: qEnd } = req.query;
+    const { startDate, endDate } = getDateRangeFromFilter(filter as string, qStart as string, qEnd as string);
+
+    // 1. Sales summary query
+    const tokens = await prisma.token.findMany({
+      where: { 
+        startTime: { gte: startDate, lte: endDate },
+        paymentVerified: true
+      },
+      include: {
+        extensions: true
+      }
+    });
+
+    const extensionsToday = await prisma.tokenExtension.findMany({
+      where: {
+        extendedAt: { gte: startDate, lte: endDate }
+      }
+    });
+
+    let totalCollectionsDec = new Decimal(0);
+    for (const t of tokens) {
+      const extSum = t.extensions.reduce((sum, ext) => sum.add(ext.additionalAmount), new Decimal(0));
+      const coverCharge = t.amountPaid.minus(extSum);
+      totalCollectionsDec = totalCollectionsDec.add(coverCharge);
+    }
+    const totalExtensionsDec = extensionsToday.reduce((acc, ext) => acc.add(ext.additionalAmount), new Decimal(0));
+    totalCollectionsDec = totalCollectionsDec.add(totalExtensionsDec);
+
+    const totalCollections = totalCollectionsDec.toNumber();
+    const totalPersonsServed = tokens.reduce((acc, t) => acc + t.personsCount, 0);
+
+    const redemptionsCount = await prisma.redemption.count({
+      where: { redeemedAt: { gte: startDate, lte: endDate } },
+    });
+
+    const salesSummary = {
+      todaySales: totalCollections,
+      todayRedemptions: redemptionsCount,
+      totalCustomers: totalPersonsServed,
+      checkoutCount: tokens.filter((t: any) => t.status === TokenStatus.CLOSED).length,
+      period: { startDate, endDate }
+    };
+
+    // 2. Table utilization query
+    const tables = await prisma.table.findMany({
+      include: { placeType: true }
+    });
+
+    const periodDurationMs = Math.max(1000, endDate.getTime() - startDate.getTime());
+    const periodHours = periodDurationMs / (3600 * 1000);
+    const periodDays = Math.max(1, periodHours / 24);
+
+    let totalOccupancyHoursSum = 0;
+    const tablesReport = [];
+
+    for (const t of tables) {
+      const logs = await prisma.tableOccupancyLog.findMany({
+        where: {
+          tableId: t.id,
+          occupiedAt: { lte: endDate },
+          OR: [
+            { vacatedAt: null },
+            { vacatedAt: { gte: startDate } }
+          ]
+        }
+      });
+
+      let totalOccupancyMs = 0;
+      let turnoverCount = 0;
+      let sessionDurationsSum = 0;
+      let finishedSessionsCount = 0;
+
+      for (const log of logs) {
+        const logStart = log.occupiedAt.getTime();
+        const logEnd = log.vacatedAt ? log.vacatedAt.getTime() : Date.now();
+        const overlapStart = Math.max(logStart, startDate.getTime());
+        const overlapEnd = Math.min(logEnd, endDate.getTime());
+
+        if (overlapStart < overlapEnd) {
+          totalOccupancyMs += (overlapEnd - overlapStart);
+        }
+
+        if (logStart >= startDate.getTime() && logStart <= endDate.getTime()) {
+          turnoverCount++;
+        }
+
+        const duration = logEnd - logStart;
+        sessionDurationsSum += duration;
+        finishedSessionsCount++;
+      }
+
+      const totalOccupancyHours = Number((totalOccupancyMs / (3600 * 1000)).toFixed(2));
+      totalOccupancyHoursSum += totalOccupancyHours;
+
+      const averageOccupancyPerDay = Number((totalOccupancyHours / periodDays).toFixed(2));
+      const averageSessionDurationMinutes = finishedSessionsCount > 0
+        ? Number((sessionDurationsSum / (finishedSessionsCount * 60 * 1000)).toFixed(2))
+        : 0;
+
+      tablesReport.push({
+        tableNumber: t.tableNumber,
+        placeType: t.placeType.name,
+        totalOccupancyHours,
+        averageOccupancyPerDay,
+        turnoverCount,
+        averageSessionDurationMinutes
+      });
+    }
+
+    const totalTableHours = Number((periodHours * tables.length).toFixed(2));
+    const averageOccupancyRate = totalTableHours > 0
+      ? Number((totalOccupancyHoursSum / totalTableHours).toFixed(4))
+      : 0;
+
+    const tableUtilization = {
+      period: {
+        start: startDate.toISOString(),
+        end: endDate.toISOString()
+      },
+      tables: tablesReport,
+      summary: {
+        totalTableHours,
+        averageOccupancyRate: Math.min(1.0, averageOccupancyRate)
+      }
+    };
+
+    // 3. Hourly breakdown query
+    const redemptions = await prisma.redemption.findMany({
+      where: { redeemedAt: { gte: startDate, lte: endDate } }
+    });
+
+    const activeTokens = await prisma.token.findMany({
+      where: {
+        startTime: { lte: endDate },
+        paymentVerified: true,
+        OR: [
+          { closedAt: null },
+          { closedAt: { gte: startDate } }
+        ]
+      },
+      include: {
+        extensions: true
+      }
+    });
+
+    const hourlyCounts: number[] = new Array(24).fill(0);
+    const hourlyData = [];
+    const dateStr = startDate.getFullYear() + '-' + String(startDate.getMonth() + 1).padStart(2, '0') + '-' + String(startDate.getDate()).padStart(2, '0');
+
+    for (let hour = 0; hour < 24; hour++) {
+      const hrRedemptions = redemptions.filter(r => new Date(r.redeemedAt).getHours() === hour).length;
+      hourlyCounts[hour] = hrRedemptions;
+
+      const hrNewTokens = activeTokens.filter(t => new Date(t.startTime).getHours() === hour && t.startTime.getTime() >= startDate.getTime() && t.startTime.getTime() <= endDate.getTime()).length;
+
+      let activeTokensSum = 0;
+      const dayStart = new Date(startDate);
+      dayStart.setHours(0, 0, 0, 0);
+      let dayCount = 0;
+
+      while (dayStart.getTime() <= endDate.getTime()) {
+        const hrStart = new Date(dayStart);
+        hrStart.setHours(hour, 0, 0, 0);
+        const hrEnd = new Date(dayStart);
+        hrEnd.setHours(hour, 59, 59, 999);
+
+        const activeCount = activeTokens.filter(t => {
+          const tStart = t.startTime.getTime();
+          const tEnd = t.closedAt ? t.closedAt.getTime() : Date.now();
+          return tStart <= hrEnd.getTime() && tEnd >= hrStart.getTime();
+        }).length;
+
+        activeTokensSum += activeCount;
+        dayCount++;
+
+        dayStart.setDate(dayStart.getDate() + 1);
+      }
+
+      const averageActiveTokens = dayCount > 0 ? Number((activeTokensSum / dayCount).toFixed(1)) : 0;
+
+      // 1. Cover charge revenue for tokens that started in this hour today
+      const hrRevenueTokens = activeTokens.filter(t => 
+        new Date(t.startTime).getHours() === hour && 
+        t.startTime.getTime() >= startDate.getTime() && 
+        t.startTime.getTime() <= endDate.getTime()
+      );
+      
+      let hrRevenue = 0;
+      for (const t of hrRevenueTokens) {
+        const extSum = t.extensions.reduce((sum, ext) => sum + parseFloat(ext.additionalAmount.toString()), 0);
+        const coverCharge = parseFloat(t.amountPaid.toString()) - extSum;
+        hrRevenue += coverCharge;
+      }
+
+      // 2. Extension revenue for extensions created in this hour today (across all active tokens)
+      for (const t of activeTokens) {
+        const hrExtensions = t.extensions.filter(ext => 
+          new Date(ext.extendedAt).getHours() === hour && 
+          ext.extendedAt.getTime() >= startDate.getTime() && 
+          ext.extendedAt.getTime() <= endDate.getTime()
+        );
+        const extRevenue = hrExtensions.reduce((sum, ext) => sum + parseFloat(ext.additionalAmount.toString()), 0);
+        hrRevenue += extRevenue;
+      }
+
+      hourlyData.push({
+        hour,
+        redemptions: hrRedemptions,
+        newTokens: hrNewTokens,
+        activeTokens: averageActiveTokens,
+        revenue: hrRevenue
+      });
+    }
+
+    let peakHour = 0;
+    let peakRedemptions = 0;
+    for (let hour = 0; hour < 24; hour++) {
+      if (hourlyCounts[hour] > peakRedemptions) {
+        peakRedemptions = hourlyCounts[hour];
+        peakHour = hour;
+      }
+    }
+
+    if (peakRedemptions === 0) {
+      let maxNew = 0;
+      for (let i = 0; i < 24; i++) {
+        if (hourlyData[i].newTokens > maxNew) {
+          maxNew = hourlyData[i].newTokens;
+          peakHour = i;
+        }
+      }
+    }
+
+    const hourlyBreakdown = {
+      date: dateStr,
+      hourlyData,
+      peakHour,
+      peakRedemptions
+    };
+
+    return res.json({
+      success: true,
+      data: {
+        salesSummary,
+        tableUtilization,
+        hourlyBreakdown
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Sales summary (Admin/Manager allowed)
+router.get('/reports/sales', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
+  try {
+    const { filter, startDate: qStart, endDate: qEnd } = req.query;
+    const { startDate, endDate } = getDateRangeFromFilter(filter as string, qStart as string, qEnd as string);
+
+    const tokens = await prisma.token.findMany({
+      where: { 
+        startTime: { gte: startDate, lte: endDate },
+        paymentVerified: true
+      },
+    });
+
+    const totalCollectionsDec = tokens.reduce((acc, t) => acc.add(t.amountPaid), new Decimal(0));
+    const totalCollections = totalCollectionsDec.toNumber();
+    const totalPersonsServed = tokens.reduce((acc, t) => acc + t.personsCount, 0);
+
+    const redemptionsCount = await prisma.redemption.count({
+      where: { redeemedAt: { gte: startDate, lte: endDate } },
+    });
+
+    return res.json({
+      success: true,
+      todaySales: totalCollections,
+      todayRedemptions: redemptionsCount,
+      totalCustomers: totalPersonsServed,
+      checkoutCount: tokens.filter((t: any) => t.status === TokenStatus.CLOSED).length,
+      data: {
+        todaySales: totalCollections,
+        todayRedemptions: redemptionsCount,
+        totalCustomers: totalPersonsServed,
+        checkoutCount: tokens.filter((t: any) => t.status === TokenStatus.CLOSED).length,
+        period: { startDate, endDate }
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Occupancy report (Admin/Manager allowed)
+router.get('/reports/occupancy', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
+  try {
+    const tables = await prisma.table.findMany();
+    const occupiedCount = tables.filter(t => t.status === 'occupied').length;
+    const totalCount = tables.length;
+    const occupancyRate = totalCount > 0 ? (occupiedCount / totalCount) * 100 : 0;
+
+    return res.json({
+      success: true,
+      totalTables: totalCount,
+      occupiedTables: occupiedCount,
+      occupancyRate: Math.round(occupancyRate),
+      tables: tables.map(t => ({
+        id: t.id,
+        number: t.tableNumber,
+        placeType: t.placeTypeId,
+        status: t.status.toUpperCase(),
+      })),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Peak hours (Admin/Manager allowed)
+router.get('/reports/peak-hours', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
+  try {
+    const { filter, startDate: qStart, endDate: qEnd } = req.query;
+    const { startDate, endDate } = getDateRangeFromFilter(filter as string, qStart as string, qEnd as string);
+
+    const redemptions = await prisma.redemption.findMany({
+      where: { redeemedAt: { gte: startDate, lte: endDate } },
+      select: { redeemedAt: true },
+    });
+
+    const hourlyCounts = Array(24).fill(0);
+    redemptions.forEach((r) => {
+      const hour = new Date(r.redeemedAt).getHours();
+      hourlyCounts[hour]++;
+    });
+
+    const labels = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
+    return res.json({
+      success: true,
+      labels,
+      data: hourlyCounts,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
+
+// GET /reports/daily (Admin/Manager allowed)
+router.get('/reports/daily', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
+  try {
+    const { date, filter, startDate: qStart, endDate: qEnd } = req.query;
+    let startDate: Date;
+    let endDate: Date;
+    let dateStr = '';
+    if (date) {
+      dateStr = date as string;
+      startDate = new Date(`${dateStr}T00:00:00`);
+      endDate = new Date(`${dateStr}T23:59:59.999`);
+    } else {
+      const range = getDateRangeFromFilter(filter as string, qStart as string, qEnd as string);
+      startDate = range.startDate;
+      endDate = range.endDate;
+      dateStr = startDate.getFullYear() + '-' + String(startDate.getMonth() + 1).padStart(2, '0') + '-' + String(startDate.getDate()).padStart(2, '0');
+    }
+
+    const tokens = await prisma.token.findMany({
+      where: { 
+        startTime: { gte: startDate, lte: endDate },
+        paymentVerified: true
+      },
+      include: { placeType: true }
+    });
+
+    const redemptions = await prisma.redemption.findMany({
+      where: { redeemedAt: { gte: startDate, lte: endDate } },
+      include: { token: { include: { placeType: true } } }
+    });
+
+    const totalRevenueDec = tokens.reduce((sum, t) => sum.add(t.amountPaid), new Decimal(0));
+    const totalRevenue = totalRevenueDec.toNumber();
+    const totalRedemptions = redemptions.length;
+    const averageRedemptionsPerToken = tokens.length > 0 ? Number((totalRedemptions / tokens.length).toFixed(1)) : 0;
+
+    const byPlaceType: Record<string, any> = {};
+    const placeTypes = await prisma.placeTypeConfig.findMany();
+    for (const pt of placeTypes) {
+      const ptTokens = tokens.filter(t => t.placeTypeId === pt.id);
+      const ptRedemptions = redemptions.filter(r => r.token.placeTypeId === pt.id);
+      const ptRevenueDec = ptTokens.reduce((sum, t) => sum.add(t.amountPaid), new Decimal(0));
+
+      const logs = await prisma.tableOccupancyLog.findMany({
+        where: {
+          table: { placeTypeId: pt.id },
+          occupiedAt: { lte: endDate },
+          OR: [
+            { vacatedAt: null },
+            { vacatedAt: { gte: startDate } }
+          ]
+        }
+      });
+
+      let totalOccupancyMs = 0;
+      for (const log of logs) {
+        const logStart = log.occupiedAt.getTime();
+        const logEnd = log.vacatedAt ? log.vacatedAt.getTime() : Date.now();
+        const overlapStart = Math.max(logStart, startDate.getTime());
+        const overlapEnd = Math.min(logEnd, endDate.getTime());
+        if (overlapStart < overlapEnd) {
+          totalOccupancyMs += (overlapEnd - overlapStart);
+        }
+      }
+
+      const periodDurationMs = Math.max(1000, endDate.getTime() - startDate.getTime());
+      const periodHours = periodDurationMs / (3600 * 1000);
+      const averageOccupancy = periodHours > 0 ? Number((totalOccupancyMs / (periodHours * 3600 * 1000)).toFixed(1)) : 0;
+
+      byPlaceType[pt.name] = {
+        tokensIssued: ptTokens.length,
+        revenue: ptRevenueDec.toNumber(),
+        redemptions: ptRedemptions.length,
+        averageOccupancy: averageOccupancy
+      };
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        date: dateStr,
+        summary: {
+          totalTokensIssued: tokens.length,
+          totalRevenue,
+          totalRedemptions,
+          averageRedemptionsPerToken
+        },
+        byPlaceType
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /reports/table-utilization (Admin/Manager allowed)
+router.get('/reports/table-utilization', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
+  try {
+    const { filter, startDate: qStart, endDate: qEnd, placeTypeId } = req.query;
+    const { startDate, endDate } = getDateRangeFromFilter(filter as string, qStart as string, qEnd as string);
+
+    const tableWhereClause: any = {};
+    if (placeTypeId) {
+      tableWhereClause.placeTypeId = placeTypeId as string;
+    }
+    const tables = await prisma.table.findMany({
+      where: tableWhereClause,
+      include: { placeType: true }
+    });
+
+    const periodDurationMs = Math.max(1000, endDate.getTime() - startDate.getTime());
+    const periodHours = periodDurationMs / (3600 * 1000);
+    const periodDays = Math.max(1, periodHours / 24);
+
+    let totalOccupancyHoursSum = 0;
+    const tablesReport = [];
+
+    for (const t of tables) {
+      const logs = await prisma.tableOccupancyLog.findMany({
+        where: {
+          tableId: t.id,
+          occupiedAt: { lte: endDate },
+          OR: [
+            { vacatedAt: null },
+            { vacatedAt: { gte: startDate } }
+          ]
+        }
+      });
+
+      let totalOccupancyMs = 0;
+      let turnoverCount = 0;
+      let sessionDurationsSum = 0;
+      let finishedSessionsCount = 0;
+
+      for (const log of logs) {
+        const logStart = log.occupiedAt.getTime();
+        const logEnd = log.vacatedAt ? log.vacatedAt.getTime() : Date.now();
+        const overlapStart = Math.max(logStart, startDate.getTime());
+        const overlapEnd = Math.min(logEnd, endDate.getTime());
+
+        if (overlapStart < overlapEnd) {
+          totalOccupancyMs += (overlapEnd - overlapStart);
+        }
+
+        if (logStart >= startDate.getTime() && logStart <= endDate.getTime()) {
+          turnoverCount++;
+        }
+
+        const duration = logEnd - logStart;
+        sessionDurationsSum += duration;
+        finishedSessionsCount++;
+      }
+
+      const totalOccupancyHours = Number((totalOccupancyMs / (3600 * 1000)).toFixed(2));
+      totalOccupancyHoursSum += totalOccupancyHours;
+
+      const averageOccupancyPerDay = Number((totalOccupancyHours / periodDays).toFixed(2));
+      const averageSessionDurationMinutes = finishedSessionsCount > 0
+        ? Number((sessionDurationsSum / (finishedSessionsCount * 60 * 1000)).toFixed(2))
+        : 0;
+
+      tablesReport.push({
+        tableNumber: t.tableNumber,
+        placeType: t.placeType.name,
+        totalOccupancyHours,
+        averageOccupancyPerDay,
+        turnoverCount,
+        averageSessionDurationMinutes
+      });
+    }
+
+    const totalTableHours = Number((periodHours * tables.length).toFixed(2));
+    const averageOccupancyRate = totalTableHours > 0
+      ? Number((totalOccupancyHoursSum / totalTableHours).toFixed(4))
+      : 0;
+
+    return res.json({
+      success: true,
+      data: {
+        period: {
+          start: startDate.toISOString(),
+          end: endDate.toISOString()
+        },
+        tables: tablesReport,
+        summary: {
+          totalTableHours,
+          averageOccupancyRate: Math.min(1.0, averageOccupancyRate)
+        }
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /reports/hourly-breakdown (Admin/Manager allowed)
+router.get('/reports/hourly-breakdown', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
+  try {
+    const { date, filter, startDate: qStart, endDate: qEnd } = req.query;
+    let startDate: Date;
+    let endDate: Date;
+    let dateStr = '';
+    if (date) {
+      dateStr = date as string;
+      startDate = new Date(`${dateStr}T00:00:00`);
+      endDate = new Date(`${dateStr}T23:59:59.999`);
+    } else {
+      const range = getDateRangeFromFilter(filter as string, qStart as string, qEnd as string);
+      startDate = range.startDate;
+      endDate = range.endDate;
+      dateStr = startDate.getFullYear() + '-' + String(startDate.getMonth() + 1).padStart(2, '0') + '-' + String(startDate.getDate()).padStart(2, '0');
+    }
+
+    const hourlyData = [];
+    const hourlyCounts = Array(24).fill(0);
+
+    const redemptions = await prisma.redemption.findMany({
+      where: { redeemedAt: { gte: startDate, lte: endDate } }
+    });
+
+    const tokens = await prisma.token.findMany({
+      where: {
+        startTime: { lte: endDate },
+        paymentVerified: true,
+        OR: [
+          { closedAt: null },
+          { closedAt: { gte: startDate } }
+        ]
+      }
+    });
+
+    for (let hour = 0; hour < 24; hour++) {
+      const hrRedemptions = redemptions.filter(r => new Date(r.redeemedAt).getHours() === hour).length;
+      hourlyCounts[hour] = hrRedemptions;
+
+      const hrNewTokens = tokens.filter(t => new Date(t.startTime).getHours() === hour && t.startTime.getTime() >= startDate.getTime() && t.startTime.getTime() <= endDate.getTime()).length;
+
+      let activeTokensSum = 0;
+      const dayStart = new Date(startDate);
+      dayStart.setHours(0, 0, 0, 0);
+      let dayCount = 0;
+
+      while (dayStart.getTime() <= endDate.getTime()) {
+        const hrStart = new Date(dayStart);
+        hrStart.setHours(hour, 0, 0, 0);
+        const hrEnd = new Date(dayStart);
+        hrEnd.setHours(hour, 59, 59, 999);
+
+        const activeCount = tokens.filter(t => {
+          const tStart = t.startTime.getTime();
+          const tEnd = t.closedAt ? t.closedAt.getTime() : Date.now();
+          return tStart <= hrEnd.getTime() && tEnd >= hrStart.getTime();
+        }).length;
+
+        activeTokensSum += activeCount;
+        dayCount++;
+
+        dayStart.setDate(dayStart.getDate() + 1);
+      }
+
+      const averageActiveTokens = dayCount > 0 ? Number((activeTokensSum / dayCount).toFixed(1)) : 0;
+
+      const hrRevenueTokens = tokens.filter(t => 
+        new Date(t.startTime).getHours() === hour && 
+        t.startTime.getTime() >= startDate.getTime() && 
+        t.startTime.getTime() <= endDate.getTime()
+      );
+      const hrRevenue = hrRevenueTokens.reduce((acc, t) => acc + parseFloat(t.amountPaid.toString()), 0);
+
+      hourlyData.push({
+        hour,
+        redemptions: hrRedemptions,
+        newTokens: hrNewTokens,
+        activeTokens: averageActiveTokens,
+        revenue: hrRevenue
+      });
+    }
+
+    let peakHour = 0;
+    let peakRedemptions = 0;
+    for (let hour = 0; hour < 24; hour++) {
+      if (hourlyCounts[hour] > peakRedemptions) {
+        peakRedemptions = hourlyCounts[hour];
+        peakHour = hour;
+      }
+    }
+
+    if (peakRedemptions === 0) {
+      let maxNew = 0;
+      for (let i = 0; i < 24; i++) {
+        if (hourlyData[i].newTokens > maxNew) {
+          maxNew = hourlyData[i].newTokens;
+          peakHour = i;
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        date: dateStr,
+        hourlyData,
+        peakHour,
+        peakRedemptions
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Batch Sync Endpoint (Offline-First reconciliation)
+router.post('/sync', authenticate, async (req: Request, res: Response) => {
+  const { deviceId, operations } = req.body;
+
+  if (!deviceId || !Array.isArray(operations)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VAL_010', message: 'deviceId and operations array are required' }
+    });
+  }
+
+  try {
+    const results = await syncService.syncOperations(deviceId, operations);
+    const processedCount = results.filter(r => r.status === 'SUCCESS').length;
+
+    return res.json({
+      success: true,
+      processedCount,
+      results
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SYNC_ERR', message: err.message }
+    });
+  }
+});
+
+// GET /api/config (Exposes tokenType config)
+router.get('/config', async (req: Request, res: Response) => {
+  try {
+    const { emailQrEnabled } = await tokenService.getConfiguredDeliveryAvailability();
+    const tokenType = 'email';
+    return res.json({
+      success: true,
+      emailQrEnabled,
+      tokenType
+    });
+  } catch (err: any) {
+    return res.json({
+      success: true,
+      emailQrEnabled: true,
+      tokenType: 'email'
+    });
+  }
+});
+
+export default router;
