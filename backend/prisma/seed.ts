@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Station, FoodType } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -132,6 +132,8 @@ async function main() {
         view_tables: true,
         process_redemption: true,
         manage_rates: true,
+        manage_menu: true,
+        manage_orders: true,
       },
     },
     {
@@ -148,6 +150,7 @@ async function main() {
       permissions: {
         process_redemption: true,
         view_tokens: true,
+        process_kds_bar: true,
       },
     },
     {
@@ -156,6 +159,7 @@ async function main() {
         view_tables: true,
         view_tokens: true,
         view_reports: true,
+        manage_menu: true,
       },
     },
   ];
@@ -305,7 +309,7 @@ async function main() {
   }
   console.log('Tables seeded.');
 
-  // 7. Seed System Configurations
+  // 6. Seed System Configurations
   console.log('Seeding system configs...');
   await prisma.systemConfig.upsert({
     where: { configKey: 'email_qr_enabled' },
@@ -317,8 +321,309 @@ async function main() {
   });
   console.log('System configs seeded.');
 
-  // 8. Mock operational data removed.
-  console.log('No mock operational data seeded.');
+  // ==========================================
+  // 7. SEED MENU SECTIONS, CATEGORIES & ITEMS
+  // ==========================================
+  console.log('Seeding menu sections and catalog...');
+
+  const sectionSpecs = [
+    { name: 'Eat', slug: 'eat', sortOrder: 1 },
+    { name: 'Drink', slug: 'drink', sortOrder: 2 },
+    { name: 'Merchandise', slug: 'merchandise', sortOrder: 3 },
+  ];
+
+  const dbSections: Record<string, string> = {};
+  for (const s of sectionSpecs) {
+    const created = await prisma.menuSection.upsert({
+      where: { slug: s.slug },
+      update: { name: s.name, sortOrder: s.sortOrder },
+      create: s,
+    });
+    dbSections[s.slug] = created.id;
+  }
+
+  const categorySpecs = [
+    // Eat
+    { sectionSlug: 'eat', name: 'Bar Snacks', slug: 'bar-snacks', sortOrder: 1 },
+    { sectionSlug: 'eat', name: 'Burgers & Sandwiches', slug: 'burgers', sortOrder: 2 },
+    { sectionSlug: 'eat', name: 'Mains', slug: 'mains', sortOrder: 3 },
+    { sectionSlug: 'eat', name: 'Accompaniments', slug: 'sides', sortOrder: 4 },
+    { sectionSlug: 'eat', name: 'Desserts', slug: 'desserts', sortOrder: 5 },
+    // Drink
+    { sectionSlug: 'drink', name: 'Beer', slug: 'beer', sortOrder: 1 },
+    { sectionSlug: 'drink', name: 'Whisky', slug: 'whisky', sortOrder: 2 },
+    { sectionSlug: 'drink', name: 'Cocktails', slug: 'cocktails', sortOrder: 3 },
+    { sectionSlug: 'drink', name: 'Mocktails', slug: 'mocktails', sortOrder: 4 },
+    { sectionSlug: 'drink', name: 'Wine', slug: 'wine', sortOrder: 5 },
+    { sectionSlug: 'drink', name: 'Soft Drinks & Water', slug: 'soft', sortOrder: 6 },
+    // Merch
+    { sectionSlug: 'merchandise', name: 'Take Home', slug: 'take-home', sortOrder: 1 },
+  ];
+
+  const dbCategories: Record<string, string> = {};
+  for (const c of categorySpecs) {
+    const created = await prisma.menuCategory.upsert({
+      where: { slug: c.slug },
+      update: { name: c.name, sortOrder: c.sortOrder, sectionId: dbSections[c.sectionSlug] },
+      create: { name: c.name, slug: c.slug, sortOrder: c.sortOrder, sectionId: dbSections[c.sectionSlug] },
+    });
+    dbCategories[c.slug] = created.id;
+  }
+
+  // Subcategories
+  const subcategorySpecs = [
+    { categorySlug: 'bar-snacks', name: 'Vegetarian', slug: 'veg', sortOrder: 1 },
+    { categorySlug: 'bar-snacks', name: 'Chicken', slug: 'chicken', sortOrder: 2 },
+    { categorySlug: 'bar-snacks', name: 'Seafood', slug: 'seafood', sortOrder: 3 },
+  ];
+
+  const dbSubcategories: Record<string, string> = {};
+  for (const sc of subcategorySpecs) {
+    const existing = await prisma.menuSubcategory.findFirst({
+      where: { categoryId: dbCategories[sc.categorySlug], slug: sc.slug },
+    });
+    if (existing) {
+      dbSubcategories[sc.slug] = existing.id;
+    } else {
+      const created = await prisma.menuSubcategory.create({
+        data: {
+          categoryId: dbCategories[sc.categorySlug],
+          name: sc.name,
+          slug: sc.slug,
+          sortOrder: sc.sortOrder,
+        },
+      });
+      dbSubcategories[sc.slug] = created.id;
+    }
+  }
+
+  // Menu Items & Modifiers
+  const menuItemSpecs = [
+    {
+      id: 'itm_gcc',
+      name: 'Golf Club Cauliflower',
+      description: 'Crisp cauliflower tossed in signature honey-chilli glaze',
+      sectionId: dbSections['eat'],
+      categoryId: dbCategories['bar-snacks'],
+      subcategoryId: dbSubcategories['veg'],
+      foodType: FoodType.VEG,
+      basePrice: 215.0,
+      station: Station.KITCHEN,
+      isAvailable: true,
+      isPopular: true,
+      tags: ['snack', 'spicy'],
+      preparationTime: 12,
+      variants: [
+        { name: 'Half', priceDelta: 0.0, sortOrder: 1 },
+        { name: 'Full', priceDelta: 100.0, sortOrder: 2 },
+      ],
+      modifierGroup: {
+        name: 'Spice level',
+        isRequired: false,
+        isMulti: false,
+        options: [
+          { name: 'Mild', priceDelta: 0.0 },
+          { name: 'Medium', priceDelta: 0.0 },
+          { name: 'Hot', priceDelta: 0.0 },
+        ],
+      },
+    },
+    {
+      id: 'itm_wings',
+      name: 'Chicken Wings',
+      description: 'Slow-cooked wings in smoky BBQ glaze',
+      sectionId: dbSections['eat'],
+      categoryId: dbCategories['bar-snacks'],
+      subcategoryId: dbSubcategories['chicken'],
+      foodType: FoodType.NON_VEG,
+      basePrice: 220.0,
+      station: Station.KITCHEN,
+      isAvailable: true,
+      isFeatured: true,
+      isPopular: true,
+      tags: ['signature'],
+      preparationTime: 14,
+      variants: [
+        { name: 'Half', priceDelta: 0.0, sortOrder: 1 },
+        { name: 'Full', priceDelta: 170.0, sortOrder: 2 },
+      ],
+      modifierGroup: {
+        name: 'Spice level',
+        isRequired: false,
+        isMulti: false,
+        options: [
+          { name: 'Mild', priceDelta: 0.0 },
+          { name: 'Medium', priceDelta: 0.0 },
+          { name: 'Hot', priceDelta: 0.0 },
+        ],
+      },
+    },
+    {
+      id: 'itm_bira',
+      name: 'Bira 91 White Draft',
+      description: 'Low bitterness wheat beer with citrus & coriander notes',
+      sectionId: dbSections['drink'],
+      categoryId: dbCategories['beer'],
+      foodType: FoodType.VEG,
+      basePrice: 275.0,
+      station: Station.BAR,
+      isAvailable: true,
+      isPopular: true,
+      tags: ['craft', 'tap'],
+      preparationTime: 3,
+      variants: [
+        { name: 'Pint (330ml)', priceDelta: 0.0, sortOrder: 1 },
+        { name: 'Pitcher (1500ml)', priceDelta: 550.0, sortOrder: 2 },
+      ],
+      modifierGroup: {
+        name: 'Ice',
+        isRequired: false,
+        isMulti: false,
+        options: [
+          { name: 'Chilled Glass', priceDelta: 0.0 },
+          { name: 'With Ice', priceDelta: 0.0 },
+        ],
+      },
+    },
+    {
+      id: 'itm_oldmonk',
+      name: 'Old Monk Legend Rum',
+      description: 'Iconic dark rum aged in oak vats',
+      sectionId: dbSections['drink'],
+      categoryId: dbCategories['whisky'],
+      foodType: FoodType.VEG,
+      basePrice: 190.0,
+      station: Station.BAR,
+      isAvailable: true,
+      tags: ['spirit'],
+      preparationTime: 2,
+      variants: [
+        { name: '30ml (Single)', priceDelta: 0.0, sortOrder: 1 },
+        { name: '60ml (Double)', priceDelta: 160.0, sortOrder: 2 },
+      ],
+      modifierGroup: {
+        name: 'Mixer',
+        isRequired: false,
+        isMulti: false,
+        options: [
+          { name: 'Water', priceDelta: 0.0 },
+          { name: 'Soda', priceDelta: 30.0 },
+          { name: 'Cola', priceDelta: 40.0 },
+        ],
+      },
+    },
+  ];
+
+  for (const item of menuItemSpecs) {
+    const createdItem = await prisma.menuItem.upsert({
+      where: { id: item.id },
+      update: {
+        name: item.name,
+        description: item.description,
+        sectionId: item.sectionId,
+        categoryId: item.categoryId,
+        subcategoryId: item.subcategoryId,
+        foodType: item.foodType,
+        basePrice: item.basePrice,
+        station: item.station,
+        isAvailable: item.isAvailable,
+        isFeatured: item.isFeatured ?? false,
+        isPopular: item.isPopular ?? false,
+        tags: item.tags,
+        preparationTime: item.preparationTime,
+      },
+      create: {
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        sectionId: item.sectionId,
+        categoryId: item.categoryId,
+        subcategoryId: item.subcategoryId,
+        foodType: item.foodType,
+        basePrice: item.basePrice,
+        station: item.station,
+        isAvailable: item.isAvailable,
+        isFeatured: item.isFeatured ?? false,
+        isPopular: item.isPopular ?? false,
+        tags: item.tags,
+        preparationTime: item.preparationTime,
+      },
+    });
+
+    // Seed variants
+    for (const v of item.variants) {
+      const existingVar = await prisma.itemVariant.findFirst({
+        where: { menuItemId: createdItem.id, name: v.name },
+      });
+      if (!existingVar) {
+        await prisma.itemVariant.create({
+          data: { menuItemId: createdItem.id, name: v.name, priceDelta: v.priceDelta, sortOrder: v.sortOrder },
+        });
+      }
+    }
+
+    // Seed modifier group
+    if (item.modifierGroup) {
+      let existingGroup = await prisma.modifierGroup.findFirst({
+        where: { menuItemId: createdItem.id, name: item.modifierGroup.name },
+      });
+      if (!existingGroup) {
+        existingGroup = await prisma.modifierGroup.create({
+          data: {
+            menuItemId: createdItem.id,
+            name: item.modifierGroup.name,
+            isRequired: item.modifierGroup.isRequired,
+            isMulti: item.modifierGroup.isMulti,
+          },
+        });
+      }
+      for (const opt of item.modifierGroup.options) {
+        const existingOpt = await prisma.modifierOption.findFirst({
+          where: { groupId: existingGroup.id, name: opt.name },
+        });
+        if (!existingOpt) {
+          await prisma.modifierOption.create({
+            data: { groupId: existingGroup.id, name: opt.name, priceDelta: opt.priceDelta },
+          });
+        }
+      }
+    }
+  }
+  console.log('Menu items & customizer modifiers seeded.');
+
+  // 8. Seed Promotions
+  console.log('Seeding promotions...');
+  const promoSpecs = [
+    {
+      id: 'prm_weekend',
+      title: 'Weekend Craft Tap Takeover',
+      subtitle: 'Flat 15% off on all craft beer pitchers',
+      ctaLabel: 'Order Craft Pitchers',
+      ctaTarget: '/customer/drink?cat=beer',
+      accent: 'amber',
+      isActive: true,
+      discountPercent: 15.0,
+    },
+    {
+      id: 'prm_lounge',
+      title: 'Lounge Happy Hours',
+      subtitle: 'Buy 2 cocktails, get Chef Bar Snack free',
+      ctaLabel: 'Explore Cocktails',
+      ctaTarget: '/customer/drink?cat=cocktails',
+      accent: 'bottle',
+      isActive: true,
+    },
+  ];
+
+  for (const promo of promoSpecs) {
+    await prisma.promotion.upsert({
+      where: { id: promo.id },
+      update: promo,
+      create: promo,
+    });
+  }
+  console.log('Promotions seeded.');
+
   console.log('--- Seeding Completed Successfully ---');
 }
 

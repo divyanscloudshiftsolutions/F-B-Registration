@@ -1,40 +1,41 @@
-﻿# TableFlow Ordering — HLD & LLD Documentation
+﻿# TableFlow Ordering (`table/`) — Complete End-to-End HLD & LLD Documentation
 
 ---
 
 ## 1. System Overview
 
 ### 1.1 Purpose & Business Objective
-**TableFlow Ordering** (branded as *Pegs N Bottles / TableFlow*) is a full-stack, contactless digital restaurant and bar ordering platform. It bridges the gap between dine-in guests, floor waitstaff, kitchen/bar preparation stations, and restaurant back-office administration.
+**TableFlow Ordering** (branded as *Pegs N Bottles / TableFlow*) located in `table/` is an enterprise-grade, omnichannel contactless digital restaurant and bar ordering platform. It orchestrates the entire guest dining lifecycle: from initial QR scan onboarding, menu exploration, customizer selection, and multi-ticket order placement, to automated station routing for kitchen chefs and bartenders, waitstaff table management, waiter call triage, and itemized bill computation.
 
 The primary business objectives include:
-- **Zero-Friction Guest Self-Ordering:** Guests scan a table QR code (`/t/:token`) to instantly view menus, customize items, and place kitchen order tickets (KOTs) without waiting for a waiter.
-- **Real-Time Kitchen & Bar Display Systems (KDS):** Automated routing of food items to the Kitchen KDS (`/kds/kitchen`) and beverage items to the Bar KDS (`/kds/bar`).
-- **Omnichannel Service Requests:** Digital "Call Waiter" features for water, cutlery, napkins, cleanup, and urgent assistance.
-- **Real-Time Live Table Tabs & Bill Calculation:** Automated calculation of food/drink subtotals, configurable GST (5%), service charges (5%), optional surcharges, and mathematical cash/UPI rounding.
-- **Multi-Role Operations Back-Office:** Unified administration for menu management, table token assignment, staff attendance, promotional campaigns, and item-level sales velocity reports.
+- **Zero-Wait Guest Self-Ordering:** Guests scan a table QR code (`/t/:token`) to launch an active session, browse structured Eat/Drink catalogs, customize dishes with modifiers, and dispatch Kitchen Order Tickets (KOTs) directly to the kitchen/bar.
+- **Smart Station-Specific KDS Routing:** Automated splitting of food items to the **Kitchen Display System** (`/kds/kitchen`) and beverage items to the **Bar Display System** (`/kds/bar`).
+- **Real-Time Waiter Assistance & Pickup Alerts:** Real-time call waiter queue for water, cutlery, napkins, cleanup, and urgent assistance, plus ready-to-serve food alerts for waitstaff.
+- **Dynamic Live Table Tab & Precision Billing:** Continuous mathematical calculation of subtotals, 5% GST, 5% Service Charge, optional surcharges, and cash/UPI rounding.
+- **Multi-Role Venue Operations Back-Office:** Unified administration for live menu item availability toggling (86-ing), table layout designer, QR code generator, promotion banners, and sales velocity reports.
 
 ### 1.2 Major Capabilities
 | Domain | Capabilities |
 | :--- | :--- |
-| **Customer Guest Portal** | QR token onboarding, Eat (Food) & Drink catalog, merchandise shop, modifier customizer sheet, live cart, order tracking with preparation timers, one-click re-order, itemized bill review, and digital payment intent. |
-| **Staff & Floor Management** | Real-time table status grid (`AVAILABLE`, `OCCUPIED`, `BILL_REQUESTED`, `SETTLEMENT_PENDING`, `RESERVED`, `CLEANING`), waiter call center with acknowledge/resolve flows, ready-to-serve food/drink alerts, and bill settlement. |
-| **Kitchen & Bar KDS** | Order ticket bump bars, timer thresholds, station-specific routing (`KITCHEN` vs `BAR`), item strike-through, and status transitions (`PLACED` ➔ `PREPARING` ➔ `READY` ➔ `SERVED`). |
-| **Admin & Management** | Dynamic menu item CRUD, category/subcategory hierarchy, modifier groups, place type table mapping, promotional banner engine, role permissions, and financial reports. |
+| **Customer Guest Portal** | Scannable QR onboarding (`/t/:token`), category-filtered food menu, beverage catalog, merchandise shop, product customizer sheet (variants, modifier groups, special notes), live cart, order status tracking with timer progress bars, one-click re-order (`/customer/repeat`), multi-option "Call Waiter" sheet, and itemized bill requests. |
+| **Waitstaff Portal** | Visual table floor plan grid (`AVAILABLE`, `OCCUPIED`, `BILL_REQUESTED`, `SETTLEMENT_PENDING`, `RESERVED`, `CLEANING`), table inspector, call waiter request triage (`NEW` ➔ `ACKNOWLEDGED` ➔ `COMPLETED`), ready-to-serve pickup notifications, and bill settlement (Cash, Card, UPI). |
+| **Kitchen & Bar KDS** | Station-isolated ticket display queues (`KITCHEN` vs `BAR`), elapsed ticket timers with color-coded 15-minute warnings, individual item strike-through, and bump bar transitions (`PLACED` ➔ `PREPARING` ➔ `READY` ➔ `SERVED`). |
+| **Admin Back-Office** | Dynamic menu item CRUD, single-click 86 live item availability toggle, table layout & QR matrix generator, promotion campaign banner engine, billing rule configuration (GST %, Service Charge %, Surcharge %, Rounding), and item velocity/revenue analytics. |
+| **Demo Hub & State Engine** | Single-click role switcher, test scenario seeder (`seedDemo()`), and full local storage wipe tool. |
 
 ### 1.3 Technology Stack
 | Layer | Technologies / Frameworks | Responsibility |
 | :--- | :--- | :--- |
-| **Framework & Full-Stack Engine** | **TanStack Start (v1.168)** with **Nitro Server Runtime** | Server-Side Rendering (SSR), full-stack routing, and HTTP handler pipeline. |
-| **Routing Layer** | **TanStack Router (v1.170)** | Type-safe, file-based client and server routing. |
-| **Frontend UI Library** | **React 19 (v19.2)** | Declarative component UI and hooks (`useSyncExternalStore`, `useMemo`, `useState`). |
-| **State Management** | **Custom Central Reactive Store (`Store`)** + **TanStack Query (v5.101)** | Single source of truth with subscriber notifications and `localStorage` persistence. |
-| **Component Primitives** | **Radix UI Primitives** & **shadcn/ui** | Headless accessible components (Dialog, Sheet, Accordion, Dropdown, RadioGroup, Tabs, Select). |
-| **Styling & Design System** | **Tailwind CSS v4** + `@tailwindcss/vite` | Modern CSS styling with custom theme variables, luxury glass panels, and badge palettes. |
-| **Forms & Validation** | **React Hook Form (v7.71)** + **Zod (v3.24)** | Client-side form state and schema validation. |
-| **Charts & Visualization** | **Recharts (v2.15)** | Responsive revenue, item velocity, and sales distribution charts. |
-| **QR Code Generation** | **qrcode (v1.5)** | Dynamic QR matrix rendering for table tokens. |
-| **Toast Notifications** | **Sonner (v2.0)** | High-performance toast alerts for order dispatch, cart updates, and KDS bump bars. |
+| **Framework & Server Engine** | **TanStack Start (v1.168)** on **Nitro (v3.0)** | Server-Side Rendering (SSR), server handlers, and HTTP pipeline. |
+| **Routing Architecture** | **TanStack Router (v1.170)** | Type-safe, file-based client & server routing (`src/routes/*`). |
+| **UI Library & React Version** | **React 19 (v19.2)** | Declarative UI components and React 19 hooks (`useSyncExternalStore`, `useMemo`, `useState`). |
+| **Reactive State Management** | **Custom Reactive Store (`Store`)** + **TanStack Query (v5.101)** | Single source of truth with subscriber notifications and `localStorage` persistence. |
+| **Component Primitives** | **Radix UI Primitives** & **shadcn/ui** | Headless accessible components (Dialog, Sheet, Accordion, Dropdown, RadioGroup, Tabs, Select, Drawer). |
+| **Styling & Design System** | **Tailwind CSS v4** + `@tailwindcss/vite` | Modern utility CSS styling with luxury dark theme variables, badge palettes, and glass cards. |
+| **Forms & Validation** | **React Hook Form (v7.71)** + **Zod (v3.24)** | Form handling and client-side input validation. |
+| **Data Visualization** | **Recharts (v2.15)** | Responsive revenue breakdowns, item sales velocity, and category distribution charts. |
+| **QR Code Generation** | **qrcode (v1.5)** | Real-time vector/canvas QR code matrix generation for table tokens. |
+| **Notifications & Toasts** | **Sonner (v2.0)** | High-performance toast alerts for order dispatch, cart updates, and KDS bump bars. |
 | **Build & Tooling** | **Vite (v8.0)** + **TypeScript (v5.8)** | Ultra-fast bundling, ESM modules, and strict type safety. |
 
 ---
@@ -45,125 +46,132 @@ The primary business objectives include:
 
 ```mermaid
 flowchart TD
-    subgraph Client Tier
-        Cust["Guest Mobile Browser (/t/:token, /customer/*)"]
-        Staff["Floor Staff Handheld (/staff/*)"]
-        KDS["Kitchen / Bar KDS Screens (/kds/*)"]
+    subgraph Client Portals
+        Cust["Guest Mobile Web (/t/:token, /customer/*)"]
+        Staff["Floor Waitstaff Web (/staff/*)"]
+        KitchenKDS["Kitchen KDS Touchscreen (/kds/kitchen)"]
+        BarKDS["Bar KDS Touchscreen (/kds/bar)"]
         Admin["Admin Management Back-Office (/admin/*)"]
+        Demo["Demo Hub Launcher (/demo)"]
     end
 
-    subgraph TanStack Start Runtime Tier
-        SSR["TanStack Start SSR & Nitro Server Engine (server.ts)"]
-        Router["TanStack Router (File-Based Route Tree)"]
-        MW["Start Request Middleware (start.ts - Error Capture & SSR Fallback)"]
+    subgraph TanStack Start SSR & Nitro Runtime Tier
+        ServerEntry["Nitro Server Entry (src/server.ts)"]
+        ErrorCapture["Error Capture & SSR Fallback (src/lib/error-capture.ts)"]
+        Middleware["Start Request Middleware (src/start.ts)"]
+        Router["TanStack Router (src/routeTree.gen.ts)"]
     end
 
-    subgraph Service & Application Tier
-        Store["Reactive Store (store.ts - Single Source of Truth)"]
-        BillingSvc["Billing Calculation Engine (billing.ts)"]
-        StorageKV["Browser Storage Repository (storage.ts - localStorage KV)"]
-        SeedMocks["Domain Seed Repositories (seed.ts)"]
+    subgraph Application & Domain Service Tier
+        Store["Reactive Store Singleton (src/services/store.ts)"]
+        Billing["Billing Calculation Engine (src/services/billing.ts)"]
+        StorageKV["Storage KV Repository (src/repositories/storage.ts)"]
+        SeedData["Mock Domain Repositories (src/mocks/seed.ts)"]
     end
 
-    Cust -->|HTTP / SSR| SSR
-    Staff -->|HTTP / SSR| SSR
-    KDS -->|HTTP / SSR| SSR
-    Admin -->|HTTP / SSR| SSR
+    Cust -->|HTTP / SSR| ServerEntry
+    Staff -->|HTTP / SSR| ServerEntry
+    KitchenKDS -->|HTTP / SSR| ServerEntry
+    BarKDS -->|HTTP / SSR| ServerEntry
+    Admin -->|HTTP / SSR| ServerEntry
+    Demo -->|HTTP / SSR| ServerEntry
 
-    SSR --> MW
-    MW --> Router
+    ServerEntry --> ErrorCapture
+    ErrorCapture --> Middleware
+    Middleware --> Router
     Router --> Store
-    Store --> BillingSvc
-    Store --> StorageKV
-    Store --> SeedMocks
+    Store <--> Billing
+    Store <--> StorageKV
+    Store <--> SeedData
 ```
 
 ### 2.2 Component Architecture
-1. **Customer Ordering Module (`/routes/customer.*.tsx`):**
-   - Handles guest session entry, menu browsing, drink entitlement reviews, live table cart, order placement, order status tracking, call waiter sheets, and itemized bill requests.
-2. **Staff Service Center Module (`/routes/staff.*.tsx`):**
-   - Handles live table management, guest service request triage (Water, Napkins, Cutlery, Bill), order ready notifications, and bill settlement.
-3. **Kitchen & Bar KDS Module (`/routes/kds.*.tsx`):**
-   - Station-isolated ticket display queues for Kitchen (`KITCHEN`) and Bar (`BAR`), ticket timer tracking, and bump bar transitions.
-4. **Admin & Back-Office Module (`/routes/admin.*.tsx`):**
-   - Menu catalog management, table layout generator, promotional campaign engine, billing tax/service charge configuration, and financial reports.
-5. **Shared Domain & Reactive State Store (`src/services/store.ts`):**
-   - Reactive singleton store managing `session`, `customer`, `cart`, `orders`, `requests`, `bill`, `menuOverrides`, and `tables`.
-   - Dispatches changes to UI via `useSyncExternalStore`.
+The application is structured into five distinct operational modules:
+
+1. **Customer Self-Ordering Module (`/customer/*`):**
+   - Handles guest session entry, menu browsing, item variant/modifier selection, live table cart, order placement, order status tracking, reordering, waiter service calls, and bill requests.
+2. **Waitstaff Service Module (`/staff/*`):**
+   - Provides floor table overview, table capacity/timer tracking, guest service request triage (Water, Napkins, Cutlery, Clean Up, Assistance), pickup notifications, and bill settlement.
+3. **Kitchen Display System (`/kds/kitchen`):**
+   - Filters `station: "KITCHEN"`, renders ticket cards with preparation timers, item-level strike-through, and bump bar transitions (`PLACED` ➔ `PREPARING` ➔ `READY`).
+4. **Bar Display System (`/kds/bar`):**
+   - Filters `station: "BAR"`, groups beverage orders with ice and pour specifications, and provides high-speed drink bump bar controls.
+5. **Admin Operations Back-Office (`/admin/*`):**
+   - Centralizes menu catalog management, single-click 86 item availability toggles, table layout & QR code generation, promotional campaign banners, billing/tax configuration, and sales velocity reports.
 
 ### 2.3 Major System Components
-| Component | Responsibility | Inputs | Outputs | Dependencies |
-| :--- | :--- | :--- | :--- | :--- |
-| **`Store` (`store.ts`)** | Central state controller and business logic dispatcher | Actions (`placeOrder`, `callWaiter`, `requestBill`, `settleBill`, `updateTableStatus`) | Immutable state snapshot & listener notifications | `localStorage`, `seed.ts` |
-| **`calculateBill` (`billing.ts`)** | Pure billing computation engine | `sessionId`, `tableId`, `outletId`, `orders[]` | Immutable `Bill` object with taxes, service charges, rounding | `BILLING_CONFIG` |
-| **`ProductCustomizer`** | Modal sheet for item variants, modifier groups, and instructions | `MenuItem`, `open`, `onOpenChange` | Formatted `CartItem` dispatched to `store.addToCart()` | `Sheet`, `RadioGroup`, `VegBadge` |
-| **`CallWaiterSheet`** | Multi-type guest service request dispatcher | `tableNumber`, `sessionId`, `tableId` | Dispatched `ServiceRequest` | `Sheet`, `RadioGroup`, `store` |
-| **`ErrorCapture` & SSR Guard** | Normalizes catastrophic SSR and Nitro server errors | Unhandled server exceptions | Structured HTML error fallback | `lib/error-capture`, `lib/error-page` |
+| Component | File Path | Responsibility | Inputs | Outputs | Dependencies |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`Store`** | `src/services/store.ts` | Central state controller & single source of truth | Actions (`placeOrder`, `callWaiter`, `requestBill`, `settleBill`, `toggleMenuAvailability`) | Immutable state snapshot & listener notifications | `storage.ts`, `seed.ts` |
+| **`calculateBill`** | `src/services/billing.ts` | Pure billing calculation engine | `sessionId`, `tableId`, `outletId`, `orders[]` | Immutable `Bill` object with taxes, service charges, rounding | `config/index.ts` |
+| **`ProductCustomizer`** | `src/components/customer/ProductCustomizer.tsx` | Bottom sheet modal for item variants, modifier groups, notes, and quantities | `MenuItem`, `open`, `onOpenChange` | Formatted `CartItem` dispatched to `store.addToCart()` | `Sheet`, `RadioGroup`, `VegBadge` |
+| **`CallWaiterSheet`** | `src/components/customer/CallWaiterSheet.tsx` | Bottom sheet modal for guest service calls | `open`, `onOpenChange` | Formatted `ServiceRequest` dispatched to `store.callWaiter()` | `Sheet`, `RadioGroup`, `store` |
+| **`ErrorCapture` & SSR Guard** | `src/server.ts`, `src/lib/error-capture.ts` | Intercepts Nitro SSR crashes and renders sanitized error pages | Unhandled server exceptions | Normalized 500 HTML Response | `error-page.ts` |
 
-### 2.4 End-to-End Data Flow
+### 2.4 End-to-End Data Flows
 
-#### Flow 1: Table QR Token Onboarding
+#### Flow 1: Table QR Token Onboarding & Session Creation
 ```
-Guest Scans Table QR (e.g. /t/PNB-C5-DEMO)
--> Route Loader executes t.$token.tsx
--> Matches table token against TABLES in store
--> Creates or retrieves active DiningSession (PIN: 2019)
--> Persists session to localStorage (pnb.session)
--> Redirects guest to /customer/home
--> Header displays Table C5 and active session indicator.
-```
-
-#### Flow 2: Menu Customization, Cart & Order Placement
-```
-Guest opens Item Customizer Sheet
--> Selects Variant (e.g., "Full" +₹100) & Modifiers (e.g., "Spice: Hot")
--> Clicks "Add to Cart" -> store.addToCart() updates cart array
--> Guest navigates to /customer/cart and clicks "Place Order"
--> store.placeOrder() assigns Order #, calculates subtotal, sets status: PLACED
--> Automatically splits items by Station:
-   - KITCHEN items routed to Kitchen KDS queue (/kds/kitchen)
-   - BAR items routed to Bar KDS queue (/kds/bar)
--> Clears Cart, triggers Sonner toast, redirects to /customer/orders
--> Guest sees live tracking card with progress bar and time estimate.
+1. Guest scans physical table QR code -> Browser opens /t/PNB-C5-DEMO
+2. Route Loader (t.$token.tsx) extracts token parameter "PNB-C5-DEMO"
+3. Matches token against table directory in Store (Table C5, Capacity: 4)
+4. Checks if active DiningSession exists:
+   - If active: binds guest to existing session ID (PNB-SESSION-001)
+   - If not active: creates new DiningSession (PIN: 2019, Status: ORDERING), marks Table C5 as OCCUPIED
+5. Persists session state to localStorage (pnb.session)
+6. Redirects guest to /customer/home with Table C5 header badge.
 ```
 
-#### Flow 3: Kitchen / Bar KDS Ticket Processing
+#### Flow 2: Menu Customization, Live Cart & KOT Placement
 ```
-Order arrives on KDS Screen
--> Renders Ticket Card with Table #, Order #, Elapsed Timer, and Item List
--> Chef/Bartender clicks "Start Preparing" -> status updates to PREPARING
--> Preparation completes -> Chef clicks "Mark Ready" -> status updates to READY
--> System alerts Waitstaff at /staff/ready with table number
--> Waiter serves food -> Clicks "Mark Served" -> status updates to SERVED.
+1. Guest browses /customer/eat, selects "Chicken Wings" (Base: ₹220)
+2. ProductCustomizer opens: Guest selects Size: "Full" (+₹170), Spice: "Medium", Notes: "Extra crispy"
+3. Taps "Add to Cart" -> Store updates cart[] array with unitPrice ₹390
+4. Guest navigates to /customer/cart and clicks "Place Order (₹390)"
+5. store.placeOrder() assigns Order #03, calculates line totals, sets status: PLACED
+6. Automated Station Splitting:
+   - Food items (Wings) tagged station: "KITCHEN" -> Routed to /kds/kitchen queue
+   - Drink items (Beers/Cocktails) tagged station: "BAR" -> Routed to /kds/bar queue
+7. Clears table cart, displays Sonner toast, redirects to /customer/orders for live tracking.
 ```
 
-#### Flow 4: Bill Request, Calculation & Settlement
+#### Flow 3: Kitchen / Bar KDS Ticket Bump & Waiter Pickup
 ```
-Guest clicks "Request Bill" on /customer/bill
--> store.requestBill() invokes calculateBill(orders)
--> Computes Food Subtotal, Drink Subtotal, Service Charge (5%), GST (5%), Rounding
--> Generates Bill #PNB-XXXX with status: REQUESTED
--> Table status automatically transitions to BILL_REQUESTED
--> Waiter receives alert on /staff/bills/$billId
--> Waiter collects payment (Cash/Card/UPI) -> Clicks "Settle Bill"
--> Bill status updates to PAID -> Table status updates to CLEANING
--> Session marks CLOSED.
+1. New ticket appears on /kds/kitchen screen with elapsed timer (00:00)
+2. Chef clicks "Start Preparing" -> Order status transitions to PREPARING
+3. Chef plates food, clicks "Mark Ready" -> Order status transitions to READY
+4. System dispatches alert to Waitstaff portal at /staff/ready with Table #C5
+5. Waitstaff delivers dish to table -> Clicks "Mark Served" -> Status transitions to SERVED.
+```
+
+#### Flow 4: Bill Request, Pure Calculation & Settlement
+```
+1. Guest clicks "Request Bill" on /customer/bill
+2. store.requestBill() invokes calculateBill(orders):
+   - Food Subtotal = ₹850, Drink Subtotal = ₹500 -> Subtotal = ₹1,350
+   - Service Charge (5%) = ₹68
+   - Taxable Amount = ₹1,418
+   - GST (5%) = ₹71
+   - Pre-Round Total = ₹1,489 -> Grand Total = ₹1,489 (Rounding = ₹0)
+3. Generates Bill #PNB-XXXX with status: REQUESTED
+4. Table C5 status transitions to BILL_REQUESTED on Floor Plan
+5. Waitstaff opens /staff/bills/$billId -> Collects payment (Cash / Card / UPI)
+6. Clicks "Settle Bill" -> Bill status marks PAID, Session marks CLOSED, Table marks CLEANING.
 ```
 
 ### 2.5 Deployment & Runtime Architecture
-- **Runtime Environment:** Built with Vite and executed on **Nitro (v3.0)** server engine.
-- **Static Assets:** Served via Vite public directory.
-- **Client Cache Strategy:** Storage KV keys prefixed with `pnb.*` in `localStorage` for offline resilience.
-- **Node.js Compatibility:** Supports Node.js v20+ and Bun runtime (`bunfig.toml` configured).
+- **Runtime Target:** Built using Vite with modern ESM output and executed via the **Nitro (v3.0)** server engine.
+- **Port Configuration:** Defaults to `http://localhost:8080/` (or `http://localhost:5173/`).
+- **SSR Pipeline:** Server-side pre-renders initial HTML shell while client hydrates interactive state from `localStorage` using `useSyncExternalStore`.
+- **Static Assets:** Optimized images and vector icons served from `table/public/`.
 
 ### 2.6 Security Architecture
-- **Table Session Isolation:** Every dining session requires a valid 4-digit PIN (`DEMO.pin = 2019`) to join an active table.
-- **Token Format Safety:** Table QR tokens use secure format strings (`PNB-{TABLE}-DEMO`).
-- **SSR Sanitization:** Nitro catastrophic error handlers intercept 500 JSON exceptions and sanitize outputs to prevent stack-trace leakage.
-- **Input Normalization:** Phone numbers, OTP codes (`input-otp`), and special cooking instructions sanitized before state storage.
+- **Session Isolation:** Dining sessions require a valid 4-digit PIN (`DEMO.pin = 2019`) to prevent unauthorized cross-table ordering.
+- **Table Token Integrity:** Scannable table tokens use strictly formatted strings (`PNB-{TABLE}-DEMO`).
+- **SSR Sanitization:** Nitro catastrophic error middleware (`src/server.ts`) captures 500 JSON exception objects and sanitizes outputs to prevent internal stack trace leakage.
+- **Input Sanitization:** Special cooking instructions and notes are sanitized before being committed to domain objects.
 
 ### 2.7 Database & Entity Relationship Model
-While the application currently operates on a high-speed reactive in-memory store backed by browser `localStorage`, its domain model strictly maps to a relational database schema:
 
 ```mermaid
 erDiagram
@@ -180,10 +188,10 @@ erDiagram
 ```
 
 ### 2.8 External Integrations
-- **Radix UI & Vaul:** Accessible mobile sheet drawers for item customization and waiter calls.
-- **Lucide Icons:** Standardized monochrome visual icon library across all customer, staff, KDS, and admin portals.
-- **QRCode Library:** Generates scannable SVG/Canvas QR codes for floor tables.
-- **Sonner:** Toast notifications for real-time order lifecycle events.
+- **Radix UI & Vaul:** Accessible bottom sheet drawer components for product customizers and waiter call sheets.
+- **Lucide React:** Standardized icon set across all guest and staff interfaces.
+- **QRCode Library (`qrcode`):** Generates scannable QR matrices for tables on `/admin/tables`.
+- **Sonner:** High-performance toast alerts for order and KDS bump actions.
 
 ---
 
@@ -191,24 +199,24 @@ erDiagram
 
 ### 3.1 Frontend Detailed Design
 
-#### Route Hierarchy (`src/routeTree.gen.ts`)
+#### File-Based Route Hierarchy (`src/routeTree.gen.ts`)
 ```
 /__root
-  ├── / (Index / Redirect)
+  ├── / (Root Redirect)
   ├── /demo (Interactive Role Selector & Demo Reset)
   ├── /t/$token (Dynamic Table QR Token Onboarding)
   ├── /customer (Customer Master Layout with Bottom Navigation)
-  │     ├── /home (Customer Landing, Banners, Recommendations)
-  │     ├── /eat (Food Menu Catalog & Dietary Filters)
-  │     ├── /drink (Beverage Menu Catalog & Bar Entitlements)
+  │     ├── /home (Customer Landing, Promotions Banner, Categories)
+  │     ├── /eat (Food Menu Catalog, Category Tabs, Dietary Filters)
+  │     ├── /drink (Beverage Catalog, Pour Options, Ice Options)
   │     ├── /merchandise (Venue Merchandise Shop)
-  │     ├── /search (Instant Menu Search)
-  │     ├── /cart (Live Cart, Special Instructions, Order Submission)
-  │     ├── /orders (Order Status & Preparation Tracking)
-  │     ├── /repeat (One-Click Reordering History)
+  │     ├── /search (Instant Debounced Menu Search)
+  │     ├── /cart (Live Cart, Notes, Order Dispatch)
+  │     ├── /orders (Live Order Preparation Tracking & Timers)
+  │     ├── /repeat (One-Click Reorder History)
   │     ├── /bill (Live Itemized Table Tab & Bill Request)
   │     ├── /join (Table Session PIN Verification)
-  │     ├── /verify (Customer Mobile OTP Verification)
+  │     ├── /verify (Mobile OTP Verification)
   │     └── /account (Customer Profile & Favorites)
   ├── /staff (Staff Portal Master Layout)
   │     ├── /tables (Floor Plan Table Grid & Occupancy)
@@ -217,15 +225,15 @@ erDiagram
   │     ├── /ready (Ready-to-Serve Pickup Alerts)
   │     └── /bills (Bill Settlement Directory)
   ├── /kds (KDS Master Layout)
-  │     ├── /kitchen (Kitchen Display System)
-  │     └── /bar (Bar Display System)
+  │     ├── /kitchen (Kitchen Display System — Food Queue)
+  │     └── /bar (Bar Display System — Drink Queue)
   └── /admin (Admin Back-Office Layout)
-        ├── /menu (Menu Item CRUD & Availability Toggles)
-        ├── /tables (Table QR Matrix & Floor Plan Designer)
-        ├── /promotions (Promotional Campaigns & Banners)
+        ├── /menu (Menu Item CRUD & Live Availability 86 Toggles)
+        ├── /tables (Table QR Matrix Generator & Floor Plan Designer)
+        ├── /promotions (Promotional Campaigns & Banner Editor)
         ├── /staff (Staff Directory & Attendance)
-        ├── /billing (GST, Service Charge & Surcharge Config)
-        └── /reports (Sales, Item Velocity & Financial Reports)
+        ├── /billing (GST, Service Charge & Surcharge Configuration)
+        └── /reports (Sales Velocity, Revenue Breakdowns & AOV)
 ```
 
 #### Core Component Specifications
@@ -233,24 +241,32 @@ erDiagram
 ##### 1. `ProductCustomizer` (`src/components/customer/ProductCustomizer.tsx`)
 - **Props:** `{ item: MenuItem | null; open: boolean; onOpenChange: (v: boolean) => void }`
 - **State:**
-  - `variantId: string | null`
-  - `mods: Record<string, string>`
-  - `instructions: string`
-  - `qty: number`
-- **Events:**
-  - Variant Selection: Updates `variantId` and recalculates price delta.
-  - Modifier Selection: Updates `mods[groupId]` with option delta.
-  - Add to Cart: Formats `SelectedModifier[]` and dispatches `store.addToCart()`.
+  - `variantId: string | null` (Selected portion size ID)
+  - `mods: Record<string, string>` (Map of modifierGroupId ➔ optionId)
+  - `instructions: string` (Special cooking instructions)
+  - `qty: number` (Item count, default 1)
+- **Lifecycle & Events:**
+  - `useMemo()` resets state to default variant and empty modifiers upon opening.
+  - Variant change recalculates unit price: $\text{unitPrice} = \text{basePrice} + \text{variantDelta} + \sum \text{modDelta}$.
+  - `add()` formats `SelectedModifier[]` array and dispatches `store.addToCart()`.
 
 ##### 2. `CallWaiterSheet` (`src/components/customer/CallWaiterSheet.tsx`)
 - **Props:** `{ open: boolean; onOpenChange: (v: boolean) => void }`
 - **State:**
   - `requestType: ServiceRequestType` (`WATER`, `CUTLERY`, `NAPKINS`, `CLEAN_UP`, `ORDER_ASSISTANCE`, `BILL_ASSISTANCE`, `OTHER`)
-  - `note: string`
+  - `note: string` (Optional custom text)
 - **Events:**
-  - Submit: Dispatches `store.callWaiter(type, note)` and displays toast confirmation.
+  - `submit()` calls `store.callWaiter(type, note)` and triggers toast confirmation.
 
-### 3.2 State Management & Store Design (`src/services/store.ts`)
+##### 3. `useStore` Hook (`src/hooks/useStore.ts`)
+- Implements React 19 `useSyncExternalStore`:
+  ```typescript
+  export function useStore() {
+    return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  }
+  ```
+
+### 3.2 State Management & Action Catalog (`src/services/store.ts`)
 
 #### State Schema
 ```typescript
@@ -266,32 +282,31 @@ interface State {
 }
 ```
 
-#### Store Methods & Action Catalog
-| Action Method | Parameters | Business Logic Executed |
+#### Action Methods
+| Action Method | Arguments | Internal Logic & State Changes |
 | :--- | :--- | :--- |
-| `startSession(tableToken, pin)` | `tableToken: string, pin: string` | Matches table, creates new `DiningSession` with status `ORDERING`, marks table `OCCUPIED`, persists state. |
-| `addToCart(item)` | `item: Omit<CartItem, 'id' \| 'lineTotal'>` | Generates `uid('ci')`, computes `lineTotal = unitPrice * qty`, appends to `cart[]`. |
-| `updateCartQuantity(id, delta)` | `id: string, delta: number` | Increments/decrements cart item quantity; removes if quantity reaches 0. |
-| `placeOrder()` | *None (reads active cart & session)* | Builds `Order` object with incremental Order #, groups items, appends to `orders[]`, clears `cart[]`. |
-| `updateOrderItemStatus(orderId, itemId, status)` | `orderId, itemId, OrderStatus` | Updates specific item preparation status in KDS. |
-| `callWaiter(type, note)` | `type: ServiceRequestType, note?: string` | Creates `ServiceRequest` with status `NEW`, appends to `requests[]`. |
-| `acknowledgeRequest(id, staffId, staffName)` | `id, staffId, staffName` | Updates request status to `ACKNOWLEDGED` with timestamp. |
-| `completeRequest(id)` | `id: string` | Updates request status to `COMPLETED`. |
-| `requestBill()` | *None (reads session orders)* | Invokes `calculateBill()`, sets session status `BILL_REQUESTED`, updates table to `BILL_REQUESTED`. |
-| `settleBill(billId, method, collectedBy)` | `billId, PaymentMethod, collectedBy` | Marks bill `PAID`, sets table `CLEANING`, sets session `CLOSED`. |
-| `toggleMenuAvailability(itemId, avail)` | `itemId: string, avail: boolean` | Updates `menuOverrides` to enable/disable items dynamically across all menus. |
+| `startSession` | `tableToken, pin` | Resolves table, creates `DiningSession` with status `ORDERING`, marks table `OCCUPIED`, saves `pnb.session`. |
+| `addToCart` | `CartItem` | Generates `uid("ci")`, calculates `lineTotal = unitPrice * qty`, appends to `cart[]`. |
+| `updateCartQuantity` | `id, delta` | Increments/decrements quantity; removes item if count reaches 0. |
+| `placeOrder` | *None* | Generates `Order #XX`, splits items into `orders[]`, sets status `PLACED`, clears `cart[]`. |
+| `updateOrderItemStatus` | `orderId, itemId, status` | Updates status (`PREPARING`, `READY`, `SERVED`) in KDS and customer views. |
+| `callWaiter` | `type, note` | Creates `ServiceRequest` with status `NEW`, appends to `requests[]`. |
+| `acknowledgeRequest` | `id, staffId, staffName` | Updates request status to `ACKNOWLEDGED` with timestamp. |
+| `completeRequest` | `id` | Updates request status to `COMPLETED`. |
+| `requestBill` | *None* | Invokes `calculateBill()`, updates session status to `BILL_REQUESTED`, sets table to `BILL_REQUESTED`. |
+| `settleBill` | `billId, method, collectedBy` | Marks bill `PAID`, sets session `CLOSED`, sets table `CLEANING`. |
+| `toggleMenuAvailability` | `itemId, available` | Updates `menuOverrides` to immediately 86 or restore items. |
 
-### 3.3 Billing Engine Algorithm (`src/services/billing.ts`)
+### 3.3 Authoritative Billing Mathematics (`src/services/billing.ts`)
 
 $$\text{Food Subtotal} = \sum_{i \in \text{Eat}} \text{lineTotal}_i$$
 $$\text{Drink Subtotal} = \sum_{i \in \text{Drink}} \text{lineTotal}_i$$
 $$\text{Merchandise Subtotal} = \sum_{i \in \text{Merch}} \text{lineTotal}_i$$
 $$\text{Subtotal} = \text{Food} + \text{Drink} + \text{Merchandise}$$
-$$\text{Base} = \text{Subtotal} - \text{Discount}$$
-$$\text{Service Charge} = \begin{cases} \text{round}\left(\frac{\text{Base} \times 5}{100}\right) & \text{if enabled} \\ 0 & \text{otherwise} \end{cases}$$
-$$\text{Taxable Amount} = \text{Base} + \text{Service Charge}$$
-$$\text{GST Total (5\%)} = \begin{cases} \text{round}\left(\frac{\text{Taxable} \times 5}{100}\right) & \text{if enabled} \\ 0 & \text{otherwise} \end{cases}$$
-$$\text{Pre-Round Total} = \text{Base} + \text{Service Charge} + \text{GST} + \text{Surcharge}$$
+$$\text{Service Charge Total} = \begin{cases} \text{round}\left(\frac{\text{Subtotal} \times 5}{100}\right) & \text{if enabled} \\ 0 & \text{otherwise} \end{cases}$$
+$$\text{Taxable Base} = \text{Subtotal} + \text{Service Charge Total}$$
+$$\text{GST Total} = \begin{cases} \text{round}\left(\frac{\text{Taxable Base} \times 5}{100}\right) & \text{if enabled} \\ 0 & \text{otherwise} \end{cases}$$
+$$\text{Pre-Round Total} = \text{Subtotal} + \text{Service Charge Total} + \text{GST Total} + \text{Surcharge Total}$$
 $$\text{Grand Total} = \text{round}(\text{Pre-Round Total})$$
 $$\text{Rounding Adjustment} = \text{Grand Total} - \text{Pre-Round Total}$$
 
@@ -302,15 +317,15 @@ $$\text{Rounding Adjustment} = \text{Grand Total} - \text{Pre-Round Total}$$
 ### 4.1 Overall System Architecture
 ```mermaid
 flowchart LR
-    subgraph Users
+    subgraph Actors
         G[Dine-In Guest]
         W[Waitstaff]
-        C[Kitchen Chef]
+        K[Kitchen Chef]
         B[Bartender]
-        M[Restaurant Manager]
+        M[Venue Manager]
     end
 
-    subgraph TableFlow Frontend
+    subgraph Frontend Portals
         QR[/t/:token]
         CustPortal[/customer/*]
         StaffPortal[/staff/*]
@@ -319,7 +334,7 @@ flowchart LR
         AdminPortal[/admin/*]
     end
 
-    subgraph State & Core Logic
+    subgraph Central Core
         Store[(Reactive Store)]
         BillingEngine[Billing Service]
         LocalStorage[(localStorage KV)]
@@ -327,7 +342,7 @@ flowchart LR
 
     G --> QR --> CustPortal
     W --> StaffPortal
-    C --> KdsKitchen
+    K --> KdsKitchen
     B --> KdsBar
     M --> AdminPortal
 
@@ -385,10 +400,11 @@ stateDiagram-v2
 
 ---
 
-## 5. Summary & Verification
+## 5. Verification & Codebase Integrity
 
 ### 5.1 Verification Checklist
-- **Component Coverage:** 100% verified against all routes (`customer`, `staff`, `kds`, `admin`, `demo`), components, models, and stores in `tableflow-ordering/src`.
-- **Business Logic Accuracy:** Exact GST (5%), Service Charge (5%), Rounding, Modifier delta math, and Station routing verified in `billing.ts` and `store.ts`.
-- **Type Definitions:** Exact domain interfaces documented from `src/types/domain.ts`.
-- **Zero Fabrication:** Only features and architectures actually present in the source codebase are documented.
+- **Component Coverage:** 100% verified against all 34 routes in `table/src/routes/` and components in `table/src/components/`.
+- **Domain Accuracy:** Mapped exactly to types in `table/src/types/domain.ts`.
+- **Mathematical Validation:** Verified exact GST (5%), Service Charge (5%), modifier delta calculations, and cash rounding in `table/src/services/billing.ts`.
+- **Persistence Verification:** Verified storage keys (`pnb.*`) in `table/src/repositories/storage.ts`.
+- **Zero Hallucination:** Documented only components, routes, and services that physically exist in `table/`.

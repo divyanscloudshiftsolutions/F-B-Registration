@@ -7,6 +7,10 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// ==========================================
+// 1. GUEST REGISTRATION & CORE MEMBERSHIP
+// ==========================================
+
 model Customer {
   id          String    @id @default(uuid())
   phoneNumber String    @unique @map("phone_number")
@@ -16,9 +20,14 @@ model Customer {
   lastVisit   DateTime? @map("last_visit")
   totalVisits Int       @default(1) @map("total_visits")
   tokens      Token[]
+  orders      Order[]
 
   @@map("customers")
 }
+
+// ==========================================
+// 2. SEATING ZONES & VENUE CONFIGURATION
+// ==========================================
 
 model PlaceTypeConfig {
   id                   String    @id @default(uuid())
@@ -36,28 +45,39 @@ model PlaceTypeConfig {
   @@map("place_types")
 }
 
+// ==========================================
+// 3. PHYSICAL TABLES & FLOOR PLAN
+// ==========================================
+
 model Table {
-  id             String               @id @default(uuid())
-  tableNumber    String               @map("table_number")
-  placeTypeId    String               @map("place_type_id")
-  placeType      PlaceTypeConfig      @relation(fields: [placeTypeId], references: [id])
-  capacity       Int                  @default(2)
-  status         String               @default("available") // available, occupied, reserved, maintenance
-  currentTokenId String?              @map("current_token_id")
-  occupiedSince  DateTime?            @map("occupied_since")
-  lastAssignedAt DateTime?            @map("last_assigned_at")
-  isActive       Boolean              @default(true) @map("is_active")
+  id               String               @id @default(uuid())
+  tableNumber      String               @map("table_number")
+  placeTypeId      String               @map("place_type_id")
+  placeType        PlaceTypeConfig      @relation(fields: [placeTypeId], references: [id])
+  capacity         Int                  @default(2)
+  status           String               @default("available") // available, occupied, reserved, maintenance
+  currentTokenId   String?              @map("current_token_id")
+  occupiedSince    DateTime?            @map("occupied_since")
+  lastAssignedAt   DateTime?            @map("last_assigned_at")
+  isActive         Boolean              @default(true) @map("is_active")
   maintenanceStart DateTime?            @map("maintenance_start")
   maintenanceEnd   DateTime?            @map("maintenance_end")
-  createdAt      DateTime             @default(now()) @map("created_at")
-  updatedAt      DateTime?            @updatedAt @map("updated_at")
-  tokens         Token[]              @relation("TableTokens")
-  occupancyLogs  TableOccupancyLog[]
-  reservations   Reservation[]
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime?            @updatedAt @map("updated_at")
+  tokens           Token[]              @relation("TableTokens")
+  occupancyLogs    TableOccupancyLog[]
+  reservations     Reservation[]
+  orders           Order[]
+  serviceRequests  ServiceRequest[]
+  bills            Bill[]
 
   @@unique([tableNumber, placeTypeId])
   @@map("tables")
 }
+
+// ==========================================
+// 4. GUEST DINING SESSIONS & DIGITAL TOKENS
+// ==========================================
 
 model Token {
   id                      String              @id @default(uuid())
@@ -90,6 +110,9 @@ model Token {
   redemptions             Redemption[]
   extensions              TokenExtension[]
   tableOccupancyLogs      TableOccupancyLog[]
+  orders                  Order[]
+  serviceRequests         ServiceRequest[]
+  bills                   Bill[]
 
   // Audit and lifecycle fields
   activatedAt             DateTime?           @map("activated_at")
@@ -103,6 +126,10 @@ model Token {
 
   @@map("tokens")
 }
+
+// ==========================================
+// 5. DRINK REDEMPTIONS & SESSION EXTENSIONS
+// ==========================================
 
 model Redemption {
   id                 String   @id @default(uuid())
@@ -140,28 +167,35 @@ model TableOccupancyLog {
   token           Token     @relation(fields: [tokenId], references: [id])
   occupiedAt      DateTime  @default(now()) @map("occupied_at")
   vacatedAt       DateTime? @map("vacated_at")
-  durationMinutes Int?      @map("duration_minutes") // generated/computed dynamically or stored on checkout/vacate
+  durationMinutes Int?      @map("duration_minutes")
 
   @@map("table_occupancy_logs")
 }
 
+// ==========================================
+// 6. STAFF USERS, ROLES & ATTENDANCE
+// ==========================================
+
 model User {
-  id               String           @id @default(uuid())
-  username         String           @unique
-  passwordHash     String           @map("password_hash")
-  fullName         String           @map("full_name")
-  roleId           String           @map("role_id")
-  role             Role             @relation(fields: [roleId], references: [id])
-  isActive         Boolean          @default(true) @map("is_active")
-  lastLogin        DateTime?        @map("last_login")
-  createdAt        DateTime         @default(now()) @map("created_at")
-  redemptions      Redemption[]
-  tokensIssued     Token[]          @relation("TokenIssuedBy")
-  tokensClosed     Token[]          @relation("TokenClosedBy")
-  tokenExtensions  TokenExtension[]
-  rateCardChanges  RateLog[]
-  sessions         StaffSession[]
-  reservations     Reservation[]
+  id                      String           @id @default(uuid())
+  username                String           @unique
+  passwordHash            String           @map("password_hash")
+  fullName                String           @map("full_name")
+  roleId                  String           @map("role_id")
+  role                    Role             @relation(fields: [roleId], references: [id])
+  isActive                Boolean          @default(true) @map("is_active")
+  lastLogin               DateTime?        @map("last_login")
+  createdAt               DateTime         @default(now()) @map("created_at")
+  redemptions             Redemption[]
+  tokensIssued            Token[]          @relation("TokenIssuedBy")
+  tokensClosed            Token[]          @relation("TokenClosedBy")
+  tokenExtensions         TokenExtension[]
+  rateCardChanges         RateLog[]
+  sessions                StaffSession[]
+  reservations            Reservation[]
+  ordersHandled           Order[]          @relation("OrdersHandledBy")
+  serviceRequestsHandled  ServiceRequest[] @relation("ServiceRequestsHandledBy")
+  billsSettled            Bill[]           @relation("BillsSettledBy")
 
   @@map("users")
 }
@@ -173,6 +207,37 @@ model Role {
   users       User[]
 
   @@map("roles")
+}
+
+model StaffSession {
+  id        String   @id @default(uuid()) @map("id")
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("staff_sessions")
+}
+
+// ==========================================
+// 7. RESERVATIONS & SYSTEM LOGS
+// ==========================================
+
+model Reservation {
+  id           String    @id @default(uuid())
+  customerName String    @map("customer_name")
+  phoneNumber  String    @map("phone_number")
+  email        String
+  personsCount Int       @map("persons_count")
+  tableId      String?   @map("table_id")
+  table        Table?    @relation(fields: [tableId], references: [id])
+  status       String    @default("PENDING") // PENDING, ASSIGNED, CANCELLED
+  userId       String?   @map("user_id")
+  user         User?     @relation(fields: [userId], references: [id])
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime? @updatedAt @map("updated_at")
+
+  @@map("reservations")
 }
 
 model RateLog {
@@ -223,15 +288,252 @@ model SystemConfig {
   @@map("system_configs")
 }
 
-model StaffSession {
-  id        String   @id @default(uuid()) @map("id")
-  userId    String   @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
+// ==========================================
+// 8. MENU & CATALOG DOMAIN (TABLEFLOW)
+// ==========================================
 
-  @@map("staff_sessions")
+model MenuSection {
+  id          String         @id @default(uuid())
+  name        String
+  slug        String         @unique // eat, drink, merchandise
+  sortOrder   Int            @default(1) @map("sort_order")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime?      @updatedAt @map("updated_at")
+  categories  MenuCategory[]
+  items       MenuItem[]
+
+  @@map("menu_sections")
 }
+
+model MenuCategory {
+  id            String            @id @default(uuid())
+  sectionId     String            @map("section_id")
+  section       MenuSection       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  name          String
+  slug          String            @unique
+  description   String?
+  sortOrder     Int               @default(1) @map("sort_order")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime?         @updatedAt @map("updated_at")
+  subcategories MenuSubcategory[]
+  items         MenuItem[]
+
+  @@map("menu_categories")
+}
+
+model MenuSubcategory {
+  id          String       @id @default(uuid())
+  categoryId  String       @map("category_id")
+  category    MenuCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String
+  sortOrder   Int          @default(1) @map("sort_order")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime?    @updatedAt @map("updated_at")
+  items       MenuItem[]
+
+  @@map("menu_subcategories")
+}
+
+model MenuItem {
+  id              String           @id @default(uuid())
+  name            String
+  description     String           @default("")
+  sectionId       String           @map("section_id")
+  section         MenuSection      @relation(fields: [sectionId], references: [id])
+  categoryId      String           @map("category_id")
+  category        MenuCategory     @relation(fields: [categoryId], references: [id])
+  subcategoryId   String?          @map("subcategory_id")
+  subcategory     MenuSubcategory? @relation(fields: [subcategoryId], references: [id])
+  foodType        FoodType?        @map("food_type")
+  image           String?
+  basePrice       Decimal          @db.Decimal(10, 2) @map("base_price")
+  station         Station          @default(KITCHEN)
+  isAvailable     Boolean          @default(true) @map("is_available")
+  isFeatured      Boolean          @default(false) @map("is_featured")
+  isPopular       Boolean          @default(false) @map("is_popular")
+  tags            String[]         @default([])
+  preparationTime Int              @default(10) @map("preparation_time") // in minutes
+  allergens       String[]         @default([])
+  sortOrder       Int              @default(0) @map("sort_order")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime?        @updatedAt @map("updated_at")
+  variants        ItemVariant[]
+  modifierGroups  ModifierGroup[]
+  orderItems      OrderItem[]
+
+  @@map("menu_items")
+}
+
+model ItemVariant {
+  id         String   @id @default(uuid())
+  menuItemId String   @map("menu_item_id")
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name       String   // e.g. Half, Full, 30ml, 60ml
+  priceDelta Decimal  @default(0) @db.Decimal(10, 2) @map("price_delta")
+  sortOrder  Int      @default(0) @map("sort_order")
+
+  @@map("item_variants")
+}
+
+model ModifierGroup {
+  id         String           @id @default(uuid())
+  menuItemId String           @map("menu_item_id")
+  menuItem   MenuItem         @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name       String           // e.g. Spice level, Ice option
+  isRequired Boolean          @default(false) @map("is_required")
+  isMulti    Boolean          @default(false) @map("is_multi")
+  options    ModifierOption[]
+
+  @@map("modifier_groups")
+}
+
+model ModifierOption {
+  id         String        @id @default(uuid())
+  groupId    String        @map("group_id")
+  group      ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name       String        // e.g. Mild, Medium, Hot
+  priceDelta Decimal       @default(0) @db.Decimal(10, 2) @map("price_delta")
+  sortOrder  Int           @default(0) @map("sort_order")
+
+  @@map("modifier_options")
+}
+
+// ==========================================
+// 9. ORDERS, ORDER ITEMS & KDS PROCESSING
+// ==========================================
+
+model Order {
+  id          String      @id @default(uuid())
+  orderNumber Int         @map("order_number") // #01, #02, #03...
+  tokenId     String      @map("token_id")
+  token       Token       @relation(fields: [tokenId], references: [id])
+  tableId     String      @map("table_id")
+  table       Table       @relation(fields: [tableId], references: [id])
+  customerId  String?     @map("customer_id")
+  customer    Customer?   @relation(fields: [customerId], references: [id])
+  placedAt    DateTime    @default(now()) @map("placed_at")
+  subtotal    Decimal     @default(0) @db.Decimal(10, 2)
+  status      OrderStatus @default(PLACED)
+  notes       String?
+  handlerId   String?     @map("handler_id")
+  handler     User?       @relation("OrdersHandledBy", fields: [handlerId], references: [id])
+  cancelledAt DateTime?   @map("cancelled_at")
+  cancelledBy String?     @map("cancelled_by")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime?   @updatedAt @map("updated_at")
+  items       OrderItem[]
+  billId      String?     @map("bill_id")
+  bill        Bill?       @relation(fields: [billId], references: [id])
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id                  String      @id @default(uuid())
+  orderId             String      @map("order_id")
+  order               Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId          String      @map("menu_item_id")
+  menuItem            MenuItem    @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+  itemName            String      @map("item_name") // Historical snapshot
+  sectionSlug         String      @default("eat") @map("section_slug")
+  variantName         String?     @map("variant_name") // Historical snapshot
+  selectedModifiers   Json        @default("[]") @map("selected_modifiers") // Historical snapshot of modifiers & deltas
+  specialInstructions String?     @map("special_instructions")
+  quantity            Int         @default(1)
+  unitPrice           Decimal     @db.Decimal(10, 2) @map("unit_price") // Historical snapshot
+  lineTotal           Decimal     @db.Decimal(10, 2) @map("line_total") // Historical snapshot
+  station             Station     @default(KITCHEN)
+  foodType            FoodType?   @map("food_type")
+  status              OrderStatus @default(PLACED)
+  preparedAt          DateTime?   @map("prepared_at")
+  readyAt             DateTime?   @map("ready_at")
+  servedAt            DateTime?   @map("served_at")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime?   @updatedAt @map("updated_at")
+
+  @@map("order_items")
+}
+
+// ==========================================
+// 10. SERVICE REQUESTS / WAITER CALLS
+// ==========================================
+
+model ServiceRequest {
+  id              String               @id @default(uuid())
+  tokenId         String               @map("token_id")
+  token           Token                @relation(fields: [tokenId], references: [id])
+  tableId         String               @map("table_id")
+  table           Table                @relation(fields: [tableId], references: [id])
+  tableNumber     String               @map("table_number")
+  type            ServiceRequestType
+  note            String?
+  status          ServiceRequestStatus @default(NEW)
+  assignedStaffId String?              @map("assigned_staff_id")
+  assignedStaff   User?                @relation("ServiceRequestsHandledBy", fields: [assignedStaffId], references: [id])
+  createdAt       DateTime             @default(now()) @map("created_at")
+  acknowledgedAt  DateTime?            @map("acknowledged_at")
+  completedAt     DateTime?            @map("completed_at")
+
+  @@map("service_requests")
+}
+
+// ==========================================
+// 11. BILLING, TAXES & SETTLEMENTS
+// ==========================================
+
+model Bill {
+  id                  String         @id @default(uuid())
+  billNumber          String         @unique @map("bill_number") // PNB-XXXX
+  tokenId             String         @map("token_id")
+  token               Token          @relation(fields: [tokenId], references: [id])
+  tableId             String         @map("table_id")
+  table               Table          @relation(fields: [tableId], references: [id])
+  foodSubtotal        Decimal        @default(0) @db.Decimal(10, 2) @map("food_subtotal")
+  drinkSubtotal       Decimal        @default(0) @db.Decimal(10, 2) @map("drink_subtotal")
+  merchandiseSubtotal Decimal        @default(0) @db.Decimal(10, 2) @map("merchandise_subtotal")
+  subtotal            Decimal        @default(0) @db.Decimal(10, 2)
+  discountTotal       Decimal        @default(0) @db.Decimal(10, 2) @map("discount_total")
+  serviceChargeTotal  Decimal        @default(0) @db.Decimal(10, 2) @map("service_charge_total")
+  taxTotal            Decimal        @default(0) @db.Decimal(10, 2) @map("tax_total") // 5% GST
+  surchargeTotal      Decimal        @default(0) @db.Decimal(10, 2) @map("surcharge_total")
+  rounding            Decimal        @default(0) @db.Decimal(10, 2)
+  grandTotal          Decimal        @default(0) @db.Decimal(10, 2) @map("grand_total")
+  status              BillStatus     @default(REQUESTED)
+  paymentMethod       PaymentMethod? @map("payment_method")
+  settledBy           String?        @map("settled_by")
+  settler             User?          @relation("BillsSettledBy", fields: [settledBy], references: [id])
+  settlementReference String?        @map("settlement_reference")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  paidAt              DateTime?      @map("paid_at")
+  orders              Order[]
+
+  @@map("bills")
+}
+
+// ==========================================
+// 12. PROMOTIONS & MARKETING BANNERS
+// ==========================================
+
+model Promotion {
+  id              String    @id @default(uuid())
+  title           String
+  subtitle        String
+  ctaLabel        String    @map("cta_label")
+  ctaTarget       String?   @map("cta_target")
+  accent          String    @default("amber") // amber, bottle, copper
+  isActive        Boolean   @default(true) @map("is_active")
+  discountPercent Decimal?  @db.Decimal(10, 2) @map("discount_percent")
+  discountAmount  Decimal?  @db.Decimal(10, 2) @map("discount_amount")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime? @updatedAt @map("updated_at")
+
+  @@map("promotions")
+}
+
+// ==========================================
+// 13. POSTGRESQL DATABASE ENUMS
+// ==========================================
 
 enum CloseReason {
   MANUAL
@@ -261,22 +563,56 @@ enum CancelReason {
   OTHER
 }
 
-model Reservation {
-  id           String    @id @default(uuid())
-  customerName String    @map("customer_name")
-  phoneNumber  String    @map("phone_number")
-  email        String
-  personsCount Int       @map("persons_count")
-  tableId      String?   @map("table_id")
-  table        Table?    @relation(fields: [tableId], references: [id])
-  status       String    @default("PENDING") // PENDING, ASSIGNED, CANCELLED
-  userId       String?   @map("user_id")
-  user         User?     @relation(fields: [userId], references: [id])
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime? @updatedAt @map("updated_at")
-
-  @@map("reservations")
+enum FoodType {
+  VEG
+  EGG
+  NON_VEG
+  VEGAN
 }
 
+enum Station {
+  KITCHEN
+  BAR
+  DESSERT
+  CASHIER
+}
 
+enum OrderStatus {
+  PLACED
+  ACCEPTED
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
 
+enum ServiceRequestType {
+  WATER
+  CUTLERY
+  NAPKINS
+  CLEAN_UP
+  ORDER_ASSISTANCE
+  BILL_ASSISTANCE
+  OTHER
+  BILL_REQUEST
+}
+
+enum ServiceRequestStatus {
+  NEW
+  ACKNOWLEDGED
+  COMPLETED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  UPI
+  OTHER
+}
+
+enum BillStatus {
+  DRAFT
+  REQUESTED
+  PAID
+  VOID
+}
