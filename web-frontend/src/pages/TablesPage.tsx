@@ -1307,9 +1307,6 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
       <button 
         onClick={() => {
           setExtendingTable(inspectingTable);
-          setExtensionMinutes(20);
-          setExtensionPaymentMethod('CASH');
-          setSendExtensionEmail(false);
         }}
         className="flex-1 py-2.5 rounded-md bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/25 text-purple-700 dark:text-purple-400 border border-purple-500/30 font-bold text-[13px] transition-all cursor-pointer"
       >

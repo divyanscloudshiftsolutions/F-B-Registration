@@ -35,7 +35,7 @@ export const ExtendSessionModal: React.FC<ExtendSessionModalProps> = ({
 
   const rateConfig = rates?.find((r: any) => 
     (token?.placeTypeId && r.id === token.placeTypeId) ||
-    (token?.placeType && typeof token.placeType === 'string' && (r.name?.toLowerCase() === token.placeType.toLowerCase() || r.id === token.placeType)) ||
+    (token?.placeType && typeof token.placeType === 'string' && (r.name?.toLowerCase() === (token.placeType as any)?.toLowerCase() || r.id === token.placeType)) ||
     (token?.placeType && typeof token.placeType === 'object' && (r.id === (token.placeType as any).id || r.name?.toLowerCase() === (token.placeType as any).name?.toLowerCase())) ||
     (token?.table?.tableNumber?.toUpperCase().startsWith('S-') && r.name?.toLowerCase().includes('standing')) ||
     (token?.table?.tableNumber?.toUpperCase().startsWith('L-') && r.name?.toLowerCase().includes('lounge'))

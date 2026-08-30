@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, LogOut } from 'lucide-react';
+import { X, LogOut, Receipt, CheckCircle } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -21,13 +21,29 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
   onClose,
   onSuccess,
 }) => {
-  const { showToast } = useAuth();
-  const [closeReason, setCloseReason] = useState('Customer Vacated Early');
+  const { showToast, user } = useAuth();
+  const [closeReason, setCloseReason] = useState('Standard Guest Checkout');
   const [closeReasonDetail, setCloseReasonDetail] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD' | 'UPI' | 'OTHER'>('CASH');
+  const [billData, setBillData] = useState<any>(null);
+  const [isLoadingBill, setIsLoadingBill] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!isOpen || !session) return;
+    if (!isOpen || !session) {
+      setBillData(null);
+      return;
+    }
+
+    setIsLoadingBill(true);
+    api.calculateBill(session.tokenNumber)
+      .then((res) => {
+        if (res.success && res.bill) {
+          setBillData(res.bill);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setIsLoadingBill(false));
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -55,9 +71,21 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const reasonDetail = closeReason === 'Other / Administrative Closure' ? closeReasonDetail : '';
-      await api.closeToken(session.tokenNumber, closeReason, reasonDetail);
-      showToast(`Session ${session.tokenNumber} checked out successfully.`, 'success');
+      if (billData && billData.items && billData.items.length > 0) {
+        // Settle authoritative bill
+        await api.settleBill({
+          tokenNumber: session.tokenNumber,
+          paymentMethod,
+          settledByStaffId: user?.id,
+          settlementReference: `${paymentMethod}-${Date.now().toString().slice(-6)}`,
+        });
+      } else {
+        // Standard session close
+        const reasonDetail = closeReason === 'Other / Administrative Closure' ? closeReasonDetail : '';
+        await api.closeToken(session.tokenNumber, closeReason, reasonDetail);
+      }
+
+      showToast(`Session ${session.tokenNumber} checked out and table released.`, 'success');
       onSuccess();
     } catch (err: any) {
       showToast(err.message || 'Failed to checkout session.', 'danger');
@@ -66,9 +94,11 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
     }
   };
 
+  const hasOrders = billData && billData.items && billData.items.length > 0;
+
   return (
     <div className="fixed inset-0 z-[100] bg-black/75 flex items-center justify-center p-4">
-      <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
+      <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn max-h-[90vh] overflow-y-auto">
         <button 
           onClick={onClose}
           className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
@@ -77,13 +107,10 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
         </button>
 
         <div className="flex items-center gap-2 text-text-main font-bold text-sm">
-          <LogOut size={18} className="text-red-500" /> Checkout
+          <LogOut size={18} className="text-red-500" /> Checkout & Table Turnover
         </div>
 
         <div className="space-y-2">
-          <p className="text-xs text-text-muted">
-            Are you sure you want to checkout this session:
-          </p>
           <div className="p-3 bg-bg-primary rounded-xl space-y-1 text-xs text-left">
             <div>Customer: <span className="font-bold text-text-main">{session.customerName}</span></div>
             <div>Phone: <span className="font-mono font-bold text-text-main">{session.customerPhone || 'N/A'}</span></div>
@@ -92,25 +119,90 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="text-left">
-            <label className="block text-xs font-semibold text-text-muted mb-1">Reason for Closure *</label>
-            <select
-              value={closeReason}
-              onChange={e => setCloseReason(e.target.value)}
-              className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
-              required
-            >
-              <option value="Customer Vacated Early">Customer Vacated Early</option>
-              <option value="Session Opened by Mistake">Session Opened by Mistake</option>
-              <option value="Standard Guest Checkout">Standard Guest Checkout</option>
-              <option value="Session Time Expired">Session Time Expired</option>
-              <option value="Session Cancelled by Reception">Session Cancelled by Reception</option>
-              <option value="Other / Administrative Closure">Other / Administrative Closure</option>
-            </select>
+        {/* Live Bill Summary */}
+        {isLoadingBill ? (
+          <div className="p-3 bg-bg-primary/50 border border-border-main rounded-xl text-xs text-text-muted text-center animate-pulse">
+            Calculating authoritative bill & redemption...
           </div>
+        ) : hasOrders ? (
+          <div className="p-3.5 bg-bg-primary border border-purple-500/30 rounded-xl space-y-2 text-xs text-left">
+            <div className="flex items-center justify-between font-bold text-purple-600 dark:text-purple-400">
+              <span className="flex items-center gap-1.5"><Receipt size={14} /> Consumption Bill</span>
+              <span>{billData.items.length} Items</span>
+            </div>
+            <div className="space-y-1 text-[11px] text-text-muted border-t border-border-main pt-1.5">
+              <div className="flex justify-between">
+                <span>Gross Subtotal:</span>
+                <span className="font-semibold text-text-main">₹{billData.grossSubtotal}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Service Charge (5%):</span>
+                <span>₹{billData.serviceChargeTotal}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>GST (5%):</span>
+                <span>₹{billData.taxTotal}</span>
+              </div>
+              {Number(billData.redemptionDeduction) > 0 && (
+                <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
+                  <span>Drink Redemption Offset:</span>
+                  <span>-₹{billData.redemptionDeduction}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm font-bold text-text-main border-t border-border-main pt-1.5 text-purple-600 dark:text-purple-400">
+                <span>Amount to Collect:</span>
+                <span>₹{billData.remainingPayable}</span>
+              </div>
+            </div>
 
-          {closeReason === 'Other / Administrative Closure' && (
+            {/* Payment Method Selector */}
+            <div className="pt-2 border-t border-border-main">
+              <label className="block text-[11px] font-semibold text-text-muted mb-1">Payment Method *</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['CASH', 'UPI', 'CARD'] as const).map((method) => (
+                  <button
+                    key={method}
+                    type="button"
+                    onClick={() => setPaymentMethod(method)}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                      paymentMethod === method
+                        ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                        : 'bg-bg-primary text-text-muted border-border-main hover:text-text-main'
+                    }`}
+                  >
+                    {method}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-3 bg-bg-primary/50 border border-border-main rounded-xl text-xs text-text-muted text-center">
+            No table consumption orders placed. Standard entry check-in session.
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {!hasOrders && (
+            <div className="text-left">
+              <label className="block text-xs font-semibold text-text-muted mb-1">Reason for Closure *</label>
+              <select
+                value={closeReason}
+                onChange={e => setCloseReason(e.target.value)}
+                className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
+                required
+              >
+                <option value="Standard Guest Checkout">Standard Guest Checkout</option>
+                <option value="Customer Vacated Early">Customer Vacated Early</option>
+                <option value="Session Opened by Mistake">Session Opened by Mistake</option>
+                <option value="Session Time Expired">Session Time Expired</option>
+                <option value="Session Cancelled by Reception">Session Cancelled by Reception</option>
+                <option value="Other / Administrative Closure">Other / Administrative Closure</option>
+              </select>
+            </div>
+          )}
+
+          {closeReason === 'Other / Administrative Closure' && !hasOrders && (
             <div className="text-left">
               <label className="block text-xs font-semibold text-text-muted mb-1">Explanation *</label>
               <textarea
@@ -124,7 +216,7 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
           )}
 
           <p className="text-[10px] text-text-muted text-left">
-            This will checkout the active session and release the table back to "available" immediately.
+            This will collect remaining payable amount (if any), close the session, and release the table back to "available" immediately.
           </p>
 
           <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
@@ -133,14 +225,14 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
               onClick={onClose}
               className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
             >
-              No, Keep it
+              Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 py-3 rounded-xl dark:bg-red-500/20 bg-red-500/10 dark:hover:bg-red-600 hover:bg-red-600 dark:text-red-200 text-red-700 dark:hover:text-white hover:text-white text-xs font-bold uppercase tracking-wider border border-red-500/30 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20"
+              className="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50 cursor-pointer"
             >
-              {isSubmitting ? 'Checking out...' : 'Yes, Checkout'}
+              {isSubmitting ? 'Processing...' : hasOrders ? `Collect ₹${billData?.remainingPayable} & Settle` : 'Confirm Checkout'}
             </button>
           </div>
         </form>

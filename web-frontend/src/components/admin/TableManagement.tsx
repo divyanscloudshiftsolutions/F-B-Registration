@@ -1255,9 +1255,9 @@ export const TableManagement: React.FC = () => {
         const activeTok = isOccupied
           ? getActiveTokenForTable(releasingTableForConfirm)
           : null;
-        const customerName = activeTok?.customerName || (activeTok?.customer as any)?.name || 'Guest Customer';
-        const customerPhone = activeTok?.phoneNumber || (activeTok?.customer as any)?.phoneNumber || '';
-        const customerEmail = activeTok?.email || (activeTok?.customer as any)?.email || '';
+        const customerName = (activeTok as any)?.customerName || (activeTok?.customer as any)?.name || 'Guest Customer';
+        const customerPhone = (activeTok as any)?.phoneNumber || (activeTok?.customer as any)?.phoneNumber || '';
+        const customerEmail = (activeTok as any)?.email || (activeTok?.customer as any)?.email || '';
         const personsCount = activeTok?.personsCount || (activeTok as any)?.persons || 1;
         const initialAmount = activeTok?.amountPaid ? parseFloat(activeTok.amountPaid.toString()) : 0;
         const extensionAmount = (activeTok as any)?.extensions?.reduce((sum: number, ext: any) => sum + (ext.amount ? parseFloat(ext.amount.toString()) : 0), 0) || 0;

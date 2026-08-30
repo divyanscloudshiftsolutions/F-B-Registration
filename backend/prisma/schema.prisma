@@ -196,6 +196,7 @@ model User {
   ordersHandled           Order[]          @relation("OrdersHandledBy")
   serviceRequestsHandled  ServiceRequest[] @relation("ServiceRequestsHandledBy")
   billsSettled            Bill[]           @relation("BillsSettledBy")
+  inventoryLogs           InventoryLog[]
 
   @@map("users")
 }
@@ -361,6 +362,7 @@ model MenuItem {
   variants        ItemVariant[]
   modifierGroups  ModifierGroup[]
   orderItems      OrderItem[]
+  stockItem       StockItem?
 
   @@map("menu_items")
 }
@@ -412,6 +414,7 @@ model Order {
   table       Table       @relation(fields: [tableId], references: [id])
   customerId  String?     @map("customer_id")
   customer    Customer?   @relation(fields: [customerId], references: [id])
+  orderSource OrderSource @default(CUSTOMER) @map("order_source")
   placedAt    DateTime    @default(now()) @map("placed_at")
   subtotal    Decimal     @default(0) @db.Decimal(10, 2)
   status      OrderStatus @default(PLACED)
@@ -532,7 +535,42 @@ model Promotion {
 }
 
 // ==========================================
-// 13. POSTGRESQL DATABASE ENUMS
+// 13. INVENTORY & STOCK TRACKING
+// ==========================================
+
+model StockItem {
+  id                String         @id @default(uuid())
+  menuItemId        String         @unique @map("menu_item_id")
+  menuItem          MenuItem       @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  currentStock      Int            @default(0) @map("current_stock")
+  unitOfMeasure     String         @default("units") @map("unit_of_measure")
+  lowStockThreshold Int            @default(5) @map("low_stock_threshold")
+  isActive          Boolean        @default(true) @map("is_active")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime?      @updatedAt @map("updated_at")
+  logs              InventoryLog[]
+
+  @@map("stock_items")
+}
+
+model InventoryLog {
+  id            String    @id @default(uuid())
+  stockItemId   String    @map("stock_item_id")
+  stockItem     StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  quantityDelta Int       @map("quantity_delta")
+  previousStock Int       @map("previous_stock")
+  newStock      Int       @map("new_stock")
+  reason        String    // ORDER_DEDUCTION, MANUAL_ADJUSTMENT, RESTOCK, CANCELLATION_RESTORE
+  referenceId   String?   @map("reference_id") // orderId or adjustment note
+  userId        String?   @map("user_id")
+  user          User?     @relation(fields: [userId], references: [id])
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@map("inventory_logs")
+}
+
+// ==========================================
+// 14. POSTGRESQL DATABASE ENUMS
 // ==========================================
 
 enum CloseReason {
@@ -584,6 +622,14 @@ enum OrderStatus {
   READY
   SERVED
   CANCELLED
+}
+
+enum OrderSource {
+  CUSTOMER
+  SERVER
+  BARTENDER
+  RECEPTIONIST
+  ADMIN
 }
 
 enum ServiceRequestType {

@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { PrismaClient, CloseReason, ActivationMethod, CancelReason } from '@prisma/client';
+import { PrismaClient, CloseReason, ActivationMethod, CancelReason, Station, OrderStatus, OrderSource, ServiceRequestType, ServiceRequestStatus, PaymentMethod } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { tableService } from './services/TableService';
 import { tokenService } from './services/TokenService';
@@ -8,6 +8,12 @@ import { redemptionService } from './services/RedemptionService';
 import redisService from './services/RedisService';
 import bcrypt from 'bcrypt';
 import syncService from './services/SyncService';
+import { menuService } from './services/MenuService';
+import { orderService } from './services/OrderService';
+import { kdsService } from './services/KdsService';
+import { serviceRequestService } from './services/ServiceRequestService';
+import { billingService } from './services/BillingService';
+import { inventoryService } from './services/InventoryService';
 
 const TokenStatus = {
   PENDING_PAYMENT: 'PENDING_PAYMENT' as const,
@@ -4760,6 +4766,259 @@ router.get('/config', async (req: Request, res: Response) => {
       emailQrEnabled: true,
       tokenType: 'email'
     });
+  }
+});
+
+// ==========================================
+// 1. MENU & CATALOG APIS
+// ==========================================
+
+// GET /api/menu (Full public/customer catalog)
+router.get('/menu', async (req: Request, res: Response) => {
+  try {
+    const includeUnavailable = req.query.includeUnavailable === 'true';
+    const menu = await menuService.getFullMenu(includeUnavailable);
+    return res.json({ success: true, menu });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/menu/categories
+router.get('/menu/categories', async (req: Request, res: Response) => {
+  try {
+    const categories = await menuService.getCategories();
+    return res.json({ success: true, categories });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// PUT /api/menu/items/:id/availability (86 toggle)
+router.put('/menu/items/:id/availability', authenticate, async (req: Request, res: Response) => {
+  try {
+    const { isAvailable } = req.body;
+    if (typeof isAvailable !== 'boolean') {
+      return res.status(400).json({ success: false, error: { message: 'isAvailable must be a boolean' } });
+    }
+    const updated = await menuService.setItemAvailability(req.params.id, isAvailable);
+    return res.json({ success: true, item: updated });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/promotions
+router.get('/promotions', async (req: Request, res: Response) => {
+  try {
+    const promotions = await menuService.getActivePromotions();
+    return res.json({ success: true, promotions });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// ==========================================
+// 2. ORDERING APIS
+// ==========================================
+
+// POST /api/orders (Self-order or assisted table-side order)
+router.post('/orders', async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber, tableId, orderSource, handlerId, notes, items } = req.body;
+    if (!tokenNumber || !items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber and non-empty items array are required' } });
+    }
+
+    const createdOrder = await orderService.placeOrder({
+      tokenNumber,
+      tableId,
+      orderSource: orderSource as OrderSource,
+      handlerId,
+      notes,
+      items,
+    });
+
+    return res.status(201).json({ success: true, order: createdOrder });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/orders/active (Query active orders for a token)
+router.get('/orders/active', async (req: Request, res: Response) => {
+  try {
+    const tokenNumber = (req.query.tokenNumber as string) || (req.query.tokenId as string);
+    if (!tokenNumber) {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber or tokenId is required' } });
+    }
+    const orders = await orderService.getOrdersForToken(tokenNumber);
+    return res.json({ success: true, orders });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// PUT /api/orders/items/:id/status (Bump item status)
+router.put('/orders/items/:id/status', async (req: Request, res: Response) => {
+  try {
+    const { status, staffUserId } = req.body;
+    if (!status) {
+      return res.status(400).json({ success: false, error: { message: 'status is required' } });
+    }
+    const updated = await orderService.updateOrderItemStatus(req.params.id, status as OrderStatus, staffUserId);
+    return res.json({ success: true, item: updated });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// ==========================================
+// 3. KDS STATION & READY APIS
+// ==========================================
+
+// GET /api/kds/orders/:station (Filter tickets by KITCHEN or BAR)
+router.get('/kds/orders/:station', async (req: Request, res: Response) => {
+  try {
+    const stationParam = req.params.station.toUpperCase();
+    if (stationParam !== 'KITCHEN' && stationParam !== 'BAR' && stationParam !== 'DESSERT') {
+      return res.status(400).json({ success: false, error: { message: 'Invalid station' } });
+    }
+    const tickets = await kdsService.getStationOrders(stationParam as Station);
+    return res.json({ success: true, tickets });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/staff/ready (Floor staff pickup queue)
+router.get('/staff/ready', async (req: Request, res: Response) => {
+  try {
+    const readyItems = await kdsService.getReadyItemsForService();
+    return res.json({ success: true, readyItems });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// ==========================================
+// 4. SERVICE REQUESTS APIS
+// ==========================================
+
+// POST /api/service-requests
+router.post('/service-requests', async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber, tableId, type, note } = req.body;
+    if (!tokenNumber || !type) {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber and type are required' } });
+    }
+    const request = await serviceRequestService.createRequest({
+      tokenNumber,
+      tableId,
+      type: type as ServiceRequestType,
+      note,
+    });
+    return res.status(201).json({ success: true, request });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/service-requests/active
+router.get('/service-requests/active', async (req: Request, res: Response) => {
+  try {
+    const requests = await serviceRequestService.getActiveRequests();
+    return res.json({ success: true, requests });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// PUT /api/service-requests/:id/status
+router.put('/service-requests/:id/status', async (req: Request, res: Response) => {
+  try {
+    const { status, staffUserId } = req.body;
+    if (!status) {
+      return res.status(400).json({ success: false, error: { message: 'status is required' } });
+    }
+    const updated = await serviceRequestService.updateStatus(req.params.id, status as ServiceRequestStatus, staffUserId);
+    return res.json({ success: true, request: updated });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// ==========================================
+// 5. BILLING & SETTLEMENT APIS
+// ==========================================
+
+// POST /api/bills/calculate (Consolidated table bill calculation)
+router.post('/bills/calculate', async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber, tokenId } = req.body;
+    const lookup = tokenNumber || tokenId;
+    if (!lookup) {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber or tokenId is required' } });
+    }
+    const billCalculation = await billingService.calculateBill(lookup);
+    return res.json({ success: true, bill: billCalculation });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/bills/settle (Settle bill and release table)
+router.post('/bills/settle', async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber, tokenId, paymentMethod, settledByStaffId, settlementReference } = req.body;
+    const lookup = tokenNumber || tokenId;
+    if (!lookup || !paymentMethod) {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber/tokenId and paymentMethod are required' } });
+    }
+    const result = await billingService.settleBill({
+      tokenNumberOrId: lookup,
+      paymentMethod: paymentMethod as PaymentMethod,
+      settledByStaffId,
+      settlementReference,
+    });
+    return res.json({ success: true, result });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// ==========================================
+// 6. INVENTORY APIS
+// ==========================================
+
+// GET /api/inventory
+router.get('/inventory', authenticate, async (req: Request, res: Response) => {
+  try {
+    const inventory = await inventoryService.getInventoryOverview();
+    return res.json({ success: true, inventory });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/inventory/adjust
+router.post('/inventory/adjust', authenticate, async (req: Request, res: Response) => {
+  try {
+    const { stockItemId, quantityDelta, reason, referenceId } = req.body;
+    if (!stockItemId || typeof quantityDelta !== 'number' || !reason) {
+      return res.status(400).json({ success: false, error: { message: 'stockItemId, numeric quantityDelta, and reason are required' } });
+    }
+    const userId = (req as any).user?.id;
+    const updated = await inventoryService.adjustStock({
+      stockItemId,
+      quantityDelta,
+      reason,
+      userId,
+      referenceId,
+    });
+    return res.json({ success: true, stockItem: updated });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
   }
 });
 

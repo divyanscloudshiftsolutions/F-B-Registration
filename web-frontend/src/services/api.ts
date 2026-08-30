@@ -642,6 +642,21 @@ class ApiService {
   async getDashboardReport(filter: string = 'day') {
     return this.request<DashboardReport>(`/reports/dashboard?filter=${filter}`);
   }
+
+  // Billing APIs
+  async calculateBill(tokenNumberOrId: string) {
+    return this.request<{ success: boolean; bill: any }>('/bills/calculate', {
+      method: 'POST',
+      body: JSON.stringify({ tokenNumber: tokenNumberOrId }),
+    });
+  }
+
+  async settleBill(payload: { tokenNumber: string; paymentMethod: string; settledByStaffId?: string; settlementReference?: string }) {
+    return this.request<{ success: boolean; result: any }>('/bills/settle', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
 }
 
 export const api = new ApiService();

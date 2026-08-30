@@ -361,14 +361,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
   // Live Overview metric cards mapping
   const metricCards = React.useMemo(() => {
-    const list = [
+    const list: Array<{
+      title: string;
+      value: string | number;
+      sub: React.ReactNode;
+      icon: any;
+      colorClass: string;
+      iconBgClass?: string;
+    }> = [
       {
         title: 'Active Guest Sessions',
         value: activeTokensCount,
         sub: <span className="text-text-muted">{occupiedTablesCount} occupied tables</span>,
         icon: Users,
         colorClass: 'border-l-primary dark:border-l-[#D4AF37] dark:bg-[#D4AF37]/5',
-        iconBgClass: 'dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] text-primary'
+        iconBgClass: 'dark:bg-primary/10 dark:text-[#D4AF37] text-primary'
       },
       {
         title: 'Total Guests In-House',
@@ -415,7 +422,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     }
 
     return list;
-  }, [isManagement, isReceptionist, isBartender, activeTokensCount, totalGuestsInHouse, totalCapacity, totalRedemptionsUsed, totalRevenue]);
+  }, [isManagement, isReceptionist, isBartender, activeTokensCount, occupiedTablesCount, totalGuestsInHouse, totalCapacity, totalRedemptionsUsed, totalRevenue]);
 
   // Dynamic alert list generation based on active tokens, table statuses, and role restriction
   const notifications = React.useMemo(() => {
@@ -471,13 +478,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
     // 3. Vacant tables available (Filtered out for Bartender)
     if (!isBartender) {
-      tables.filter(t => t.status === 'vacant').slice(0, 2).forEach(t => {
+      tables.filter(t => t.status === 'available').slice(0, 2).forEach(t => {
         list.push({
-          id: `vacant-${t.id}`,
-          title: `Table ${t.tableNumber || t.name} is now available`,
+          id: `available-${t.id}`,
+          title: `Table ${t.tableNumber} is now available`,
           message: `${t.capacity}-Seater • Ready for check-in`,
           customerName: 'N/A',
-          tableNumber: t.tableNumber || t.name,
+          tableNumber: t.tableNumber,
           type: 'assign',
           actionLabel: 'Assign',
           onAction: () => onNavigate?.('tables')
