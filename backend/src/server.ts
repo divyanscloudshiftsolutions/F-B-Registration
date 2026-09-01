@@ -133,7 +133,13 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
-app.listen(Number(port), '0.0.0.0', () => {
+import http from 'http';
+import { initSocketServer } from './realtime';
+
+const server = http.createServer(app);
+initSocketServer(server);
+
+server.listen(Number(port), '0.0.0.0', () => {
   logger.info(`Backend server listening on port ${port}`, {
     component: 'startup',
     event: 'server.started',

@@ -14,6 +14,7 @@ import { kdsService } from './services/KdsService';
 import { serviceRequestService } from './services/ServiceRequestService';
 import { billingService } from './services/BillingService';
 import { inventoryService } from './services/InventoryService';
+import { broadcastTableUpdated } from './realtime';
 
 const TokenStatus = {
   PENDING_PAYMENT: 'PENDING_PAYMENT' as const,
@@ -496,8 +497,8 @@ router.post('/auth/login', async (req: Request, res: Response) => {
 
   const usernameLower = username.toLowerCase();
   const isLocalAllowed = 
-    ['admin', 'receptionist', 'bartender', 'manager'].includes(usernameLower) ||
-    /^(adm|rec|bar|mgr)-\d{2}$/.test(usernameLower);
+    ['admin', 'receptionist', 'bartender', 'manager', 'chef', 'waiter', 'server'].includes(usernameLower) ||
+    /^(adm|rec|bar|mgr|chf|wtr)-\d{2}$/.test(usernameLower);
 
   if (!isLocalAllowed) {
     return res.status(401).json({
@@ -1238,6 +1239,17 @@ router.post('/tables/assign', authenticate, authorize(['receptionist', 'admin'])
     await redisService.del('tables:all').catch(() => {});
     await redisService.del('tokens:active').catch(() => {});
 
+    try {
+      broadcastTableUpdated({
+        tableId: table.id,
+        tableNumber: table.tableNumber,
+        status: table.status,
+        currentTokenId: token?.id || null,
+        occupiedSince: table.occupiedSince ? table.occupiedSince.toISOString() : null,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (e) {}
+
     return res.json({
       success: true,
       data: {
@@ -1704,6 +1716,17 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
     await redisService.del('table:available:all');
     await redisService.del('tables:all').catch(() => {});
 
+    try {
+      broadcastTableUpdated({
+        tableId: updated.id,
+        tableNumber: updated.tableNumber,
+        status: updated.status,
+        currentTokenId: updated.currentTokenId || null,
+        occupiedSince: updated.occupiedSince ? updated.occupiedSince.toISOString() : null,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (e) {}
+
     return res.json(updated);
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { code: 'STATUS_ERR', message: err.message } });
@@ -1765,6 +1788,17 @@ router.post('/tables/:id/lock', authenticate, async (req: AuthenticatedRequest, 
     await redisService.del(`table:available:${updatedTable.placeTypeId}`);
     await redisService.del('table:available:all');
     await redisService.del('tables:all').catch(() => {});
+
+    try {
+      broadcastTableUpdated({
+        tableId: updatedTable.id,
+        tableNumber: updatedTable.tableNumber,
+        status: updatedTable.status,
+        currentTokenId: updatedTable.currentTokenId || null,
+        occupiedSince: updatedTable.occupiedSince ? updatedTable.occupiedSince.toISOString() : null,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (e) {}
 
     return res.json({ success: true, table: updatedTable });
   } catch (err: any) {
@@ -1845,6 +1879,17 @@ router.post('/tables/:id/unlock', authenticate, async (req: AuthenticatedRequest
     await redisService.del(`table:available:${updatedTable.placeTypeId}`);
     await redisService.del('table:available:all');
     await redisService.del('tables:all').catch(() => {});
+
+    try {
+      broadcastTableUpdated({
+        tableId: updatedTable.id,
+        tableNumber: updatedTable.tableNumber,
+        status: updatedTable.status,
+        currentTokenId: updatedTable.currentTokenId || null,
+        occupiedSince: updatedTable.occupiedSince ? updatedTable.occupiedSince.toISOString() : null,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (e) {}
 
     return res.json({ success: true, table: updatedTable });
   } catch (err: any) {

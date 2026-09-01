@@ -1,10 +1,13 @@
-export type UserRole = 'admin' | 'receptionist' | 'bartender' | 'manager';
+export type UserRole = 'admin' | 'receptionist' | 'bartender' | 'manager' | 'chef' | 'waiter' | 'server';
 
 export const UserRole = {
   ADMIN: 'admin' as UserRole,
   RECEPTIONIST: 'receptionist' as UserRole,
   BARTENDER: 'bartender' as UserRole,
   MANAGER: 'manager' as UserRole,
+  CHEF: 'chef' as UserRole,
+  WAITER: 'waiter' as UserRole,
+  SERVER: 'server' as UserRole,
 };
 
 export interface User {
@@ -141,4 +144,15 @@ export interface DashboardReport {
       peakRedemptions: number;
     };
   };
+}
+
+export interface SessionAlert {
+  id: string;
+  tokenId: string;
+  tableNumber: string;
+  customerName: string;
+  remainingMinutes: number;
+  message: string;
+  type?: 'warning' | 'urgent' | 'info' | 'danger';
+  severity?: 'warning' | 'urgent' | 'info' | 'danger';
 }

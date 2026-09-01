@@ -12,7 +12,8 @@ export type AdminSubTab =
  | 'staff' 
  | 'chart' 
  | 'rates' 
- | 'customers';
+ | 'customers'
+ | 'menu';
 
 interface AdminNavTabsProps {
  activeTab: AdminSubTab;
@@ -22,6 +23,7 @@ interface AdminNavTabsProps {
 export const AdminNavTabs: React.FC<AdminNavTabsProps> = ({ activeTab, setActiveTab }) => {
  const tabs: { id: AdminSubTab; label: string; icon: React.FC<{ size?: number; className?: string }> }[] = [
  { id: 'tables', label: 'Tables Floor Plan', icon: Grid3X3 },
+ { id: 'menu', label: 'Menu & 86 Availability', icon: BarChart3 },
  { id: 'staff', label: 'Staff Directory', icon: Users },
  { id: 'chart', label: 'Revenue Analytics', icon: BarChart3 },
  { id: 'rates', label: 'Rate Cards', icon: DollarSign },

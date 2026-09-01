@@ -1,5 +1,6 @@
 import { PrismaClient, BillStatus, PaymentMethod, CloseReason } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { broadcastBillSettled, broadcastTableUpdated } from '../realtime';
 
 const prisma = new PrismaClient();
 
@@ -135,7 +136,7 @@ export class BillingService {
   }) {
     const calc = await this.calculateBill(input.tokenNumberOrId);
 
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const token = await tx.token.findUnique({
         where: { id: calc.tokenId },
         include: { table: true },
@@ -239,6 +240,35 @@ export class BillingService {
         turnoverStatus: 'TABLE_RELEASED_AND_SESSION_CLOSED',
       };
     });
+
+    if (result.bill && result.turnoverStatus === 'TABLE_RELEASED_AND_SESSION_CLOSED') {
+      try {
+        broadcastBillSettled({
+          billId: result.bill.id,
+          billNumber: result.bill.billNumber,
+          tokenId: result.bill.tokenId,
+          tokenNumber: calc.tokenNumber,
+          tableId: result.bill.tableId,
+          grandTotal: Number(result.bill.grandTotal),
+          status: result.bill.status,
+          paymentMethod: result.bill.paymentMethod || 'CASH',
+          paidAt: result.bill.paidAt ? result.bill.paidAt.toISOString() : new Date().toISOString(),
+        });
+
+        broadcastTableUpdated({
+          tableId: result.bill.tableId,
+          tableNumber: calc.tableNumber,
+          status: 'available',
+          currentTokenId: null,
+          occupiedSince: null,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn('Real-time bill settlement broadcast error:', err);
+      }
+    }
+
+    return result;
   }
 }
 

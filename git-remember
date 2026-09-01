@@ -377,6 +377,36 @@ git push origin main
 Do not show commands for repositories that have no relevant changes.
 
 ============================================================
+12. SENSITIVE & ENVIRONMENT FILES POLICY (.ENV & .ENV.EXAMPLE)
+============================================================
+
+NEVER push:
+- .env
+- .env.*
+- .env*.local
+- .env.example
+- *.env
+- *.env.example
+
+to ANY of the 4 Git repositories (Central, Backend, Web Frontend, or React Native).
+
+Always ensure:
+1. Every repository root and subproject has `.gitignore` explicitly listing:
+   .env
+   .env.*
+   .env*.local
+   .env.example
+   *.env
+   *.env.example
+
+2. Before staging or committing, verify that no `.env` or `.env.example` files are tracked:
+   git status
+   git ls-files | grep -i "\.env"
+
+3. If any `.env` or `.env.example` file is ever accidentally staged, immediately unstage and remove it:
+   git rm --cached <file>
+
+============================================================
 FINAL RULE
 ==========
 
@@ -388,9 +418,8 @@ IDENTIFY ONLY AFFECTED REPOSITORIES.
 USE ONE DAILY COMMIT PER AFFECTED REPOSITORY.
 USE A GENERIC HUMAN-WRITTEN SUMMARY OF THE DAY'S WORK.
 PUSH ONLY THE CORRECT SOURCE CONTENTS.
+NEVER PUSH .ENV OR .ENV.EXAMPLE FILES.
 USE MAIN ONLY.
 SHOW EACH REPOSITORY'S COMMANDS IN A SEPARATE COPY-CODE BLOCK.
 NEVER MIX REPOSITORY CONTENTS.
-
-```
-```
+````

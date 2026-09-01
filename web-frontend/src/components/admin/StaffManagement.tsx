@@ -45,13 +45,13 @@ export const StaffManagement: React.FC = () => {
 
  // Update default username prefix when role changes
  useEffect(() => {
- const prefix = role === 'admin' ? 'ADM' : (role === 'receptionist' ? 'REC' : (role === 'bartender' ? 'BAR' : 'MGR'));
- setUsername(`${prefix}-01`);
+   const prefix = role === 'admin' ? 'ADM' : (role === 'receptionist' ? 'REC' : (role === 'bartender' ? 'BAR' : (role === 'chef' ? 'CHF' : (role === 'waiter' ? 'WTR' : 'MGR'))));
+   setUsername(`${prefix}-01`);
  }, [role]);
 
  // Validations matching AdminPortal.tsx
  const isFullNameValid = /^[a-zA-Z\s.'-]{2,100}$/.test(fullName.trim());
- const expectedPrefix = role === 'admin' ? 'ADM' : (role === 'receptionist' ? 'REC' : (role === 'bartender' ? 'BAR' : 'MGR'));
+ const expectedPrefix = role === 'admin' ? 'ADM' : (role === 'receptionist' ? 'REC' : (role === 'bartender' ? 'BAR' : (role === 'chef' ? 'CHF' : (role === 'waiter' ? 'WTR' : 'MGR'))));
  const isUsernameValid = new RegExp('^' + expectedPrefix + '-\\d{2}$').test(username.trim().toUpperCase());
  const isPinValid = /^\d{4}$/.test(pin.trim());
  const isDuplicate = users.some(u => u.username.toUpperCase() === username.trim().toUpperCase());
@@ -264,6 +264,8 @@ export const StaffManagement: React.FC = () => {
  >
  <option value="receptionist">Receptionist (REC)</option>
  <option value="bartender">Bartender (BAR)</option>
+ <option value="chef">Kitchen Chef (CHF)</option>
+ <option value="waiter">Waiter / Server (WTR)</option>
  <option value="admin">Administrator (ADM)</option>
  <option value="manager">Manager (MGR)</option>
  </select>

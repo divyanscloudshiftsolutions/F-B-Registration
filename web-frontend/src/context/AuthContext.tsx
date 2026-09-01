@@ -125,7 +125,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
  setUser(res.user);
  setToken(res.token);
  localStorage.setItem('bar_web_user', JSON.stringify(res.user));
- localStorage.setItem('bar_web_active_tab', 'dashboard');
+ const roleLower = res.user.role ? String(res.user.role).toLowerCase() : '';
+ let defaultTab = 'dashboard';
+ if (roleLower === 'chef') {
+   defaultTab = 'kds_kitchen';
+ } else if (roleLower === 'waiter' || roleLower === 'server') {
+   defaultTab = 'waiter_tables';
+ } else if (roleLower === 'bartender') {
+   defaultTab = 'bartender/checkins';
+ } else {
+   defaultTab = 'dashboard';
+ }
+ localStorage.setItem('bar_web_active_tab', defaultTab);
  showToast(`Welcome back, ${res.user.fullName}!`, 'success');
  
  // Log receptionist/admin login notification

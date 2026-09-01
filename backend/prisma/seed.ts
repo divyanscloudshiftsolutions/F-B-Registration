@@ -162,6 +162,22 @@ async function main() {
         manage_menu: true,
       },
     },
+    {
+      name: 'chef',
+      permissions: {
+        process_kds_kitchen: true,
+        view_orders: true,
+      },
+    },
+    {
+      name: 'waiter',
+      permissions: {
+        view_tables: true,
+        manage_orders: true,
+        process_service_requests: true,
+        view_ready_queue: true,
+      },
+    },
   ];
 
   const dbRoles: Record<string, string> = {};
@@ -204,6 +220,20 @@ async function main() {
       fullName: 'David Manager',
       passwordHash: await bcrypt.hash('manager123', 12),
       roleId: dbRoles['manager'],
+      isActive: true,
+    },
+    {
+      username: 'chef',
+      fullName: 'Gordon Chef',
+      passwordHash: await bcrypt.hash('chef123', 12),
+      roleId: dbRoles['chef'],
+      isActive: true,
+    },
+    {
+      username: 'waiter',
+      fullName: 'Ravi Waiter',
+      passwordHash: await bcrypt.hash('waiter123', 12),
+      roleId: dbRoles['waiter'],
       isActive: true,
     },
   ];

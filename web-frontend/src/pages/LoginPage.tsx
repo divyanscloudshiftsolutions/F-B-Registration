@@ -4,9 +4,9 @@ import { useAuth } from '../context/AuthContext';
 
 export const LoginPage: React.FC = () => {
  const { login, isDark, toggleTheme } = useAuth();
- const [selectedRole, setSelectedRole] = useState<'REC' | 'BAR' | 'ADM' | 'MGR'>('ADM');
- const [username, setUsername] = useState('ADM-03');
- const [pin, setPin] = useState('1234');
+ const [selectedRole, setSelectedRole] = useState<'REC' | 'BAR' | 'ADM' | 'MGR' | 'CHF' | 'WTR'>('ADM');
+ const [username, setUsername] = useState('admin');
+ const [pin, setPin] = useState('admin123');
  const [isSubmitting, setIsSubmitting] = useState(false);
  const [errorMsg, setErrorMsg] = useState(() => {
     const saved = localStorage.getItem('auth_error_msg');
@@ -17,14 +17,16 @@ export const LoginPage: React.FC = () => {
     return '';
   });
 
- const handleRoleSelect = (role: 'REC' | 'BAR' | 'ADM' | 'MGR') => {
+ const handleRoleSelect = (role: 'REC' | 'BAR' | 'ADM' | 'MGR' | 'CHF' | 'WTR') => {
  setSelectedRole(role);
  setErrorMsg('');
  const defaults = {
- REC: { user: 'REC-01', pin: '1234' },
- BAR: { user: 'BAR-02', pin: '1234' },
- ADM: { user: 'ADM-03', pin: '1234' },
- MGR: { user: 'MGR-04', pin: '1234' },
+   ADM: { user: 'admin', pin: 'admin123' },
+   REC: { user: 'receptionist', pin: 'recep123' },
+   BAR: { user: 'bartender', pin: 'bar123' },
+   CHF: { user: 'chef', pin: 'chef123' },
+   WTR: { user: 'waiter', pin: 'waiter123' },
+   MGR: { user: 'manager', pin: 'manager123' },
  };
  setUsername(defaults[role].user);
  setPin(defaults[role].pin);
@@ -183,16 +185,16 @@ export const LoginPage: React.FC = () => {
           {/* Role Selection Tabs styled as standardized premium segmented controls */}
           <div>
             <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2">1. Select Station Role</label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 rounded-xl bg-[#F8F7FC] dark:bg-black/10 border border-border-main">
-              {(['REC', 'BAR', 'ADM', 'MGR'] as const).map(r => {
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 p-1 rounded-xl bg-[#F8F7FC] dark:bg-black/10 border border-border-main">
+              {(['ADM', 'REC', 'BAR', 'CHF', 'WTR', 'MGR'] as const).map(r => {
                 const isSel = selectedRole === r;
-                const labels = { REC: 'Reception', BAR: 'Bartender', ADM: 'Admin', MGR: 'Manager' };
+                const labels = { ADM: 'Admin', REC: 'Reception', BAR: 'Bar', CHF: 'Chef', WTR: 'Waiter', MGR: 'Manager' };
                 return (
                   <button
                     key={r}
                     type="button"
                     onClick={() => handleRoleSelect(r)}
-                    className={`py-2.5 sm:py-2 px-1 text-[11px] sm:text-[10px] md:text-xs font-bold uppercase transition-all duration-200 active:scale-95 premium-tab-secondary truncate ${
+                    className={`py-2 px-1 text-[10px] md:text-xs font-bold uppercase transition-all duration-200 active:scale-95 premium-tab-secondary truncate ${
                       isSel ? 'active' : ''
                     }`}
                   >

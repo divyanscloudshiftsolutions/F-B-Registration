@@ -1,5 +1,6 @@
 import { PrismaClient, OrderStatus, OrderSource, Station } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { broadcastOrderCreated, broadcastOrderItemUpdated } from '../realtime';
 
 const prisma = new PrismaClient();
 
@@ -177,7 +178,7 @@ export class OrderService {
     const orderNumber = existingOrdersCount + 1;
 
     // 6. Execute Transactional Order Creation with Atomic Inventory Lock
-    return prisma.$transaction(async (tx) => {
+    const createdOrder = await prisma.$transaction(async (tx) => {
       // Validate and deduct stock atomically
       for (const deduction of stockDeductions) {
         const stock = await tx.stockItem.findUnique({
@@ -229,6 +230,39 @@ export class OrderService {
 
       return createdOrder;
     });
+
+    // Broadcast order.created in real-time after successful DB commit
+    try {
+      broadcastOrderCreated({
+        orderId: createdOrder.id,
+        orderNumber: createdOrder.orderNumber,
+        tokenNumber: token.tokenNumber,
+        tableId: createdOrder.tableId,
+        tableNumber: token.table?.tableNumber || 'N/A',
+        orderSource: createdOrder.orderSource,
+        handlerId: createdOrder.handlerId,
+        items: createdOrder.items.map((i) => ({
+          id: i.id,
+          menuItemId: i.menuItemId,
+          itemName: i.itemName,
+          variantName: i.variantName,
+          selectedModifiers: i.selectedModifiers,
+          specialInstructions: i.specialInstructions,
+          quantity: i.quantity,
+          unitPrice: Number(i.unitPrice),
+          lineTotal: Number(i.lineTotal),
+          station: i.station,
+          status: i.status,
+          foodType: i.foodType,
+        })),
+        subtotal: Number(createdOrder.subtotal),
+        placedAt: createdOrder.placedAt.toISOString(),
+      });
+    } catch (broadcastErr) {
+      console.warn('Real-time order broadcast error:', broadcastErr);
+    }
+
+    return createdOrder;
   }
 
   /**
@@ -317,6 +351,37 @@ export class OrderService {
         where: { id: item.orderId },
         data: { status: OrderStatus.PREPARING },
       });
+    }
+
+    // Broadcast order.item.updated after successful DB commit
+    try {
+      const orderWithToken = await prisma.order.findUnique({
+        where: { id: item.orderId },
+        include: { token: true, table: true },
+      });
+
+      broadcastOrderItemUpdated({
+        orderId: item.orderId,
+        orderItemId: updatedItem.id,
+        orderNumber: orderWithToken?.orderNumber || 0,
+        tokenNumber: orderWithToken?.token?.tokenNumber || '',
+        tableId: orderWithToken?.tableId || '',
+        tableNumber: orderWithToken?.table?.tableNumber,
+        station: updatedItem.station,
+        itemName: updatedItem.itemName,
+        variantName: updatedItem.variantName,
+        selectedModifiers: updatedItem.selectedModifiers,
+        specialInstructions: updatedItem.specialInstructions,
+        quantity: updatedItem.quantity,
+        previousStatus: item.status,
+        status: updatedItem.status,
+        preparedAt: updatedItem.preparedAt ? updatedItem.preparedAt.toISOString() : null,
+        readyAt: updatedItem.readyAt ? updatedItem.readyAt.toISOString() : null,
+        servedAt: updatedItem.servedAt ? updatedItem.servedAt.toISOString() : null,
+        updatedAt: now.toISOString(),
+      });
+    } catch (broadcastErr) {
+      console.warn('Real-time order item broadcast error:', broadcastErr);
     }
 
     return updatedItem;

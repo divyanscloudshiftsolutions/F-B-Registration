@@ -1,4 +1,5 @@
 import { PrismaClient, ServiceRequestType, ServiceRequestStatus } from '@prisma/client';
+import { broadcastServiceRequestCreated, broadcastServiceRequestUpdated } from '../realtime';
 
 const prisma = new PrismaClient();
 
@@ -60,6 +61,23 @@ export class ServiceRequestService {
       },
     });
 
+    // Broadcast service_request.created in real-time
+    try {
+      broadcastServiceRequestCreated({
+        id: created.id,
+        tokenId: token.id,
+        tokenNumber: token.tokenNumber,
+        tableId,
+        tableNumber: token.table.tableNumber,
+        type: created.type,
+        note: created.note,
+        status: created.status,
+        createdAt: created.createdAt.toISOString(),
+      });
+    } catch (err) {
+      console.warn('Real-time service request broadcast error:', err);
+    }
+
     return {
       ...created,
       isDuplicate: false,
@@ -100,10 +118,38 @@ export class ServiceRequestService {
       data.completedAt = now;
     }
 
-    return prisma.serviceRequest.update({
+    const updated = await prisma.serviceRequest.update({
       where: { id: requestId },
       data,
+      include: {
+        token: true,
+        assignedStaff: {
+          select: { id: true, username: true, fullName: true },
+        },
+      },
     });
+
+    // Broadcast service_request.updated in real-time
+    try {
+      broadcastServiceRequestUpdated({
+        id: updated.id,
+        tokenId: updated.tokenId,
+        tokenNumber: updated.token?.tokenNumber || '',
+        tableId: updated.tableId,
+        tableNumber: updated.tableNumber,
+        type: updated.type,
+        status: updated.status,
+        assignedStaffId: updated.assignedStaffId,
+        assignedStaffName: updated.assignedStaff?.fullName || updated.assignedStaff?.username || null,
+        acknowledgedAt: updated.acknowledgedAt ? updated.acknowledgedAt.toISOString() : null,
+        completedAt: updated.completedAt ? updated.completedAt.toISOString() : null,
+        updatedAt: now.toISOString(),
+      });
+    } catch (err) {
+      console.warn('Real-time service request status broadcast error:', err);
+    }
+
+    return updated;
   }
 }
 

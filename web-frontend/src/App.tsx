@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { DataProvider } from './context/DataContext';
+import { DataProvider, useData } from './context/DataContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { LoginPage } from './pages/LoginPage';
@@ -10,9 +10,12 @@ import { QuickAttendanceWebPage } from './pages/QuickAttendanceWebPage';
 import { BartenderPage } from './pages/BartenderPage';
 import { TablesPage } from './pages/TablesPage';
 import { AdminPage } from './pages/AdminPage';
-
+import { KitchenKDSPage } from './pages/KitchenKDSPage';
+import { BarKDSPage } from './pages/BarKDSPage';
+import { WaiterStationPage } from './pages/WaiterStationPage';
+import { CustomerApp } from './pages/CustomerApp';
+import { DemoHubPage } from './pages/DemoHubPage';
 import { AlertTriangle, X } from 'lucide-react';
-import { useData } from './context/DataContext';
 
 const AppContent: React.FC = () => {
   const { user, toasts, dismissToast, isLoading } = useAuth();
@@ -21,6 +24,7 @@ const AppContent: React.FC = () => {
   const [activeTab, setActiveTabState] = useState<string>(() => {
     return localStorage.getItem('bar_web_active_tab') || 'dashboard';
   });
+
   const setActiveTab = (tab: string) => {
     setActiveTabState(tab);
     localStorage.setItem('bar_web_active_tab', tab);
@@ -60,6 +64,17 @@ const AppContent: React.FC = () => {
     }
   }, [user, isLoading]);
 
+  // Handle Customer and Demo Hub Paths
+  if (typeof window !== 'undefined') {
+    const pathname = window.location.pathname;
+    if (pathname.startsWith('/t/') || pathname.startsWith('/customer')) {
+      return <CustomerApp />;
+    }
+    if (pathname === '/demo') {
+      return <DemoHubPage />;
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center dark:bg-[#141225] bg-[#F5F3FA] text-text-main font-bold">
@@ -72,8 +87,65 @@ const AppContent: React.FC = () => {
     return <LoginPage />;
   }
 
+  // Handle direct authenticated URL routes
+  if (typeof window !== 'undefined') {
+    const pathname = window.location.pathname;
+    if (pathname.startsWith('/staff') || pathname === '/waiter') {
+      return <WaiterStationPage />;
+    }
+    if (pathname === '/kds' || pathname === '/kds/kitchen' || pathname === '/kds_kitchen') {
+      return <KitchenKDSPage />;
+    }
+    if (pathname === '/kds/bar' || pathname === '/kds_bar') {
+      return <BarKDSPage />;
+    }
+  }
+
+  const userRole = user?.role ? String(user.role).toLowerCase() : '';
+
   const renderTabContent = () => {
+    // Dedicated Chef View
+    if (userRole === 'chef') {
+      return <KitchenKDSPage />;
+    }
+
+    // Dedicated Waiter / Server View
+    if (userRole === 'waiter' || userRole === 'server') {
+      return <WaiterStationPage />;
+    }
+
+    if (activeTab.startsWith('waiter')) {
+      return <WaiterStationPage />;
+    }
+
+    if (activeTab === 'kds_kitchen') {
+      if (userRole === 'admin' || userRole === 'manager' || userRole === 'chef') {
+        return <KitchenKDSPage />;
+      }
+      return (
+        <div className="p-8 text-center text-text-muted">
+          <p className="text-sm font-bold text-red-400">Access Denied: Kitchen KDS is restricted to Chefs and Managers.</p>
+        </div>
+      );
+    }
+    if (activeTab === 'kds_bar') {
+      if (userRole === 'admin' || userRole === 'manager' || userRole === 'bartender') {
+        return <BarKDSPage />;
+      }
+      return (
+        <div className="p-8 text-center text-text-muted">
+          <p className="text-sm font-bold text-red-400">Access Denied: Bar KDS is restricted to Bartenders and Managers.</p>
+        </div>
+      );
+    }
     if (activeTab === 'dashboard') {
+      if (userRole === 'bartender' || userRole === 'chef' || userRole === 'waiter') {
+        return (
+          <div className="p-8 text-center text-text-muted">
+            <p className="text-sm font-bold text-red-400">Access Denied: Dashboard is restricted to Receptionists, Managers, and Admins.</p>
+          </div>
+        );
+      }
       return (
         <DashboardPage 
           onNavigate={(tabId, adminSubtab) => {
@@ -89,15 +161,36 @@ const AppContent: React.FC = () => {
       );
     }
     if (activeTab === 'checkin') {
+      if (userRole === 'bartender' || userRole === 'chef' || userRole === 'waiter') {
+        return (
+          <div className="p-8 text-center text-text-muted">
+            <p className="text-sm font-bold text-red-400">Access Denied: Check-In is restricted to Receptionists and Admins.</p>
+          </div>
+        );
+      }
       return <CheckInPage />;
     }
     if (activeTab === 'quick_attendance') {
       return <QuickAttendanceWebPage />;
     }
     if (activeTab.startsWith('bartender')) {
+      if (userRole !== 'admin' && userRole !== 'manager' && userRole !== 'bartender') {
+        return (
+          <div className="p-8 text-center text-text-muted">
+            <p className="text-sm font-bold text-red-400">Access Denied: Bartender operations are restricted to Bartenders and Managers.</p>
+          </div>
+        );
+      }
       return <BartenderPage activeTab={activeTab} setActiveTab={setActiveTab} />;
     }
     if (activeTab.startsWith('tables')) {
+      if (userRole === 'chef') {
+        return (
+          <div className="p-8 text-center text-text-muted">
+            <p className="text-sm font-bold text-red-400">Access Denied.</p>
+          </div>
+        );
+      }
       return (
         <TablesPage 
           onNavigateToCheckIn={() => setActiveTab('checkin')} 
@@ -107,6 +200,13 @@ const AppContent: React.FC = () => {
       );
     }
     if (activeTab.startsWith('admin')) {
+      if (userRole !== 'admin' && userRole !== 'manager') {
+        return (
+          <div className="p-8 text-center text-text-muted">
+            <p className="text-sm font-bold text-red-400">Access Denied: Administration is restricted to Administrators and Managers.</p>
+          </div>
+        );
+      }
       return <AdminPage activeTab={activeTab} setActiveTab={setActiveTab} />;
     }
     return (
@@ -125,125 +225,98 @@ const AppContent: React.FC = () => {
   };
 
   const getTabTitle = () => {
+    if (activeTab === 'kds_kitchen') return 'Kitchen KDS Food Preparation';
+    if (activeTab === 'kds_bar') return 'Bar KDS Beverage Station';
+    if (activeTab.startsWith('waiter')) return 'Waiter Floor Service Station';
     if (activeTab === 'dashboard') return 'Executive Management Dashboard';
     if (activeTab === 'checkin') return 'Reception Check-In & Customer Registration';
     if (activeTab === 'quick_attendance') return 'Quick Facial Attendance Kiosk';
     if (activeTab.startsWith('bartender')) return 'Bartender Drink Service Station';
     if (activeTab.startsWith('tables')) return 'Live Seating Floor Plan & Tables';
     if (activeTab.startsWith('admin')) return 'System Administration & Staff Portal';
-    return 'Open the Bottle';
+    return 'TableFlow Operations';
   };
-
-
 
   return (
     <div className="flex h-[100dvh] dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] text-text-primary font-sans overflow-hidden relative">
-      {/* Multi-Layer Atmospheric Ambient Background Composition */}
+      {/* Multi-Layer Atmospheric Ambient Background */}
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
-        {/* Orb 1: Warm Amber Top-Left/behind Sidebar */}
         <div className="absolute -top-[15%] -left-[10%] w-[45%] h-[55%] dark:bg-[radial-gradient(circle,rgba(241,147,7,0.06)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(241,147,7,0.04)_0%,transparent_70%)] rounded-full blur-[130px] animate-ambient-slow-1" />
-
-        {/* Orb 2: Primary Brand Purple Header Glow */}
         <div className="absolute -top-[20%] right-[15%] w-[50%] h-[60%] dark:bg-[radial-gradient(circle,rgba(141,108,229,0.16)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(141,108,229,0.12)_0%,transparent_70%)] rounded-full blur-[140px] animate-ambient-slow-2" />
-
-        {/* Orb 3: Deep Indigo Center-Right Depth */}
         <div className="absolute top-[25%] right-[5%] w-[40%] h-[50%] dark:bg-[radial-gradient(circle,rgba(99,102,241,0.10)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(99,102,241,0.06)_0%,transparent_70%)] rounded-full blur-[150px] animate-ambient-slow-1" />
-
-        {/* Orb 4: Deep Indigo Bottom-Right Accent */}
-        <div className="absolute -bottom-[15%] right-[10%] w-[40%] h-[50%] dark:bg-[radial-gradient(circle,rgba(99,102,241,0.08)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(99,102,241,0.06)_0%,transparent_70%)] rounded-full blur-[140px] animate-ambient-slow-2" />
-
-        {/* Orb 5: Emerald Bottom-Left Accent */}
-        <div className="absolute -bottom-[10%] left-[10%] w-[35%] h-[45%] dark:bg-[radial-gradient(circle,rgba(16,185,129,0.08)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(16,185,129,0.06)_0%,transparent_70%)] rounded-full blur-[130px] animate-ambient-slow-1" />
-
-        {/* Ambient Vignette Overlay for edge depth */}
-        <div className="absolute inset-0 ambient-vignette-overlay" />
       </div>
 
-      {/* Navigation Sidebar */}
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        collapsed={sidebarCollapsed}
-        setCollapsed={setSidebarCollapsed}
+      <Sidebar 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab} 
+        collapsed={sidebarCollapsed} 
+        setCollapsed={setSidebarCollapsed} 
       />
 
-      <div className="flex-1 flex flex-col min-w-0 h-[100dvh] bg-bg-workspace border border-border-sidebar border-y-0 border-r-0 border-l-[1px] rounded-none overflow-hidden transition-all duration-300 z-10">
-        <Header
-          title={getTabTitle()}
+      <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden relative z-10">
+        <Header 
+          title={getTabTitle()} 
           onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-          isSidebarCollapsed={sidebarCollapsed}
           onRefresh={handleGlobalRefresh}
           isRefreshing={isGlobalRefreshing}
         />
-        
-        <main className="p-3 sm:p-4 md:p-6 flex-1 overflow-y-auto no-scrollbar">
+
+        {/* Global Urgent Session Alert Toast Bar */}
+        {sessionAlerts.length > 0 && (
+          <div className="px-4 py-2 space-y-1.5 z-50 shrink-0">
+            {sessionAlerts.map(alert => (
+              <div 
+                key={alert.id}
+                className="p-3 rounded-2xl flex items-center justify-between shadow-lg backdrop-blur-md border animate-bounce-short text-xs font-bold dark:bg-amber-500/20 bg-amber-50 border-amber-500/40 dark:text-amber-300 text-amber-700"
+              >
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={16} className="text-amber-500" />
+                  <span>{alert.message}</span>
+                </div>
+                <button 
+                  onClick={() => dismissAlert(alert.id)}
+                  className="p-1 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <main className="flex-1 overflow-y-auto px-2 sm:px-4 md:px-6 py-2 sm:py-4 relative z-0">
           {renderTabContent()}
         </main>
+      </div>
 
-        {/* Session Expiry Warning Popups Container */}
-        <div className="fixed top-3 sm:top-4 inset-x-3 sm:inset-x-auto sm:left-1/2 sm:transform sm:-translate-x-1/2 z-[70] flex flex-col gap-3 w-auto sm:w-full sm:max-w-md px-0 sm:px-4 pointer-events-none">
-          {sessionAlerts.filter(a => !a.dismissed).map(alert => (
-            <div
-              key={alert.id}
-              onClick={() => {
-                if (alert.tableId) {
-                  localStorage.setItem('bar_auto_inspect_table_id', alert.tableId);
-                  setActiveTab('tables/layout');
-                  window.dispatchEvent(new CustomEvent('bar_auto_inspect', { detail: { tableId: alert.tableId } }));
-                }
-              }}
-              className="pointer-events-auto p-4 dark:bg-[#1C1C1E] bg-white border border-red-500/40 rounded-2xl shadow-2xl flex items-start gap-3 animate-fadeIn text-text-main cursor-pointer hover:border-red-500/70 transition-colors"
+      {/* Global Toast Messages */}
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+        {toasts.map(toast => (
+          <div 
+            key={toast.id}
+            className={`p-3.5 rounded-2xl shadow-xl border pointer-events-auto flex items-center justify-between text-xs font-bold animate-slide-up backdrop-blur-md ${
+              (toast.type as string) === 'success' 
+                ? 'dark:bg-emerald-950/80 bg-emerald-50 border-emerald-500/30 dark:text-emerald-300 text-emerald-800'
+                : (toast.type as string) === 'danger' || (toast.type as string) === 'error'
+                ? 'dark:bg-rose-950/80 bg-rose-50 border-rose-500/30 dark:text-rose-300 text-rose-800'
+                : 'dark:bg-indigo-950/80 bg-indigo-50 border-indigo-500/30 dark:text-indigo-300 text-indigo-800'
+            }`}
+          >
+            <span>{toast.message}</span>
+            <button 
+              onClick={() => dismissToast(toast.id)}
+              className="p-1 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 ml-2"
             >
-              <div className="p-2 rounded-xl bg-red-500/10 text-red-500 shrink-0">
-                <AlertTriangle size={18} />
-              </div>
-              <div className="flex-1 min-w-0 text-left">
-                <h4 className="text-xs font-black text-red-500 uppercase tracking-widest">Session Expiring Soon</h4>
-                <p className="text-sm font-bold mt-1">Table {alert.tableNumber} — {alert.customerName}</p>
-                <p className="text-xs text-text-muted mt-0.5">Session expires in {alert.remainingTimeStr}.</p>
-              </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  dismissAlert(alert.id);
-                }}
-                className="p-1 rounded-lg text-text-muted hover:text-text-main cursor-pointer shrink-0"
-              >
-                <X size={18} />
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {/* Global Toast Alert Notifications Container: Top on mobile, Bottom-Right on web */}
-        <div className="fixed top-4 inset-x-4 sm:top-auto sm:bottom-4 sm:right-4 sm:left-auto z-[120] space-y-2 sm:max-w-sm w-auto sm:w-full pointer-events-none">
-          {toasts.map(toast => (
-            <div
-              key={toast.id}
-              className={`pointer-events-auto p-3.5 sm:p-4 rounded-2xl shadow-2xl flex items-center justify-between border backdrop-blur-md transition-all animate-fadeIn ${
-                toast.type === 'success'
-                  ? 'bg-status-success-bg border-status-success-border text-status-success'
-                  : toast.type === 'danger'
-                  ? 'bg-status-danger-bg border-status-danger-border text-status-danger'
-                  : 'bg-status-info-bg border-status-info-border text-status-info'
-              }`}
-            >
-              <span className="text-xs font-semibold leading-snug">{toast.message}</span>
-              <button
-                onClick={() => dismissToast(toast.id)}
-                className="ml-3 text-xs opacity-70 hover:opacity-100 font-bold p-1 shrink-0 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-        </div>
+              <X size={12} />
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );
 };
 
-export default function App() {
+export const App: React.FC = () => {
   return (
     <AuthProvider>
       <DataProvider>
@@ -251,4 +324,6 @@ export default function App() {
       </DataProvider>
     </AuthProvider>
   );
-}
+};
+
+export default App;

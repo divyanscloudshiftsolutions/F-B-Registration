@@ -9,7 +9,7 @@ export class KdsService {
   async getStationOrders(station: Station) {
     const activeItems = await prisma.orderItem.findMany({
       where: {
-        station,
+        station: station === Station.KITCHEN ? { in: [Station.KITCHEN, Station.DESSERT] } : station,
         status: {
           in: [OrderStatus.PLACED, OrderStatus.ACCEPTED, OrderStatus.PREPARING, OrderStatus.READY],
         },

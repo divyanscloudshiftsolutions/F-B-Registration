@@ -8,7 +8,11 @@ import {
  ChevronLeft,
  ChevronRight,
  Camera,
- Martini
+ Martini,
+ ChefHat,
+ BellRing,
+ Receipt,
+ UtensilsCrossed
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { UserRole } from '../../types';
@@ -137,7 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
  id: 'tables',
  label: 'Tables',
  icon: Grid3X3,
- roles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST, UserRole.BARTENDER],
+ roles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST],
  subItems: [
  { label: 'Table Layout', onClick: () => handleNavClick('tables/layout'), active: activeTab === 'tables/layout' },
  { label: 'Reservations', onClick: () => handleNavClick('tables/reservations'), active: activeTab === 'tables/reservations' }
@@ -302,11 +306,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
  </div>
 
  <nav className="px-4 py-2 space-y-1 overflow-y-auto flex-1 min-h-0">
- {renderNavButton('dashboard', 'Dashboard', LayoutDashboard, [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST, UserRole.BARTENDER])}
+ {/* Receptionist / Admin / Manager: Dashboard */}
+ {renderNavButton('dashboard', 'Dashboard', LayoutDashboard, [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST])}
+ 
+ {/* Receptionist / Admin: Reception Check-In */}
  {renderNavButton('checkin', 'Reception', UserCheck, [UserRole.ADMIN, UserRole.RECEPTIONIST])}
+ 
+ {/* Receptionist / Admin: Tables */}
  {renderGroup(groups.find(g => g.id === 'tables'))}
+ 
+ {/* Bartender / Admin: Bar KDS */}
+ {renderNavButton('kds_bar', 'Bar KDS', Wine, [UserRole.ADMIN, UserRole.BARTENDER])}
+ 
+ {/* Bartender / Admin: Bartender Check-ins */}
  {renderGroup(groups.find(g => g.id === 'bartender'))}
- {renderNavButton('quick_attendance', 'Attendance', Camera, [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST, UserRole.BARTENDER])}
+ 
+ {/* Chef / Admin: Kitchen KDS */}
+ {renderNavButton('kds_kitchen', 'Kitchen KDS', ChefHat, [UserRole.ADMIN, UserRole.CHEF])}
+ 
+ {/* Waiter / Server / Admin: Waiter Operations */}
+ {renderNavButton('waiter_tables', 'Tables', UtensilsCrossed, [UserRole.ADMIN, UserRole.WAITER, UserRole.SERVER])}
+ {renderNavButton('waiter_requests', 'Requests', BellRing, [UserRole.ADMIN, UserRole.WAITER, UserRole.SERVER])}
+ {renderNavButton('waiter_ready', 'Ready Queue', ChefHat, [UserRole.ADMIN, UserRole.WAITER, UserRole.SERVER])}
+ {renderNavButton('waiter_bills', 'Bills', Receipt, [UserRole.ADMIN, UserRole.WAITER, UserRole.SERVER])}
+ 
+ {/* Bartender / Receptionist / Admin: Attendance */}
+ {renderNavButton('quick_attendance', 'Attendance', Camera, [UserRole.ADMIN, UserRole.BARTENDER])}
+ 
+ {/* Admin / Manager only: System Administration */}
  {renderGroup(groups.find(g => g.id === 'administration'))}
  </nav>
  </div>

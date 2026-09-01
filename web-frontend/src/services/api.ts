@@ -98,6 +98,12 @@ class ApiService {
     } else if (lowerId === 'mgr-04' || lowerId === 'mgr' || lowerId === 'manager') {
       userStr = 'manager';
       pinStr = 'manager123';
+    } else if (lowerId === 'chf-05' || lowerId === 'chf' || lowerId === 'chef') {
+      userStr = 'chef';
+      pinStr = 'chef123';
+    } else if (lowerId === 'wtr-06' || lowerId === 'wtr' || lowerId === 'waiter') {
+      userStr = 'waiter';
+      pinStr = 'waiter123';
     }
 
     const res = await this.request<{
@@ -656,6 +662,99 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  }
+
+  // KDS APIs
+  async getKdsOrders(station: 'KITCHEN' | 'BAR' | 'DESSERT') {
+    return this.request<{ success: boolean; tickets: any[] }>(`/kds/orders/${station}`);
+  }
+
+  async updateOrderItemStatus(orderItemId: string, status: string, staffUserId?: string) {
+    return this.request<{ success: boolean; item: any }>(`/orders/items/${orderItemId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, staffUserId }),
+    });
+  }
+
+  // Customer & Ordering APIs
+  async getMenu(includeUnavailable: boolean = false) {
+    const data = await this.request<{ success: boolean; menu: any[] }>(`/menu?includeUnavailable=${includeUnavailable}`);
+    return data.menu || [];
+  }
+
+  async getCategories() {
+    const data = await this.request<{ success: boolean; categories: any[] }>('/menu/categories');
+    return data.categories || [];
+  }
+
+  async getPromotions() {
+    const data = await this.request<{ success: boolean; promotions: any[] }>('/promotions');
+    return data.promotions || [];
+  }
+
+  async setItemAvailability(itemId: string, isAvailable: boolean) {
+    return this.request<{ success: boolean; item: any }>(`/menu/items/${itemId}/availability`, {
+      method: 'PUT',
+      body: JSON.stringify({ isAvailable }),
+    });
+  }
+
+  async placeOrder(payload: {
+    tokenNumber: string;
+    tableId?: string;
+    orderSource?: string;
+    handlerId?: string;
+    notes?: string;
+    items: Array<{
+      menuItemId: string;
+      variantName?: string;
+      selectedModifiers?: any[];
+      specialInstructions?: string;
+      quantity: number;
+    }>;
+  }) {
+    const data = await this.request<{ success: boolean; order: any }>('/orders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return data.order;
+  }
+
+  async getActiveOrders(tokenNumber: string) {
+    const data = await this.request<{ success: boolean; orders: any[] }>(`/orders/active?tokenNumber=${encodeURIComponent(tokenNumber)}`);
+    return data.orders || [];
+  }
+
+  // Ready Items & Service Requests APIs
+  async getReadyItems() {
+    const data = await this.request<{ success: boolean; readyItems: any[] }>('/staff/ready');
+    return data.readyItems || [];
+  }
+
+  async createServiceRequest(payload: {
+    tokenNumber: string;
+    tableId?: string;
+    type: string;
+    note?: string;
+  }) {
+    const data = await this.request<{ success: boolean; request: any }>('/service-requests', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return data.request;
+  }
+
+  async getActiveServiceRequests() {
+    const data = await this.request<{ success: boolean; requests: any[] }>('/service-requests/active');
+    return data.requests || [];
+  }
+
+  async updateServiceRequestStatus(requestId: string, status: string, staffUserId?: string) {
+    const data = await this.request<{ success: boolean; request: any }>(`/service-requests/${requestId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, staffUserId }),
+    });
+    return data.request;
   }
 }
 

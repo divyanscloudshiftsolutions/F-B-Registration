@@ -182,3 +182,18 @@
 {"timestamp":"2026-08-26T14:06:52.345Z","tokenNumber":"BAR-20260826-00002","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +20 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
 {"timestamp":"2026-08-26T14:26:46.657Z","tokenNumber":"BAR-20260826-00002","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +10 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
 {"timestamp":"2026-08-26T14:36:20.952Z","tokenNumber":"BAR-20260826-00002","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +20 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-01T16:33:01.381Z","tokenNumber":"BAR-20260901-31723","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"25cf0a23-759f-4371-8c84-270b5a113195"}
+{"timestamp":"2026-09-01T16:33:21.188Z","tokenNumber":"BAR-20260901-19214","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"25cf0a23-759f-4371-8c84-270b5a113195"}
+{"timestamp":"2026-09-01T16:34:54.623Z","tokenNumber":"BAR-20260901-39406","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"25cf0a23-759f-4371-8c84-270b5a113195"}
+{"timestamp":"2026-09-01T16:35:21.513Z","tokenNumber":"BAR-20260901-30096","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"25cf0a23-759f-4371-8c84-270b5a113195"}
+{"timestamp":"2026-09-01T16:36:54.892Z","tokenNumber":"BAR-20260901-48144","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"25cf0a23-759f-4371-8c84-270b5a113195"}
+{"timestamp":"2026-09-01T16:37:11.335Z","tokenNumber":"BAR-20260901-28685","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"25cf0a23-759f-4371-8c84-270b5a113195"}
+{"timestamp":"2026-09-01T17:33:08.578Z","tokenNumber":"BAR-RT-782026","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-01T17:33:38.579Z","tokenNumber":"BAR-RT-808155","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-01T17:34:08.606Z","tokenNumber":"BAR-RT-837746","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-01T17:34:38.621Z","tokenNumber":"BAR-RT-876699","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-01T17:35:08.651Z","tokenNumber":"BAR-RT-898211","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-01T17:39:23.777Z","tokenNumber":"BAR-AUD-A-0635","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-01T17:39:23.784Z","tokenNumber":"BAR-AUD-B-0654","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-01T17:39:53.785Z","tokenNumber":"BAR-AUD-A-5165","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-01T17:39:53.791Z","tokenNumber":"BAR-AUD-B-5174","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}

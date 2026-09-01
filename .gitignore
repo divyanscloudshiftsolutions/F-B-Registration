@@ -2,8 +2,17 @@ node_modules/
 dist/
 logs/
 scratch/
+
+# Environment files
 .env
 .env.*
+.env*.local
 .env.example
 *.env
 *.env.example
+**/.env
+**/.env.*
+**/.env*.local
+**/.env.example
+**/*.env
+**/*.env.example
