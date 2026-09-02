@@ -22,11 +22,27 @@ import {
 } from 'lucide-react';
 import { VegBadge } from '../components/customer/VegBadge';
 
-type WaiterTab = 'overview' | 'tables' | 'requests' | 'ready' | 'bills';
+export type WaiterTab = 'overview' | 'tables' | 'requests' | 'ready' | 'bills';
 
-export const WaiterStationPage: React.FC = () => {
+interface WaiterStationPageProps {
+  initialTab?: WaiterTab;
+  onTabChange?: (tab: WaiterTab) => void;
+}
+
+export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab = 'overview', onTabChange }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<WaiterTab>('overview');
+  const [activeTab, setActiveTabState] = useState<WaiterTab>(initialTab);
+
+  useEffect(() => {
+    if (initialTab && initialTab !== activeTab) {
+      setActiveTabState(initialTab);
+    }
+  }, [initialTab]);
+
+  const setActiveTab = (tab: WaiterTab) => {
+    setActiveTabState(tab);
+    onTabChange?.(tab);
+  };
   const [tables, setTables] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
   const [readyItems, setReadyItems] = useState<any[]>([]);
@@ -228,7 +244,7 @@ export const WaiterStationPage: React.FC = () => {
           <p className="text-xs text-text-muted mt-0.5">Floor occupancy, service requests, ready pickup queue, and table-side orders</p>
         </div>
 
-        {/* Tab Buttons matching table/ reference */}
+        {/* Tab Buttons */}
         <div className="flex items-center gap-1.5 p-1 rounded-2xl dark:bg-[#1A1829] bg-white border border-[#8D6CE5]/15 shadow-2xs self-start sm:self-auto overflow-x-auto max-w-full">
           <button
             onClick={() => setActiveTab('overview')}

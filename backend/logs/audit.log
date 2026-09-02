@@ -197,3 +197,11 @@
 {"timestamp":"2026-09-01T17:39:23.784Z","tokenNumber":"BAR-AUD-B-0654","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
 {"timestamp":"2026-09-01T17:39:53.785Z","tokenNumber":"BAR-AUD-A-5165","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
 {"timestamp":"2026-09-01T17:39:53.791Z","tokenNumber":"BAR-AUD-B-5174","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-02T16:50:00.721Z","tokenNumber":"BAR-20260902-00005","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"bb74c0d5-2c69-4b5b-96bb-a61bb44beb1b"}
+{"timestamp":"2026-09-02T16:50:47.543Z","tokenNumber":"BAR-20260902-00007","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"bb74c0d5-2c69-4b5b-96bb-a61bb44beb1b"}
+{"timestamp":"2026-09-02T16:51:05.354Z","tokenNumber":"BAR-20260902-00009","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"bb74c0d5-2c69-4b5b-96bb-a61bb44beb1b"}
+{"timestamp":"2026-09-02T16:56:06.387Z","tokenNumber":"BAR-20260902-00013","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"bb74c0d5-2c69-4b5b-96bb-a61bb44beb1b"}
+{"timestamp":"2026-09-02T16:56:35.099Z","tokenNumber":"BAR-20260902-00002","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"bb74c0d5-2c69-4b5b-96bb-a61bb44beb1b"}
+{"timestamp":"2026-09-02T17:04:51.425Z","tokenNumber":"BAR-20260902-00012","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"bb74c0d5-2c69-4b5b-96bb-a61bb44beb1b"}
+{"timestamp":"2026-09-02T17:05:05.325Z","tokenNumber":"BAR-20260902-00014","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"bb74c0d5-2c69-4b5b-96bb-a61bb44beb1b"}
+{"timestamp":"2026-09-02T17:34:39.714Z","tokenNumber":"BAR-20260902-00004","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}

@@ -14,20 +14,56 @@ import { KitchenKDSPage } from './pages/KitchenKDSPage';
 import { BarKDSPage } from './pages/BarKDSPage';
 import { WaiterStationPage } from './pages/WaiterStationPage';
 import { CustomerApp } from './pages/CustomerApp';
+import { CustomerLandingPage } from './pages/CustomerLandingPage';
+import { CustomerAccessPage } from './pages/CustomerAccessPage';
 import { DemoHubPage } from './pages/DemoHubPage';
+import { TableDisplayPage } from './pages/TableDisplayPage';
 import { AlertTriangle, X } from 'lucide-react';
+
+const getTabFromPathname = (pathname: string): string => {
+  if (pathname === '/checkin') return 'checkin';
+  if (pathname.startsWith('/tables')) return 'tables/layout';
+  if (pathname.startsWith('/bartender')) return 'bartender/checkins';
+  if (pathname.startsWith('/admin')) return 'admin/tables';
+  if (pathname === '/quick_attendance') return 'quick_attendance';
+  if (pathname === '/kds/kitchen' || pathname === '/kds_kitchen' || pathname === '/kds') return 'kds_kitchen';
+  if (pathname === '/kds/bar' || pathname === '/kds_bar') return 'kds_bar';
+  if (pathname === '/waiter' || pathname.startsWith('/staff')) return 'waiter_overview';
+  if (pathname === '/dashboard' || pathname === '/') return 'dashboard';
+  return '';
+};
 
 const AppContent: React.FC = () => {
   const { user, toasts, dismissToast, isLoading } = useAuth();
   const { sessionAlerts, dismissAlert, refreshAll } = useData();
   const [isGlobalRefreshing, setIsGlobalRefreshing] = useState<boolean>(false);
   const [activeTab, setActiveTabState] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname;
+      const tabFromPath = getTabFromPathname(p);
+      if (tabFromPath) return tabFromPath;
+    }
     return localStorage.getItem('bar_web_active_tab') || 'dashboard';
   });
 
   const setActiveTab = (tab: string) => {
     setActiveTabState(tab);
     localStorage.setItem('bar_web_active_tab', tab);
+    if (typeof window !== 'undefined') {
+      const route = tab === 'dashboard' ? '/dashboard' 
+        : tab === 'checkin' ? '/checkin'
+        : tab === 'kds_kitchen' ? '/kds/kitchen'
+        : tab === 'kds_bar' ? '/kds/bar'
+        : tab === 'quick_attendance' ? '/quick_attendance'
+        : tab.startsWith('waiter') ? '/waiter'
+        : tab.startsWith('tables') ? '/tables'
+        : tab.startsWith('bartender') ? '/bartender'
+        : tab.startsWith('admin') ? '/admin'
+        : `/${tab}`;
+      if (window.location.pathname !== route && !window.location.pathname.startsWith('/t/') && !window.location.pathname.startsWith('/customer') && window.location.pathname !== '/demo') {
+        window.history.pushState(null, '', route);
+      }
+    }
   };
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
@@ -58,20 +94,57 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window !== 'undefined') {
+        const p = window.location.pathname;
+        const tab = getTabFromPathname(p);
+        if (tab) {
+          setActiveTabState(tab);
+        }
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
     if (!isLoading && !user) {
       setActiveTabState('dashboard');
       localStorage.setItem('bar_web_active_tab', 'dashboard');
     }
   }, [user, isLoading]);
 
-  // Handle Customer and Demo Hub Paths
+  // Handle Customer, Access Verification, Landing, Table Display, and Demo Hub Paths
   if (typeof window !== 'undefined') {
     const pathname = window.location.pathname;
-    if (pathname.startsWith('/t/') || pathname.startsWith('/customer')) {
-      return <CustomerApp />;
+
+    // 1. Direct Customer Access Links (e.g. /customer/access/:token, /t/:token)
+    if (pathname.startsWith('/customer/access/') || pathname.startsWith('/t/')) {
+      return <CustomerAccessPage />;
     }
+
+    // 2. Customer Landing Pages (e.g. /customer/landing, /customer/entry)
+    if (pathname === '/customer/landing' || pathname === '/customer/entry') {
+      return <CustomerLandingPage />;
+    }
+
+    // 3. Customer App Routes (e.g. /customer/home, /customer/cart, /customer/eat, etc.)
+    if (pathname.startsWith('/customer')) {
+      const activeToken = localStorage.getItem('bar_active_token');
+      if (activeToken) {
+        return <CustomerApp />;
+      }
+      return <CustomerLandingPage />;
+    }
+
+    // 4. Dedicated Demo Hub (Internal Staff / Testing)
     if (pathname === '/demo') {
       return <DemoHubPage />;
+    }
+
+    // 5. Physical Table Display (Isolated / Internal Demo)
+    if (pathname.startsWith('/table/') || pathname.startsWith('/display/')) {
+      return <TableDisplayPage />;
     }
   }
 
@@ -84,21 +157,10 @@ const AppContent: React.FC = () => {
   }
 
   if (!user) {
+    if (typeof window !== 'undefined' && (window.location.pathname === '/' || window.location.pathname === '')) {
+      return <CustomerLandingPage />;
+    }
     return <LoginPage />;
-  }
-
-  // Handle direct authenticated URL routes
-  if (typeof window !== 'undefined') {
-    const pathname = window.location.pathname;
-    if (pathname.startsWith('/staff') || pathname === '/waiter') {
-      return <WaiterStationPage />;
-    }
-    if (pathname === '/kds' || pathname === '/kds/kitchen' || pathname === '/kds_kitchen') {
-      return <KitchenKDSPage />;
-    }
-    if (pathname === '/kds/bar' || pathname === '/kds_bar') {
-      return <BarKDSPage />;
-    }
   }
 
   const userRole = user?.role ? String(user.role).toLowerCase() : '';
@@ -111,11 +173,15 @@ const AppContent: React.FC = () => {
 
     // Dedicated Waiter / Server View
     if (userRole === 'waiter' || userRole === 'server') {
-      return <WaiterStationPage />;
+      const sub = activeTab.replace('waiter_', '').replace('waiter', '') as any;
+      const waiterTab = ['overview', 'tables', 'requests', 'ready', 'bills'].includes(sub) ? sub : 'overview';
+      return <WaiterStationPage initialTab={waiterTab} onTabChange={(tab) => setActiveTab(`waiter_${tab}`)} />;
     }
 
     if (activeTab.startsWith('waiter')) {
-      return <WaiterStationPage />;
+      const sub = activeTab.replace('waiter_', '').replace('waiter', '') as any;
+      const waiterTab = ['overview', 'tables', 'requests', 'ready', 'bills'].includes(sub) ? sub : 'overview';
+      return <WaiterStationPage initialTab={waiterTab} onTabChange={(tab) => setActiveTab(`waiter_${tab}`)} />;
     }
 
     if (activeTab === 'kds_kitchen') {

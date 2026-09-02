@@ -102,7 +102,7 @@ export const BarKDSPage: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col min-h-0 dark:bg-[#141225] bg-[#F5F3FA] p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-6">
-      {/* Header Bar matching table/ KdsShell */}
+      {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#8D6CE5]/15">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-[#8D6CE5]/10 text-[#8D6CE5] flex items-center justify-center shadow-xs">
@@ -154,7 +154,7 @@ export const BarKDSPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 4-Column Kanban Board matching table/ KitchenBoard */}
+      {/* 4-Column Kanban Board */}
       <div className="grid gap-4 md:grid-cols-4 flex-1">
         {columns.map((col) => {
           const list = activeItems.filter((entry) => entry.item.status === col.key);

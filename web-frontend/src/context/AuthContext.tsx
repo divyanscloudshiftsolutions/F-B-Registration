@@ -133,6 +133,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    defaultTab = 'waiter_tables';
  } else if (roleLower === 'bartender') {
    defaultTab = 'bartender/checkins';
+ } else if (roleLower === 'receptionist') {
+   defaultTab = 'checkin';
  } else {
    defaultTab = 'dashboard';
  }

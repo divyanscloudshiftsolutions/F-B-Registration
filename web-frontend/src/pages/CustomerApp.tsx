@@ -25,6 +25,7 @@ import {
   Flame,
   Star,
   X,
+  LogOut,
 } from 'lucide-react';
 
 type CustomerNavTab = 'home' | 'eat' | 'drink' | 'merch' | 'search' | 'cart' | 'orders' | 'bill' | 'repeat' | 'account';
@@ -52,9 +53,46 @@ const CustomerAppInner: React.FC = () => {
     refreshBill,
     isCallWaiterOpen,
     setIsCallWaiterOpen,
+    isSessionClosed,
+    logout,
   } = useCustomer();
 
-  const [activeTab, setActiveTab] = useState<CustomerNavTab>('home');
+  const getCustomerTabFromPath = (): CustomerNavTab => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      if (p.includes('/customer/eat')) return 'eat';
+      if (p.includes('/customer/drink')) return 'drink';
+      if (p.includes('/customer/merch')) return 'merch';
+      if (p.includes('/customer/cart')) return 'cart';
+      if (p.includes('/customer/orders')) return 'orders';
+      if (p.includes('/customer/bill')) return 'bill';
+      if (p.includes('/customer/repeat')) return 'repeat';
+      if (p.includes('/customer/search')) return 'search';
+      if (p.includes('/customer/account')) return 'account';
+    }
+    return 'home';
+  };
+
+  const [activeTab, setActiveTabState] = useState<CustomerNavTab>(getCustomerTabFromPath);
+
+  const setActiveTab = (tab: CustomerNavTab) => {
+    setActiveTabState(tab);
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/t/')) {
+      const targetPath = tab === 'home' ? '/customer/home' : `/customer/${tab}`;
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState(null, '', targetPath);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setActiveTabState(getCustomerTabFromPath());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [dietaryFilter, setDietaryFilter] = useState<'ALL' | 'VEG' | 'NON_VEG' | 'EGG'>('ALL');
   const [customizingItem, setCustomizingItem] = useState<CustomizerItem | null>(null);
@@ -192,6 +230,19 @@ const CustomerAppInner: React.FC = () => {
               aria-label="Account"
             >
               <User className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => {
+                if (window.confirm('Exit customer ordering view? Your active dining session and table remain open.')) {
+                  logout();
+                }
+              }}
+              className="p-2.5 rounded-full border border-white/15 hover:bg-white/10 text-text-muted hover:text-white transition-colors"
+              title="Exit Customer View"
+              aria-label="Logout"
+            >
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -1015,6 +1066,24 @@ const CustomerAppInner: React.FC = () => {
         tableId={undefined}
         activeRequests={activeRequests}
       />
+
+      {/* Session Closed Auto-Exit Notification Overlay */}
+      {isSessionClosed && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-6 text-center animate-in fade-in">
+          <div className="max-w-sm w-full rounded-3xl bg-[#1A1829] border border-[#8D6CE5]/40 p-6 shadow-2xl">
+            <div className="w-14 h-14 rounded-2xl bg-[#8D6CE5]/20 text-[#8D6CE5] flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="w-7 h-7" />
+            </div>
+            <h3 className="text-xl font-black text-white mb-2">Session Ended</h3>
+            <p className="text-xs text-text-muted leading-relaxed mb-4">
+              Your dining session at Pegs N Bottles has concluded. Thank you for visiting!
+            </p>
+            <div className="text-[11px] text-[#8D6CE5] font-bold">
+              Returning to welcome page...
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

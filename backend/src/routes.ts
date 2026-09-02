@@ -14,7 +14,7 @@ import { kdsService } from './services/KdsService';
 import { serviceRequestService } from './services/ServiceRequestService';
 import { billingService } from './services/BillingService';
 import { inventoryService } from './services/InventoryService';
-import { broadcastTableUpdated } from './realtime';
+import { broadcastTableUpdated, broadcastTableSessionActivated, broadcastTableSessionClosed } from './realtime';
 
 const TokenStatus = {
   PENDING_PAYMENT: 'PENDING_PAYMENT' as const,
@@ -177,6 +177,10 @@ export const authorize = (allowedRoles: string[]) => {
 };
 
 const router = Router();
+
+router.get('/health', (req: Request, res: Response) => {
+  return res.json({ status: 'ok', service: 'tableflow-backend', timestamp: new Date().toISOString() });
+});
 
 router.get('/debug-prisma-enums', (req: Request, res: Response) => {
   try {
@@ -1162,6 +1166,160 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/tables/:identifier/active-session (Public for Table Display)
+router.get('/tables/:identifier/active-session', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = req.params;
+    if (!identifier) {
+      return res.status(400).json({ success: false, error: { message: 'Table identifier is required' } });
+    }
+
+    const table = await prisma.table.findFirst({
+      where: {
+        OR: [
+          { id: identifier },
+          { tableNumber: { equals: identifier, mode: 'insensitive' } },
+        ],
+      },
+      include: {
+        placeType: true,
+        tokens: {
+          where: {
+            status: { in: ['ACTIVE', 'EXTENDED'] },
+          },
+          include: {
+            customer: true,
+          },
+          orderBy: { issuedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!table) {
+      return res.status(404).json({ success: false, error: { message: 'Table not found' } });
+    }
+
+    const activeToken = table.tokens[0];
+    if (!activeToken || activeToken.status === 'CLOSED' || activeToken.status === 'CANCELLED' || activeToken.status === 'EXPIRED') {
+      return res.json({
+        success: true,
+        active: false,
+        table: {
+          id: table.id,
+          tableNumber: table.tableNumber,
+          placeType: table.placeType.name,
+          capacity: table.capacity,
+          status: table.status.toUpperCase(),
+        },
+      });
+    }
+
+    return res.json({
+      success: true,
+      active: true,
+      table: {
+        id: table.id,
+        tableNumber: table.tableNumber,
+        placeType: table.placeType.name,
+        capacity: table.capacity,
+        status: table.status.toUpperCase(),
+      },
+      session: {
+        tokenNumber: activeToken.tokenNumber,
+        customerName: activeToken.customer.name,
+        personsCount: activeToken.personsCount,
+        startTime: activeToken.startTime.toISOString(),
+        endTime: activeToken.endTime.toISOString(),
+        amountPaid: Number(activeToken.amountPaid),
+        totalRedemptionsAllowed: activeToken.totalRedemptionsAllowed,
+        redemptionsUsed: activeToken.redemptionsUsed,
+        status: activeToken.status,
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/tables/:identifier/claim-session (Phone Fallback for Table Display)
+router.post('/tables/:identifier/claim-session', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = req.params;
+    const { phoneNumber } = req.body;
+
+    if (!identifier || !phoneNumber) {
+      return res.status(400).json({ success: false, error: { message: 'Table identifier and phoneNumber are required' } });
+    }
+
+    const cleanedPhone = String(phoneNumber).trim().replace(/[^\d]/g, '').slice(-10);
+    if (cleanedPhone.length !== 10) {
+      return res.status(400).json({ success: false, error: { message: 'Please enter a valid 10-digit Indian phone number' } });
+    }
+
+    const table = await prisma.table.findFirst({
+      where: {
+        OR: [
+          { id: identifier },
+          { tableNumber: { equals: identifier, mode: 'insensitive' } },
+        ],
+      },
+      include: {
+        placeType: true,
+        tokens: {
+          where: {
+            status: { in: ['ACTIVE', 'EXTENDED'] },
+          },
+          include: {
+            customer: true,
+          },
+          orderBy: { issuedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!table) {
+      return res.status(404).json({ success: false, error: { message: 'Table not found' } });
+    }
+
+    const activeToken = table.tokens[0];
+    if (!activeToken) {
+      return res.status(404).json({
+        success: false,
+        error: { message: 'No active session found for this table. Please contact the receptionist or waiter.' },
+      });
+    }
+
+    const customerPhone = (activeToken.customer.phoneNumber || '').replace(/[^\d]/g, '').slice(-10);
+    if (customerPhone !== cleanedPhone) {
+      // Secure rejection: Never disclose cross-table or customer existence
+      return res.status(403).json({
+        success: false,
+        error: { message: 'No active session found for this table with the provided phone number.' },
+      });
+    }
+
+    return res.json({
+      success: true,
+      tokenNumber: activeToken.tokenNumber,
+      tableNumber: table.tableNumber,
+      tableId: table.id,
+      customerName: activeToken.customer.name,
+      session: {
+        tokenNumber: activeToken.tokenNumber,
+        customerName: activeToken.customer.name,
+        personsCount: activeToken.personsCount,
+        startTime: activeToken.startTime.toISOString(),
+        endTime: activeToken.endTime.toISOString(),
+        status: activeToken.status,
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
 // Get available tables
 router.get('/tables/available', authenticate, async (req: Request, res: Response) => {
   const { placeTypeId, placeType } = req.query;
@@ -1227,7 +1385,7 @@ router.post('/tables/assign', authenticate, authorize(['receptionist', 'admin'])
       where: { id: tokenId },
       include: { customer: true }
     });
-    if (token && token.status === TokenStatus.PENDING_PAYMENT && token.deliveryMode === 'EMAIL_QR' && !token.emailSent && token.emailDeliveryStatus !== 'PENDING') {
+    if (token && token.paymentVerified && token.status === TokenStatus.ACTIVE && token.deliveryMode === 'EMAIL_QR' && !token.emailSent && token.emailDeliveryStatus !== 'PENDING') {
       await prisma.token.update({
         where: { id: tokenId },
         data: {
@@ -2103,6 +2261,21 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
       createdAt: token.issuedAt.toISOString(),
     };
 
+    if (token.tableId) {
+      try {
+        broadcastTableSessionActivated({
+          tableId: token.tableId,
+          tableNumber: token.table?.tableNumber || '',
+          tokenNumber: token.tokenNumber,
+          customerName: token.customer.name,
+          startTime: token.startTime,
+          endTime: token.endTime,
+        });
+      } catch (e) {
+        console.warn('Failed to broadcast table session activation:', e);
+      }
+    }
+
     await redisService.del('tokens:active').catch(() => {});
     await redisService.del('tables:all').catch(() => {});
 
@@ -2278,15 +2451,9 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
           tableId: resolvedTableId,
           personsCount: finalPersonsCount,
           placeTypeId: finalPlaceTypeId,
-          ...(emailPending ? { emailDeliveryStatus: 'PENDING' } : {})
         },
         include: { customer: true, placeType: true, table: true }
       });
-
-      // Send email if table is assigned now and email wasn't sent
-      if (emailPending) {
-        emailNotificationService.enqueueEmailJob(finalEmail, existingToken.tokenNumber, customerName);
-      }
 
       // Sync Redis cache
       await redisService.setex(`token:${tokenNumber}`, 86400, JSON.stringify(updatedToken));
@@ -2337,10 +2504,6 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
       tableId,
       tableNumber
     });
-
-    if (token.tableId) {
-      emailNotificationService.enqueueEmailJob(finalEmail, token.tokenNumber, customerName);
-    }
 
     const responseData = {
       id: token.id,
@@ -2971,6 +3134,9 @@ const sendEmailHandler = async (req: Request, res: Response) => {
     }
     if (!token.customer.email) {
       return res.status(400).json({ success: false, error: { message: 'Customer email is missing' } });
+    }
+    if (!token.paymentVerified) {
+      return res.status(400).json({ success: false, error: { message: 'Cannot dispatch customer access email before entry payment verification.' } });
     }
 
     emailNotificationService.enqueueEmailJob(
@@ -3900,6 +4066,163 @@ router.get('/customers/:phoneNumber', authenticate, async (req: Request, res: Re
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 6.5. PAYMENT-GATED CUSTOMER ACCESS & RECOVERY
+// ==========================================
+
+// GET /api/customer/access/:tokenNumber (Payment-Gated Customer Access)
+router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber } = req.params;
+    if (!tokenNumber) {
+      return res.status(400).json({ authorized: false, error: 'Token number is required' });
+    }
+
+    const token = await prisma.token.findUnique({
+      where: { tokenNumber },
+      include: {
+        customer: true,
+        table: true,
+        placeType: true,
+      },
+    });
+
+    if (!token) {
+      return res.status(404).json({
+        authorized: false,
+        error: 'Customer dining session not found. Please contact reception or your waiter.',
+      });
+    }
+
+    // Check if session has closed / cancelled / expired
+    if (token.status === 'CLOSED' || token.status === 'CANCELLED' || token.status === 'EXPIRED') {
+      return res.status(403).json({
+        authorized: false,
+        error: 'This dining session has ended. Please contact staff if you need assistance.',
+        sessionStatus: token.status,
+        tokenNumber: token.tokenNumber,
+      });
+    }
+
+    // Check Entry Payment Verification
+    if (!token.paymentVerified) {
+      return res.status(403).json({
+        authorized: false,
+        error: 'Your entry payment has not been verified yet. Please complete payment at reception or contact staff.',
+        paymentStatus: 'UNVERIFIED',
+        tokenNumber: token.tokenNumber,
+        customerName: token.customer.name,
+        tableNumber: token.table?.tableNumber || null,
+        amountPaid: Number(token.amountPaid),
+      });
+    }
+
+    // Payment Verified & Session Active
+    return res.json({
+      authorized: true,
+      session: {
+        tokenNumber: token.tokenNumber,
+        customerName: token.customer.name,
+        phoneNumber: token.customer.phoneNumber,
+        email: token.customer.email,
+        tableNumber: token.table?.tableNumber || null,
+        tableId: token.tableId,
+        placeType: token.placeType.name,
+        personsCount: token.personsCount,
+        startTime: token.startTime.toISOString(),
+        endTime: token.endTime.toISOString(),
+        amountPaid: Number(token.amountPaid),
+        paymentVerified: true,
+        totalRedemptionsAllowed: token.totalRedemptionsAllowed,
+        redemptionsUsed: token.redemptionsUsed,
+        status: token.status,
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ authorized: false, error: err.message });
+  }
+});
+
+// POST /api/customer/recover (Phone-based session recovery with payment check)
+router.post('/customer/recover', async (req: Request, res: Response) => {
+  try {
+    const { phoneNumber, tableNumber } = req.body;
+    if (!phoneNumber) {
+      return res.status(400).json({ authorized: false, error: 'Phone number is required' });
+    }
+
+    const cleanedPhone = String(phoneNumber).trim().replace(/[^\d]/g, '').slice(-10);
+    if (cleanedPhone.length !== 10) {
+      return res.status(400).json({ authorized: false, error: 'Please enter a valid 10-digit phone number' });
+    }
+
+    const tokens = await prisma.token.findMany({
+      where: {
+        status: { in: ['ACTIVE', 'EXTENDED'] },
+        customer: {
+          phoneNumber: { endsWith: cleanedPhone },
+        },
+      },
+      include: {
+        customer: true,
+        table: true,
+        placeType: true,
+      },
+      orderBy: { issuedAt: 'desc' },
+      take: 1,
+    });
+
+    const activeToken = tokens[0];
+    if (!activeToken) {
+      return res.status(404).json({
+        authorized: false,
+        error: 'No active dining session found with the provided phone number. Please check in at reception.',
+      });
+    }
+
+    // If specific tableNumber was provided for table isolation
+    if (tableNumber && activeToken.table) {
+      if (activeToken.table.tableNumber.toLowerCase() !== tableNumber.toLowerCase()) {
+        return res.status(403).json({
+          authorized: false,
+          error: 'No active session found for this specific table with the provided phone number.',
+        });
+      }
+    }
+
+    // Verify Entry Payment Gate
+    if (!activeToken.paymentVerified) {
+      return res.status(403).json({
+        authorized: false,
+        error: 'Your entry payment has not been verified yet. Please complete payment at reception.',
+        paymentStatus: 'UNVERIFIED',
+        tokenNumber: activeToken.tokenNumber,
+      });
+    }
+
+    return res.json({
+      authorized: true,
+      tokenNumber: activeToken.tokenNumber,
+      session: {
+        tokenNumber: activeToken.tokenNumber,
+        customerName: activeToken.customer.name,
+        phoneNumber: activeToken.customer.phoneNumber,
+        email: activeToken.customer.email,
+        tableNumber: activeToken.table?.tableNumber || null,
+        tableId: activeToken.tableId,
+        placeType: activeToken.placeType.name,
+        personsCount: activeToken.personsCount,
+        startTime: activeToken.startTime.toISOString(),
+        endTime: activeToken.endTime.toISOString(),
+        paymentVerified: true,
+        status: activeToken.status,
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ authorized: false, error: err.message });
   }
 });
 
@@ -4905,7 +5228,7 @@ router.get('/orders/active', async (req: Request, res: Response) => {
 });
 
 // PUT /api/orders/items/:id/status (Bump item status)
-router.put('/orders/items/:id/status', async (req: Request, res: Response) => {
+router.put('/orders/items/:id/status', authenticate, authorize(['admin', 'manager', 'chef', 'bartender', 'waiter', 'server']), async (req: Request, res: Response) => {
   try {
     const { status, staffUserId } = req.body;
     if (!status) {
@@ -4923,7 +5246,7 @@ router.put('/orders/items/:id/status', async (req: Request, res: Response) => {
 // ==========================================
 
 // GET /api/kds/orders/:station (Filter tickets by KITCHEN or BAR)
-router.get('/kds/orders/:station', async (req: Request, res: Response) => {
+router.get('/kds/orders/:station', authenticate, authorize(['admin', 'manager', 'chef', 'bartender']), async (req: Request, res: Response) => {
   try {
     const stationParam = req.params.station.toUpperCase();
     if (stationParam !== 'KITCHEN' && stationParam !== 'BAR' && stationParam !== 'DESSERT') {
@@ -4937,7 +5260,7 @@ router.get('/kds/orders/:station', async (req: Request, res: Response) => {
 });
 
 // GET /api/staff/ready (Floor staff pickup queue)
-router.get('/staff/ready', async (req: Request, res: Response) => {
+router.get('/staff/ready', authenticate, authorize(['admin', 'manager', 'waiter', 'server']), async (req: Request, res: Response) => {
   try {
     const readyItems = await kdsService.getReadyItemsForService();
     return res.json({ success: true, readyItems });
@@ -4970,7 +5293,7 @@ router.post('/service-requests', async (req: Request, res: Response) => {
 });
 
 // GET /api/service-requests/active
-router.get('/service-requests/active', async (req: Request, res: Response) => {
+router.get('/service-requests/active', authenticate, authorize(['admin', 'manager', 'waiter', 'server', 'receptionist']), async (req: Request, res: Response) => {
   try {
     const requests = await serviceRequestService.getActiveRequests();
     return res.json({ success: true, requests });
@@ -4980,7 +5303,7 @@ router.get('/service-requests/active', async (req: Request, res: Response) => {
 });
 
 // PUT /api/service-requests/:id/status
-router.put('/service-requests/:id/status', async (req: Request, res: Response) => {
+router.put('/service-requests/:id/status', authenticate, authorize(['admin', 'manager', 'waiter', 'server', 'receptionist']), async (req: Request, res: Response) => {
   try {
     const { status, staffUserId } = req.body;
     if (!status) {
@@ -5013,7 +5336,7 @@ router.post('/bills/calculate', async (req: Request, res: Response) => {
 });
 
 // POST /api/bills/settle (Settle bill and release table)
-router.post('/bills/settle', async (req: Request, res: Response) => {
+router.post('/bills/settle', authenticate, authorize(['admin', 'manager', 'receptionist']), async (req: Request, res: Response) => {
   try {
     const { tokenNumber, tokenId, paymentMethod, settledByStaffId, settlementReference } = req.body;
     const lookup = tokenNumber || tokenId;

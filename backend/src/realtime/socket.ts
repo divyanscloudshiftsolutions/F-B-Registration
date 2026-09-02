@@ -339,3 +339,31 @@ export function broadcastBillSettled(payload: BillUpdatedPayload) {
     updatedAt: payload.paidAt,
   });
 }
+
+export function broadcastTableSessionActivated(payload: {
+  tableId: string;
+  tableNumber: string;
+  tokenNumber: string;
+  customerName?: string;
+  startTime: string | Date;
+  endTime: string | Date;
+}) {
+  if (!io) return;
+  io.to(`table:${payload.tableId}`).emit(SOCKET_EVENTS.TABLE_SESSION_ACTIVATED, payload);
+  io.to(`table:${payload.tableNumber}`).emit(SOCKET_EVENTS.TABLE_SESSION_ACTIVATED, payload);
+  io.to('tables:all').emit(SOCKET_EVENTS.TABLE_SESSION_ACTIVATED, payload);
+}
+
+export function broadcastTableSessionClosed(payload: {
+  tableId: string;
+  tableNumber: string;
+  tokenNumber: string;
+  closedAt: string | Date;
+}) {
+  if (!io) return;
+  io.to(`table:${payload.tableId}`).emit(SOCKET_EVENTS.TABLE_SESSION_CLOSED, payload);
+  io.to(`table:${payload.tableNumber}`).emit(SOCKET_EVENTS.TABLE_SESSION_CLOSED, payload);
+  io.to(`customer:token:${payload.tokenNumber}`).emit(SOCKET_EVENTS.TABLE_SESSION_CLOSED, payload);
+  io.to('tables:all').emit(SOCKET_EVENTS.TABLE_SESSION_CLOSED, payload);
+}
+

@@ -49,6 +49,8 @@ export interface CustomerContextType {
   refreshMenu: () => Promise<void>;
   isCallWaiterOpen: boolean;
   setIsCallWaiterOpen: (open: boolean) => void;
+  isSessionClosed: boolean;
+  logout: () => void;
 }
 
 const CustomerContext = createContext<CustomerContextType | undefined>(undefined);
@@ -90,11 +92,36 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isOrdering, setIsOrdering] = useState<boolean>(false);
   const [isCallWaiterOpen, setIsCallWaiterOpen] = useState<boolean>(false);
+  const [isSessionClosed, setIsSessionClosed] = useState<boolean>(false);
 
   // Save cart
   useEffect(() => {
     localStorage.setItem('bar_customer_cart', JSON.stringify(cart));
   }, [cart]);
+
+  const handleSessionClosure = useCallback(() => {
+    setIsSessionClosed(true);
+    setCart([]);
+    try {
+      localStorage.removeItem('bar_active_token');
+      localStorage.removeItem('bar_customer_cart');
+      localStorage.removeItem('bar_active_table_num');
+      localStorage.removeItem('bar_active_table_id');
+    } catch {}
+    setTimeout(() => {
+      window.location.assign('/customer/landing');
+    }, 1500);
+  }, []);
+
+  const logout = useCallback(() => {
+    try {
+      localStorage.removeItem('bar_active_token');
+      localStorage.removeItem('bar_customer_cart');
+      localStorage.removeItem('bar_active_table_num');
+      localStorage.removeItem('bar_active_table_id');
+    } catch {}
+    window.location.assign('/customer/landing');
+  }, []);
 
   const setSession = (token: string, tableNum?: string, tblId?: string) => {
     setTokenNumberState(token);
@@ -196,13 +223,27 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const unsubBillUpdated = onSocketEvent('bill.updated', (data: any) => {
       if (data && (data.tokenNumber === tokenNumber || data.tokenId === tokenNumber)) {
-        refreshBill();
+        if (data.status === 'PAID') {
+          handleSessionClosure();
+        } else {
+          refreshBill();
+        }
       }
     });
 
     const unsubSessionUpdated = onSocketEvent('session.updated', (data: any) => {
       if (data && (data.tokenNumber === tokenNumber || data.tokenId === tokenNumber)) {
-        refreshBill();
+        if (data.status === 'CLOSED' || data.status === 'CANCELLED') {
+          handleSessionClosure();
+        } else {
+          refreshBill();
+        }
+      }
+    });
+
+    const unsubSessionClosed = onSocketEvent('table.session.closed', (data: any) => {
+      if (data && (data.tokenNumber === tokenNumber || data.tableNumber === tableNumber)) {
+        handleSessionClosure();
       }
     });
 
@@ -213,8 +254,9 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       unsubReqUpdated();
       unsubBillUpdated();
       unsubSessionUpdated();
+      unsubSessionClosed();
     };
-  }, [tokenNumber, refreshOrders, refreshBill]);
+  }, [tokenNumber, tableNumber, refreshOrders, refreshBill, handleSessionClosure]);
 
   // Cart Handlers
   const addToCart = (item: Omit<CartItem, 'id'>) => {
@@ -306,6 +348,8 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         refreshMenu,
         isCallWaiterOpen,
         setIsCallWaiterOpen,
+        isSessionClosed,
+        logout,
       }}
     >
       {children}

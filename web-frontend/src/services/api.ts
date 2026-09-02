@@ -258,6 +258,84 @@ class ApiService {
     });
   }
 
+  async getTableActiveSession(identifier: string) {
+    return this.request<{
+      success: boolean;
+      active: boolean;
+      table?: any;
+      session?: {
+        tokenNumber: string;
+        customerName: string;
+        personsCount: number;
+        startTime: string;
+        endTime: string;
+        amountPaid: number;
+        totalRedemptionsAllowed: number;
+        redemptionsUsed: number;
+        status: string;
+      };
+      error?: { message: string };
+    }>(`/tables/${encodeURIComponent(identifier)}/active-session`);
+  }
+
+  async claimTableSession(identifier: string, phoneNumber: string) {
+    return this.request<{
+      success: boolean;
+      tokenNumber?: string;
+      tableNumber?: string;
+      tableId?: string;
+      customerName?: string;
+      session?: any;
+      error?: { message: string };
+    }>(`/tables/${encodeURIComponent(identifier)}/claim-session`, {
+      method: 'POST',
+      body: JSON.stringify({ phoneNumber }),
+    });
+  }
+
+  async validateCustomerAccess(tokenNumber: string) {
+    return this.request<{
+      authorized: boolean;
+      session?: {
+        tokenNumber: string;
+        customerName: string;
+        phoneNumber?: string;
+        email?: string;
+        tableNumber?: string | null;
+        tableId?: string | null;
+        placeType?: string;
+        personsCount?: number;
+        startTime?: string;
+        endTime?: string;
+        amountPaid?: number;
+        paymentVerified?: boolean;
+        totalRedemptionsAllowed?: number;
+        redemptionsUsed?: number;
+        status?: string;
+      };
+      paymentStatus?: string;
+      sessionStatus?: string;
+      tokenNumber?: string;
+      customerName?: string;
+      tableNumber?: string | null;
+      amountPaid?: number;
+      error?: string;
+    }>(`/customer/access/${encodeURIComponent(tokenNumber)}`);
+  }
+
+  async recoverCustomerSession(phoneNumber: string, tableNumber?: string) {
+    return this.request<{
+      authorized: boolean;
+      tokenNumber?: string;
+      session?: any;
+      paymentStatus?: string;
+      error?: string;
+    }>('/customer/recover', {
+      method: 'POST',
+      body: JSON.stringify({ phoneNumber, tableNumber }),
+    });
+  }
+
   async lockTable(tableId: string) {
     return this.request<{ success: boolean; table: Table }>(`/tables/${tableId}/lock`, {
       method: 'POST',

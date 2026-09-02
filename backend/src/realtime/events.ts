@@ -14,6 +14,8 @@ export const SOCKET_EVENTS = {
 
   // Floor & Billing events
   TABLE_UPDATED: 'table.updated',
+  TABLE_SESSION_ACTIVATED: 'table.session.activated',
+  TABLE_SESSION_CLOSED: 'table.session.closed',
   BILL_UPDATED: 'bill.updated',
   SESSION_UPDATED: 'session.updated',
 

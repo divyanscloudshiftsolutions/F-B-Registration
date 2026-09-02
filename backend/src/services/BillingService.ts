@@ -1,6 +1,6 @@
 import { PrismaClient, BillStatus, PaymentMethod, CloseReason } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { broadcastBillSettled, broadcastTableUpdated } from '../realtime';
+import { broadcastBillSettled, broadcastTableUpdated, broadcastTableSessionClosed } from '../realtime';
 
 const prisma = new PrismaClient();
 
@@ -262,6 +262,13 @@ export class BillingService {
           currentTokenId: null,
           occupiedSince: null,
           updatedAt: new Date().toISOString(),
+        });
+
+        broadcastTableSessionClosed({
+          tableId: result.bill.tableId,
+          tableNumber: calc.tableNumber,
+          tokenNumber: calc.tokenNumber,
+          closedAt: result.bill.paidAt ? result.bill.paidAt.toISOString() : new Date().toISOString(),
         });
       } catch (err) {
         console.warn('Real-time bill settlement broadcast error:', err);
