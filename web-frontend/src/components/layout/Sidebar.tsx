@@ -10,8 +10,6 @@ import {
  Camera,
  Martini,
  ChefHat,
- BellRing,
- Receipt,
  UtensilsCrossed
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -137,63 +135,66 @@ export const Sidebar: React.FC<SidebarProps> = ({
  };
 
  const groups = [
- {
- id: 'tables',
- label: 'Tables',
- icon: Grid3X3,
- roles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST],
- subItems: [
- { label: 'Table Layout', onClick: () => handleNavClick('tables/layout'), active: activeTab === 'tables/layout' },
- { label: 'Reservations', onClick: () => handleNavClick('tables/reservations'), active: activeTab === 'tables/reservations' }
- ]
- },
- {
- id: 'bartender',
- label: 'Bartender',
- icon: Wine,
- roles: [UserRole.ADMIN, UserRole.BARTENDER],
- subItems: [
- { label: 'Check-ins', onClick: () => handleNavClick('bartender/checkins'), active: activeTab === 'bartender/checkins' },
- { label: 'QR Scan', onClick: () => handleNavClick('bartender/scan'), active: activeTab === 'bartender/scan' }
- ]
- },
- {
- id: 'administration',
- label: 'Administration',
- icon: ShieldCheck,
- roles: [UserRole.ADMIN, UserRole.MANAGER],
- subItems: [
- { label: 'Table Floor', onClick: () => handleNavClick('admin/tables'), active: activeTab === 'admin/tables' },
- { label: 'Staff Directory', onClick: () => handleNavClick('admin/staff'), active: activeTab === 'admin/staff' },
- { label: 'Revenue Analytics', onClick: () => handleNavClick('admin/chart'), active: activeTab === 'admin/chart' },
- { label: 'Rate Cards', onClick: () => handleNavClick('admin/rates'), active: activeTab === 'admin/rates' },
- { label: 'Customer Sessions', onClick: () => handleNavClick('admin/customers'), active: activeTab === 'admin/customers' }
- ]
- }
+   {
+     id: 'tables',
+     label: 'Tables',
+     icon: Grid3X3,
+     roles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST],
+     subItems: [
+       { label: 'Table Layout', onClick: () => handleNavClick('tables/layout'), active: activeTab === 'tables/layout' },
+       { label: 'Reservations', onClick: () => handleNavClick('tables/reservations'), active: activeTab === 'tables/reservations' }
+     ]
+   },
+   {
+     id: 'bartender',
+     label: 'Bartender',
+     icon: Wine,
+     roles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.BARTENDER],
+     subItems: [
+       { label: 'Check-ins', onClick: () => handleNavClick('bartender/checkins'), active: activeTab === 'bartender/checkins' },
+       { label: 'QR Scan', onClick: () => handleNavClick('bartender/scan'), active: activeTab === 'bartender/scan' }
+     ]
+   },
+   {
+     id: 'administration',
+     label: 'Administration',
+     icon: ShieldCheck,
+     roles: [UserRole.ADMIN, UserRole.MANAGER],
+     subItems: [
+       { label: 'Table Floor', onClick: () => handleNavClick('admin/tables'), active: activeTab === 'admin/tables' },
+       { label: 'Menu & Catalog', onClick: () => handleNavClick('admin/menu'), active: activeTab === 'admin/menu' },
+       { label: 'Staff Directory', onClick: () => handleNavClick('admin/staff'), active: activeTab === 'admin/staff' },
+       { label: 'Revenue Analytics', onClick: () => handleNavClick('admin/chart'), active: activeTab === 'admin/chart' },
+       { label: 'Rate Cards', onClick: () => handleNavClick('admin/rates'), active: activeTab === 'admin/rates' },
+       { label: 'Customer Sessions', onClick: () => handleNavClick('admin/customers'), active: activeTab === 'admin/customers' }
+     ]
+   }
  ];
 
  const renderNavButton = (id: string, label: string, Icon: any, allowedRoles: string[]) => {
- if (!hasRole(allowedRoles)) return null;
- const isActive = activeTab === id;
- 
- return (
- <button
- onClick={() => handleNavClick(id)}
- className={`w-full flex items-center justify-between ${
- collapsed ? 'justify-center px-0' : 'px-3'
- } py-2.5 text-[13px] overflow-hidden premium-menu-item cursor-pointer ${
- isActive ? 'active' : ''
- }`}
- title={collapsed ? label : undefined}
- >
- <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} relative z-10`}>
- <div className="nav-icon-badge">
- <Icon size={16} strokeWidth={isActive ? 2.5 : 2} />
- </div>
- {!collapsed && <span>{label}</span>}
- </div>
- </button>
- );
+    if (!hasRole(allowedRoles)) return null;
+    const isActive = activeTab === id 
+      || (id === 'waiter' && activeTab.startsWith('waiter'))
+      || (id === 'kds' && (activeTab === 'kds' || activeTab.startsWith('kds')));
+   
+   return (
+     <button
+       onClick={() => handleNavClick(id)}
+       className={`w-full flex items-center justify-between ${
+         collapsed ? 'justify-center px-0' : 'px-3'
+       } py-2.5 text-[13px] overflow-hidden premium-menu-item cursor-pointer ${
+         isActive ? 'active' : ''
+       }`}
+       title={collapsed ? label : undefined}
+     >
+       <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} relative z-10`}>
+         <div className="nav-icon-badge">
+           <Icon size={16} strokeWidth={isActive ? 2.5 : 2} />
+         </div>
+         {!collapsed && <span>{label}</span>}
+       </div>
+     </button>
+   );
  };
 
  const renderGroup = (group: any) => {
@@ -277,7 +278,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
  <Martini size={20} className="text-white" />
  </div>
  <div className="flex flex-col">
- <span className="font-bold dark:text-primary text-primary text-base tracking-tight">OPEN THE BOTTLE</span>
+ <span className="font-bold dark:text-primary text-primary text-base tracking-tight">PEGS N BOTTLES</span>
  <span className="text-[9px] text-text-muted font-bold tracking-widest uppercase mt-0.5">Management Portal</span>
  </div>
  </div>
@@ -305,37 +306,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
  )}
  </div>
 
- <nav className="px-4 py-2 space-y-1 overflow-y-auto flex-1 min-h-0">
- {/* Receptionist / Admin / Manager: Dashboard */}
- {renderNavButton('dashboard', 'Dashboard', LayoutDashboard, [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST])}
- 
- {/* Receptionist / Admin: Reception Check-In */}
- {renderNavButton('checkin', 'Reception', UserCheck, [UserRole.ADMIN, UserRole.RECEPTIONIST])}
- 
- {/* Receptionist / Admin: Tables */}
- {renderGroup(groups.find(g => g.id === 'tables'))}
- 
- {/* Bartender / Admin: Bar KDS */}
- {renderNavButton('kds_bar', 'Bar KDS', Wine, [UserRole.ADMIN, UserRole.BARTENDER])}
- 
- {/* Bartender / Admin: Bartender Check-ins */}
- {renderGroup(groups.find(g => g.id === 'bartender'))}
- 
- {/* Chef / Admin: Kitchen KDS */}
- {renderNavButton('kds_kitchen', 'Kitchen KDS', ChefHat, [UserRole.ADMIN, UserRole.CHEF])}
- 
- {/* Waiter / Server / Admin: Waiter Operations */}
- {renderNavButton('waiter_tables', 'Tables', UtensilsCrossed, [UserRole.ADMIN, UserRole.WAITER, UserRole.SERVER])}
- {renderNavButton('waiter_requests', 'Requests', BellRing, [UserRole.ADMIN, UserRole.WAITER, UserRole.SERVER])}
- {renderNavButton('waiter_ready', 'Ready Queue', ChefHat, [UserRole.ADMIN, UserRole.WAITER, UserRole.SERVER])}
- {renderNavButton('waiter_bills', 'Bills', Receipt, [UserRole.ADMIN, UserRole.WAITER, UserRole.SERVER])}
- 
- {/* Bartender / Receptionist / Admin: Attendance */}
- {renderNavButton('quick_attendance', 'Attendance', Camera, [UserRole.ADMIN, UserRole.BARTENDER])}
- 
- {/* Admin / Manager only: System Administration */}
- {renderGroup(groups.find(g => g.id === 'administration'))}
- </nav>
+  <nav className="px-4 py-2 space-y-1 overflow-y-auto flex-1 min-h-0">
+  {/* Admin / Manager: Dashboard */}
+  {renderNavButton('dashboard', 'Dashboard', LayoutDashboard, [UserRole.ADMIN, UserRole.MANAGER])}
+  
+  {/* Receptionist / Manager / Admin: Reception Check-In */}
+  {renderNavButton('checkin', 'Reception', UserCheck, [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST])}
+  
+  {/* Receptionist / Manager / Admin: Tables */}
+  {renderGroup(groups.find(g => g.id === 'tables'))}
+  
+  {/* Bartender / Manager / Admin: Bartender Check-ins */}
+  {renderGroup(groups.find(g => g.id === 'bartender'))}
+  
+  {/* Kitchen & Bar Display System: KDS */}
+  {renderNavButton('kds', 'KDS', ChefHat, [UserRole.ADMIN, UserRole.MANAGER, UserRole.CHEF, UserRole.BARTENDER])}
+  
+  {/* Waiter / Server / Manager / Admin: Waiter Dashboard */}
+  {renderNavButton('waiter', 'Waiter Dashboard', UtensilsCrossed, [UserRole.ADMIN, UserRole.MANAGER, UserRole.WAITER, UserRole.SERVER])}
+  
+  {/* All Staff: Attendance */}
+  {renderNavButton('quick_attendance', 'Attendance', Camera, [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST, UserRole.BARTENDER, UserRole.WAITER, UserRole.SERVER, UserRole.CHEF])}
+  
+  {/* Admin / Manager only: System Administration */}
+  {renderGroup(groups.find(g => g.id === 'administration'))}
+  </nav>
  </div>
 
  <div className="shrink-0 pb-4" style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>

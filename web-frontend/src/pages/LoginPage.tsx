@@ -119,12 +119,12 @@ export const LoginPage: React.FC = () => {
       <div className="w-full max-w-5xl my-auto glass-panel border border-border-main rounded-2xl sm:rounded-3xl overflow-hidden grid grid-cols-1 lg:grid-cols-2 relative z-10 shrink-0 shadow-2xl">
         
         {/* Left Panel: Venue Branding Showcase (Responsive) */}
-        <div className="flex flex-col justify-between p-5 sm:p-8 lg:p-10 bg-gradient-to-br from-primary/10 to-primary/5 border-b lg:border-b-0 lg:border-r border-border-main relative">
+        <div className="flex flex-col justify-between p-6 sm:p-8 lg:p-10 bg-gradient-to-br from-primary/10 to-primary/5 border-b lg:border-b-0 lg:border-r border-border-main relative">
           {/* Theme Toggle inside Card */}
           <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-20">
             <button
               onClick={toggleThemeWithWave}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl transition-all premium-btn-secondary flex items-center justify-center cursor-pointer"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl transition-all premium-btn-secondary flex items-center justify-center cursor-pointer select-none active:scale-95"
               title="Toggle Color Theme"
               aria-label="Toggle Color Theme"
             >
@@ -133,59 +133,59 @@ export const LoginPage: React.FC = () => {
           </div>
 
           <div>
-            <div className="flex items-center gap-3 sm:gap-4 mb-1 sm:mb-2 lg:mb-6 pr-12">
+            <div className="flex items-center gap-3.5 sm:gap-4 mb-2 lg:mb-6 pr-14">
               {/* Glowing Brand Logo element */}
-              <div className="w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-2xl premium-logo-glow flex items-center justify-center text-text-inverse text-lg sm:text-xl lg:text-2xl font-bold shrink-0">
+              <div className="w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-2xl premium-logo-glow flex items-center justify-center text-text-inverse text-lg sm:text-xl lg:text-2xl font-bold shrink-0 select-none">
                 🍸
               </div>
-              <div className="min-w-0">
-                <h1 className="text-base sm:text-lg lg:text-[27px] font-bold text-text-main tracking-wider uppercase leading-tight truncate">OPEN THE BOTTLE</h1>
+              <div className="min-w-0 flex-1">
+                <h1 className="text-base sm:text-lg lg:text-[26px] font-bold text-text-main tracking-wider uppercase leading-tight truncate">PEGS N BOTTLES</h1>
                 <p className="text-[9px] sm:text-[10px] lg:text-xs text-primary font-semibold mt-0.5 lg:mt-1 uppercase tracking-widest truncate">Enterprise Terminal Gateway</p>
               </div>
             </div>
             
-            <p className="hidden lg:block text-xs text-text-muted mt-6 leading-relaxed font-semibold">
+            <p className="hidden lg:block text-xs text-text-muted mt-5 leading-relaxed font-semibold">
               A unified workstation for guest check-in, table management, drink redemption, and operations.
             </p>
 
-            <div className="hidden sm:flex lg:hidden items-center gap-2 mt-3 pt-3 border-t border-border-main/30 text-[11px] text-text-muted font-semibold">
+            <div className="hidden sm:flex lg:hidden items-center gap-2 mt-4 pt-3.5 border-t border-border-main/30 text-[11px] text-text-muted font-semibold">
               <ShieldCheck className="text-emerald-500 shrink-0" size={16} />
               <span>Authorized Shift Staff Terminal Only</span>
             </div>
           </div>
 
-          <div className="hidden lg:block space-y-3">
-            <div className="p-4 rounded-2xl bg-bg-secondary-surface border border-border-main flex items-center gap-3">
+          <div className="hidden lg:block mt-8">
+            <div className="p-4 rounded-2xl bg-bg-secondary-surface border border-border-main flex items-center gap-3.5">
               <ShieldCheck className="text-emerald-400 shrink-0" size={20} />
               <div>
-                <p className="text-xs font-bold text-text-main">Secure Terminal Access</p>
-                <p className="text-[10px] text-text-muted font-semibold">Authorized Shift Staff Terminal Only</p>
+                <p className="text-xs font-bold text-text-main leading-tight">Secure Terminal Access</p>
+                <p className="text-[10px] text-text-muted font-semibold mt-0.5 leading-tight">Authorized Shift Staff Terminal Only</p>
               </div>
             </div>
           </div>
         </div>
 
         {/* Right Panel: Authentication Form */}
-        <div className="p-5 sm:p-8 lg:p-10 flex flex-col justify-center space-y-5 sm:space-y-6">
+        <div className="p-6 sm:p-8 lg:p-10 flex flex-col justify-center space-y-5 sm:space-y-6 w-full">
           
           {/* Header */}
           <div>
-            <h2 className="text-lg sm:text-xl font-bold text-text-main tracking-wide">Staff Workstation Login</h2>
-            <p className="text-xs text-text-muted mt-1 font-semibold">Select your station role and enter your credentials to continue.</p>
+            <h2 className="text-lg sm:text-xl font-bold text-text-main tracking-wide leading-tight">Staff Workstation Login</h2>
+            <p className="text-xs text-text-muted mt-1 font-semibold leading-normal">Select your station role and enter your credentials to continue.</p>
           </div>
 
           {/* Error Banner */}
           {errorMsg && (
-            <div className="p-3 sm:p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 dark:text-red-400 text-red-700 text-xs font-bold flex items-center gap-2">
-              <span>⚠️</span>
-              <span>{errorMsg}</span>
+            <div className="p-3 sm:p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 dark:text-red-400 text-red-700 text-xs font-bold flex items-start gap-2.5 leading-snug w-full">
+              <span className="shrink-0 text-sm leading-none mt-0.5">⚠️</span>
+              <span className="flex-1 break-words">{errorMsg}</span>
             </div>
           )}
 
           {/* Role Selection Tabs styled as standardized premium segmented controls */}
-          <div>
-            <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2">1. Select Station Role</label>
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 p-1 rounded-xl bg-[#F8F7FC] dark:bg-black/10 border border-border-main">
+          <div className="w-full">
+            <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2 select-none">1. Select Station Role</label>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 p-1 rounded-xl bg-[#F8F7FC] dark:bg-black/20 border border-border-main w-full">
               {(['ADM', 'REC', 'BAR', 'CHF', 'WTR', 'MGR'] as const).map(r => {
                 const isSel = selectedRole === r;
                 const labels = { ADM: 'Admin', REC: 'Reception', BAR: 'Bar', CHF: 'Chef', WTR: 'Waiter', MGR: 'Manager' };
@@ -194,7 +194,7 @@ export const LoginPage: React.FC = () => {
                     key={r}
                     type="button"
                     onClick={() => handleRoleSelect(r)}
-                    className={`py-2 px-1 text-[10px] md:text-xs font-bold uppercase transition-all duration-200 active:scale-95 premium-tab-secondary truncate ${
+                    className={`py-2 px-1 text-[10px] sm:text-xs font-bold uppercase transition-all duration-200 active:scale-95 premium-tab-secondary truncate text-center flex items-center justify-center min-h-[36px] select-none ${
                       isSel ? 'active' : ''
                     }`}
                   >
@@ -206,10 +206,10 @@ export const LoginPage: React.FC = () => {
           </div>
 
           {/* Credentials Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-text-muted mb-1.5">Employee Access Code</label>
-              <div className="relative">
+          <form onSubmit={handleSubmit} className="space-y-4 w-full">
+            <div className="w-full">
+              <label className="block text-xs font-semibold text-text-muted mb-1.5 select-none">Employee Access Code</label>
+              <div className="relative flex items-center w-full">
                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" size={16} />
                 <input
                   type="text"
@@ -219,15 +219,15 @@ export const LoginPage: React.FC = () => {
                     setErrorMsg('');
                   }}
                   placeholder="e.g. ADM-03"
-                  className="w-full bg-bg-secondary-surface border border-border-main rounded-xl pl-10 pr-4 py-3 md:py-2.5 text-base md:text-sm text-text-main font-mono font-semibold placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full bg-bg-secondary-surface border border-border-main rounded-xl pl-10 pr-4 py-3 md:py-2.5 text-base md:text-sm text-text-main font-mono font-semibold placeholder:text-text-placeholder focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                   required
                 />
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-text-muted mb-1.5">Security PIN</label>
-              <div className="relative">
+            <div className="w-full">
+              <label className="block text-xs font-semibold text-text-muted mb-1.5 select-none">Security PIN</label>
+              <div className="relative flex items-center w-full">
                 <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" size={16} />
                 <input
                   type="password"
@@ -237,7 +237,7 @@ export const LoginPage: React.FC = () => {
                     setErrorMsg('');
                   }}
                   placeholder="••••"
-                  className="w-full bg-bg-secondary-surface border border-border-main rounded-xl pl-10 pr-4 py-3 md:py-2.5 text-base md:text-sm text-text-main font-mono font-semibold placeholder-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full bg-bg-secondary-surface border border-border-main rounded-xl pl-10 pr-4 py-3 md:py-2.5 text-base md:text-sm text-text-main font-mono font-semibold placeholder:text-text-placeholder focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                   required
                 />
               </div>
@@ -248,14 +248,14 @@ export const LoginPage: React.FC = () => {
               type="submit"
               disabled={isSubmitting}
               title={isSubmitting ? "Authenticating..." : undefined}
-              className="w-full py-3.5 sm:py-3 min-h-[44px] rounded-xl primary-btn text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all mt-4 cursor-pointer"
+              className="w-full py-3.5 sm:py-3 min-h-[44px] rounded-xl primary-btn text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all mt-4 cursor-pointer select-none active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <span>Opening Workstation...</span>
               ) : (
                 <>
                   <span>Open Workstation</span>
-                  <ArrowRight size={16} />
+                  <ArrowRight size={16} className="shrink-0" />
                 </>
               )}
             </button>

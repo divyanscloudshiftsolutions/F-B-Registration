@@ -16,19 +16,48 @@ import { WaiterStationPage } from './pages/WaiterStationPage';
 import { CustomerApp } from './pages/CustomerApp';
 import { CustomerLandingPage } from './pages/CustomerLandingPage';
 import { CustomerAccessPage } from './pages/CustomerAccessPage';
-import { DemoHubPage } from './pages/DemoHubPage';
 import { TableDisplayPage } from './pages/TableDisplayPage';
 import { AlertTriangle, X } from 'lucide-react';
 
+const isValidAppPath = (pathname: string): boolean => {
+  if (pathname === '/' || pathname === '/login') return true;
+  if (pathname.startsWith('/customer') || pathname.startsWith('/t/')) return true;
+  if (pathname.startsWith('/table/') || pathname.startsWith('/display/')) return true;
+  if (pathname === '/dashboard' || pathname === '/checkin' || pathname === '/quick_attendance' || pathname === '/attendance') return true;
+  if (pathname.startsWith('/tables') || pathname.startsWith('/bartender') || pathname.startsWith('/admin')) return true;
+  if (pathname.startsWith('/kds') || pathname.startsWith('/waiter') || pathname.startsWith('/staff')) return true;
+  return false;
+};
+
+const getDefaultTabForRole = (role?: string): { tab: string; path: string } => {
+  const r = (role || '').toLowerCase();
+  if (r === 'receptionist') return { tab: 'checkin', path: '/checkin' };
+  if (r === 'bartender') return { tab: 'bartender/checkins', path: '/bartender' };
+  if (r === 'chef') return { tab: 'kds_kitchen', path: '/kds/kitchen' };
+  if (r === 'waiter' || r === 'server') return { tab: 'waiter_tables', path: '/waiter' };
+  return { tab: 'dashboard', path: '/dashboard' };
+};
+
 const getTabFromPathname = (pathname: string): string => {
   if (pathname === '/checkin') return 'checkin';
-  if (pathname.startsWith('/tables')) return 'tables/layout';
-  if (pathname.startsWith('/bartender')) return 'bartender/checkins';
-  if (pathname.startsWith('/admin')) return 'admin/tables';
-  if (pathname === '/quick_attendance') return 'quick_attendance';
+  if (pathname === '/admin/menu') return 'admin/menu';
+  if (pathname === '/admin/staff') return 'admin/staff';
+  if (pathname === '/admin/rates') return 'admin/rates';
+  if (pathname === '/admin/chart') return 'admin/chart';
+  if (pathname === '/admin/customers') return 'admin/customers';
+  if (pathname === '/admin/tables' || pathname === '/admin' || pathname.startsWith('/admin')) return 'admin/tables';
+  if (pathname === '/tables/reservations') return 'tables/reservations';
+  if (pathname === '/tables/layout' || pathname === '/tables' || pathname.startsWith('/tables')) return 'tables/layout';
+  if (pathname === '/bartender/scan') return 'bartender/scan';
+  if (pathname === '/bartender/checkins' || pathname === '/bartender' || pathname.startsWith('/bartender')) return 'bartender/checkins';
+  if (pathname === '/waiter/tables') return 'waiter_tables';
+  if (pathname === '/waiter/requests') return 'waiter_requests';
+  if (pathname === '/waiter/ready') return 'waiter_ready';
+  if (pathname === '/waiter/bills') return 'waiter_bills';
+  if (pathname === '/waiter' || pathname.startsWith('/waiter') || pathname.startsWith('/staff')) return 'waiter_tables';
+  if (pathname === '/quick_attendance' || pathname === '/attendance') return 'quick_attendance';
   if (pathname === '/kds/kitchen' || pathname === '/kds_kitchen' || pathname === '/kds') return 'kds_kitchen';
   if (pathname === '/kds/bar' || pathname === '/kds_bar') return 'kds_bar';
-  if (pathname === '/waiter' || pathname.startsWith('/staff')) return 'waiter_overview';
   if (pathname === '/dashboard' || pathname === '/') return 'dashboard';
   return '';
 };
@@ -40,8 +69,10 @@ const AppContent: React.FC = () => {
   const [activeTab, setActiveTabState] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname;
-      const tabFromPath = getTabFromPathname(p);
-      if (tabFromPath) return tabFromPath;
+      if (isValidAppPath(p)) {
+        const tabFromPath = getTabFromPathname(p);
+        if (tabFromPath) return tabFromPath;
+      }
     }
     return localStorage.getItem('bar_web_active_tab') || 'dashboard';
   });
@@ -52,15 +83,21 @@ const AppContent: React.FC = () => {
     if (typeof window !== 'undefined') {
       const route = tab === 'dashboard' ? '/dashboard' 
         : tab === 'checkin' ? '/checkin'
-        : tab === 'kds_kitchen' ? '/kds/kitchen'
+        : tab === 'kds' || tab === 'kds_kitchen' ? '/kds/kitchen'
         : tab === 'kds_bar' ? '/kds/bar'
         : tab === 'quick_attendance' ? '/quick_attendance'
+        : tab === 'waiter_tables' ? '/waiter/tables'
+        : tab === 'waiter_requests' ? '/waiter/requests'
+        : tab === 'waiter_ready' ? '/waiter/ready'
+        : tab === 'waiter_bills' ? '/waiter/bills'
         : tab.startsWith('waiter') ? '/waiter'
-        : tab.startsWith('tables') ? '/tables'
-        : tab.startsWith('bartender') ? '/bartender'
-        : tab.startsWith('admin') ? '/admin'
+        : tab === 'tables/reservations' ? '/tables/reservations'
+        : tab.startsWith('tables') ? '/tables/layout'
+        : tab === 'bartender/scan' ? '/bartender/scan'
+        : tab.startsWith('bartender') ? '/bartender/checkins'
+        : tab.startsWith('admin') ? `/${tab}`
         : `/${tab}`;
-      if (window.location.pathname !== route && !window.location.pathname.startsWith('/t/') && !window.location.pathname.startsWith('/customer') && window.location.pathname !== '/demo') {
+      if (window.location.pathname !== route && !window.location.pathname.startsWith('/t/') && !window.location.pathname.startsWith('/customer')) {
         window.history.pushState(null, '', route);
       }
     }
@@ -72,6 +109,9 @@ const AppContent: React.FC = () => {
     setIsGlobalRefreshing(true);
     const start = Date.now();
     try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app:global-refresh'));
+      }
       await refreshAll();
     } finally {
       const elapsed = Date.now() - start;
@@ -97,6 +137,16 @@ const AppContent: React.FC = () => {
     const handlePopState = () => {
       if (typeof window !== 'undefined') {
         const p = window.location.pathname;
+        if (!isValidAppPath(p)) {
+          if (!user) {
+            window.history.replaceState(null, '', '/');
+          } else {
+            const def = getDefaultTabForRole(user?.role);
+            window.history.replaceState(null, '', def.path);
+            setActiveTabState(def.tab);
+          }
+          return;
+        }
         const tab = getTabFromPathname(p);
         if (tab) {
           setActiveTabState(tab);
@@ -105,27 +155,54 @@ const AppContent: React.FC = () => {
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    if (!isLoading && !user) {
-      setActiveTabState('dashboard');
-      localStorage.setItem('bar_web_active_tab', 'dashboard');
+    if (!isLoading) {
+      if (typeof window !== 'undefined') {
+        const p = window.location.pathname;
+        if (!user) {
+          if (p !== '/' && p !== '/login' && !p.startsWith('/customer') && !p.startsWith('/t/') && !p.startsWith('/table/') && !p.startsWith('/display/')) {
+            window.history.replaceState(null, '', '/login');
+          }
+          setActiveTabState('dashboard');
+          localStorage.setItem('bar_web_active_tab', 'dashboard');
+        } else {
+          // If on landing or login route upon authentication, redirect immediately to role default
+          if (p === '/' || p === '/login') {
+            const def = getDefaultTabForRole(user?.role);
+            window.history.replaceState(null, '', def.path);
+            setActiveTabState(def.tab);
+            localStorage.setItem('bar_web_active_tab', def.tab);
+          } else if (!isValidAppPath(p)) {
+            const def = getDefaultTabForRole(user?.role);
+            window.history.replaceState(null, '', def.path);
+            setActiveTabState(def.tab);
+            localStorage.setItem('bar_web_active_tab', def.tab);
+          } else {
+            const tabFromPath = getTabFromPathname(p);
+            if (tabFromPath) {
+              setActiveTabState(tabFromPath);
+              localStorage.setItem('bar_web_active_tab', tabFromPath);
+            }
+          }
+        }
+      }
     }
   }, [user, isLoading]);
 
-  // Handle Customer, Access Verification, Landing, Table Display, and Demo Hub Paths
+  // Determine standalone routes that bypass standard Staff App Shell
   if (typeof window !== 'undefined') {
     const pathname = window.location.pathname;
 
-    // 1. Direct Customer Access Links (e.g. /customer/access/:token, /t/:token)
-    if (pathname.startsWith('/customer/access/') || pathname.startsWith('/t/')) {
+    // 1. Direct short URL Token Verification (e.g. /t/BAR-20260902-12345)
+    if (pathname.startsWith('/t/')) {
       return <CustomerAccessPage />;
     }
 
-    // 2. Customer Landing Pages (e.g. /customer/landing, /customer/entry)
-    if (pathname === '/customer/landing' || pathname === '/customer/entry') {
-      return <CustomerLandingPage />;
+    // 2. Direct Customer Access Gateway (e.g. /customer/access/BAR-20260902-12345)
+    if (pathname.startsWith('/customer/access/')) {
+      return <CustomerAccessPage />;
     }
 
     // 3. Customer App Routes (e.g. /customer/home, /customer/cart, /customer/eat, etc.)
@@ -137,12 +214,7 @@ const AppContent: React.FC = () => {
       return <CustomerLandingPage />;
     }
 
-    // 4. Dedicated Demo Hub (Internal Staff / Testing)
-    if (pathname === '/demo') {
-      return <DemoHubPage />;
-    }
-
-    // 5. Physical Table Display (Isolated / Internal Demo)
+    // 4. Physical Table Display (Isolated / Internal Table Terminal)
     if (pathname.startsWith('/table/') || pathname.startsWith('/display/')) {
       return <TableDisplayPage />;
     }
@@ -168,29 +240,38 @@ const AppContent: React.FC = () => {
   const renderTabContent = () => {
     // Dedicated Chef View
     if (userRole === 'chef') {
+      if (activeTab === 'quick_attendance') return <QuickAttendanceWebPage />;
       return <KitchenKDSPage />;
     }
 
     // Dedicated Waiter / Server View
     if (userRole === 'waiter' || userRole === 'server') {
+      if (activeTab === 'quick_attendance') return <QuickAttendanceWebPage />;
       const sub = activeTab.replace('waiter_', '').replace('waiter', '') as any;
       const waiterTab = ['overview', 'tables', 'requests', 'ready', 'bills'].includes(sub) ? sub : 'overview';
       return <WaiterStationPage initialTab={waiterTab} onTabChange={(tab) => setActiveTab(`waiter_${tab}`)} />;
     }
 
     if (activeTab.startsWith('waiter')) {
+      if (userRole !== 'admin' && userRole !== 'manager' && userRole !== 'waiter' && userRole !== 'server') {
+        return (
+          <div className="p-8 text-center text-text-muted">
+            <p className="text-sm font-bold text-red-400">Access Denied: Waiter Station is restricted to Servers, Managers, and Administrators.</p>
+          </div>
+        );
+      }
       const sub = activeTab.replace('waiter_', '').replace('waiter', '') as any;
       const waiterTab = ['overview', 'tables', 'requests', 'ready', 'bills'].includes(sub) ? sub : 'overview';
       return <WaiterStationPage initialTab={waiterTab} onTabChange={(tab) => setActiveTab(`waiter_${tab}`)} />;
     }
 
-    if (activeTab === 'kds_kitchen') {
+    if (activeTab === 'kds' || activeTab === 'kds_kitchen') {
       if (userRole === 'admin' || userRole === 'manager' || userRole === 'chef') {
         return <KitchenKDSPage />;
       }
       return (
         <div className="p-8 text-center text-text-muted">
-          <p className="text-sm font-bold text-red-400">Access Denied: Kitchen KDS is restricted to Chefs and Managers.</p>
+          <p className="text-sm font-bold text-red-400">Access Denied: Kitchen KDS is restricted to Chefs, Managers, and Administrators.</p>
         </div>
       );
     }
@@ -200,15 +281,15 @@ const AppContent: React.FC = () => {
       }
       return (
         <div className="p-8 text-center text-text-muted">
-          <p className="text-sm font-bold text-red-400">Access Denied: Bar KDS is restricted to Bartenders and Managers.</p>
+          <p className="text-sm font-bold text-red-400">Access Denied: Bar KDS is restricted to Bartenders, Managers, and Administrators.</p>
         </div>
       );
     }
     if (activeTab === 'dashboard') {
-      if (userRole === 'bartender' || userRole === 'chef' || userRole === 'waiter') {
+      if (userRole !== 'admin' && userRole !== 'manager') {
         return (
           <div className="p-8 text-center text-text-muted">
-            <p className="text-sm font-bold text-red-400">Access Denied: Dashboard is restricted to Receptionists, Managers, and Admins.</p>
+            <p className="text-sm font-bold text-red-400">Access Denied: Executive Dashboard is restricted strictly to Managers and Administrators.</p>
           </div>
         );
       }
@@ -227,10 +308,10 @@ const AppContent: React.FC = () => {
       );
     }
     if (activeTab === 'checkin') {
-      if (userRole === 'bartender' || userRole === 'chef' || userRole === 'waiter') {
+      if (userRole !== 'admin' && userRole !== 'manager' && userRole !== 'receptionist') {
         return (
           <div className="p-8 text-center text-text-muted">
-            <p className="text-sm font-bold text-red-400">Access Denied: Check-In is restricted to Receptionists and Admins.</p>
+            <p className="text-sm font-bold text-red-400">Access Denied: Check-In is restricted to Receptionists, Managers, and Administrators.</p>
           </div>
         );
       }
@@ -243,17 +324,17 @@ const AppContent: React.FC = () => {
       if (userRole !== 'admin' && userRole !== 'manager' && userRole !== 'bartender') {
         return (
           <div className="p-8 text-center text-text-muted">
-            <p className="text-sm font-bold text-red-400">Access Denied: Bartender operations are restricted to Bartenders and Managers.</p>
+            <p className="text-sm font-bold text-red-400">Access Denied: Bartender operations are restricted to Bartenders, Managers, and Administrators.</p>
           </div>
         );
       }
       return <BartenderPage activeTab={activeTab} setActiveTab={setActiveTab} />;
     }
     if (activeTab.startsWith('tables')) {
-      if (userRole === 'chef') {
+      if (userRole === 'chef' || userRole === 'bartender') {
         return (
           <div className="p-8 text-center text-text-muted">
-            <p className="text-sm font-bold text-red-400">Access Denied.</p>
+            <p className="text-sm font-bold text-red-400">Access Denied: Floor tables layout is restricted to Receptionists, Waiters, Managers, and Administrators.</p>
           </div>
         );
       }
@@ -269,7 +350,7 @@ const AppContent: React.FC = () => {
       if (userRole !== 'admin' && userRole !== 'manager') {
         return (
           <div className="p-8 text-center text-text-muted">
-            <p className="text-sm font-bold text-red-400">Access Denied: Administration is restricted to Administrators and Managers.</p>
+            <p className="text-sm font-bold text-red-400">Access Denied: Administration is restricted strictly to Administrators and Managers.</p>
           </div>
         );
       }
@@ -291,7 +372,7 @@ const AppContent: React.FC = () => {
   };
 
   const getTabTitle = () => {
-    if (activeTab === 'kds_kitchen') return 'Kitchen KDS Food Preparation';
+    if (activeTab === 'kds' || activeTab === 'kds_kitchen') return 'Kitchen KDS Food Preparation';
     if (activeTab === 'kds_bar') return 'Bar KDS Beverage Station';
     if (activeTab.startsWith('waiter')) return 'Waiter Floor Service Station';
     if (activeTab === 'dashboard') return 'Executive Management Dashboard';
@@ -304,12 +385,12 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="flex h-[100dvh] dark:bg-gradient-to-br dark:from-[#141225] dark:via-[#1A1333] dark:to-[#080612] bg-gradient-to-br from-[#F5F3FA] via-[#FAF9FF] to-[#EDE9FE] text-text-primary font-sans overflow-hidden relative">
-      {/* Multi-Layer Atmospheric Ambient Background */}
+    <div className="flex h-[100dvh] dark:bg-gradient-to-br dark:from-[#111114] dark:via-[#161619] dark:to-[#0A0A0C] bg-gradient-to-br from-[#F8F9FA] via-[#FFFFFF] to-[#F1F3F5] text-text-primary font-sans overflow-hidden relative">
+      {/* Multi-Layer Atmospheric Ambient Background (Neutral non-purple depth) */}
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
-        <div className="absolute -top-[15%] -left-[10%] w-[45%] h-[55%] dark:bg-[radial-gradient(circle,rgba(241,147,7,0.06)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(241,147,7,0.04)_0%,transparent_70%)] rounded-full blur-[130px] animate-ambient-slow-1" />
-        <div className="absolute -top-[20%] right-[15%] w-[50%] h-[60%] dark:bg-[radial-gradient(circle,rgba(141,108,229,0.16)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(141,108,229,0.12)_0%,transparent_70%)] rounded-full blur-[140px] animate-ambient-slow-2" />
-        <div className="absolute top-[25%] right-[5%] w-[40%] h-[50%] dark:bg-[radial-gradient(circle,rgba(99,102,241,0.10)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(99,102,241,0.06)_0%,transparent_70%)] rounded-full blur-[150px] animate-ambient-slow-1" />
+        <div className="absolute -top-[15%] -left-[10%] w-[45%] h-[55%] dark:bg-[radial-gradient(circle,rgba(241,147,7,0.06)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(0,0,0,0.02)_0%,transparent_70%)] rounded-full blur-[130px] animate-ambient-slow-1" />
+        <div className="absolute -top-[20%] right-[15%] w-[50%] h-[60%] dark:bg-[radial-gradient(circle,rgba(212,175,55,0.12)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(0,0,0,0.02)_0%,transparent_70%)] rounded-full blur-[140px] animate-ambient-slow-2" />
+        <div className="absolute top-[25%] right-[5%] w-[40%] h-[50%] dark:bg-[radial-gradient(circle,rgba(255,255,255,0.03)_0%,transparent_70%)] bg-[radial-gradient(circle,rgba(0,0,0,0.01)_0%,transparent_70%)] rounded-full blur-[150px] animate-ambient-slow-1" />
       </div>
 
       <Sidebar 
@@ -328,9 +409,9 @@ const AppContent: React.FC = () => {
         />
 
         {/* Global Urgent Session Alert Toast Bar */}
-        {sessionAlerts.length > 0 && (
+        {sessionAlerts.filter(alert => !alert.dismissed).length > 0 && (
           <div className="px-4 py-2 space-y-1.5 z-50 shrink-0">
-            {sessionAlerts.map(alert => (
+            {sessionAlerts.filter(alert => !alert.dismissed).map(alert => (
               <div 
                 key={alert.id}
                 className="p-3 rounded-2xl flex items-center justify-between shadow-lg backdrop-blur-md border animate-bounce-short text-xs font-bold dark:bg-amber-500/20 bg-amber-50 border-amber-500/40 dark:text-amber-300 text-amber-700"
@@ -350,7 +431,7 @@ const AppContent: React.FC = () => {
           </div>
         )}
 
-        <main className="flex-1 overflow-y-auto px-2 sm:px-4 md:px-6 py-2 sm:py-4 relative z-0">
+        <main className="flex-1 overflow-y-auto px-2 sm:px-4 md:px-6 py-2 sm:py-4 relative">
           {renderTabContent()}
         </main>
       </div>

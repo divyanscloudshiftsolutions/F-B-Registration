@@ -46,7 +46,7 @@ const LiveSessionTimer: React.FC<LiveSessionTimerProps> = ({ endTime, status }) 
     return <span className="text-zinc-500 font-bold text-xs">Closed</span>;
   }
   if (upperStatus === 'EXPIRED' || timeLeft <= 0) {
-    return <span className="text-red-400 font-bold text-xs font-mono">00:00</span>;
+    return <span className="text-red-600 dark:text-red-400 font-bold text-xs font-mono">00:00</span>;
   }
 
   const hours = Math.floor(timeLeft / 3600);
@@ -58,10 +58,10 @@ const LiveSessionTimer: React.FC<LiveSessionTimerProps> = ({ endTime, status }) 
 
   if (hours > 0) {
     const paddedHours = String(hours).padStart(2, '0');
-    return <span className="font-mono font-bold text-amber-400 text-xs">{paddedHours}:{paddedMins}:{paddedSecs}</span>;
+    return <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs">{paddedHours}:{paddedMins}:{paddedSecs}</span>;
   }
 
-  return <span className="font-mono font-bold text-amber-400 text-xs">{paddedMins}:{paddedSecs}</span>;
+  return <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs">{paddedMins}:{paddedSecs}</span>;
 };
 
 interface AnimatedNumberProps {
@@ -487,6 +487,13 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
   useEffect(() => {
     fetchActiveTokens(false);
+    const handleGlobalRefresh = () => {
+      fetchActiveTokens(false);
+      refreshTokens();
+      refreshTables();
+    };
+    window.addEventListener('app:global-refresh', handleGlobalRefresh);
+
     const interval = setInterval(() => {
       api.getActiveTokens().then(list => {
         if (Array.isArray(list)) {
@@ -495,7 +502,10 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
       }).catch(() => {});
     }, 4000);
 
-    return () => clearInterval(interval);
+    return () => {
+      window.removeEventListener('app:global-refresh', handleGlobalRefresh);
+      clearInterval(interval);
+    };
   }, []);
 
   // Sync with global data context tokens
@@ -772,352 +782,328 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
       {isScanTab && (
         <div className="max-w-xl mx-auto space-y-4">
           {/* Scan Tab Camera Bar */}
-          <div className="glass-panel p-4 rounded-2xl border border-border-main flex flex-wrap items-center justify-between gap-4">
+          <div className="rounded-2xl bg-white dark:bg-[#18181A] border border-border-main dark:border-white/10 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 shadow-sm">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl dark:bg-amber-500/15 bg-amber-500/10 dark:text-amber-400 text-amber-700 flex items-center justify-center font-bold">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary dark:bg-amber-500/15 dark:border-amber-500/20 dark:text-amber-400 flex items-center justify-center font-bold shrink-0">
                 <Camera size={20} />
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-text-main">QR Scanner Terminal</h3>
-                <p className="text-[11px] text-text-muted">Scan guest QR pass or enter token manually</p>
+              <div className="min-w-0">
+                <h3 className="text-sm sm:text-base font-bold text-text-main truncate">QR Scanner Terminal</h3>
+                <p className="text-[11px] text-text-muted truncate">Scan guest QR pass or enter token manually</p>
               </div>
             </div>
 
-            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               {cameraActive && (
                 <button
+                  type="button"
                   onClick={toggleFacingMode}
-                  className="flex-1 sm:flex-none justify-center px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all premium-btn-secondary cursor-pointer"
+                  className="flex-1 sm:flex-none h-10 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all bg-zinc-100 hover:bg-zinc-200 dark:bg-[#242428] dark:hover:bg-[#2E2E34] text-text-main border border-border-main dark:border-white/10 cursor-pointer shrink-0"
                   title="Switch Camera Source"
                 >
-                  <div className="nav-icon-badge">
-                    <RefreshCw size={12} />
-                  </div>
-                  <span className="hidden sm:inline">{facingMode === 'user' ? 'Laptop Webcam' : 'External Scanner'}</span>
-                  <span className="sm:hidden">Switch Cam</span>
+                  <RefreshCw size={13} className="shrink-0" />
+                  <span>{facingMode === 'user' ? 'Webcam' : 'External'}</span>
                 </button>
               )}
 
               {!cameraActive ? (
                 <button
+                  type="button"
                   onClick={handleEnableCamera}
-                  className="flex-1 sm:flex-none justify-center px-4 py-2 rounded-xl primary-btn bg-emerald-500 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                  className="flex-1 sm:flex-none h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 shadow-sm"
                 >
-                  <div className="nav-icon-badge">
-                    <Camera size={14} />
-                  </div>
-                  <span>Enable Camera Scanner</span>
+                  <Camera size={14} className="shrink-0" />
+                  <span>Enable Camera</span>
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={stopCamera}
-                  className="flex-1 sm:flex-none justify-center px-4 py-2 rounded-xl premium-btn-secondary cancellation-btn dark:text-red-400 text-red-700 dark:border-red-500/30 border-red-500/30 dark:bg-red-500/5 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                  className="flex-1 sm:flex-none h-10 px-4 rounded-xl bg-rose-500/10 text-rose-700 border border-rose-500/30 hover:bg-rose-500/20 hover:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30 dark:hover:bg-rose-500/20 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
                 >
-                  <div className="nav-icon-badge">
-                    <VideoOff size={14} />
-                  </div>
-                  <span className="hidden sm:inline">Stop Camera</span>
-                  <span className="sm:hidden">Stop Cam</span>
+                  <VideoOff size={14} className="shrink-0" />
+                  <span>Stop Camera</span>
                 </button>
               )}
             </div>
           </div>
- {!scannedToken ? (
- /* Pass Verification Terminal Panel */
- <div className="glass-panel p-3 sm:p-6 rounded-3xl border border-border-main space-y-4 sm:space-y-6 animate-fadeIn">
- <div className="flex items-center justify-between pb-3 border-b border-border-main">
- <h3 className="text-sm font-bold uppercase text-text-main tracking-wider">Pass Verification Terminal</h3>
- <span className="text-[10px] text-text-muted font-mono uppercase tracking-wider">QR Code Reader</span>
- </div>
 
- {/* Camera View / Reticle Box */}
- <div className={`relative rounded-2xl overflow-hidden border border-border-main aspect-video flex flex-col items-center justify-center ${
- cameraActive ? 'bg-black' : 'bg-bg-primary'
- }`}>
- {cameraActive ? (
- <>
-  <video 
-  ref={videoRef} 
-  autoPlay 
-  playsInline 
-  muted 
-  className="w-full h-full object-cover" 
-  />
-  <div className="absolute inset-0 pointer-events-none z-10">
-    {/* Ambient Scanning Line across the full view */}
-    <div className="absolute left-0 right-0 h-[2px] bg-emerald-500/60 top-1/2 -translate-y-1/2 shadow-[0_0_12px_#10B981] animate-pulse" />
-    
-    {/* Smart Full-Frame Corner Brackets */}
-    <div className="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 border-emerald-400 rounded-tl-lg" />
-    <div className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 border-emerald-400 rounded-tr-lg" />
-    <div className="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 border-emerald-400 rounded-bl-lg" />
-    <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-emerald-400 rounded-br-lg" />
+          {!scannedToken ? (
+            /* Pass Verification Terminal Panel */
+            <div className="rounded-3xl bg-white dark:bg-[#18181A] border border-border-main dark:border-white/10 p-4 sm:p-6 space-y-4 sm:space-y-5 shadow-sm animate-fadeIn">
+              <div className="flex items-center justify-between pb-3 border-b border-border-main dark:border-white/10">
+                <h3 className="text-xs sm:text-sm font-bold uppercase text-text-main tracking-wider">Pass Verification Terminal</h3>
+                <span className="text-[10px] text-text-muted font-mono uppercase tracking-wider">QR Code Reader</span>
+              </div>
 
-    {/* Ambient Text Identifier */}
-    <div className="absolute top-4 left-12 bg-black/60 px-2 py-0.5 rounded-md border border-white/10">
-      <span className="text-[9px] text-emerald-400 font-black uppercase tracking-wider">Full-Frame Auto Scanner</span>
-    </div>
+              {/* Camera View / Reticle Box */}
+              <div className={`relative rounded-2xl overflow-hidden border border-border-main dark:border-white/15 aspect-video flex flex-col items-center justify-center ${
+                cameraActive ? 'bg-black' : 'bg-zinc-50 dark:bg-[#121214]'
+              }`}>
+                {cameraActive ? (
+                  <>
+                    <video 
+                      ref={videoRef} 
+                      autoPlay 
+                      playsInline 
+                      muted 
+                      className="w-full h-full object-cover" 
+                    />
+                    <div className="absolute inset-0 pointer-events-none z-10">
+                      {/* Ambient Scanning Line across the full view */}
+                      <div className="absolute left-0 right-0 h-[2px] bg-emerald-500/60 top-1/2 -translate-y-1/2 shadow-[0_0_12px_#10B981] animate-pulse" />
+                      
+                      {/* Smart Full-Frame Corner Brackets */}
+                      <div className="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 border-emerald-400 rounded-tl-lg" />
+                      <div className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 border-emerald-400 rounded-tr-lg" />
+                      <div className="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 border-emerald-400 rounded-bl-lg" />
+                      <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-emerald-400 rounded-br-lg" />
 
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 w-[90%] sm:w-max px-4 py-1.5 rounded-full border border-border-main flex items-center justify-center">
-      <p className="text-[10px] text-text-main font-extrabold uppercase tracking-widest text-center leading-tight">
-        Place QR Code anywhere in the camera view
-      </p>
-    </div>
-  </div>
- </>
- ) : (
- <div className="text-center p-6 space-y-3">
- <Camera className="mx-auto text-text-muted" size={40} />
- <p className="text-xs text-text-muted">Click &quot;Enable Camera Scanner&quot; above to activate live QR scanner</p>
- {cameraError && (
- <p className="text-xs dark:text-amber-400 text-amber-700 font-semibold">{cameraError}</p>
- )}
- </div>
- )}
- </div>
+                      {/* Ambient Text Identifier */}
+                      <div className="absolute top-4 left-12 bg-black/60 px-2 py-0.5 rounded-md border border-white/10">
+                        <span className="text-[9px] text-emerald-400 font-black uppercase tracking-wider">Full-Frame Auto Scanner</span>
+                      </div>
 
- {/* Manual Token Lookup Form */}
- <form onSubmit={handleVerify} className="space-y-2 sm:space-y-3 pt-1 sm:pt-2">
- <label className="block text-[11px] sm:text-xs font-semibold text-text-muted">Or Enter Token Code Manually</label>
- <div className="flex flex-row gap-2 sm:gap-3">
- <div className="relative flex-1 w-full">
- <Search className="absolute left-3.5 top-3 text-text-muted" size={18} />
- <input
- type="text"
- value={tokenInput}
- onChange={e => setTokenInput(e.target.value.toUpperCase())}
- placeholder="e.g. TKB-0104"
- className="w-full bg-bg-primary border border-border-main rounded-xl pl-10 pr-4 py-2.5 text-base md:text-sm text-text-main font-mono placeholder-gray-500 focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
- />
- </div>
+                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 w-[90%] sm:w-max px-4 py-1.5 rounded-full border border-border-main flex items-center justify-center">
+                        <p className="text-[10px] text-white font-extrabold uppercase tracking-widest text-center leading-tight">
+                          Place QR Code anywhere in the camera view
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center p-6 space-y-2.5">
+                    <div className="w-12 h-12 rounded-2xl bg-zinc-200/60 dark:bg-[#1E1E22] text-text-muted flex items-center justify-center mx-auto">
+                      <Camera size={24} />
+                    </div>
+                    <p className="text-xs font-semibold text-text-main">Camera Scanner Inactive</p>
+                    <p className="text-[11px] text-text-muted max-w-xs mx-auto">Click &quot;Enable Camera&quot; above to activate live camera feed or enter token code below</p>
+                    {cameraError && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold">{cameraError}</p>
+                    )}
+                  </div>
+                )}
+              </div>
 
- <button
- type="submit"
- disabled={isVerifying || !tokenInput.trim()}
- title={isVerifying ? "Verifying..." : !tokenInput.trim() ? "Enter pass code" : undefined}
- className="px-4 sm:px-6 py-2.5 rounded-xl primary-btn text-[11px] sm:text-xs font-black uppercase tracking-wider disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
- >
- {isVerifying ? 'Verifying...' : 'Verify Pass'}
- </button>
- </div>
- </form>
- </div>
- ) : (
- /* Verified Guest Pass Summary Panel */
- <div className="glass-panel p-3 sm:p-6 rounded-3xl border border-border-main space-y-4 sm:space-y-6 animate-fadeIn">
- <div className="flex items-center justify-between pb-3 border-b border-border-main">
- <h3 className="text-sm font-bold uppercase text-text-main tracking-wider">Verified Guest Pass Summary</h3>
- <span className="text-[10px] text-text-muted font-mono uppercase tracking-wider">Redemption Console</span>
- </div>
+              {/* Manual Token Lookup Form */}
+              <form onSubmit={handleVerify} className="space-y-2 pt-1">
+                <label className="block text-[11px] sm:text-xs font-semibold text-text-muted">Or Enter Token Code Manually</label>
+                <div className="flex flex-row items-center gap-2 sm:gap-3">
+                  <div className="relative flex-1 w-full">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" size={18} />
+                    <input
+                      type="text"
+                      value={tokenInput}
+                      onChange={e => setTokenInput(e.target.value.toUpperCase())}
+                      placeholder="e.g. TKB-0104"
+                      className="w-full h-11 bg-white dark:bg-[#121214] border border-border-main dark:border-white/15 rounded-xl pl-10 pr-4 text-sm text-text-main font-mono placeholder-zinc-500 dark:placeholder-zinc-500 focus:outline-none focus:border-primary dark:focus:border-primary transition-all font-medium"
+                    />
+                  </div>
 
- {/* Token Number & Status Header */}
- <div className="p-3 sm:p-4 rounded-2xl bg-bg-primary border border-border-main flex flex-row items-center justify-between gap-3 sm:gap-0">
- <div>
- <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block">Token Pass</span>
- <span className="font-mono text-2xl font-black text-text-main break-all">{scannedToken.tokenNumber}</span>
- </div>
+                  <button
+                    type="submit"
+                    disabled={isVerifying || !tokenInput.trim()}
+                    title={isVerifying ? "Verifying..." : !tokenInput.trim() ? "Enter pass code" : undefined}
+                    className="h-11 px-5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider disabled:opacity-40 flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    {isVerifying ? 'Verifying...' : 'Verify Pass'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : (
+            /* Verified Guest Pass Summary Panel */
+            <div className="rounded-3xl bg-white dark:bg-[#18181A] border border-border-main dark:border-white/10 p-4 sm:p-6 space-y-4 sm:space-y-5 shadow-sm animate-fadeIn">
+              <div className="flex items-center justify-between pb-3 border-b border-border-main dark:border-white/10">
+                <h3 className="text-xs sm:text-sm font-bold uppercase text-text-main tracking-wider">Verified Guest Pass Summary</h3>
+                <span className="text-[10px] text-text-muted font-mono uppercase tracking-wider">Redemption Console</span>
+              </div>
 
- <span className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${badgeClasses}`}>
-    {badgeIcon}
-    <span>{badgeLabel}</span>
-  </span>
- </div>
+              {/* Token Number & Status Header */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-zinc-50 dark:bg-[#141416] border border-border-main dark:border-white/10 flex flex-row items-center justify-between gap-3">
+                <div>
+                  <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block">Token Pass</span>
+                  <span className="font-mono text-xl sm:text-2xl font-black text-text-main break-all">{scannedToken.tokenNumber}</span>
+                </div>
 
- {/* Guest Details */}
- <div className="space-y-1.5 sm:space-y-2 text-xs">
- <div className="flex justify-between items-center p-2.5 sm:p-3 rounded-xl bg-bg-primary border border-border-main gap-2">
- <span className="text-text-muted shrink-0">Guest Name:</span>
- <span className="font-bold text-text-main text-sm truncate flex-1 text-right">{scannedToken.customer?.name || 'Walk-in Guest'}</span>
- </div>
+                <span className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${badgeClasses}`}>
+                  {badgeIcon}
+                  <span>{badgeLabel}</span>
+                </span>
+              </div>
 
- <div className="flex justify-between items-center p-2.5 sm:p-3 rounded-xl bg-bg-primary border border-border-main gap-2">
- <span className="text-text-muted shrink-0">Phone Contact:</span>
- <span className="font-mono text-text-muted truncate flex-1 text-right">{scannedToken.customer?.phoneNumber || '—'}</span>
- </div>
+              {/* Guest Details */}
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between items-center p-2.5 sm:p-3 rounded-xl bg-white dark:bg-[#141416] border border-border-main dark:border-white/10 gap-2">
+                  <span className="text-text-muted shrink-0">Guest Name:</span>
+                  <span className="font-bold text-text-main text-xs sm:text-sm truncate flex-1 text-right">{scannedToken.customer?.name || 'Walk-in Guest'}</span>
+                </div>
 
- <div className="flex justify-between items-center p-2.5 sm:p-3 rounded-xl bg-bg-primary border border-border-main gap-2">
- <span className="text-text-muted shrink-0">Email Contact:</span>
- <span className="font-mono text-text-muted truncate flex-1 text-right" title={scannedToken.customer?.email}>{scannedToken.customer?.email || '—'}</span>
- </div>
+                <div className="flex justify-between items-center p-2.5 sm:p-3 rounded-xl bg-white dark:bg-[#141416] border border-border-main dark:border-white/10 gap-2">
+                  <span className="text-text-muted shrink-0">Phone Contact:</span>
+                  <span className="font-mono text-text-muted truncate flex-1 text-right">{scannedToken.customer?.phoneNumber || '—'}</span>
+                </div>
 
- <div className="flex justify-between items-center p-2.5 sm:p-3 rounded-xl bg-bg-primary border border-border-main gap-2">
- <span className="text-text-muted shrink-0">Guest Headcount:</span>
- <span className="font-bold text-text-main truncate flex-1 text-right">{scannedToken.personsCount} Guests</span>
- </div>
- </div>
+                <div className="flex justify-between items-center p-2.5 sm:p-3 rounded-xl bg-white dark:bg-[#141416] border border-border-main dark:border-white/10 gap-2">
+                  <span className="text-text-muted shrink-0">Email Contact:</span>
+                  <span className="font-mono text-text-muted truncate flex-1 text-right" title={scannedToken.customer?.email}>{scannedToken.customer?.email || '—'}</span>
+                </div>
 
-  {/* Drink Quota Usage Progress Bar & Cumulative Breakdown */}
-  <div className="p-4 rounded-2xl bg-bg-primary border border-border-main space-y-3">
-    <div className="flex items-center justify-between text-xs font-bold">
-      <span className="text-text-muted uppercase tracking-wider text-[11px]">Redemption Progress</span>
-      <div className="flex items-center gap-2">
-        <span className={`font-black font-mono text-sm inline-flex items-center gap-1 ${isQuotaDepleted ? 'dark:text-red-400 text-red-700' : 'dark:text-emerald-400 text-emerald-700'}`}>
-          <AnimatedNumber value={redemptionsUsed} />
-          <span>/</span>
-          <span>{totalAllowed}</span>
-          <span>USED</span>
-        </span>
-        <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${remainingDrinks > 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'}`}>
-          <AnimatedNumber value={remainingDrinks} />
-          <span>{remainingDrinks === 1 ? 'Drink' : 'Drinks'} Remaining</span>
-        </span>
-      </div>
-    </div>
+                <div className="flex justify-between items-center p-2.5 sm:p-3 rounded-xl bg-white dark:bg-[#141416] border border-border-main dark:border-white/10 gap-2">
+                  <span className="text-text-muted shrink-0">Guest Headcount:</span>
+                  <span className="font-bold text-text-main truncate flex-1 text-right">{scannedToken.personsCount} Guests</span>
+                </div>
+              </div>
 
-    <div className="w-full h-2.5 rounded-full bg-bg-card overflow-hidden">
-      <div 
-        className={`h-full transition-[width] duration-300 ease-out rounded-full ${
-          isQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'
-        }`}
-        style={{ width: `${Math.min(100, (redemptionsUsed / totalAllowed) * 100)}%` }}
-      />
-    </div>
+              {/* Drink Quota Usage Progress Bar & Cumulative Breakdown */}
+              <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-[#141416] border border-border-main dark:border-white/10 space-y-3">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-text-muted uppercase tracking-wider text-[11px]">Redemption Progress</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`font-black font-mono text-sm inline-flex items-center gap-1 ${isQuotaDepleted ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
+                      <AnimatedNumber value={redemptionsUsed} />
+                      <span>/</span>
+                      <span>{totalAllowed}</span>
+                      <span>USED</span>
+                    </span>
+                    <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${remainingDrinks > 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'}`}>
+                      <AnimatedNumber value={remainingDrinks} />
+                      <span>{remainingDrinks === 1 ? 'Drink' : 'Drinks'} Remaining</span>
+                    </span>
+                  </div>
+                </div>
 
-    {/* Cumulative Breakdown in Scan Mode */}
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-border-main/40 text-xs">
-      <div className="p-2 rounded-xl bg-bg-surface border border-border-main flex flex-col">
-        <span className="text-[10px] text-text-muted font-semibold uppercase">Current Check-In</span>
-        <span className="font-mono font-bold text-text-main text-xs">{scannedCurrentCheckIn} Drinks</span>
-      </div>
-      <div className="p-2 rounded-xl bg-bg-surface border border-border-main flex flex-col">
-        <span className="text-[10px] text-text-muted font-semibold uppercase">Carried Forward</span>
-        <span className={`font-mono font-bold text-xs ${scannedCarriedForward > 0 ? 'text-primary font-black' : 'text-text-muted'}`}>
-          {scannedCarriedForward > 0 ? `+${scannedCarriedForward} Drinks` : '0 Drinks'}
-        </span>
-      </div>
-      <div className="p-2 rounded-xl bg-bg-surface border border-border-main flex flex-col col-span-2 sm:col-span-1">
-        <span className="text-[10px] text-text-muted font-semibold uppercase">Total Entitlement</span>
-        <span className="font-mono font-black text-text-main text-xs">{totalAllowed} Drinks</span>
-      </div>
-    </div>
-  </div>
+                <div className="w-full h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+                  <div 
+                    className={`h-full transition-[width] duration-300 ease-out rounded-full ${
+                      isQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'
+                    }`}
+                    style={{ width: `${Math.min(100, (redemptionsUsed / totalAllowed) * 100)}%` }}
+                  />
+                </div>
 
-  {/* Dispense & Revert Actions */}
-  <div className="space-y-2 sm:space-y-3 pt-1 sm:pt-2">
-    {!isActivePass && (
-      <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-2.5 text-xs text-red-400">
-        <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-        <div>
-          <p className="font-extrabold uppercase tracking-wider">Redemption Blocked</p>
-          <p className="mt-0.5 text-text-muted">This token pass is no longer active (Current status: <span className="font-black text-text-main">{tokenStatus || 'UNKNOWN'}</span>). Dispensing and reverting drinks is locked.</p>
+                {/* Cumulative Breakdown in Scan Mode */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-border-main/40 dark:border-white/10 text-xs">
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-[#1C1C20] border border-border-main dark:border-white/10 flex flex-col">
+                    <span className="text-[10px] text-text-muted font-semibold uppercase">Current Check-In</span>
+                    <span className="font-mono font-bold text-text-main text-xs mt-0.5">{scannedCurrentCheckIn} Drinks</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-[#1C1C20] border border-border-main dark:border-white/10 flex flex-col">
+                    <span className="text-[10px] text-text-muted font-semibold uppercase">Carried Forward</span>
+                    <span className={`font-mono font-bold text-xs mt-0.5 ${scannedCarriedForward > 0 ? 'text-primary font-black' : 'text-text-muted'}`}>
+                      {scannedCarriedForward > 0 ? `+${scannedCarriedForward} Drinks` : '0 Drinks'}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-[#1C1C20] border border-border-main dark:border-white/10 flex flex-col col-span-2 sm:col-span-1">
+                    <span className="text-[10px] text-text-muted font-semibold uppercase">Total Entitlement</span>
+                    <span className="font-mono font-black text-text-main text-xs mt-0.5">{totalAllowed} Drinks</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dispense & Revert Actions */}
+              <div className="space-y-3 pt-1">
+                {!isActivePass && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-2.5 text-xs text-red-700 dark:text-red-400">
+                    <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-extrabold uppercase tracking-wider">Redemption Blocked</p>
+                      <p className="mt-0.5 text-text-muted">This token pass is no longer active (Current status: <span className="font-black text-text-main">{tokenStatus || 'UNKNOWN'}</span>). Dispensing and reverting drinks is locked.</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-row items-center gap-2 sm:gap-3">
+                  <div className="flex items-center justify-between bg-white dark:bg-[#1C1C20] border border-border-main dark:border-white/10 rounded-xl p-1 h-12 w-32 shrink-0">
+                    <button 
+                      type="button"
+                      onClick={() => setRedeemQty(Math.max(1, redeemQty - 1))}
+                      disabled={isRedeeming || isQuotaDepleted || !isActivePass || redeemQty <= 1}
+                      className="w-8 h-8 flex items-center justify-center rounded text-text-muted hover:text-text-main hover:bg-bg-card disabled:opacity-30 transition-all cursor-pointer"
+                      title="Decrease quantity"
+                      aria-label="Decrease quantity"
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <span className="font-bold text-text-main text-sm font-mono">{redeemQty}</span>
+                    <button 
+                      type="button"
+                      onClick={() => setRedeemQty(Math.min(Math.max(1, totalAllowed - redemptionsUsed), redeemQty + 1))}
+                      disabled={isRedeeming || isQuotaDepleted || !isActivePass || redeemQty >= (totalAllowed - redemptionsUsed)}
+                      className="w-8 h-8 flex items-center justify-center rounded text-text-muted hover:text-text-main hover:bg-bg-card disabled:opacity-30 transition-all cursor-pointer"
+                      title="Increase quantity"
+                      aria-label="Increase quantity"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={handleRedeem}
+                    disabled={isRedeeming || isQuotaDepleted || !isActivePass}
+                    title={isRedeeming ? "Dispensing..." : !isActivePass ? `Redemption blocked. Token status is ${tokenStatus || 'INACTIVE'}.` : isQuotaDepleted ? "Drink quota limit reached for this session." : undefined}
+                    className="flex-1 h-12 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-40 cursor-pointer"
+                  >
+                    <Wine size={14} />
+                    <span>{isRedeeming ? 'Dispensing...' : `Dispense ${redeemQty}`}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                  {redemptionsUsed > 0 && isActivePass && (
+                    <button
+                      type="button"
+                      onClick={handleUndo}
+                      className="h-11 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-[#1C1C20] dark:hover:bg-[#25252A] text-xs font-bold text-amber-700 dark:text-amber-300 border border-amber-500/30 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <RotateCcw size={14} /> <span>Revert Last Drink</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScannedToken(null);
+                      setTokenInput('');
+                      startCamera();
+                    }}
+                    className={`h-11 rounded-xl text-xs font-bold transition-all bg-zinc-100 hover:bg-zinc-200 dark:bg-[#1C1C20] dark:hover:bg-[#25252A] text-text-main border border-border-main dark:border-white/10 flex items-center justify-center gap-1.5 cursor-pointer ${
+                      !(redemptionsUsed > 0 && isActivePass) ? 'sm:col-span-2' : ''
+                    }`}
+                  >
+                    <Camera size={14} /> <span>Scan Next</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
-    )}
-
-    <div className="flex flex-row items-center gap-2 sm:gap-3">
-      <div className="flex items-center justify-between bg-bg-surface border border-border-main rounded-xl p-1 h-12 sm:h-[52px] w-32 shrink-0">
-        <button 
-          onClick={() => setRedeemQty(Math.max(1, redeemQty - 1))}
-          disabled={isRedeeming || isQuotaDepleted || !isActivePass || redeemQty <= 1}
-          className="p-2 hover:bg-bg-card rounded-lg transition-all text-text-muted disabled:opacity-50 cursor-pointer"
-        >
-          <Minus size={16} />
-        </button>
-        <span className="font-bold text-text-main text-sm">{redeemQty}</span>
-        <button 
-          onClick={() => setRedeemQty(Math.min(Math.max(1, totalAllowed - redemptionsUsed), redeemQty + 1))}
-          disabled={isRedeeming || isQuotaDepleted || !isActivePass || redeemQty >= (totalAllowed - redemptionsUsed)}
-          className="p-2 hover:bg-bg-card rounded-lg transition-all text-text-muted disabled:opacity-50 cursor-pointer"
-        >
-          <Plus size={16} />
-        </button>
-      </div>
-      
-      <button
-        onClick={handleRedeem}
-        disabled={isRedeeming || isQuotaDepleted || !isActivePass}
-        title={isRedeeming ? "Dispensing..." : !isActivePass ? `Redemption blocked. Token status is ${tokenStatus || 'INACTIVE'}.` : isQuotaDepleted ? "Drink quota limit reached for this session." : undefined}
-        className="flex-1 h-12 sm:h-[52px] rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-      >
-        <div className="nav-icon-badge">
-          <Wine size={14} />
-        </div>
-        <span>{isRedeeming ? 'Dispensing...' : `Dispense ${redeemQty}`}</span>
-      </button>
-    </div>
-
-    <div className="flex flex-row gap-2 sm:gap-3">
-      {redemptionsUsed > 0 && isActivePass && (
-        <button
-          onClick={handleUndo}
-          className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-[11px] sm:text-xs font-bold text-amber-300 border border-amber-500/30 flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer"
-        >
-          <RotateCcw size={14} /> <span className="hidden sm:inline">Revert Last Drink</span><span className="sm:hidden">Revert</span>
-        </button>
       )}
- <button
- onClick={() => {
- setScannedToken(null);
- setTokenInput('');
- startCamera();
- }}
- className="flex-1 py-2.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all premium-btn-secondary flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer"
- >
- <Camera size={14} /> Scan Next
- </button>
- </div>
- </div>
- </div>
- )}
- </div>
- )}
 
- {/* ======================================================== */}
- {/* 2. CHECK-INS TAB */}
+      {/* ======================================================== */}
+      {/* 2. CHECK-INS TAB */}
  {/* ======================================================== */}
  {!isScanTab && (
     <div className="space-y-5">
       
       {/* Hero Station Banner */}
-      <div className="rounded-2xl dark:bg-[#18181A] bg-white border border-border-main p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 shadow-sm">
-        <div className="flex items-center justify-between sm:justify-start gap-3 min-w-0 w-full sm:w-auto">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 dark:text-amber-400 flex items-center justify-center shrink-0">
-              <Wine size={18} className="stroke-[2.2] sm:w-5 sm:h-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm sm:text-lg font-bold text-text-main tracking-wide truncate">Bartender Service Station</h3>
-                <span className="px-2 py-0.5 text-[10px] sm:text-[11px] font-mono font-bold rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 shrink-0">
-                  {activeTokens.length}
-                </span>
-              </div>
-              <p className="text-xs text-text-muted font-medium mt-0.5 truncate hidden sm:block">
-                Manage and search active guest check-in sessions with quick action tools
-              </p>
-            </div>
+      <div className="rounded-2xl bg-white dark:bg-[#18181A] border border-border-main p-4 sm:p-5 flex items-center justify-between gap-3 sm:gap-4 shadow-sm">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-primary/10 border border-primary/20 text-primary dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <Wine size={18} className="stroke-[2.2] sm:w-5 sm:h-5" />
           </div>
-
-          {/* Mobile Refresh Button */}
-          <button
-            onClick={() => {
-              fetchActiveTokens();
-              refreshTokens();
-              refreshTables();
-            }}
-            disabled={isLoadingTokens}
-            className="w-9 h-9 rounded-xl bg-amber-500/5 hover:bg-amber-500/10 active:bg-amber-500/20 text-amber-500 dark:text-amber-400 border border-amber-500/30 flex items-center justify-center transition-all cursor-pointer disabled:opacity-50 shrink-0 sm:hidden"
-            title={`Sync Sessions (${activeTokens.length})`}
-            aria-label={`Sync Sessions (${activeTokens.length})`}
-          >
-            <RefreshCw size={14} className={isLoadingTokens ? 'animate-spin' : ''} />
-          </button>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm sm:text-lg font-bold text-text-main tracking-wide truncate">Bartender Service Station</h3>
+              <span className="px-2 py-0.5 text-[10px] sm:text-[11px] font-mono font-bold rounded-full bg-primary/10 text-primary border border-primary/20 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20 shrink-0">
+                {activeTokens.length}
+              </span>
+            </div>
+            <p className="text-xs text-text-muted font-medium mt-0.5 truncate hidden sm:block">
+              Manage and search active guest check-in sessions with quick action tools
+            </p>
+          </div>
         </div>
-
-        {/* Desktop / Tablet Refresh Button */}
-        <button
-          onClick={() => {
-            fetchActiveTokens();
-            refreshTokens();
-            refreshTables();
-          }}
-          disabled={isLoadingTokens}
-          className="w-9 h-9 rounded-xl bg-amber-500/5 hover:bg-amber-500/10 active:bg-amber-500/20 text-amber-500 dark:text-amber-400 border border-amber-500/30 hidden sm:flex items-center justify-center transition-all cursor-pointer disabled:opacity-50 shrink-0"
-          title={`Sync Sessions (${activeTokens.length})`}
-          aria-label={`Sync Sessions (${activeTokens.length})`}
-        >
-          <RefreshCw size={14} className={isLoadingTokens ? 'animate-spin' : ''} />
-        </button>
       </div>
 
       {/* Global Search Bar */}
@@ -1128,7 +1114,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           placeholder="Global Session Search (Search by Guest Name, Phone Number, Email, or Token code...)"
-          className="w-full bg-[#121214] dark:bg-[#121214] bg-white border border-border-main rounded-xl pl-11 pr-4 py-3 text-sm text-text-main placeholder-zinc-500 dark:placeholder-zinc-500 focus:outline-none dark:focus:border-primary focus:border-primary transition-all font-medium"
+          className="w-full bg-white dark:bg-[#121214] border border-border-main rounded-xl pl-11 pr-4 py-3 text-sm text-text-main placeholder-zinc-500 dark:placeholder-zinc-500 focus:outline-none focus:border-primary dark:focus:border-primary transition-all font-medium"
         />
       </div>
 
@@ -1139,7 +1125,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
         </div>
       ) : filteredTokens.length === 0 ? (
         <div className="glass-panel p-16 text-center text-text-muted text-sm rounded-3xl border border-border-main space-y-2">
-          <Users className="mx-auto text-gray-600" size={40} />
+          <Users className="mx-auto text-text-muted opacity-60" size={40} />
           <p className="font-bold text-text-main">No Active Checked-In Guests</p>
           <p className="text-xs">No guest matches the search queries, or no sessions are currently checked in.</p>
         </div>
@@ -1165,7 +1151,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
             return (
               <div 
                 key={tk.tokenNumber || tk.id} 
-                className="dark:bg-[#141416] bg-white p-3.5 sm:p-4 xl:p-5 rounded-2xl border border-border-main/70 transition-all duration-200 hover:border-border-main relative shadow-sm flex flex-col justify-between"
+                className="bg-white dark:bg-[#141416] p-3.5 sm:p-4 xl:p-5 rounded-2xl border border-border-main/70 transition-all duration-200 hover:border-border-main relative shadow-sm flex flex-col justify-between"
               >
                 {/* ======================================================== */}
                 {/* 1. MOBILE & TABLET COMPACT OPERATIONAL CARD (< 1280px)  */}
@@ -1181,7 +1167,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                       <h4 className="text-xs sm:text-sm font-bold text-text-main truncate max-w-[100px] sm:max-w-[160px]" title={tk.customer?.name || 'Walk-in Guest'}>
                         {tk.customer?.name || 'Walk-in Guest'}
                       </h4>
-                      <span className="hidden xs:inline-block px-1.5 py-0.5 rounded bg-zinc-800/60 dark:bg-zinc-800/60 bg-zinc-100 text-[10px] font-mono font-semibold text-text-muted shrink-0">
+                      <span className="hidden xs:inline-block px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200/60 dark:border-zinc-700/50 text-[10px] font-mono font-semibold text-zinc-700 dark:text-zinc-300 shrink-0">
                         {tk.tokenNumber}
                       </span>
                     </div>
@@ -1191,7 +1177,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                       <div className="bg-bg-card/70 border border-border-main/40 px-2 py-0.5 rounded-md">
                         <LiveSessionTimer endTime={tk.endTime} status={tk.status} />
                       </div>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-950/60 dark:bg-emerald-950/60 bg-emerald-50 text-emerald-400 dark:text-emerald-400 text-emerald-700 border border-emerald-800/50 dark:border-emerald-800/50 border-emerald-300 shrink-0">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800/50 shrink-0">
                         {tk.status}
                       </span>
                     </div>
@@ -1221,7 +1207,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                         </span>
                       </div>
 
-                      <div className="w-full h-1.5 rounded-full bg-zinc-800 dark:bg-zinc-800 bg-zinc-200 overflow-hidden">
+                      <div className="w-full h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
                         <div 
                           className={`h-full transition-[width] duration-300 ease-out rounded-full ${isTokenQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'}`}
                           style={{ width: `${Math.min(100, (tk.redemptionsUsed / tk.totalRedemptionsAllowed) * 100)}%` }}
@@ -1232,7 +1218,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                     {/* Primary Controls Row: [ Stepper ] [ REDEEM ] [ REVERT ] */}
                     <div className="grid grid-cols-3 gap-1.5 pt-0.5">
                       {/* Quantity Stepper */}
-                      <div className="h-9 sm:h-10 rounded-lg dark:bg-[#1C1C20] bg-zinc-100 border border-border-main flex items-center justify-between px-1">
+                      <div className="h-9 sm:h-10 rounded-lg bg-zinc-100 dark:bg-[#1C1C20] border border-border-main flex items-center justify-between px-1">
                         <button
                           type="button"
                           onClick={() => handleQuantityDecrement(tk.tokenNumber)}
@@ -1386,7 +1372,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
                       <div className="p-2 rounded-lg bg-bg-surface/70 border border-border-main/30 text-[10px] flex items-center justify-between text-text-muted">
                         <span>Current: <strong className="text-text-main font-mono">{tkCurrentCheckIn}</strong></span>
-                        <span>Carried: <strong className="text-amber-400 font-mono">+{tkCarriedForward}</strong></span>
+                        <span>Carried: <strong className="text-amber-600 dark:text-amber-400 font-mono">+{tkCarriedForward}</strong></span>
                         <span>Total: <strong className="text-text-main font-mono">{tk.totalRedemptionsAllowed}</strong></span>
                       </div>
                     </div>
@@ -1406,12 +1392,12 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                       </h4>
                       
                       {/* Token Code Badge */}
-                      <span className="px-2.5 py-0.5 rounded-md bg-[#222226] dark:bg-[#222226] bg-zinc-100 border border-[#333338] dark:border-[#333338] border-zinc-200 text-[11px] font-mono font-bold text-zinc-200 dark:text-zinc-200 text-zinc-700">
+                      <span className="px-2.5 py-0.5 rounded-md bg-zinc-100 dark:bg-[#222226] border border-zinc-200 dark:border-[#333338] text-[11px] font-mono font-bold text-zinc-700 dark:text-zinc-200">
                         {tk.tokenNumber}
                       </span>
 
                       {/* Status Badge */}
-                      <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-emerald-950/60 dark:bg-emerald-950/60 bg-emerald-50 text-emerald-400 dark:text-emerald-400 text-emerald-700 border border-emerald-800/50 dark:border-emerald-800/50 border-emerald-300">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800/50">
                         {tk.status}
                       </span>
                     </div>
@@ -1477,13 +1463,13 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                         <span>{tk.totalRedemptionsAllowed}</span>
                         <span>USED</span>
                       </span>
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-950/80 dark:bg-emerald-950/80 bg-emerald-50 text-emerald-400 dark:text-emerald-400 text-emerald-700 border border-emerald-800/60 dark:border-emerald-800/60 border-emerald-300 whitespace-nowrap inline-flex items-center gap-1">
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800/60 whitespace-nowrap inline-flex items-center gap-1">
                         <AnimatedNumber value={tkRemainingDrinks} />
                         <span>{tkRemainingDrinks === 1 ? 'DRINK' : 'DRINKS'} REMAINING</span>
                       </span>
                     </div>
 
-                    <div className="w-full h-2 rounded-full bg-zinc-800 dark:bg-zinc-800 bg-zinc-200 overflow-hidden my-2">
+                    <div className="w-full h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden my-2">
                       <div 
                         className={`h-full transition-[width] duration-300 ease-out rounded-full ${isTokenQuotaDepleted ? 'bg-red-500' : 'bg-emerald-500'}`}
                         style={{ width: `${Math.min(100, (tk.redemptionsUsed / tk.totalRedemptionsAllowed) * 100)}%` }}
@@ -1492,9 +1478,9 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
                     <div className="flex items-center gap-2 text-xs text-text-muted pt-0.5">
                       <span>Current Check-In: <strong className="text-text-main font-mono">{tkCurrentCheckIn}</strong></span>
-                      <span className="text-zinc-600">|</span>
-                      <span className="text-amber-400 font-bold">
-                        Carried Forward: <strong className="font-mono text-amber-400">+{tkCarriedForward}</strong>
+                      <span className="text-zinc-400 dark:text-zinc-600">|</span>
+                      <span className="text-amber-600 dark:text-amber-400 font-bold">
+                        Carried Forward: <strong className="font-mono text-amber-600 dark:text-amber-400">+{tkCarriedForward}</strong>
                       </span>
                     </div>
                   </div>
@@ -1510,7 +1496,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                     {/* ROW 1: [ Quantity Control ] [ REDEEM ] [ REVERT ] */}
                     <div className="grid grid-cols-3 gap-1.5">
                       {/* Quantity Selector: [ − ] [ 1 ] [ + ] */}
-                      <div className="h-9 rounded-lg dark:bg-[#1C1C20] bg-zinc-100 border border-border-main flex items-center justify-between px-1">
+                      <div className="h-9 rounded-lg bg-zinc-100 dark:bg-[#1C1C20] border border-border-main flex items-center justify-between px-1">
                         <button
                           type="button"
                           onClick={() => handleQuantityDecrement(tk.tokenNumber)}

@@ -1278,72 +1278,72 @@ setPersonsCount(preselectedTable.capacity);
  
  {/* Wizard Progress Header Bar */}
  <div className="glass-panel p-4 rounded-2xl border border-border-main relative overflow-hidden">
- {/* Background connector line */}
- <div className="absolute left-[6%] right-[6%] top-1/2 -translate-y-1/2 h-[2px] bg-amber-500/10 dark:bg-amber-300/10 -z-10" />
- 
- {/* Progress fill line */}
- <div 
- className="absolute left-[6%] top-1/2 -translate-y-1/2 h-[2px] bg-gradient-to-r from-amber-500 to-amber-600 dark:from-amber-400 dark:to-amber-500 0_0_8px_rgba(217,119,6,0.3)] 0_0_8px_rgba(251,191,36,0.4)] transition-all duration-500 ease-out -z-10"
- style={{ width: `${((stage - 1) / 4) * 88}%` }}
- />
+        {/* Background connector line */}
+        <div className="absolute left-[6%] right-[6%] top-1/2 -translate-y-1/2 h-[2px] bg-primary/10 -z-10" />
+        
+        {/* Progress fill line */}
+        <div 
+          className="absolute left-[6%] top-1/2 -translate-y-1/2 h-[2px] bg-primary transition-all duration-500 ease-out -z-10"
+          style={{ width: `${((stage - 1) / 4) * 88}%` }}
+        />
 
- <div className="flex items-center justify-between w-full">
- {[
- { num: 1, label: 'Customer Info' },
- { num: 2, label: 'Table Seating' },
- { num: 3, label: 'QR Verification' },
- { num: 4, label: 'Payment Details' },
- { num: 5, label: 'Pass Generated' },
- ].map(step => {
- const isCompleted = stage > step.num;
- const isActive = stage === step.num;
- return (
- <div key={step.num} className="flex flex-col items-center gap-1.5 relative z-10">
- <div 
- className={`w-8 h-8 rounded-full flex items-center justify-center text-xs transition-all duration-300 ${
- isCompleted 
- ? 'bg-gradient-to-r from-amber-500 to-amber-600 dark:from-amber-400 dark:to-amber-500 text-black font-black border border-amber-600/30' 
- : isActive 
- ? 'bg-amber-500/10 dark:bg-amber-300/15 text-amber-700 dark:text-amber-300 font-black 0_0_12px_rgba(217,119,6,0.25)] 0_0_15px_rgba(251,191,36,0.3)] ring-2 ring-amber-500/25 dark:ring-amber-300/30 border border-amber-500/40 dark:border-amber-300/50 scale-105' 
- : 'bg-amber-500/[0.03] dark:bg-amber-300/[0.03] text-amber-600/40 dark:text-amber-400/40 border border-amber-500/10 dark:border-amber-300/10'
- }`}
- >
- {isCompleted ? '✓' : step.num}
- </div>
- <span className={`text-[10px] uppercase tracking-wider font-extrabold transition-all hidden md:block ${
-  isActive ? 'text-amber-700 dark:text-amber-300' : isCompleted ? 'text-amber-600 dark:text-amber-400/80' : 'text-text-muted'
- }`}>
- {step.label}
- </span>
- </div>
- );
- })}
- </div>
+        <div className="flex items-center justify-between w-full">
+          {[
+            { num: 1, label: 'Customer Info' },
+            { num: 2, label: 'Table Seating' },
+            { num: 3, label: 'QR Verification' },
+            { num: 4, label: 'Payment Details' },
+            { num: 5, label: 'Pass Generated' },
+          ].map(step => {
+            const isCompleted = stage > step.num;
+            const isActive = stage === step.num;
+            return (
+              <div key={step.num} className="flex flex-col items-center gap-1.5 relative z-10">
+                <div 
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs transition-all duration-300 ${
+                    isCompleted 
+                      ? 'bg-primary text-white dark:text-black font-black border border-primary' 
+                      : isActive 
+                      ? 'bg-primary/10 text-primary font-black ring-2 ring-primary/25 border border-primary/40 scale-105' 
+                      : 'bg-primary/[0.03] text-primary/40 border border-primary/10'
+                  }`}
+                >
+                  {isCompleted ? '✓' : step.num}
+                </div>
+                <span className={`text-[10px] uppercase tracking-wider font-extrabold transition-all hidden md:block ${
+                  isActive ? 'text-primary' : isCompleted ? 'text-primary/80' : 'text-text-muted'
+                }`}>
+                  {step.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
 
- {/* Mobile-only status text tracker */}
- <div className="text-center mt-2.5 text-[10px] uppercase tracking-widest font-black text-amber-600 dark:text-amber-400 md:hidden">
- Step {stage} of 5: {[
-'Customer Info',
- 'Table Seating',
- 'QR Verification',
- 'Payment Details',
- 'Pass Generated'
- ][stage - 1]}
- </div>
-  {stage !== 5 && (phoneNumber || customerName || email || selectedTableId) && (
-    <div className="flex justify-end mt-2 px-2">
-      <button
-        type="button"
-        onClick={() => handleStopCheckInWithConfirmation(handleResetWizard)}
-        className="px-3 py-1.5 rounded-lg border border-red-500/20 hover:border-red-500/40 bg-red-500/5 text-[10px] uppercase tracking-wider font-extrabold text-red-500 hover:bg-red-500/10 transition-all flex items-center gap-1 cursor-pointer"
-      >
-        STOP CHECK-IN
-      </button>
-    </div>
-  )}
- </div>
+        {/* Mobile-only status text tracker */}
+        <div className="text-center mt-2.5 text-[10px] uppercase tracking-widest font-black text-primary md:hidden">
+          Step {stage} of 5: {[
+            'Customer Info',
+            'Table Seating',
+            'QR Verification',
+            'Payment Details',
+            'Pass Generated'
+          ][stage - 1]}
+        </div>
+        {stage !== 5 && (phoneNumber || customerName || email || selectedTableId) && (
+          <div className="flex justify-end mt-2 px-2">
+            <button
+              type="button"
+              onClick={() => handleStopCheckInWithConfirmation(handleResetWizard)}
+              className="px-3 py-1.5 rounded-lg border border-red-500/20 hover:border-red-500/40 bg-red-500/5 text-[10px] uppercase tracking-wider font-extrabold text-red-500 hover:bg-red-500/10 transition-all flex items-center gap-1 cursor-pointer"
+            >
+              STOP CHECK-IN
+            </button>
+          </div>
+        )}
+      </div>
 
- {/* Main Dual-Column Desktop Grid */}
+      {/* Main Dual-Column Desktop Grid */}
  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
  
  {/* Left 8 Columns: Active Stage Form Panel */}
@@ -1447,7 +1447,7 @@ setPersonsCount(preselectedTable.capacity);
  type="email"
  value={email}
  onChange={e => setEmail(e.target.value)}
- placeholder="e.g. name@example.com"
+ placeholder="e.g. name@gmail.com"
  className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-base md:text-sm text-text-main focus:outline-none transition-all ${
     email.trim().length === 0 || !isValidEmail(email) || emailConflict
     ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'

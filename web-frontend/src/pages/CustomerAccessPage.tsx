@@ -106,7 +106,7 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
   // 3. UNVERIFIED PAYMENT STATE (Entry payment gatekeeper)
   if (accessState === 'UNVERIFIED') {
     return (
-      <div className="h-[100dvh] w-full bg-[#12111F] text-white flex flex-col justify-between p-6 sm:p-10 font-sans select-none overflow-y-auto">
+      <div className="min-h-[100dvh] w-full bg-[#12111F] text-white flex flex-col justify-between p-6 sm:p-10 font-sans select-none overflow-y-auto">
         {/* Ambient background glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -133,13 +133,14 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight mb-3">
-            Entry Payment Required
+            Payment Not Received
           </h1>
 
-          <p className="text-xs sm:text-sm text-text-muted leading-relaxed mb-6">
-            Your table access pass has been created, but your cover charge/entry payment is currently pending verification.
-            Please complete the payment with our reception staff to unlock ordering.
-          </p>
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 mb-6">
+            <p className="text-xs sm:text-sm text-amber-200 font-semibold leading-relaxed">
+              Payment is not received. Please contact the receptionist to complete your registration.
+            </p>
+          </div>
 
           {/* Session Summary Card */}
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-left mb-6 space-y-2.5 text-xs">
@@ -157,6 +158,12 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
               <div className="flex justify-between text-text-muted">
                 <span>Assigned Table:</span>
                 <span className="font-bold text-[#8D6CE5]">Table {sessionData.tableNumber}</span>
+              </div>
+            )}
+            {sessionData?.amountPaid !== undefined && (
+              <div className="flex justify-between text-text-muted">
+                <span>Entry Fee Due:</span>
+                <span className="font-mono font-bold text-amber-400">₹{sessionData.amountPaid}</span>
               </div>
             )}
           </div>
@@ -184,44 +191,121 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
 
         {/* Footer */}
         <footer className="text-center text-[11px] text-text-muted z-10">
-          Need assistance? Please contact your server or reception staff.
+          Need assistance? Please contact reception staff to complete registration.
         </footer>
       </div>
     );
   }
 
-  // 4. SESSION CLOSED STATE (Post-Checkout / Ended Session)
+  // 4. SESSION CLOSED STATE (Post-Checkout / Ended Session - Read-Only Bill View)
   if (accessState === 'CLOSED') {
+    const bill = sessionData?.bill;
+
     return (
-      <div className="h-[100dvh] w-full bg-[#12111F] text-white flex flex-col justify-between p-6 sm:p-10 font-sans select-none overflow-y-auto">
-        <header className="flex items-center justify-between z-10">
+      <div className="min-h-[100dvh] w-full bg-[#12111F] text-white flex flex-col justify-between p-6 sm:p-10 font-sans select-none overflow-y-auto">
+        <header className="flex items-center justify-between z-10 mb-6">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#8D6CE5] to-indigo-500 text-white font-black flex items-center justify-center text-sm shadow-md">
               P
             </div>
             <div>
               <div className="font-extrabold text-sm leading-tight">Pegs N Bottles</div>
-              <div className="text-[11px] text-text-muted">Customer Access Portal</div>
+              <div className="text-[11px] text-text-muted">Completed Dining Session</div>
             </div>
           </div>
-          <span className="px-3 py-1 rounded-full border border-white/20 bg-white/5 text-text-muted text-xs font-bold">
-            SESSION ENDED
+          <span className="px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs font-black flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            PAYMENT COMPLETED
           </span>
         </header>
 
-        <main className="max-w-md mx-auto my-auto z-10 w-full text-center py-6">
-          <div className="w-16 h-16 rounded-3xl bg-[#8D6CE5]/15 border border-[#8D6CE5]/30 text-[#8D6CE5] flex items-center justify-center mx-auto mb-5 shadow-lg">
-            <Clock className="w-8 h-8" />
+        <main className="max-w-md mx-auto my-auto z-10 w-full py-4">
+          <div className="text-center mb-6">
+            <div className="w-14 h-14 rounded-3xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto mb-3 shadow-lg">
+              <CheckCircle2 className="w-7 h-7" />
+            </div>
+            <h1 className="text-2xl font-black tracking-tight mb-1">
+              Dining Session Closed
+            </h1>
+            <p className="text-xs text-text-muted leading-relaxed">
+              Payment was successfully completed and this session is now closed. Thank you for dining with us!
+            </p>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight mb-3">
-            Dining Session Concluded
-          </h1>
+          {/* Read-Only Printed Bill Card */}
+          <div className="rounded-3xl border border-white/10 bg-[#181628] p-5 shadow-2xl mb-6 relative overflow-hidden">
+            <div className="border-b border-white/10 pb-3 mb-3 flex justify-between items-center text-xs">
+              <div>
+                <span className="text-text-muted">Bill No: </span>
+                <span className="font-mono font-bold text-white">{bill?.billNumber || 'PNB-FINAL'}</span>
+              </div>
+              <div>
+                <span className="text-text-muted">Table: </span>
+                <span className="font-bold text-[#8D6CE5]">{sessionData?.tableNumber ? `Table ${sessionData.tableNumber}` : 'N/A'}</span>
+              </div>
+            </div>
 
-          <p className="text-xs sm:text-sm text-text-muted leading-relaxed mb-6">
-            This dining session has already been settled and closed.
-            Thank you for dining at Pegs N Bottles! We hope you enjoyed your visit.
-          </p>
+            {sessionData?.customerName && (
+              <div className="flex justify-between text-xs text-text-muted mb-3">
+                <span>Guest:</span>
+                <span className="font-semibold text-white">{sessionData.customerName}</span>
+              </div>
+            )}
+
+            {/* Bill Line Items Breakdown if available */}
+            {bill?.orders && bill.orders.length > 0 ? (
+              <div className="border-t border-b border-white/5 py-3 my-3 space-y-2 max-h-48 overflow-y-auto">
+                {bill.orders.map((ord: any, idx: number) => (
+                  <div key={idx} className="space-y-1">
+                    {ord.items.map((it: any, iIdx: number) => (
+                      <div key={iIdx} className="flex justify-between text-xs">
+                        <span className="text-white/80">
+                          {it.quantity}x {it.itemName}
+                        </span>
+                        <span className="font-mono text-white">₹{it.lineTotal.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {/* Financial Summary */}
+            <div className="space-y-1.5 text-xs text-text-muted pt-2">
+              {bill?.subtotal !== undefined && (
+                <div className="flex justify-between">
+                  <span>Subtotal:</span>
+                  <span className="font-mono text-white">₹{bill.subtotal.toFixed(2)}</span>
+                </div>
+              )}
+              {bill?.serviceChargeTotal !== undefined && (
+                <div className="flex justify-between">
+                  <span>Service Charge (5%):</span>
+                  <span className="font-mono text-white">₹{bill.serviceChargeTotal.toFixed(2)}</span>
+                </div>
+              )}
+              {bill?.taxTotal !== undefined && (
+                <div className="flex justify-between">
+                  <span>GST (5%):</span>
+                  <span className="font-mono text-white">₹{bill.taxTotal.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="border-t border-white/10 pt-2 flex justify-between text-sm font-black text-white">
+                <span>Final Grand Total:</span>
+                <span className="font-mono text-emerald-400">
+                  ₹{bill?.grandTotal !== undefined ? bill.grandTotal.toFixed(2) : '0.00'}
+                </span>
+              </div>
+              <div className="flex justify-between text-[11px] text-emerald-400/90 font-bold pt-1">
+                <span>Payment Status:</span>
+                <span>PAID {bill?.paymentMethod ? `via ${bill.paymentMethod}` : ''}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-center text-[11px] text-text-muted mb-6">
+            Ordering is disabled for this concluded session. A new check-in is required for future orders.
+          </div>
 
           <button
             onClick={() => window.location.assign('/customer/landing')}
@@ -233,7 +317,7 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
         </main>
 
         <footer className="text-center text-[11px] text-text-muted z-10">
-          Pegs N Bottles — Have a wonderful rest of your day.
+          Pegs N Bottles — Thank you for choosing us!
         </footer>
       </div>
     );

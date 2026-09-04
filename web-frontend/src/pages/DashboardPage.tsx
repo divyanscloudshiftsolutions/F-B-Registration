@@ -10,7 +10,6 @@ import {
   X,
   UserCheck,
   CalendarRange,
-  RefreshCw,
   Activity,
   Bell,
   BarChart3,
@@ -131,25 +130,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const [reportData, setReportData] = useState<DashboardReport['data'] | null>(null);
   const [isReportLoading, setIsReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
-  const [isRefreshingLiveSessions, setIsRefreshingLiveSessions] = useState(false);
-
-  const handleLiveSessionsRefresh = async () => {
-    if (isRefreshingLiveSessions) return;
-    setIsRefreshingLiveSessions(true);
-    const start = Date.now();
-    try {
-      await Promise.all([
-        refreshTokens(),
-        refreshTables(),
-        isManagement ? refreshAllSessions() : Promise.resolve(),
-        isManagement ? fetchReport() : Promise.resolve()
-      ]);
-    } finally {
-      const elapsed = Date.now() - start;
-      const delay = Math.max(0, 500 - elapsed);
-      setTimeout(() => setIsRefreshingLiveSessions(false), delay);
-    }
-  };
 
   const fetchReport = async () => {
     setIsReportLoading(true);
@@ -174,6 +154,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       fetchReport();
       refreshAllSessions();
     }
+
+    const handleGlobalRefresh = () => {
+      if (isManagement) {
+        fetchReport();
+      }
+    };
+    window.addEventListener('app:global-refresh', handleGlobalRefresh);
+    return () => {
+      window.removeEventListener('app:global-refresh', handleGlobalRefresh);
+    };
   }, [user]);
 
   const handleCloseSubmit = async (e: React.FormEvent) => {
@@ -573,20 +563,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               <button
                 key={i}
                 onClick={act.onClick}
-                className="w-full p-2.5 sm:p-4 rounded-xl flex flex-col sm:flex-row items-center sm:items-start justify-between gap-1.5 sm:gap-3 transition-all duration-300 text-center sm:text-left cursor-pointer group focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50 bg-gradient-to-br from-[#D4AF37]/10 to-transparent border border-[#D4AF37]/30 hover:border-[#D4AF37] shadow-[0_0_12px_rgba(212,175,55,0.08)] col-span-1"
+                className="w-full p-2.5 sm:p-4 rounded-xl flex flex-col sm:flex-row items-center sm:items-start justify-between gap-1.5 sm:gap-3 transition-all duration-300 text-center sm:text-left cursor-pointer group focus:outline-none focus:ring-2 dark:focus:ring-[#D4AF37]/50 focus:ring-primary/50 dark:bg-gradient-to-br dark:from-[#D4AF37]/10 dark:to-transparent bg-gradient-to-br from-primary/10 to-transparent dark:border-[#D4AF37]/30 border-primary/30 dark:hover:border-[#D4AF37] hover:border-primary dark:shadow-[0_0_12px_rgba(212,175,55,0.08)] shadow-[0_0_12px_rgba(124,58,237,0.08)] col-span-1"
               >
                 <div className="flex flex-col sm:flex-row items-center gap-1.5 sm:gap-3 w-full min-w-0">
-                  <div className="p-1.5 sm:p-2.5 rounded-lg shrink-0 bg-[#D4AF37]/15 text-[#D4AF37] transition-colors">
+                  <div className="p-1.5 sm:p-2.5 rounded-lg shrink-0 dark:bg-[#D4AF37]/15 bg-primary/10 dark:text-[#D4AF37] text-primary transition-colors">
                     <Icon size={14} className="sm:w-4 sm:h-4" />
                   </div>
                   <div className="min-w-0 text-center sm:text-left w-full">
-                    <h5 className="text-[10px] sm:text-xs font-bold text-white transition-colors truncate">
+                    <h5 className="text-[10px] sm:text-xs font-bold text-text-main dark:text-white transition-colors truncate">
                       {act.title}
                     </h5>
                     <p className="text-[8px] sm:text-[10px] text-text-muted mt-0.5 truncate">{act.desc}</p>
                   </div>
                 </div>
-                <div className="hidden sm:block text-xs font-bold transition-transform group-hover:translate-x-1 text-[#D4AF37]">
+                <div className="hidden sm:block text-xs font-bold transition-transform group-hover:translate-x-1 dark:text-[#D4AF37] text-primary">
                   →
                 </div>
               </button>
@@ -626,17 +616,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               <h3 className="text-sm font-bold text-text-main truncate">Live Customer Sessions</h3>
               <p className="text-xs text-text-muted mt-0.5 truncate">Real-time QR active seating tickets</p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button 
-                onClick={handleLiveSessionsRefresh}
-                disabled={isRefreshingLiveSessions}
-                className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl transition-all premium-btn-secondary flex items-center justify-center cursor-pointer shrink-0 disabled:opacity-50"
-                title="Refresh Live Sessions"
-                aria-label="Refresh Live Sessions"
-              >
-                <RefreshCw size={13} className={(isRefreshingLiveSessions || isLoading) ? 'animate-spin' : ''} />
-              </button>
-            </div>
           </div>
 
           {isLoading ? (
@@ -647,7 +626,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               {!isBartender && (
                 <button 
                   onClick={() => onNavigate?.('checkin')} 
-                  className="px-3 py-1.5 rounded-lg bg-[#D4AF37] hover:bg-[#F5E08B] text-black text-xs font-bold transition-all cursor-pointer shadow-[0_0_10px_rgba(212,175,55,0.2)]"
+                  className="px-3 py-1.5 rounded-lg dark:bg-[#D4AF37] dark:hover:bg-[#F5E08B] dark:text-black bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all cursor-pointer dark:shadow-[0_0_10px_rgba(212,175,55,0.2)] shadow-[0_0_10px_rgba(124,58,237,0.2)]"
                 >
                   New Check-In
                 </button>
@@ -801,8 +780,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           )}
         </div>
 
-        {/* Attention Needed Column (Height adjusted dynamically to prevent empty spaces) */}
-        <div className="glass-panel p-4 sm:p-6 rounded-2xl border border-border-main flex flex-col justify-between min-h-[180px] lg:h-[396px]">
+        {/* Attention Needed Column (Flexible dynamic height to eliminate unnecessary empty space) */}
+        <div className="glass-panel p-4 sm:p-6 rounded-2xl border border-border-main flex flex-col justify-between min-h-[180px]">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-border-main shrink-0">
             <div className="flex items-center gap-2 dark:text-red-400 text-red-700 font-bold text-sm">
               <Bell size={18} /> <span>Attention Needed</span>
@@ -827,7 +806,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 } else if (notif.type === 'assign') {
                   iconColorClass = 'text-emerald-700 bg-emerald-500/15 dark:bg-emerald-500/10 dark:text-emerald-400';
                 } else if (notif.type === 'attendance') {
-                  iconColorClass = 'text-[#D4AF37] bg-[#D4AF37]/15 dark:bg-[#D4AF37]/10';
+                  iconColorClass = 'dark:text-[#D4AF37] text-primary dark:bg-[#D4AF37]/10 bg-primary/10';
                 }
 
                 return (
@@ -849,7 +828,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                     {notif.actionLabel && notif.onAction && (
                       <button
                         onClick={notif.onAction}
-                        className="w-full sm:w-auto px-3 py-1.5 sm:py-1 rounded bg-[#D4AF37]/10 hover:bg-[#D4AF37]/25 text-[#D4AF37] text-xs sm:text-[10px] font-bold border border-[#D4AF37]/20 transition-all cursor-pointer whitespace-nowrap flex items-center justify-center shrink-0 self-stretch sm:self-center"
+                        className="w-full sm:w-auto px-3 py-1.5 sm:py-1 rounded dark:bg-[#D4AF37]/10 dark:hover:bg-[#D4AF37]/25 dark:text-[#D4AF37] dark:border-[#D4AF37]/20 bg-primary/10 hover:bg-primary/20 text-primary border-primary/20 text-xs sm:text-[10px] font-bold transition-all cursor-pointer whitespace-nowrap flex items-center justify-center shrink-0 self-stretch sm:self-center"
                       >
                         {notif.actionLabel}
                       </button>

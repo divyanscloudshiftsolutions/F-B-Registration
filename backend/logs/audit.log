@@ -205,3 +205,9 @@
 {"timestamp":"2026-09-02T17:04:51.425Z","tokenNumber":"BAR-20260902-00012","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"bb74c0d5-2c69-4b5b-96bb-a61bb44beb1b"}
 {"timestamp":"2026-09-02T17:05:05.325Z","tokenNumber":"BAR-20260902-00014","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +0 mins","initiatedBy":"bb74c0d5-2c69-4b5b-96bb-a61bb44beb1b"}
 {"timestamp":"2026-09-02T17:34:39.714Z","tokenNumber":"BAR-20260902-00004","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-04T10:12:22.679Z","tokenNumber":"PNB-703","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-04T10:17:22.846Z","tokenNumber":"PNB-701","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-04T10:44:16.833Z","tokenNumber":"PNB-702","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-04T10:47:16.872Z","tokenNumber":"PNB-705","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-04T14:08:18.705Z","tokenNumber":"PNB-704","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-04T14:08:18.716Z","tokenNumber":"PNB-706","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}

@@ -129,7 +129,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onSidebarToggle, onRefres
         )}
         <div className="min-w-0">
           <h2 className="text-base sm:text-xl md:text-2xl font-black text-text-primary dark:text-white tracking-wider uppercase leading-none truncate">{title}</h2>
-          <p className="text-[9px] sm:text-[10px] text-text-muted font-bold mt-1 sm:mt-1.5 uppercase tracking-widest truncate">Open the Bottle</p>
+          <p className="text-[9px] sm:text-[10px] text-text-muted font-bold mt-1 sm:mt-1.5 uppercase tracking-widest truncate">Pegs N Bottles</p>
         </div>
       </div>
 

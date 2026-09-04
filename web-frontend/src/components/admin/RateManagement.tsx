@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Edit3, RefreshCw, X, Clock, Wine } from 'lucide-react';
+import { DollarSign, Edit3, X, Clock, Wine } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 
 export const RateManagement: React.FC = () => {
- const { showToast } = useAuth();
- const { rates: rawRates, isLoading, refreshRates } = useData();
- const [editingRate, setEditingRate] = useState<any | null>(null);
+  const { user, showToast } = useAuth();
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const { rates: rawRates, isLoading, refreshRates } = useData();
+  const [editingRate, setEditingRate] = useState<any | null>(null);
 
  // Fetch rates on component mount
  useEffect(() => {
@@ -57,41 +58,16 @@ export const RateManagement: React.FC = () => {
  } finally {
  setIsSubmitting(false);
  }
- };
-
-  const [isRefreshingRates, setIsRefreshingRates] = useState<boolean>(false);
-
-  const handleManualRefresh = async () => {
-    if (isRefreshingRates) return;
-    setIsRefreshingRates(true);
-    const start = Date.now();
-    try {
-      await refreshRates();
-    } finally {
-      const elapsed = Date.now() - start;
-      const delay = Math.max(0, 500 - elapsed);
-      setTimeout(() => setIsRefreshingRates(false), delay);
-    }
   };
 
- return (
- <div className="space-y-6">
+  return (
+    <div className="space-y-6">
       {/* Top Header */}
       <div className="flex items-center justify-between gap-3 border-b border-border-main pb-4 mb-6">
         <div className="min-w-0">
           <h3 className="text-sm font-bold text-text-main uppercase tracking-wider truncate">Place Type Rate Cards & Pricing Config</h3>
           <p className="text-xs text-text-muted truncate">Configure cover charge rates, base hours, and drink allowances</p>
         </div>
-
-        <button
-          onClick={handleManualRefresh}
-          disabled={isRefreshingRates}
-          className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer disabled:opacity-50"
-          title="Refresh Rates"
-          aria-label="Refresh Rates"
-        >
-          <RefreshCw size={13} className={(isRefreshingRates || isLoading) ? 'animate-spin' : ''} />
-        </button>
       </div>
 
  {/* Rates Cards Grid */}
@@ -102,18 +78,24 @@ export const RateManagement: React.FC = () => {
  {rates.map(r => (
  <div key={r.id} className="glass-panel dark:bg-[#1C1C1E] p-4 sm:p-6 rounded-3xl dark:rounded-xl border border-border-main dark:border-[rgba(255,255,255,0.1)] space-y-3 sm:space-y-4 relative overflow-hidden flex flex-col justify-between">
  <div>
- <div className="flex items-center justify-between mb-2">
- <span className="font-bold text-text-main text-base">{r.name || r.placeType}</span>
- <button
- onClick={() => openEditModal(r)}
- className="p-2 transition-all premium-btn-secondary flex items-center justify-center"
- title="Edit Rate Card"
- >
- <div className="nav-icon-badge m-0">
- <Edit3 size={12} />
- </div>
- </button>
- </div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-bold text-text-main text-base">{r.name || r.placeType}</span>
+              {isAdmin ? (
+                <button
+                  onClick={() => openEditModal(r)}
+                  className="p-2 transition-all premium-btn-secondary flex items-center justify-center cursor-pointer"
+                  title="Edit Rate Card"
+                >
+                  <div className="nav-icon-badge m-0">
+                    <Edit3 size={12} />
+                  </div>
+                </button>
+              ) : (
+                <span className="text-[10px] text-text-muted italic px-2 py-0.5 rounded-md bg-white/5 border border-white/5">
+                  View Only
+                </span>
+              )}
+            </div>
 
  <p className="text-3xl font-black dark:text-[#D4AF37] text-primary">₹{r.ratePerPerson} <span className="text-xs font-normal text-text-muted">/ person</span></p>
 

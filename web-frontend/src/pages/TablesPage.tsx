@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Grid3X3, RefreshCw, X, CheckCircle2, Users, ArrowRight, Search, UserPlus, AlertTriangle, Clock, Lock, Mail, User, Phone } from 'lucide-react';
+import { Grid3X3, X, CheckCircle2, Users, ArrowRight, Search, UserPlus, AlertTriangle, Clock, Lock, Mail, User, Phone } from 'lucide-react';
 import { api } from '../services/api';
 import type { Table, Token } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -57,7 +57,7 @@ export const TableTimer: React.FC<{ endTime: string }> = ({ endTime }) => {
 
   if (isExpired) {
     return (
-      <span className="font-mono text-red-500 font-extrabold animate-pulse">
+      <span className="font-mono text-red-500 dark:text-red-400 font-extrabold animate-pulse">
         Expired
       </span>
     );
@@ -65,7 +65,7 @@ export const TableTimer: React.FC<{ endTime: string }> = ({ endTime }) => {
 
   return (
     <span className={`font-mono font-bold transition-colors ${
-      isCloseToExpiry ? 'text-red-500 font-black animate-pulse' : 'text-text-main font-bold'
+      isCloseToExpiry ? 'text-red-500 dark:text-red-400 font-black animate-pulse' : 'text-text-main font-bold'
     }`}>
       {remainingTime}
     </span>
@@ -235,6 +235,19 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     return () => window.removeEventListener('keydown', handleCancelKeyDown);
   }, [cancellingReservation, isSubmittingCancel]);
 
+  // Keyboard listener for Inspect Table Drawer (Escape to close)
+  useEffect(() => {
+    if (!inspectingTable) return;
+    const handleInspectKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setInspectingTable(null);
+      }
+    };
+    window.addEventListener('keydown', handleInspectKeyDown);
+    return () => window.removeEventListener('keydown', handleInspectKeyDown);
+  }, [inspectingTable]);
+
   // Extend Modal State
   const [extendingTable, setExtendingTable] = useState<Table | null>(null);
 
@@ -244,23 +257,18 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  const [closureReasonOption, setClosureReasonOption] = useState('Customer Vacated Early');
  const [closureCustomExplanation, setClosureCustomExplanation] = useState('');
  const [isSubmittingCloseSession, setIsSubmittingCloseSession] = useState(false);
- const [isRefreshingTables, setIsRefreshingTables] = useState(false);
 
-  const handleRefresh = async () => {
-    if (isRefreshingTables) return;
-    setIsRefreshingTables(true);
-    const start = Date.now();
-    try {
-      await Promise.all([refreshTables(), refreshTokens(), refreshReservations()]);
-    } finally {
-      const elapsed = Date.now() - start;
-      const delay = Math.max(0, 500 - elapsed);
-      setTimeout(() => setIsRefreshingTables(false), delay);
-    }
+  const refreshAllTableData = () => {
+    return Promise.all([refreshTables(), refreshTokens(), refreshReservations()]);
   };
 
   useEffect(() => {
-    handleRefresh();
+    refreshAllTableData();
+    const handleGlobalRefresh = () => refreshAllTableData();
+    window.addEventListener('app:global-refresh', handleGlobalRefresh);
+    return () => {
+      window.removeEventListener('app:global-refresh', handleGlobalRefresh);
+    };
   }, [activeTab]);
 
   const inspectTableById = (tableId: string) => {
@@ -279,7 +287,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
           setInspectingTable(targetTable);
         } else {
           showToast(`Table ${targetTable.tableNumber}'s session has already expired or is no longer active.`, 'info');
-          handleRefresh();
+          refreshAllTableData();
         }
       }
     }
@@ -650,65 +658,57 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  return (
  <div className="space-y-6 text-text-main">
  
- {/* Non-Overlapping Structured Control Toolbar */}
- <div className="dark:bg-transparent glass-panel border border-border-main border-x-0 border-t-0 rounded-none p-0 pb-4 mb-6 space-y-4">
- {/* Tier 1: Primary Zone Switcher Tabs */}
- <div className="flex flex-wrap items-center justify-between gap-4 pt-3 pb-4 border-b border-border-main w-full">
- <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto px-4">
- <button
- onClick={() => setPlaceZone('STANDING_BAR')}
- className={`w-full sm:w-auto px-4 py-2.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 ${
- placeZone === 'STANDING_BAR' ? 'active' : ''
- }`}
- >
- Standard Zone (Standing Bar)
- </button>
-
- <button
- onClick={() => setPlaceZone('PREMIUM_LOUNGE')}
- className={`w-full sm:w-auto px-4 py-2.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 ${
- placeZone === 'PREMIUM_LOUNGE' ? 'active' : ''
- }`}
- >
- Premium Zone (Lounge)
- </button>
- </div>
-
- <div className="text-xs font-bold text-text-muted w-full sm:w-auto text-left sm:text-right flex items-center justify-between sm:block px-4">
- <span>Total Tables:</span> <span className="text-text-main font-mono text-sm sm:text-xs">{filteredTables.length}</span>
- </div>
- </div>
-
-        {/* Tier 2: Secondary Status Filters & Refresh Action */}
-        <div className="flex items-center justify-between gap-3 w-full px-4">
-          <div className="flex flex-nowrap overflow-x-auto custom-scrollbar items-center gap-2 flex-1 sm:flex-initial pb-1 sm:pb-0">
-            <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Status Filter:</span>
-            {['all', 'available', 'occupied', 'reserved'].map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-3 sm:px-3.5 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-secondary shrink-0 ${
-                  filter === f ? 'active' : ''
-                }`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+  {/* Non-Overlapping Structured Control Toolbar - Only for Floor Plan Layout */}
+  {activeTab !== 'tables/reservations' && (
+    <div className="dark:bg-transparent glass-panel border border-border-main border-x-0 border-t-0 rounded-none p-0 pb-4 mb-6 space-y-4">
+      {/* Tier 1: Primary Zone Switcher Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-4 pt-3 pb-4 border-b border-border-main w-full">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto px-4">
+          <button
+            onClick={() => setPlaceZone('STANDING_BAR')}
+            className={`w-full sm:w-auto px-4 py-2.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 ${
+              placeZone === 'STANDING_BAR' ? 'active' : ''
+            }`}
+          >
+            Standard Zone (Standing Bar)
+          </button>
 
           <button
-            onClick={handleRefresh}
-            disabled={isRefreshingTables}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer disabled:opacity-50"
-            title="Refresh Floor Plan"
-            aria-label="Refresh Floor Plan"
+            onClick={() => setPlaceZone('PREMIUM_LOUNGE')}
+            className={`w-full sm:w-auto px-4 py-2.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 ${
+              placeZone === 'PREMIUM_LOUNGE' ? 'active' : ''
+            }`}
           >
-            <RefreshCw size={13} className={(isRefreshingTables || isLoading) ? 'animate-spin' : ''} />
+            Premium Zone (Lounge)
           </button>
         </div>
- </div>
 
-  {/* Stable Table Cards Floor Plan Grid */}
+        <div className="text-xs font-bold text-text-muted w-full sm:w-auto text-left sm:text-right flex items-center justify-between sm:block px-4">
+          <span>Total Tables:</span> <span className="text-text-main font-mono text-sm sm:text-xs">{filteredTables.length}</span>
+        </div>
+      </div>
+
+      {/* Tier 2: Secondary Status Filters & Refresh Action */}
+      <div className="flex items-center justify-between gap-3 w-full px-4">
+        <div className="flex flex-nowrap overflow-x-auto custom-scrollbar items-center gap-2 flex-1 sm:flex-initial pb-1 sm:pb-0">
+          <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Status Filter:</span>
+          {['all', 'available', 'occupied', 'reserved'].map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-3 sm:px-3.5 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-secondary shrink-0 ${
+                filter === f ? 'active' : ''
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* Active Reservations View */}
   {activeTab === 'tables/reservations' ? (
     isLoading ? (
       <div className="py-20 text-center text-text-muted text-sm">Loading active reservations...</div>
@@ -786,7 +786,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                       className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
                         cancelDisabled 
                           ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40' 
-                          : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 border border-red-500/30 cursor-pointer'
+                          : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-300 active:bg-red-500/20 dark:active:bg-red-500/30 dark:text-red-400 text-red-600 border border-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer'
                       }`}
                     >
                       Cancel
@@ -978,7 +978,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
                 !isOwner 
                   ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed' 
-                  : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 border border-red-500/30 cursor-pointer'
+                  : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-300 active:bg-red-500/20 dark:active:bg-red-500/30 dark:text-red-400 text-red-600 border border-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer'
               }`}
             >
               Cancel
@@ -1028,230 +1028,267 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  </div>
  )}
 
- {/* INSPECT DETAILS MODAL */}
- {(() => {
- if (!inspectingTable) return null;
- const capacity = inspectingTable.capacity || 4;
- const assignedToken = tokens.find(tk => tk.tableId === inspectingTable.id || (tk.table && tk.table.id === inspectingTable.id));
- const isOccupied = inspectingTable.status === 'occupied';
- const occupiedCount = assignedToken ? (assignedToken.personsCount || 1) : (isOccupied ? capacity : 0);
+ {/* INSPECT DETAILS DRAWER */}
+  {(() => {
+    if (!inspectingTable) return null;
+    const capacity = inspectingTable.capacity || 4;
+    const assignedToken = tokens.find(tk => tk.tableId === inspectingTable.id || (tk.table && tk.table.id === inspectingTable.id));
+    const isOccupied = inspectingTable.status === 'occupied';
+    const occupiedCount = assignedToken ? (assignedToken.personsCount || 1) : (isOccupied ? capacity : 0);
 
- return (
- <div className="fixed inset-0 z-50 dark:bg-transparent bg-slate-900/40 flex items-center justify-end p-0 animate-fadeIn pointer-events-none">
- <div className="w-full md:w-[380px] bg-bg-surface border border-border-main border-y-0 border-r-0 border-l-[1px] dark:border-[rgba(255,255,255,0.1)] dark:bg-[#121212] rounded-none p-5 relative text-text-main animate-none h-[100dvh] pointer-events-auto flex flex-col">
- 
- {/* Header */}
- <div className="flex items-center justify-between pb-4 dark:pb-5 border-b border-border-main dark:border-[rgba(255,255,255,0.1)] shrink-0">
- <div className="flex items-center gap-2 text-text-main font-bold text-sm sm:text-base pr-2 dark:text-white">
- <span className="hidden dark:block w-2.5 h-2.5 rounded-full bg-red-400" />
- <span className="truncate dark:text-lg">T-{inspectingTable.tableNumber.padStart(2, '0')}</span>
- <span className="hidden dark:block text-[10px] text-primary ml-2 uppercase">VIP Lounge</span>
- </div>
- <button 
- onClick={() => setInspectingTable(null)}
- className="p-0 rounded-lg dark:bg-transparent bg-bg-surface hover:bg-bg-card hover:bg-transparent text-text-muted hover:text-text-main transition-all cursor-pointer shrink-0"
- >
- <X size={20} />
- </button>
- </div>
-
- {/* Scrollable Content Area */}
- <div className="flex-1 overflow-y-auto py-5 space-y-6 no-scrollbar">
- {/* Top Center Visual Seating View using TableDiagram */}
- <div className="dark:bg-transparent p-5 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] flex flex-col items-center justify-center space-y-3">
- <p className="text-[10px] font-extrabold uppercase tracking-widest text-text-muted">
- Visual Seating Alignment ({occupiedCount} / {capacity} Seats Occupied)
- </p>
-
- <div className="w-full max-w-sm h-36 flex items-center justify-center">
- <TableDiagram
- capacity={capacity}
- occupiedCount={occupiedCount}
- status={inspectingTable.status}
- tableNumber={inspectingTable.tableNumber}
- />
- </div>
- </div>
-
- {/* Table & Session Metrics */}
- <div className="grid grid-cols-2 gap-3 text-xs">
- <div className="dark:bg-transparent p-3.5 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] space-y-1">
- <span className="text-text-muted text-[10px] font-bold uppercase">Status</span>
- <p className={`font-bold text-sm uppercase ${inspectingTable.status === 'occupied' ? 'dark:text-amber-400 text-amber-700' : 'dark:text-emerald-400 text-emerald-700'}`}>
- {inspectingTable.status}
- </p>
- </div>
-
- <div className="dark:bg-transparent p-3.5 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] space-y-1">
- <span className="text-text-muted text-[10px] font-bold uppercase">Capacity Limit</span>
- <p className="font-bold text-sm text-text-main">{inspectingTable.capacity} Guests Max</p>
- </div>
- </div>
-
- {inspectingToken && (
-    <div className="dark:bg-transparent p-4 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] space-y-2.5 text-xs">
-      <div className="flex justify-between items-center">
-        <span className="text-text-muted">Customer Name:</span>
-        <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={inspectingToken.customer?.name || 'Walk-in Guest'}>
-          {inspectingToken.customer?.name || 'Walk-in Guest'}
-        </span>
-      </div>
-      <div className="flex justify-between items-center">
-        <span className="text-text-muted">Phone Number:</span>
-        <span className="font-mono font-semibold text-text-main text-right">
-          {inspectingToken.customer?.phoneNumber || '—'}
-        </span>
-      </div>
-      <div className="flex justify-between items-center">
-        <span className="text-text-muted">Email ID:</span>
-        <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={inspectingToken.customer?.email || (inspectingToken as any).email || '—'}>
-          {inspectingToken.customer?.email || (inspectingToken as any).email || '—'}
-        </span>
-      </div>
-      <div className="flex justify-between items-center">
-        <span className="text-text-muted">Token Pass:</span>
-        <span className="font-mono text-text-main font-bold text-right">{inspectingToken.tokenNumber}</span>
-      </div>
-      <div className="flex justify-between items-center">
-        <span className="text-text-muted">Guests Headcount:</span>
-        <span className="font-bold text-text-main text-right">{inspectingToken.personsCount || 1} {inspectingToken.personsCount === 1 ? 'Guest' : 'Guests'}</span>
-      </div>
-      <div className="flex justify-between items-center">
-        <span className="text-text-muted">Drinks Used / Total:</span>
-        <span className="font-mono font-bold text-emerald-400 text-right">
-          {inspectingToken.redemptionsUsed} / {inspectingToken.totalRedemptionsAllowed} Used
-        </span>
-      </div>
-      {inspectingTable.status === 'occupied' && (
-        <div className="flex justify-between items-center pt-1 border-t border-border-main/50 dark:border-[rgba(255,255,255,0.1)]">
-          <span className="text-text-muted font-medium">Time Remaining:</span>
-          <TableTimer endTime={inspectingToken.endTime} />
-        </div>
-      )}
-    </div>
-  )}
-
-  {inspectingTable.status === 'reserved' && (() => {
-    const res = realReservations.find((r: any) => r.tableId === inspectingTable.id && (r.status === 'PENDING' || r.status === 'CONFIRMED'));
-    if (!res) return null;
     return (
-      <div className="dark:bg-transparent p-4 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] space-y-2.5 text-xs">
-        <div className="flex justify-between items-center">
-          <span className="text-text-muted">Reserved Customer:</span>
-          <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={res.customerName}>
-            {res.customerName}
-          </span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-text-muted">Phone Number:</span>
-          <span className="font-mono font-semibold text-text-main text-right">{res.phoneNumber || '—'}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-text-muted">Email ID:</span>
-          <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={res.email || '—'}>
-            {res.email || '—'}
-          </span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-text-muted">Guests Headcount:</span>
-          <span className="font-bold text-text-main text-right">{res.personsCount} Guests</span>
+      <div 
+        className="fixed inset-0 z-[100] bg-black/40 dark:bg-black/60 backdrop-blur-[2px] flex items-stretch justify-end p-0 animate-fadeIn"
+        onClick={() => setInspectingTable(null)}
+      >
+        <div 
+          className="w-full sm:w-[380px] md:w-[400px] bg-bg-surface dark:bg-[#18181B] border-l border-border-main dark:border-white/10 p-5 relative text-text-main h-[100dvh] max-h-screen shadow-2xl flex flex-col justify-between"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between pb-4 border-b border-border-main dark:border-white/10 shrink-0">
+            <div className="flex items-center gap-2 text-text-main font-bold text-base dark:text-white pr-2">
+              <span className="font-mono text-lg font-black tracking-wide dark:text-[#D4AF37] text-primary">
+                {inspectingTable.tableNumber.startsWith('S-') || inspectingTable.tableNumber.startsWith('L-') || inspectingTable.tableNumber.startsWith('M')
+                  ? inspectingTable.tableNumber 
+                  : `T-${inspectingTable.tableNumber}`}
+              </span>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-bg-primary dark:bg-white/5 text-text-muted border border-border-main dark:border-white/10">
+                {(inspectingTable.placeTypeId === 'PREMIUM_LOUNGE' || inspectingTable.tableNumber.startsWith('L-')) ? 'Premium Lounge' : 'Standing Bar'}
+              </span>
+            </div>
+            <button 
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setInspectingTable(null);
+              }}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer shrink-0 focus:outline-none focus:ring-2 focus:ring-primary"
+              title="Close inspection drawer"
+              aria-label="Close inspection drawer"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Scrollable Content Area */}
+          <div className="flex-1 overflow-y-auto py-5 space-y-5 custom-scrollbar no-scrollbar">
+            {/* Top Center Visual Seating View using TableDiagram */}
+            <div className="p-4 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 flex flex-col items-center justify-center space-y-2.5">
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-text-muted">
+                Visual Seating Alignment ({occupiedCount} / {capacity} Seats Occupied)
+              </p>
+
+              <div className="w-full max-w-sm h-32 flex items-center justify-center">
+                <TableDiagram
+                  capacity={capacity}
+                  occupiedCount={occupiedCount}
+                  status={inspectingTable.status}
+                  tableNumber={inspectingTable.tableNumber}
+                />
+              </div>
+            </div>
+
+            {/* Table & Session Metrics */}
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="p-3.5 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-1">
+                <span className="text-text-muted text-[10px] font-bold uppercase">Status</span>
+                <p className={`font-bold text-sm uppercase ${
+                  inspectingTable.status === 'occupied' 
+                    ? 'dark:text-amber-400 text-amber-700' 
+                    : inspectingTable.status === 'reserved'
+                    ? 'dark:text-blue-400 text-blue-700'
+                    : inspectingTable.status === 'maintenance'
+                    ? 'text-text-muted'
+                    : 'dark:text-emerald-400 text-emerald-700'
+                }`}>
+                  {inspectingTable.status}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-1">
+                <span className="text-text-muted text-[10px] font-bold uppercase">Capacity Limit</span>
+                <p className="font-bold text-sm text-text-main">{inspectingTable.capacity || 4} Guests Max</p>
+              </div>
+            </div>
+
+            {inspectingToken && (
+              <div className="p-4 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-2.5 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-text-muted">Customer Name:</span>
+                  <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={inspectingToken.customer?.name || 'Walk-in Guest'}>
+                    {inspectingToken.customer?.name || 'Walk-in Guest'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-text-muted">Phone Number:</span>
+                  <span className="font-mono font-semibold text-text-main text-right">
+                    {inspectingToken.customer?.phoneNumber || '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-text-muted">Email ID:</span>
+                  <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={inspectingToken.customer?.email || (inspectingToken as any).email || '—'}>
+                    {inspectingToken.customer?.email || (inspectingToken as any).email || '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-text-muted">Token Pass:</span>
+                  <span className="font-mono text-text-main font-bold text-right">{inspectingToken.tokenNumber}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-text-muted">Guests Headcount:</span>
+                  <span className="font-bold text-text-main text-right">{inspectingToken.personsCount || 1} {inspectingToken.personsCount === 1 ? 'Guest' : 'Guests'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-text-muted">Drinks Used / Total:</span>
+                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-right">
+                    {inspectingToken.redemptionsUsed} / {inspectingToken.totalRedemptionsAllowed} Used
+                  </span>
+                </div>
+                {inspectingTable.status === 'occupied' && (
+                  <div className="flex justify-between items-center pt-2 border-t border-border-main/50 dark:border-white/10">
+                    <span className="text-text-muted font-medium">Time Remaining:</span>
+                    <TableTimer endTime={inspectingToken.endTime} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {inspectingTable.status === 'reserved' && (() => {
+              const res = realReservations.find((r: any) => r.tableId === inspectingTable.id && (r.status === 'PENDING' || r.status === 'CONFIRMED'));
+              if (!res) return null;
+              return (
+                <div className="p-4 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-2.5 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-text-muted">Reserved Customer:</span>
+                    <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={res.customerName}>
+                      {res.customerName}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-text-muted">Phone Number:</span>
+                    <span className="font-mono font-semibold text-text-main text-right">{res.phoneNumber || '—'}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-text-muted">Email ID:</span>
+                    <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={res.email || '—'}>
+                      {res.email || '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-text-muted">Guests Headcount:</span>
+                    <span className="font-bold text-text-main text-right">{res.personsCount} Guests</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {!inspectingToken && inspectingTable.status === 'available' && (
+              <div className="p-4 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-text-muted">Session Rate Allowance:</span>
+                  <span className="font-mono font-bold text-text-main">₹500 / Session</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-text-muted">Default Headcount:</span>
+                  <span className="font-bold text-text-main">{capacity} Guests</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons (Footer) */}
+          <div className="pt-4 border-t border-border-main dark:border-white/10 flex flex-col gap-2.5 shrink-0">
+            {inspectingTable.status === 'occupied' ? (
+              <div className="flex flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={() => setClosingTableSession(inspectingTable)}
+                  className="flex-1 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 text-red-700 dark:text-red-400 font-bold text-xs border border-red-500/30 transition-all text-center cursor-pointer"
+                >
+                  Checkout
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setExtendingTable(inspectingTable);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/25 text-purple-700 dark:text-purple-400 border border-purple-500/30 font-bold text-xs transition-all cursor-pointer"
+                >
+                  Extend Session
+                </button>
+              </div>
+            ) : inspectingTable.status === 'in_checkin' ? (
+              <button
+                type="button"
+                disabled
+                className="w-full py-2.5 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/30 text-xs font-bold text-center cursor-not-allowed"
+              >
+                In Check-In (Locked)
+              </button>
+            ) : (
+              (() => {
+                const res = realReservations.find((r: any) => r.tableId === inspectingTable.id && r.status === 'PENDING');
+                const isOwner = !res || !res.userId || res.userId === user?.id || user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+                const isReserved = inspectingTable.status === 'reserved';
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => isReserved ? handleCheckInReservedTable(inspectingTable) : handleAssignClick(inspectingTable)}
+                      disabled={isReserved && !isOwner}
+                      title={isReserved && !isOwner ? "This reservation is owned by another receptionist." : undefined}
+                      className={`w-full py-3 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 ${
+                        isReserved && !isOwner ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
+                    >
+                      <span>Assign Guest & Check-In</span>
+                      <ArrowRight size={14} />
+                    </button>
+                    
+                    {isReserved && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelClick(inspectingTable)}
+                        disabled={!isOwner}
+                        title={!isOwner ? "This reservation is owned by another receptionist." : undefined}
+                        className={`w-full py-2.5 rounded-xl font-bold text-xs border transition-all text-center ${
+                          !isOwner 
+                            ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed' 
+                            : 'bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/25 text-rose-700 dark:text-rose-400 border border-rose-500/30 cursor-pointer'
+                        }`}
+                      >
+                        Clear Reservation
+                      </button>
+                    )}
+
+                    {inspectingTable.status === 'available' && (
+                      <button
+                        type="button"
+                        onClick={() => { setInspectingTable(null); handleReserveClick(inspectingTable); }}
+                        className="w-full py-2.5 rounded-xl bg-transparent border border-primary text-primary font-bold text-xs hover:bg-primary/5 transition-all text-center cursor-pointer"
+                      >
+                        Reserve Table
+                      </button>
+                    )}
+                  </>
+                );
+              })()
+            )}
+
+            <button
+              type="button"
+              onClick={() => setInspectingTable(null)}
+              className="w-full py-2.5 rounded-xl bg-transparent text-xs font-bold text-text-muted hover:text-text-main border border-border-main dark:border-white/10 hover:bg-neutral-100 dark:hover:bg-white/5 transition-all cursor-pointer"
+            >
+              Close Drawer
+            </button>
+          </div>
         </div>
       </div>
     );
   })()}
- </div>
-
- {/* Action Buttons (Footer) */}
- <div className="pt-5 border-t border-border-main dark:border-[rgba(255,255,255,0.1)] flex flex-col gap-3 shrink-0">
-  {inspectingTable.status === 'occupied' ? (
-    <div className="flex flex-row gap-2">
-      <button
-        type="button"
-        onClick={() => setClosingTableSession(inspectingTable)}
-        className="flex-1 py-2.5 rounded-md dark:rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 font-bold text-[13px] border border-red-500/30 transition-all text-center cursor-pointer"
-      >
-        Checkout
-      </button>
-      <button 
-        onClick={() => {
-          setExtendingTable(inspectingTable);
-        }}
-        className="flex-1 py-2.5 rounded-md bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/25 text-purple-700 dark:text-purple-400 border border-purple-500/30 font-bold text-[13px] transition-all cursor-pointer"
-      >
-        Extend Session
-      </button>
-    </div>
-  ) : inspectingTable.status === 'in_checkin' ? (
-    <button
-      type="button"
-      disabled
-      className="w-full py-3 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/30 text-[13px] font-bold text-center cursor-not-allowed"
-    >
-      In Check-In (Locked)
-    </button>
-  ) : (
-    (() => {
-      const res = realReservations.find((r: any) => r.tableId === inspectingTable.id && r.status === 'PENDING');
-      const isOwner = !res || !res.userId || res.userId === user?.id || user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
-      const isReserved = inspectingTable.status === 'reserved';
-      return (
-        <>
-          <button
-            type="button"
-            onClick={() => isReserved ? handleCheckInReservedTable(inspectingTable) : handleAssignClick(inspectingTable)}
-            disabled={isReserved && !isOwner}
-            title={isReserved && !isOwner ? "This reservation is owned by another receptionist." : undefined}
-            className={`w-full py-3 rounded-md primary-btn text-[13px] font-black uppercase tracking-wider flex items-center justify-center gap-2 dark:text-black ${
-              isReserved && !isOwner ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
-            }`}
-          >
-            <span className="dark:hidden">Assign Guest & Check-In</span>
-            <span className="hidden dark:block">+ Add Order</span>
-            <ArrowRight size={16} className="dark:hidden" />
-          </button>
-          
-          {isReserved && (
-            <button
-              type="button"
-              onClick={() => handleCancelClick(inspectingTable)}
-              disabled={!isOwner}
-              title={!isOwner ? "This reservation is owned by another receptionist." : undefined}
-              className={`w-full py-2.5 rounded-md font-bold text-[13px] border transition-all text-center ${
-                !isOwner 
-                  ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed' 
-                  : 'bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/25 text-rose-700 dark:text-rose-400 border border-rose-500/30 cursor-pointer'
-              }`}
-            >
-              Clear Reservation
-            </button>
-          )}
-
-          {inspectingTable.status === 'available' && (
-            <button
-              type="button"
-              onClick={() => { setInspectingTable(null); handleReserveClick(inspectingTable); }}
-              className="w-full py-2 rounded-md bg-transparent border border-primary text-primary font-bold text-[11px] hover:bg-primary/5 transition-all text-center cursor-pointer"
-            >
-              Reserve Table
-            </button>
-          )}
-        </>
-      );
-    })()
-  )}
-
- <button
- type="button"
- onClick={() => setInspectingTable(null)}
- className="w-full py-2.5 rounded-md bg-transparent text-[11px] font-bold text-text-muted hover:text-text-main border border-border-main dark:border-[rgba(255,255,255,0.1)] cursor-pointer"
- >
- Close Drawer
- </button>
- </div>
- </div>
- </div>
- );
- })()}
 
  {/* ASSIGN TABLE MODAL */}
  {assigningTable && (

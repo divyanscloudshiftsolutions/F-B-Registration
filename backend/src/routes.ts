@@ -397,7 +397,7 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       } else {
         return res.status(403).json({
           success: false,
-          error: { code: 'AUTH_006', message: 'Access Denied: User is not authorized for Open the Bottle' }
+          error: { code: 'AUTH_006', message: 'Access Denied: User is not authorized for Pegs N Bottles' }
         });
       }
     }
@@ -4099,11 +4099,48 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
 
     // Check if session has closed / cancelled / expired
     if (token.status === 'CLOSED' || token.status === 'CANCELLED' || token.status === 'EXPIRED') {
-      return res.status(403).json({
+      const bill = await prisma.bill.findFirst({
+        where: { tokenId: token.id },
+        include: {
+          orders: {
+            include: { items: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return res.status(200).json({
         authorized: false,
-        error: 'This dining session has ended. Please contact staff if you need assistance.',
         sessionStatus: token.status,
+        error: 'This dining session has ended. Payment was successfully completed.',
         tokenNumber: token.tokenNumber,
+        customerName: token.customer.name,
+        tableNumber: token.table?.tableNumber || null,
+        placeType: token.placeType.name,
+        bill: bill ? {
+          billNumber: bill.billNumber,
+          foodSubtotal: Number(bill.foodSubtotal),
+          drinkSubtotal: Number(bill.drinkSubtotal),
+          merchandiseSubtotal: Number(bill.merchandiseSubtotal),
+          subtotal: Number(bill.subtotal),
+          discountTotal: Number(bill.discountTotal),
+          serviceChargeTotal: Number(bill.serviceChargeTotal),
+          taxTotal: Number(bill.taxTotal),
+          rounding: Number(bill.rounding),
+          grandTotal: Number(bill.grandTotal),
+          paymentMethod: bill.paymentMethod,
+          paidAt: bill.paidAt,
+          status: bill.status,
+          orders: bill.orders.map(o => ({
+            orderNumber: o.orderNumber,
+            items: o.items.map(it => ({
+              itemName: it.itemName,
+              quantity: it.quantity,
+              unitPrice: Number(it.unitPrice),
+              lineTotal: Number(it.lineTotal),
+            })),
+          })),
+        } : null,
       });
     }
 
@@ -4111,7 +4148,7 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
     if (!token.paymentVerified) {
       return res.status(403).json({
         authorized: false,
-        error: 'Your entry payment has not been verified yet. Please complete payment at reception or contact staff.',
+        error: 'Payment is not received. Please contact the receptionist to complete your registration.',
         paymentStatus: 'UNVERIFIED',
         tokenNumber: token.tokenNumber,
         customerName: token.customer.name,

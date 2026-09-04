@@ -161,14 +161,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
  }
  };
 
- const logout = async () => {
- await api.logout();
- setUser(null);
- setToken(null);
- localStorage.removeItem('bar_web_user');
- localStorage.removeItem('bar_web_active_tab');
- showToast('Logged out successfully.', 'info');
- };
+  const logout = async () => {
+    await api.logout();
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem('bar_web_user');
+    localStorage.removeItem('bar_web_active_tab');
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/customer') && !window.location.pathname.startsWith('/t/')) {
+      window.history.replaceState(null, '', '/login');
+    }
+    showToast('Logged out successfully.', 'info');
+  };
 
  // Helper actions for notifications
  const addNotification = (title: string, message: string) => {

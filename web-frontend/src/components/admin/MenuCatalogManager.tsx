@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import { VegBadge } from '../customer/VegBadge';
-import { Search, Filter, RefreshCw, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
+import { Search, Filter, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
 
 export const MenuCatalogManager: React.FC = () => {
+  const { user } = useAuth();
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
   const [menu, setMenu] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -25,6 +28,11 @@ export const MenuCatalogManager: React.FC = () => {
 
   useEffect(() => {
     fetchMenu();
+    const handleGlobalRefresh = () => fetchMenu();
+    window.addEventListener('app:global-refresh', handleGlobalRefresh);
+    return () => {
+      window.removeEventListener('app:global-refresh', handleGlobalRefresh);
+    };
   }, []);
 
   const handleToggleAvailability = async (itemId: string, currentAvailability: boolean) => {
@@ -81,14 +89,6 @@ export const MenuCatalogManager: React.FC = () => {
           <h2 className="text-lg font-black text-text-primary dark:text-white">Menu Catalog & Live 86 Manager</h2>
           <p className="text-xs text-text-muted">Instant in-stock and sold-out availability toggling across guest devices</p>
         </div>
-
-        <button
-          onClick={fetchMenu}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#8D6CE5]/20 text-xs font-bold text-text-primary dark:text-white hover:bg-[#8D6CE5]/10 self-start sm:self-auto"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </button>
       </div>
 
       {feedback && (
@@ -162,17 +162,29 @@ export const MenuCatalogManager: React.FC = () => {
                     </td>
                     <td className="p-3.5 font-bold text-text-primary dark:text-white">₹{item.basePrice}</td>
                     <td className="p-3.5 text-right">
-                      <button
-                        disabled={isToggling}
-                        onClick={() => handleToggleAvailability(item.id, isAvail)}
-                        className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all ${
-                          isAvail
-                            ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-500 hover:bg-rose-500/15 hover:border-rose-500/30 hover:text-rose-500'
-                            : 'bg-rose-500/15 border border-rose-500/30 text-rose-500 hover:bg-emerald-500/15 hover:border-emerald-500/30 hover:text-emerald-500'
-                        }`}
-                      >
-                        {isToggling ? 'Updating...' : isAvail ? 'In Stock' : '86 Sold Out'}
-                      </button>
+                      {isAdmin ? (
+                        <button
+                          disabled={isToggling}
+                          onClick={() => handleToggleAvailability(item.id, isAvail)}
+                          className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                            isAvail
+                              ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-500 hover:bg-rose-500/15 hover:border-rose-500/30 hover:text-rose-500'
+                              : 'bg-rose-500/15 border border-rose-500/30 text-rose-500 hover:bg-emerald-500/15 hover:border-emerald-500/30 hover:text-emerald-500'
+                          }`}
+                        >
+                          {isToggling ? 'Updating...' : isAvail ? 'In Stock' : '86 Sold Out'}
+                        </button>
+                      ) : (
+                        <span
+                          className={`px-3 py-1.5 rounded-xl font-bold text-xs inline-block ${
+                            isAvail
+                              ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                              : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                          }`}
+                        >
+                          {isAvail ? 'In Stock' : '86 Sold Out'} (View Only)
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );

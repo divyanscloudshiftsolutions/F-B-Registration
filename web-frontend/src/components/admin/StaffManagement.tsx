@@ -1,40 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Search, RefreshCw, X } from 'lucide-react';
+import { UserPlus, Search, X } from 'lucide-react';
 import { api } from '../../services/api';
 import type { User, UserRole } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 
 export const StaffManagement: React.FC = () => {
- const { showToast } = useAuth();
- const { users, isLoading, refreshUsers } = useData();
- const [search, setSearch] = useState('');
- const [currentPage, setCurrentPage] = useState(1);
- const itemsPerPage = 10;
+  const { user, showToast } = useAuth();
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const { users, isLoading, refreshUsers } = useData();
+  const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
- useEffect(() => {
- setCurrentPage(1);
- }, [search]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
 
- // Fetch users on component mount
- useEffect(() => {
- refreshUsers();
- }, []);
- const [isModalOpen, setIsModalOpen] = useState(false);
- const [isRefreshingStaff, setIsRefreshingStaff] = useState(false);
-
- const handleManualRefresh = async () => {
-   if (isRefreshingStaff) return;
-   setIsRefreshingStaff(true);
-   const start = Date.now();
-   try {
-     await refreshUsers();
-   } finally {
-     const elapsed = Date.now() - start;
-     const delay = Math.max(0, 500 - elapsed);
-     setTimeout(() => setIsRefreshingStaff(false), delay);
-   }
- };
+  // Fetch users on component mount
+  useEffect(() => {
+    refreshUsers();
+  }, []);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
  // Form State
  const [fullName, setFullName] = useState('');
@@ -116,87 +103,88 @@ export const StaffManagement: React.FC = () => {
  </div>
 
         <div className="flex flex-row items-center gap-2 w-full md:w-auto shrink-0 justify-end">
-          <button
-            onClick={handleManualRefresh}
-            disabled={isRefreshingStaff}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer disabled:opacity-50"
-            title="Refresh Staff Data"
-            aria-label="Refresh Staff Data"
-          >
-            <RefreshCw size={13} className={(isRefreshingStaff || isLoading) ? 'animate-spin' : ''} />
-          </button>
 
- <button
- onClick={() => setIsModalOpen(true)}
- className="flex-1 sm:flex-none justify-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl primary-btn text-[11px] sm:text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap"
- >
- <div className="nav-icon-badge">
- <UserPlus size={14} />
- </div>
- <span>Add Staff</span>
- </button>
- </div>
- </div>
+          {isAdmin ? (
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex-1 sm:flex-none justify-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl primary-btn text-[11px] sm:text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap"
+            >
+              <div className="nav-icon-badge">
+                <UserPlus size={14} />
+              </div>
+              <span>Add Staff</span>
+            </button>
+          ) : (
+            <span className="px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 text-text-muted text-[11px] font-bold">
+              View Only
+            </span>
+          )}
+        </div>
+      </div>
 
- {/* Staff User Directory Table */}
- <div className="glass-panel dark:bg-[#1C1C1E] p-3 sm:p-6 rounded-2xl dark:rounded-xl border border-border-main dark:border-[rgba(255,255,255,0.1)]">
- {isLoading ? (
- <div className="py-12 text-center text-text-muted text-sm">Loading staff user directory...</div>
- ) : filteredUsers.length === 0 ? (
- <div className="py-12 text-center text-text-muted text-sm">No staff members found matching criteria.</div>
- ) : (
- <div className="overflow-x-auto custom-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0">
- <table className="w-full text-left text-xs min-w-[700px]">
- <thead>
- <tr className="border-b border-border-main text-text-muted uppercase font-semibold text-[10px] tracking-wider">
- <th className="pb-3 px-3">Employee Code</th>
- <th className="pb-3 px-3">Full Name</th>
- <th className="pb-3 px-3">Shift Role</th>
- <th className="pb-3 px-3">Status</th>
- <th className="pb-3 px-3">Last Login</th>
- <th className="pb-3 px-3">Actions</th>
- </tr>
- </thead>
- <tbody className="divide-y divide-border-main">
- {paginatedUsers.map(u => (
- <tr key={u.id} className="hover:bg-bg-primary transition-colors">
- <td className="py-3 px-3 font-mono font-bold dark:text-[#D4AF37] text-primary">{u.username}</td>
- <td className="py-3 px-3 font-semibold text-text-main">{u.fullName}</td>
- <td className="py-3 px-3">
- <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
- u.role === 'admin' ? 'dark:bg-amber-500/20 bg-amber-500/10 dark:text-amber-300 text-amber-700 border border-amber-500/40' :
- u.role === 'receptionist' ? 'dark:bg-blue-500/20 bg-blue-500/10 dark:text-blue-300 text-blue-700 border border-blue-500/40' :
- u.role === 'bartender' ? 'bg-emerald-500/20 dark:text-emerald-300 text-emerald-700 border border-emerald-500/40' :
- 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
- }`}>
- {u.role}
- </span>
- </td>
- <td className="py-3 px-3">
- <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
- u.isActive ? 'badge-active' : 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-400 text-red-700 border border-red-500/30'
- }`}>
- {u.isActive ? 'ACTIVE' : 'INACTIVE'}
- </span>
- </td>
- <td className="py-3 px-3 font-mono text-text-muted">
- {u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'Never'}
- </td>
- <td className="py-3 px-3">
- <button
- onClick={() => handleToggleStatus(u)}
- className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer focus:outline-none focus:ring-2 ${
- u.isActive
- ? 'dark:bg-red-500/20 bg-red-500/10 hover:dark:bg-red-500/30 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 border-red-500/30 focus:ring-red-500/20'
- : 'dark:bg-emerald-500/20 bg-emerald-500/10 hover:dark:bg-emerald-500/30 hover:bg-emerald-500/15 hover:border-emerald-500/50 hover:text-emerald-800 active:bg-emerald-500/25 active:text-emerald-900 dark:text-emerald-400 text-emerald-700 border-emerald-500/30 focus:ring-emerald-500/20'
- }`}
- >
- {u.isActive ? 'Deactivate' : 'Activate'}
- </button>
- </td>
- </tr>
- ))}
- </tbody>
+      {/* Staff User Directory Table */}
+      <div className="glass-panel dark:bg-[#1C1C1E] p-3 sm:p-6 rounded-2xl dark:rounded-xl border border-border-main dark:border-[rgba(255,255,255,0.1)]">
+        {isLoading ? (
+          <div className="py-12 text-center text-text-muted text-sm">Loading staff user directory...</div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="py-12 text-center text-text-muted text-sm">No staff members found matching criteria.</div>
+        ) : (
+          <div className="overflow-x-auto custom-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0">
+            <table className="w-full text-left text-xs min-w-[700px]">
+              <thead>
+                <tr className="border-b border-border-main text-text-muted uppercase font-semibold text-[10px] tracking-wider">
+                  <th className="pb-3 px-3">Employee Code</th>
+                  <th className="pb-3 px-3">Full Name</th>
+                  <th className="pb-3 px-3">Shift Role</th>
+                  <th className="pb-3 px-3">Status</th>
+                  <th className="pb-3 px-3">Last Login</th>
+                  <th className="pb-3 px-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-main">
+                {paginatedUsers.map(u => (
+                  <tr key={u.id} className="hover:bg-bg-primary transition-colors">
+                    <td className="py-3 px-3 font-mono font-bold dark:text-[#D4AF37] text-primary">{u.username}</td>
+                    <td className="py-3 px-3 font-semibold text-text-main">{u.fullName}</td>
+                    <td className="py-3 px-3">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                        u.role === 'admin' ? 'dark:bg-amber-500/20 bg-amber-500/10 dark:text-amber-300 text-amber-700 border border-amber-500/40' :
+                        u.role === 'receptionist' ? 'dark:bg-blue-500/20 bg-blue-500/10 dark:text-blue-300 text-blue-700 border border-blue-500/40' :
+                        u.role === 'bartender' ? 'bg-emerald-500/20 dark:text-emerald-300 text-emerald-700 border border-emerald-500/40' :
+                        'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                      }`}>
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        u.isActive ? 'badge-active' : 'dark:bg-red-500/20 bg-red-500/10 dark:text-red-400 text-red-700 border border-red-500/30'
+                      }`}>
+                        {u.isActive ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 font-mono text-text-muted">
+                      {u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'Never'}
+                    </td>
+                    <td className="py-3 px-3">
+                      {isAdmin ? (
+                        <button
+                          onClick={() => handleToggleStatus(u)}
+                          className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer focus:outline-none focus:ring-2 ${
+                            u.isActive
+                              ? 'dark:bg-red-500/20 bg-red-500/10 hover:dark:bg-red-500/30 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 dark:text-red-400 text-red-700 border-red-500/30 focus:ring-red-500/20'
+                              : 'dark:bg-emerald-500/20 bg-emerald-500/10 hover:dark:bg-emerald-500/30 hover:bg-emerald-500/15 hover:border-emerald-500/50 hover:text-emerald-800 active:bg-emerald-500/25 active:text-emerald-900 dark:text-emerald-400 text-emerald-700 border-emerald-500/30 focus:ring-emerald-500/20'
+                          }`}
+                        >
+                          {u.isActive ? 'Deactivate' : 'Activate'}
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-text-muted italic">Read Only</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
  </table>
  </div>
  )}

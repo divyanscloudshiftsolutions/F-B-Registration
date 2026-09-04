@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Grid3X3, Plus, RefreshCw, X, CheckCircle2, Users, VideoOff, Lock, Unlock, AlertTriangle, Edit3, Trash2 } from 'lucide-react';
+import { Grid3X3, Plus, X, CheckCircle2, Users, VideoOff, Lock, Unlock, AlertTriangle, Edit3, Trash2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
@@ -54,20 +54,6 @@ export const TableManagement: React.FC = () => {
   const [placeType, setPlaceType] = useState('STANDING_BAR');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [isRefreshingTables, setIsRefreshingTables] = useState(false);
-
-  const handleManualRefresh = async () => {
-    if (isRefreshingTables) return;
-    setIsRefreshingTables(true);
-    const start = Date.now();
-    try {
-      await Promise.all([refreshTables(), refreshTokens()]);
-    } finally {
-      const elapsed = Date.now() - start;
-      const delay = Math.max(0, 500 - elapsed);
-      setTimeout(() => setIsRefreshingTables(false), delay);
-    }
-  };
 
   // Form State (Edit)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -441,15 +427,6 @@ export const TableManagement: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
-            <button
-              onClick={handleManualRefresh}
-              disabled={isRefreshingTables}
-              className="w-9 h-9 rounded-xl flex items-center justify-center transition-all premium-btn-secondary shrink-0 cursor-pointer disabled:opacity-50"
-              title="Refresh Table Data"
-              aria-label="Refresh Table Data"
-            >
-              <RefreshCw size={13} className={(isRefreshingTables || isLoading) ? 'animate-spin' : ''} />
-            </button>
 
             {isAdmin && (
               <button

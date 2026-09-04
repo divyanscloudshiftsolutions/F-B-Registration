@@ -5,23 +5,23 @@
 
 :root {
   /* Backgrounds */
-  --bg-primary: #F5F3FA;
-  --bg-surface: #FFFFFF;
-  --bg-secondary-surface: #F8F7FC;
-  --bg-sidebar: #FFFFFF;
-  --bg-workspace: #FAF9FF;
-  --border-sidebar: #E4E4E7;
+  --bg-primary: #F3F4F6;
+  --bg-surface: #FAFAFB;
+  --bg-secondary-surface: #EAECEF;
+  --bg-sidebar: #F8F9FA;
+  --bg-workspace: #F3F4F6;
+  --border-sidebar: #E2E4E8;
   --glass-shadow: none;
   --glass-blur: 0px;
-  --bg-header: #F8F7FC;
-  --bg-card: #FFFFFF;
-  --bg-modal: #FFFFFF;
-  --bg-table: #FFFFFF;
-  --bg-hover: #F8F7FC;
+  --bg-header: #F8F9FA;
+  --bg-card: #FAFAFB;
+  --bg-modal: #FAFAFB;
+  --bg-table: #FAFAFB;
+  --bg-hover: #EAECEF;
   --bg-selected: #EDE9FE;
-  --divider: #E4E4E7;
-  --border: #E4E4E7;
-  --border-color: #E4E4E7;
+  --divider: #E2E4E8;
+  --border: #E2E4E8;
+  --border-color: #E2E4E8;
 
   /* Brand Colors */
   --color-primary: #7C3AED;
@@ -58,7 +58,7 @@
   --color-info-border: #BFDBFE;
   --color-inactive: #A1A1AA;
 
-  --bg-card-glass: rgba(255, 255, 255, 0.8);
+  --bg-card-glass: rgba(250, 250, 251, 0.95);
 }
 
 .dark {
@@ -966,7 +966,7 @@ html:not(.dark) .premium-menu-item:hover:not(.active) {
   color: #18181B;
 }
 html:not(.dark) .premium-menu-item:hover:not(.active) .nav-icon-badge {
-  background: #FFFFFF;
+  background: #FAFAFB;
   border-color: #DDD6FE;
   color: #7C3AED;
 }
@@ -986,12 +986,12 @@ html:not(.dark) .premium-menu-item.active:active {
 }
 html:not(.dark) .premium-menu-item:active .nav-icon-badge,
 html:not(.dark) .premium-menu-item.active:active .nav-icon-badge {
-  background: #FFFFFF !important;
+  background: #FAFAFB !important;
   border-color: #DDD6FE !important;
   color: #6D28D9 !important;
 }
 html:not(.dark) .premium-menu-item.active .nav-icon-badge {
-  background: #FFFFFF !important;
+  background: #FAFAFB !important;
   border-color: #DDD6FE !important;
   color: #7C3AED !important;
   box-shadow: none !important;
@@ -1011,8 +1011,8 @@ html:not(.dark) .premium-menu-item:hover:active span {
 
 /* Light Theme Sub-Menu Item Overrides */
 html:not(.dark) .glass-sub-menu-btn {
-  background: #FFFFFF;
-  border-color: #E4E4E7;
+  background: #FAFAFB;
+  border-color: #E2E4E8;
   color: #52525B;
 }
 html:not(.dark) .glass-sub-menu-btn:hover:not(.active) {
@@ -1068,7 +1068,7 @@ html:not(.dark) .premium-btn-primary:focus {
 
 /* Light Theme Secondary Button Overrides */
 html:not(.dark) .premium-btn-secondary {
-  background: #FFFFFF !important;
+  background: #FAFAFB !important;
   color: #7C3AED !important;
   border: 1px solid #DDD6FE !important;
   box-shadow: none !important;
@@ -1095,8 +1095,8 @@ html:not(.dark) .premium-btn-secondary:hover:active {
 
 /* Light Theme Tabs Overrides */
 html:not(.dark) .premium-tab-primary {
-  background: #FFFFFF;
-  border-color: #E4E4E7;
+  background: #FAFAFB;
+  border-color: #E2E4E8;
   color: #52525B;
 }
 html:not(.dark) .premium-tab-primary:hover:not(.active) {
@@ -1119,8 +1119,8 @@ html:not(.dark) .premium-tab-primary:active {
 
 /* Secondary Tabs */
 html:not(.dark) .premium-tab-secondary {
-  background: #FFFFFF !important;
-  border: 1px solid #E4E4E7 !important;
+  background: #FAFAFB !important;
+  border: 1px solid #E2E4E8 !important;
   color: #52525B !important;
 }
 html:not(.dark) .premium-tab-secondary:hover:not(.active) {
