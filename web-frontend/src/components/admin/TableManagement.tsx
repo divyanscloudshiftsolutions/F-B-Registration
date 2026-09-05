@@ -431,9 +431,9 @@ export const TableManagement: React.FC = () => {
             {isAdmin && (
               <button
                 onClick={() => setIsModalOpen(true)}
-                className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 rounded-xl primary-btn text-[10px] sm:text-xs font-extrabold uppercase tracking-wider flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap"
+                className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black text-[10px] sm:text-xs font-extrabold uppercase tracking-wider flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap shadow-sm active:scale-95 transition-all cursor-pointer"
               >
-                <div className="nav-icon-badge p-0.5">
+                <div className="p-0.5">
                   <Plus size={14} />
                 </div>
                 <span className="hidden sm:inline">Add New Table</span>
@@ -446,7 +446,40 @@ export const TableManagement: React.FC = () => {
 
       {/* Tables Grid */}
       {isLoading ? (
-        <div className="py-12 text-center text-text-muted text-sm">Loading floor tables...</div>
+        <div className="space-y-6 sm:space-y-8 animate-pulse">
+          {[4, 2].map((cap) => (
+            <div key={cap} className="space-y-4 py-4 md:py-6 border-b border-border-sidebar/30 last:border-b-0">
+              <div className="flex items-center justify-between pb-2 px-1 border-b border-border-sidebar/40">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-2 h-2 rounded-full bg-zinc-300 dark:bg-white/20" />
+                  <div className="h-4 w-28 bg-zinc-200 dark:bg-white/10 rounded-md" />
+                </div>
+                <div className="h-4 w-16 bg-zinc-200 dark:bg-white/10 rounded-full" />
+              </div>
+              <div className="flex flex-wrap gap-5 justify-start">
+                {[1, 2, 3].map((n) => (
+                  <div
+                    key={n}
+                    className="w-full max-w-[320px] mx-auto shrink-0 p-3 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] shadow-xs flex flex-col justify-between gap-3 min-h-[260px]"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="h-6 w-16 bg-zinc-200 dark:bg-white/10 rounded-md" />
+                      <div className="h-5 w-20 bg-zinc-100 dark:bg-white/5 rounded-full" />
+                    </div>
+                    <div className="h-24 sm:h-28 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200/60 dark:border-white/5" />
+                    <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-white/5">
+                      <div className="flex justify-between">
+                        <div className="h-3 w-20 bg-zinc-100 dark:bg-white/5 rounded-md" />
+                        <div className="h-3 w-16 bg-zinc-100 dark:bg-white/5 rounded-md" />
+                      </div>
+                      <div className="h-9 w-full bg-zinc-200 dark:bg-white/10 rounded-xl" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : filteredTables.length === 0 ? (
         <div className="glass-panel p-12 rounded-3xl border border-border-main text-center space-y-3">
           <Grid3X3 className="mx-auto text-text-muted" size={32} />
@@ -479,18 +512,18 @@ export const TableManagement: React.FC = () => {
                     <div
                       key={tb.id}
                       onClick={() => setInspectingTable(tb)}
-                      className={`w-full max-w-[320px] mx-auto shrink-0 p-3 rounded-[20px] dark:rounded-xl border transition-all relative overflow-hidden flex flex-col justify-between gap-3 dark:bg-[#1C1C1E] ${
-                        inspectingTable?.id === tb.id ? 'dark:border-primary' : 'dark:border-[rgba(255,255,255,0.1)]'
-                      } ${
-                        isFull
-                          ? 'bg-bg-surface/50 border-red-500/30 '
+                      className={`w-full max-w-[320px] mx-auto shrink-0 p-3 rounded-2xl border transition-all relative overflow-hidden flex flex-col justify-between gap-3 bg-white dark:bg-[#18181A] shadow-xs cursor-pointer ${
+                        inspectingTable?.id === tb.id
+                          ? 'border-primary dark:border-[#D4AF37] ring-1 ring-primary/30 dark:ring-[#D4AF37]/30'
+                          : isFull
+                          ? 'border-red-300 dark:border-red-900/40 hover:border-red-400'
                           : isPartial
-                          ? 'bg-bg-surface/50 border-amber-500/30 '
+                          ? 'border-amber-300 dark:border-amber-900/40 hover:border-amber-400'
                           : tb.status === 'reserved'
-                          ? 'bg-bg-surface border-blue-500/20 '
+                          ? 'border-blue-300 dark:border-blue-900/40 hover:border-blue-400'
                           : tb.status === 'maintenance'
-                          ? 'bg-bg-surface/50 border-border-main opacity-60 '
-                          : 'bg-bg-surface border-emerald-500/30 hover:border-primary/50 '
+                          ? 'border-zinc-300 dark:border-zinc-700 opacity-60'
+                          : 'border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:border-white/20'
                       }`}
                     >
                       {/* Header: Table Number & Semantic Status Pill */}
@@ -503,7 +536,7 @@ export const TableManagement: React.FC = () => {
                         </div>
 
                         <span
-                          className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
                             isFull
                               ? 'dark:bg-red-500/15 bg-red-500/10 dark:text-red-400 text-red-700 border border-red-500/30'
                               : isPartial
@@ -522,8 +555,8 @@ export const TableManagement: React.FC = () => {
                         </span>
                       </div>
 
-                      {/* Central Dynamic Table Diagram Container */}
-                      <div className="py-1 px-2 rounded-2xl bg-bg-primary/90 border border-border-sidebar/40 flex items-center justify-center h-28 relative">
+                      {/* Central Dynamic Table Diagram Container (Responsive Height) */}
+                      <div className="py-1 px-2 rounded-xl bg-zinc-50/80 dark:bg-black/30 border border-zinc-200/60 dark:border-white/5 flex items-center justify-center h-24 sm:h-28 relative">
                         <TableDiagram
                           capacity={capacity}
                           occupiedCount={occupiedCount}
@@ -565,18 +598,18 @@ export const TableManagement: React.FC = () => {
                       </div>
 
                       {/* Card Action Row */}
-                      <div className="pt-2 border-t border-border-main/50">
+                      <div className="pt-2 border-t border-zinc-100 dark:border-white/10">
                         {tb.status === 'occupied' ? (
-                          <div className="grid grid-cols-2 gap-1.5">
+                          <div className="flex flex-col xs:grid xs:grid-cols-2 gap-1.5">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setReleasingTableForConfirm(tb);
                               }}
-                              className={`py-2 rounded-xl text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 transition-all text-center cursor-pointer ${isDark ? 'primary-btn bg-red-500' : 'bg-red-500/10 text-red-700 hover:bg-red-500/15 hover:border-red-500/50 hover:text-red-800 active:bg-red-500/25 active:text-red-900 border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/20'}`}
+                              className="py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 transition-all text-center cursor-pointer bg-red-500/10 text-red-700 dark:text-red-400 hover:bg-red-500/20 active:bg-red-500/25 border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/20 min-h-[38px]"
                             >
-                              <VideoOff size={11} />
+                              <VideoOff size={12} />
                               <span>Release</span>
                             </button>
                             <button
@@ -590,7 +623,7 @@ export const TableManagement: React.FC = () => {
                                   showToast('No active session token found for this table.', 'warning');
                                 }
                               }}
-                              className="py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/25 text-purple-700 dark:text-purple-400 border border-purple-500/30 font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-1 transition-all cursor-pointer"
+                              className="py-2.5 rounded-xl bg-primary/10 hover:bg-primary/20 active:bg-primary/25 text-primary border border-primary/25 dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:border-[#D4AF37]/30 dark:hover:bg-[#D4AF37]/25 font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-1 transition-all cursor-pointer min-h-[38px]"
                             >
                               <span>Extend</span>
                             </button>
@@ -602,7 +635,7 @@ export const TableManagement: React.FC = () => {
                               e.stopPropagation();
                               setCancellingReservationForConfirm(tb);
                             }}
-                            className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/25 text-rose-700 dark:text-rose-400 border border-rose-500/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer"
+                            className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/25 text-rose-700 dark:text-rose-400 border border-rose-500/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer min-h-[38px]"
                           >
                             <X size={12} />
                             <span>Release Reservation</span>
@@ -614,7 +647,7 @@ export const TableManagement: React.FC = () => {
                               e.stopPropagation();
                               setReleasingTableForConfirm(tb);
                             }}
-                            className="w-full py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/25 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer"
+                            className="w-full py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/25 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer min-h-[38px]"
                           >
                             <Unlock size={12} />
                             <span>Release Table</span>
@@ -626,9 +659,9 @@ export const TableManagement: React.FC = () => {
                               e.stopPropagation();
                               setInspectingTable(tb);
                             }}
-                            className="w-full py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+                            className="w-full py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95 transition-all min-h-[38px]"
                           >
-                            <div className="nav-icon-badge p-0.5">
+                            <div className="p-0.5">
                               <Plus size={12} />
                             </div>
                             <span>Open for Seating</span>
@@ -653,19 +686,27 @@ export const TableManagement: React.FC = () => {
         const isTableLocked = inspectingTable.status === 'in_checkin' || inspectingTable.status === 'maintenance';
 
         return (
-          <div className="fixed inset-0 z-50 dark:bg-transparent bg-slate-900/40 flex items-center justify-end p-0 animate-fadeIn pointer-events-none">
-            <div className="w-full md:w-[380px] bg-bg-surface border border-border-main border-y-0 border-r-0 border-l-[1px] dark:border-[rgba(255,255,255,0.1)] dark:bg-[#121212] rounded-none p-5 relative text-text-main animate-none h-[100dvh] pointer-events-auto flex flex-col">
+          <div 
+            onClick={() => setInspectingTable(null)}
+            className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/60 backdrop-blur-xs flex items-center justify-end p-0 animate-fadeIn cursor-pointer"
+          >
+            <div 
+              onClick={(e) => e.stopPropagation()}
+              className="w-full md:w-[380px] bg-bg-surface border-y-0 border-r-0 border-l border-zinc-200 dark:border-white/10 dark:bg-[#111114] rounded-none p-5 relative text-text-main animate-none h-[100dvh] flex flex-col cursor-default shadow-xl"
+            >
               
               {/* Header */}
-              <div className="flex items-center justify-between pb-4 dark:pb-5 border-b border-border-main dark:border-[rgba(255,255,255,0.1)] shrink-0">
+              <div className="flex items-center justify-between pb-4 dark:pb-5 border-b border-border-main dark:border-white/10 shrink-0">
                 <div className="flex items-center gap-2 text-text-main font-bold text-sm sm:text-base pr-2 dark:text-white">
-                  <span className="hidden dark:block w-2.5 h-2.5 rounded-full bg-red-400" />
-                  <span className="truncate dark:text-lg">T-{inspectingTable.tableNumber.padStart(2, '0')}</span>
-                  <span className="hidden dark:block text-[10px] text-primary ml-2 uppercase">VIP Lounge</span>
+                  <span className={`w-2.5 h-2.5 rounded-full ${isOccupied ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                  <span className="font-mono font-black text-lg tracking-wider">{inspectingTable.tableNumber}</span>
+                  <span className="text-[10px] font-bold text-text-muted ml-2 uppercase tracking-wider">
+                    {inspectingTable.tableNumber.toUpperCase().startsWith('S-') ? 'Standard Zone' : 'Premium Zone'}
+                  </span>
                 </div>
                 <button 
                   onClick={() => setInspectingTable(null)}
-                  className="p-0 rounded-lg dark:bg-transparent bg-bg-surface hover:bg-bg-card hover:bg-transparent text-text-muted hover:text-text-main transition-all cursor-pointer shrink-0"
+                  className="p-1 rounded-lg text-text-muted hover:text-text-main hover:bg-zinc-100 dark:hover:bg-white/10 transition-all cursor-pointer shrink-0"
                 >
                   <X size={20} />
                 </button>
@@ -675,12 +716,12 @@ export const TableManagement: React.FC = () => {
               <div className="flex-1 overflow-y-auto py-5 space-y-6 no-scrollbar">
                 
                 {/* Top Center Visual Seating View using TableDiagram */}
-                <div className="dark:bg-transparent p-5 rounded-none bg-bg-primary border border-border-main dark:border-[rgba(255,255,255,0.1)] flex flex-col items-center justify-center space-y-3">
+                <div className="p-5 rounded-2xl bg-zinc-50/70 dark:bg-white/5 border border-border-main dark:border-white/10 flex flex-col items-center justify-center space-y-3">
                   <p className="text-[10px] font-extrabold uppercase tracking-widest text-text-muted">
                     Visual Seating Alignment ({occupiedCount} / {capacity} Seats Occupied)
                   </p>
 
-                  <div className="w-full max-w-sm h-36 flex items-center justify-center">
+                  <div className="w-full max-w-sm h-32 sm:h-36 flex items-center justify-center">
                     <TableDiagram
                       capacity={capacity}
                       occupiedCount={occupiedCount}
@@ -869,7 +910,7 @@ export const TableManagement: React.FC = () => {
                             showToast('No active session token found for this table.', 'warning');
                           }
                         }}
-                        className="w-full py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/25 text-purple-700 dark:text-purple-400 border border-purple-500/30 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                        className="w-full py-2.5 rounded-xl bg-primary/10 hover:bg-primary/20 active:bg-primary/25 text-primary border border-primary/25 dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:border-[#D4AF37]/30 dark:hover:bg-[#D4AF37]/25 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
                       >
                         <span>Extend Session</span>
                       </button>
@@ -879,11 +920,11 @@ export const TableManagement: React.FC = () => {
                   {isAdmin && (
                     <div className="space-y-2">
                       <div className="grid grid-cols-2 gap-2">
-                        {/* Edit Table Button — Indigo */}
+                        {/* Edit Table Button — Neutral Secondary Button */}
                         <button
                           type="button"
                           onClick={() => openEditModal(inspectingTable)}
-                          className="py-2.5 px-3 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 active:bg-indigo-500/25 text-indigo-700 dark:text-indigo-400 border border-indigo-500/30 font-bold text-xs transition-all cursor-pointer text-center truncate flex items-center justify-center gap-1.5"
+                          className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-800 dark:bg-white/10 dark:hover:bg-white/15 dark:active:bg-white/20 dark:text-zinc-200 border border-zinc-200 dark:border-white/10 font-bold text-xs transition-all cursor-pointer text-center truncate flex items-center justify-center gap-1.5 shadow-xs"
                         >
                           <Edit3 size={13} className="shrink-0" />
                           <span>Edit Table</span>
@@ -1003,10 +1044,10 @@ export const TableManagement: React.FC = () => {
                         key={sug}
                         type="button"
                         onClick={() => setTableNumber(sug)}
-                        className={`px-2 py-1 rounded text-[10px] font-mono font-bold transition-all border ${
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all border cursor-pointer ${
                           normalizedInput === sug
-                            ? 'bg-primary text-white border-primary'
-                            : 'bg-bg-primary text-text-muted border-border-main hover:text-text-main hover:border-text-muted'
+                            ? 'bg-primary text-white border-primary dark:bg-[#D4AF37] dark:text-black dark:border-[#D4AF37] shadow-xs'
+                            : 'bg-zinc-100 text-zinc-800 border-zinc-200 dark:bg-white/5 dark:text-zinc-200 dark:border-white/10 hover:bg-zinc-200 dark:hover:bg-white/10'
                         }`}
                       >
                         {sug}
@@ -1043,7 +1084,7 @@ export const TableManagement: React.FC = () => {
                 <label className="block text-xs font-semibold text-text-muted mb-1">Place Type Category</label>
                 <select
                   value={placeType}
-                  onChange={e => setPlaceType(e.target.value)}
+                  onChange={e => setPlaceType(e.target.value as any)}
                   className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
                 >
                   <option value="STANDING_BAR">Standing Bar Zone</option>
@@ -1055,7 +1096,7 @@ export const TableManagement: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+                  className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -1063,7 +1104,7 @@ export const TableManagement: React.FC = () => {
                   type="submit"
                   disabled={isSubmitting || !isFormValid}
                   title={isSubmitting ? "Creating..." : !isFormValid ? "Fill all fields" : undefined}
-                  className="flex-1 py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50"
+                  className="flex-1 py-3 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black text-xs font-extrabold uppercase tracking-wider disabled:opacity-50 shadow-sm active:scale-95 transition-all cursor-pointer"
                 >
                   {isSubmitting ? 'Creating...' : 'Confirm Table'}
                 </button>
@@ -1116,10 +1157,10 @@ export const TableManagement: React.FC = () => {
                         key={sug}
                         type="button"
                         onClick={() => setEditTableNumber(sug)}
-                        className={`px-2 py-1 rounded text-[10px] font-mono font-bold transition-all border ${
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all border cursor-pointer ${
                           editNormalizedInput === sug
-                            ? 'bg-primary text-white border-primary'
-                            : 'bg-bg-primary text-text-muted border-border-main hover:text-text-main hover:border-text-muted'
+                            ? 'bg-primary text-white border-primary dark:bg-[#D4AF37] dark:text-black dark:border-[#D4AF37] shadow-xs'
+                            : 'bg-zinc-100 text-zinc-800 border-zinc-200 dark:bg-white/5 dark:text-zinc-200 dark:border-white/10 hover:bg-zinc-200 dark:hover:bg-white/10'
                         }`}
                       >
                         {sug}
@@ -1177,7 +1218,7 @@ export const TableManagement: React.FC = () => {
                   type="submit"
                   disabled={isSubmittingEdit || !isEditFormValid}
                   title={isSubmittingEdit ? "Updating..." : !isEditFormValid ? "Fill all fields" : undefined}
-                  className="flex-1 py-3 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+                  className="flex-1 py-3 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black text-xs font-extrabold uppercase tracking-wider disabled:opacity-50 shadow-sm active:scale-95 transition-all cursor-pointer"
                 >
                   {isSubmittingEdit ? 'Updating...' : 'Update Table'}
                 </button>
@@ -1329,7 +1370,7 @@ export const TableManagement: React.FC = () => {
                       await handleToggleLockTable(tb);
                     }
                   }}
-                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black text-xs font-extrabold uppercase tracking-wider cursor-pointer shadow-sm active:scale-95 transition-all"
                 >
                   Confirm Release
                 </button>
@@ -1354,7 +1395,7 @@ export const TableManagement: React.FC = () => {
 
               <div className="text-text-main font-bold text-base flex items-center gap-2 text-red-500">
                 <AlertTriangle size={18} className="shrink-0" />
-                <span>Release Reservation on T-{cancellingReservationForConfirm.tableNumber}</span>
+                <span>Release Reservation on {cancellingReservationForConfirm.tableNumber}</span>
               </div>
 
               <p className="text-xs text-text-muted leading-relaxed">

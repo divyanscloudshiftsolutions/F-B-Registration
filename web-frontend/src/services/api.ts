@@ -184,6 +184,30 @@ class ApiService {
     });
   }
 
+  async updateUser(userId: string, userData: { username: string; fullName: string; role: string; pin?: string; isActive?: boolean }) {
+    const payload: any = {
+      username: userData.username,
+      fullName: userData.fullName,
+      role: userData.role,
+    };
+    if (userData.pin && userData.pin.trim().length > 0) {
+      payload.password = userData.pin.trim();
+    }
+    if (userData.isActive !== undefined) {
+      payload.isActive = userData.isActive;
+    }
+    return this.request<{ success: boolean; message?: string; user?: User }>(`/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteUser(userId: string) {
+    return this.request<{ success: boolean; message?: string }>(`/users/${userId}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Tables APIs
   async getTables(): Promise<Table[]> {
     try {
@@ -822,8 +846,11 @@ class ApiService {
     return data.request;
   }
 
-  async getActiveServiceRequests() {
-    const data = await this.request<{ success: boolean; requests: any[] }>('/service-requests/active');
+  async getActiveServiceRequests(tokenNumber?: string) {
+    const endpoint = tokenNumber
+      ? `/service-requests/active?tokenNumber=${encodeURIComponent(tokenNumber)}`
+      : '/service-requests/active';
+    const data = await this.request<{ success: boolean; requests: any[] }>(endpoint);
     return data.requests || [];
   }
 

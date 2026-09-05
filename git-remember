@@ -274,41 +274,74 @@ repositories, provide Git commands as SEPARATE COPY-PASTE CODE BLOCKS.
 
 Do NOT combine all repositories into one large command block.
 
-All commands must be runnable starting from the MONOREPO ROOT.
+All commands must start and finish at the MONOREPO ROOT:
+- Central repository commands run directly from the monorepo root.
+- Dedicated repositories (web-frontend, backend, frontend) use normal push by
+  entering the folder with `cd <folder>`, running status, add, commit, push,
+  and immediately returning with `cd ..`.
+- NEVER use `git subtree` or `subtree split` (which outputs slow numeric tick bars like `44/456 (43) [0]`).
+  Always use clean, standard `cd <folder>` -> `cd ..` workflow.
 
 Only display command blocks for repositories that actually have relevant changes.
 
 Each affected repository must have its own complete command block containing:
 
+For CENTRAL:
 git status
-correct git add
-git commit with the appropriate daily generic human-written message
+git add <files>
+git commit -m "<message>"
+git push personal-repo main
+
+For DEDICATED (web-frontend, backend, frontend):
+cd <folder>
+git status
+git add .
+git commit -m "<message>"
 git push origin main
+cd ..
 
 Example:
 
 CENTRAL REPOSITORY
 
 ```bash
-<complete commands>
-````
+git status
+git add web-frontend/ backend/ frontend/ Documents/ issues/
+git commit -m "<daily generic human-written summary>"
+git push personal-repo main
+```
 
 WEB FRONTEND REPOSITORY
 
 ```bash
-<complete commands>
+cd web-frontend
+git status
+git add .
+git commit -m "<daily generic human-written summary>"
+git push origin main
+cd ..
 ```
 
 BACKEND REPOSITORY
 
 ```bash
-<complete commands>
+cd backend
+git status
+git add .
+git commit -m "<daily generic human-written summary>"
+git push origin main
+cd ..
 ```
 
 REACT NATIVE FRONTEND REPOSITORY
 
 ```bash
-<complete commands>
+cd frontend
+git status
+git add .
+git commit -m "<daily generic human-written summary>"
+git push origin main
+cd ..
 ```
 
 ============================================================
@@ -418,6 +451,7 @@ IDENTIFY ONLY AFFECTED REPOSITORIES.
 USE ONE DAILY COMMIT PER AFFECTED REPOSITORY.
 USE A GENERIC HUMAN-WRITTEN SUMMARY OF THE DAY'S WORK.
 PUSH ONLY THE CORRECT SOURCE CONTENTS.
+ALWAYS USE STANDARD CD <FOLDER> -> CD .. WORKFLOW (NO SUBTREE SPLITS OR NUMERIC PROGRESS BARS).
 NEVER PUSH .ENV OR .ENV.EXAMPLE FILES.
 USE MAIN ONLY.
 SHOW EACH REPOSITORY'S COMMANDS IN A SEPARATE COPY-CODE BLOCK.

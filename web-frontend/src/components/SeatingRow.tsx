@@ -76,32 +76,32 @@ export const SeatingRow: React.FC<SeatingRowProps> = ({ capacity, tableCount, ch
             {tableCount} {tableCount === 1 ? 'Table' : 'Tables'}
           </span>
           {shouldScroll && (
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
                 onClick={() => handleScroll('left')}
                 disabled={!canScrollLeft}
-                className={`p-1.5 rounded-lg border border-border-main transition-all flex items-center justify-center ${
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl border transition-all flex items-center justify-center ${
                   canScrollLeft
-                    ? 'text-text-main hover:bg-bg-primary cursor-pointer'
-                    : 'text-text-muted opacity-30 cursor-not-allowed'
+                    ? 'text-text-main hover:bg-zinc-100 dark:hover:bg-white/10 active:scale-95 border-zinc-200 dark:border-white/15 cursor-pointer shadow-xs'
+                    : 'text-text-muted border-zinc-200/50 dark:border-white/5 opacity-30 cursor-not-allowed'
                 }`}
                 aria-label="Scroll Left"
               >
-                <ChevronLeft size={16} />
+                <ChevronLeft size={18} />
               </button>
               <button
                 type="button"
                 onClick={() => handleScroll('right')}
                 disabled={!canScrollRight}
-                className={`p-1.5 rounded-lg border border-border-main transition-all flex items-center justify-center ${
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl border transition-all flex items-center justify-center ${
                   canScrollRight
-                    ? 'text-text-main hover:bg-bg-primary cursor-pointer'
-                    : 'text-text-muted opacity-30 cursor-not-allowed'
+                    ? 'text-text-main hover:bg-zinc-100 dark:hover:bg-white/10 active:scale-95 border-zinc-200 dark:border-white/15 cursor-pointer shadow-xs'
+                    : 'text-text-muted border-zinc-200/50 dark:border-white/5 opacity-30 cursor-not-allowed'
                 }`}
                 aria-label="Scroll Right"
               >
-                <ChevronRight size={16} />
+                <ChevronRight size={18} />
               </button>
             </div>
           )}

@@ -181,15 +181,24 @@
   --color-status-inactive: var(--color-inactive);
 }
 
-html, body {
+html {
   margin: 0;
   padding: 0;
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
+  font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  overflow-x: hidden;
   font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: var(--bg-primary) !important;
   color: var(--text-primary) !important;
   -webkit-font-smoothing: antialiased;
+  -webkit-overflow-scrolling: touch;
 }
 .dark body {
   background-color: var(--bg-primary) !important;
@@ -676,36 +685,61 @@ omg_this_is_unused_class_but_we_keep_to_match_target { color: transparent; }
   transform: scale(0.97) !important;
 }
 
+/* Semantic Status Badges (Active, Extended/Warning, Expired/Danger, Closed) */
 .badge-active {
-  background-color: var(--color-success-bg);
-  color: var(--color-success);
-  border: 1px solid var(--color-success-border);
+  background-color: #ECFDF5;
+  color: #047857;
+  border: 1px solid #A7F3D0;
 }
 
 .badge-warning {
-  background-color: var(--color-warning-bg);
-  color: var(--color-warning);
-  border: 1px solid var(--color-warning-border);
+  background-color: #FFFBEB;
+  color: #92400E;
+  border: 1px solid #FDE68A;
 }
 
 .badge-danger {
-  background-color: var(--color-danger-bg);
-  color: var(--color-danger-status);
-  border: 1px solid var(--color-danger-border);
+  background-color: #FEF2F2;
+  color: #B91C1C;
+  border: 1px solid #FECACA;
 }
 
 .badge-closed {
-  background-color: rgba(156, 163, 175, 0.15);
-  color: #9CA3AF;
-  border: 1px solid rgba(156, 163, 175, 0.3);
+  background-color: #F4F4F5;
+  color: #52525B;
+  border: 1px solid #E4E4E7;
+}
+
+.dark .badge-active {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34D399;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.dark .badge-warning {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #FBBF24;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.dark .badge-danger {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #F87171;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.dark .badge-closed {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #A1A1AA;
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 /* Revenue Analytics Chart Custom Bar Styles */
 .analytics-bar-regular {
-  background-color: rgba(var(--glow-rgb), 0.2) !important;
+  background-color: rgba(var(--glow-rgb), 0.3) !important;
 }
 .analytics-bar-regular:hover {
-  background-color: rgba(var(--glow-rgb), 0.35) !important;
+  background-color: rgba(var(--glow-rgb), 0.5) !important;
 }
 
 /* Premium Wave Theme Transition Configurations */

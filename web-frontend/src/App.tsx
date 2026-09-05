@@ -205,8 +205,13 @@ const AppContent: React.FC = () => {
       return <CustomerAccessPage />;
     }
 
-    // 3. Customer App Routes (e.g. /customer/home, /customer/cart, /customer/eat, etc.)
-    if (pathname.startsWith('/customer')) {
+    // 3. Customer Landing Gate (/customers or /customer/landing or exact /customer)
+    if (pathname === '/customers' || pathname === '/customers/' || pathname === '/customer/landing' || pathname === '/customer' || pathname === '/customer/') {
+      return <CustomerLandingPage />;
+    }
+
+    // 4. Customer App Inside Routes (e.g. /customer/home, /customer/cart, /customer/eat, etc.)
+    if (pathname.startsWith('/customer/')) {
       const activeToken = localStorage.getItem('bar_active_token');
       if (activeToken) {
         return <CustomerApp />;

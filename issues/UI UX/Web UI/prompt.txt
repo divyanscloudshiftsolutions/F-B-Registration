@@ -58,9 +58,17 @@ Only read today's existing file when necessary to append new issues and determin
 ============================================================
 5. REPORT TITLE
 ============================================================
-Every daily file must begin with:
+Do NOT use generic headings like "# Daily Technical & Architectural Issues Log — [Full Month Day, Year]".
 
-# Daily Technical & Architectural Issues Log — [Full Month Day, Year]
+Every daily file must begin with a clear, reasonable, and professional overarching title that synthesizes and reflects all the issues and work completed in that file.
+
+Format:
+# [Reasonable General Topic / Comprehensive Report Title Considering All Issues]
+
+Examples:
+# Customer Portal Full-Stack Hardening: Menu Separation, Order Tracking, Fiscal Engine Reconciliation, Session Identity, Responsive Interaction & Rate Limiting Optimization
+# Web Frontend End-to-End UI/UX Alignment, Design System Compliance & Operational Workflow Hardening Log
+# TableFlow Environment Setup, Multi-Role Architecture & Database Audit Report
 
 ============================================================
 6. ISSUE TEMPLATE

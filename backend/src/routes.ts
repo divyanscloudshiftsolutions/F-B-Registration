@@ -619,7 +619,7 @@ router.post('/auth/register', authenticate, authorize(['admin']), async (req: Re
     });
   }
 
-  const allowedSeeded = ['admin', 'receptionist', 'bartender', 'manager'];
+  const allowedSeeded = ['admin', 'receptionist', 'bartender', 'manager', 'chef', 'waiter', 'server'];
   if (!allowedSeeded.includes(finalUsername.toLowerCase())) {
     let prefixRegex: RegExp;
     let expectedFormat: string;
@@ -635,6 +635,12 @@ router.post('/auth/register', authenticate, authorize(['admin']), async (req: Re
     } else if (finalRoleName === 'manager') {
       prefixRegex = /^MGR-\d{2}$/;
       expectedFormat = 'MGR-XX';
+    } else if (finalRoleName === 'chef') {
+      prefixRegex = /^CHF-\d{2}$/;
+      expectedFormat = 'CHF-XX';
+    } else if (finalRoleName === 'waiter' || finalRoleName === 'server') {
+      prefixRegex = /^WTR-\d{2}$/;
+      expectedFormat = 'WTR-XX';
     } else {
       return res.status(400).json({ success: false, error: { code: 'VAL_004', message: 'Role does not exist' } });
     }
@@ -909,7 +915,7 @@ router.put('/users/:id', authenticate, authorize(['admin']), async (req: Request
     });
   }
 
-  const allowedSeeded = ['admin', 'receptionist', 'bartender', 'manager'];
+  const allowedSeeded = ['admin', 'receptionist', 'bartender', 'manager', 'chef', 'waiter', 'server'];
   if (!allowedSeeded.includes(finalUsername.toLowerCase())) {
     let prefixRegex: RegExp;
     let expectedFormat: string;
@@ -925,6 +931,12 @@ router.put('/users/:id', authenticate, authorize(['admin']), async (req: Request
     } else if (finalRoleName === 'manager') {
       prefixRegex = /^MGR-\d{2}$/;
       expectedFormat = 'MGR-XX';
+    } else if (finalRoleName === 'chef') {
+      prefixRegex = /^CHF-\d{2}$/;
+      expectedFormat = 'CHF-XX';
+    } else if (finalRoleName === 'waiter' || finalRoleName === 'server') {
+      prefixRegex = /^WTR-\d{2}$/;
+      expectedFormat = 'WTR-XX';
     } else {
       return res.status(400).json({ success: false, error: { code: 'VAL_004', message: 'Role does not exist' } });
     }
@@ -1097,6 +1109,135 @@ router.patch('/users/:id/status', authenticate, authorize(['admin']), async (req
       }
     });
   } catch (err: any) {
+    return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
+  }
+});
+
+// DELETE /api/users/:id (Admin Only - Real-time Database Deletion)
+router.delete('/users/:id', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const authUser = (req as AuthenticatedRequest).user;
+
+  if (!authUser) {
+    return res.status(401).json({ success: false, error: { code: 'AUTH_003', message: 'Unauthorized' } });
+  }
+
+  // 1. Prevent self-deletion
+  if (authUser.id === id) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'CONFLICT_SELF_DELETION',
+        message: 'You cannot delete your own account.'
+      }
+    });
+  }
+
+  try {
+    const targetUser = await prisma.user.findUnique({
+      where: { id },
+      include: { role: true }
+    });
+
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } });
+    }
+
+    // 2. Protect Main Admin account from deletion
+    const uname = targetUser.username.toLowerCase();
+    if (uname === 'admin' || uname === 'adm-01') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN_MAIN_ADMIN_DELETE',
+          message: 'The primary administrator account is protected and cannot be deleted.'
+        }
+      });
+    }
+
+    // 3. Find primary admin user to reassign historical/audit records that require non-null FKs
+    const primaryAdmin = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { username: { in: ['admin', 'ADM-01'] } },
+          { role: { name: 'admin' } }
+        ]
+      }
+    });
+    const fallbackAdminId = primaryAdmin ? primaryAdmin.id : authUser.id;
+
+    // 4. Atomic transaction to reassign/clean up relations and delete user in DB
+    await prisma.$transaction(async (tx) => {
+      // Reassign non-nullable Token references
+      await tx.token.updateMany({
+        where: { issuedBy: id },
+        data: { issuedBy: fallbackAdminId }
+      });
+      await tx.token.updateMany({
+        where: { closedBy: id },
+        data: { closedBy: fallbackAdminId }
+      });
+
+      // Reassign non-nullable Redemption references
+      await tx.redemption.updateMany({
+        where: { bartenderId: id },
+        data: { bartenderId: fallbackAdminId }
+      });
+
+      // Reassign non-nullable TokenExtension references
+      await tx.tokenExtension.updateMany({
+        where: { approvedBy: id },
+        data: { approvedBy: fallbackAdminId }
+      });
+
+      // Reassign non-nullable RateLog references
+      await tx.rateLog.updateMany({
+        where: { changedBy: id },
+        data: { changedBy: fallbackAdminId }
+      });
+
+      // Nullify nullable references
+      await tx.order.updateMany({
+        where: { handlerId: id },
+        data: { handlerId: null }
+      });
+      await tx.serviceRequest.updateMany({
+        where: { assignedStaffId: id },
+        data: { assignedStaffId: null }
+      });
+      await tx.bill.updateMany({
+        where: { settledBy: id },
+        data: { settledBy: null }
+      });
+      await tx.reservation.updateMany({
+        where: { userId: id },
+        data: { userId: null }
+      });
+      await tx.inventoryLog.updateMany({
+        where: { userId: id },
+        data: { userId: null }
+      });
+
+      // Delete active/past staff sessions
+      await tx.staffSession.deleteMany({
+        where: { userId: id }
+      });
+
+      // Permanently delete user from users table
+      await tx.user.delete({
+        where: { id }
+      });
+    });
+
+    // Invalidate Redis user cache
+    await redisService.del('users:all').catch(() => {});
+
+    return res.json({
+      success: true,
+      message: `Staff member ${targetUser.username} (${targetUser.fullName}) deleted successfully from database.`
+    });
+  } catch (err: any) {
+    console.error('Failed to delete staff user:', err);
     return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
   }
 });
@@ -5330,10 +5471,20 @@ router.post('/service-requests', async (req: Request, res: Response) => {
 });
 
 // GET /api/service-requests/active
-router.get('/service-requests/active', authenticate, authorize(['admin', 'manager', 'waiter', 'server', 'receptionist']), async (req: Request, res: Response) => {
+router.get('/service-requests/active', async (req: Request, res: Response) => {
   try {
-    const requests = await serviceRequestService.getActiveRequests();
-    return res.json({ success: true, requests });
+    const tokenNumber = (req.query.tokenNumber as string) || (req.query.tokenId as string);
+    if (tokenNumber) {
+      const requests = await serviceRequestService.getActiveRequests(tokenNumber);
+      return res.json({ success: true, requests });
+    }
+
+    return authenticate(req as any, res, () => {
+      return authorize(['admin', 'manager', 'waiter', 'server', 'receptionist'])(req as any, res, async () => {
+        const requests = await serviceRequestService.getActiveRequests();
+        return res.json({ success: true, requests });
+      });
+    });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: { message: err.message } });
   }

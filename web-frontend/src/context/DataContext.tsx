@@ -281,12 +281,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       }, 1000);
 
-      // 3-second sync interval for background fetches (multi-user updates)
+      // Background sync interval for background fetches (multi-user updates)
+      // Checks document visibility to prevent background spam when tab is inactive
       const syncInterval = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
         refreshTokens();
         refreshTables();
         refreshReservations();
-      }, 3000);
+      }, 15000);
 
       return () => {
         clearInterval(countdownInterval);

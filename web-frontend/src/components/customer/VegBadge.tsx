@@ -1,13 +1,17 @@
 import React from 'react';
 
 interface VegBadgeProps {
-  type: 'VEG' | 'NON_VEG' | 'EGG' | string;
+  type?: 'VEG' | 'NON_VEG' | 'EGG' | string | null;
   className?: string;
   size?: 'sm' | 'md';
 }
 
 export const VegBadge: React.FC<VegBadgeProps> = ({ type, className = '', size = 'md' }) => {
-  const normType = (type || 'VEG').toUpperCase();
+  if (!type) return null;
+  const normType = type.toUpperCase();
+  if (normType !== 'VEG' && normType !== 'NON_VEG' && normType !== 'EGG') {
+    return null;
+  }
   const isVeg = normType === 'VEG';
   const isEgg = normType === 'EGG';
 

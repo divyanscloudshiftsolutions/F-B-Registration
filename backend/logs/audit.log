@@ -211,3 +211,6 @@
 {"timestamp":"2026-09-04T10:47:16.872Z","tokenNumber":"PNB-705","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
 {"timestamp":"2026-09-04T14:08:18.705Z","tokenNumber":"PNB-704","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
 {"timestamp":"2026-09-04T14:08:18.716Z","tokenNumber":"PNB-706","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-05T06:07:35.773Z","tokenNumber":"PNB-BILL-L-02-6126","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-05T06:07:35.778Z","tokenNumber":"PNB-BILL-S-03-6301","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-05T06:07:35.784Z","tokenNumber":"PNB-BILL-L-05-6315","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}

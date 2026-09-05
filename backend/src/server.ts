@@ -38,7 +38,13 @@ if (process.env.REDIS_URL) {
 // API Gateway Rate Limiter (B2 component in system_details.md)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Limit each IP to 1000 requests per 15-minute window
+  max: process.env.NODE_ENV === 'production' ? 1000 : 50000, // Limit each IP in production, very high in dev
+  skip: (req) => {
+    // Skip rate limiting in non-production, or for localhost loopback
+    if (process.env.NODE_ENV !== 'production') return true;
+    const ip = req.ip || req.socket?.remoteAddress || '';
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+  },
   store: rateLimitStore,
   message: {
     success: false,

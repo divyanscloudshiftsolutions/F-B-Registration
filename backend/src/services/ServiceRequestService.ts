@@ -86,13 +86,19 @@ export class ServiceRequestService {
   }
 
   /**
-   * Get all active service requests
+   * Get all active service requests (optionally filtered by tokenNumber)
    */
-  async getActiveRequests() {
+  async getActiveRequests(tokenNumber?: string) {
+    const where: any = {
+      status: { in: [ServiceRequestStatus.NEW, ServiceRequestStatus.ACKNOWLEDGED] },
+    };
+
+    if (tokenNumber) {
+      where.token = { tokenNumber };
+    }
+
     return prisma.serviceRequest.findMany({
-      where: {
-        status: { in: [ServiceRequestStatus.NEW, ServiceRequestStatus.ACKNOWLEDGED] },
-      },
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         table: true,

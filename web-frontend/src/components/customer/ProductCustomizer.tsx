@@ -127,21 +127,21 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 animate-fade-in">
-      <div className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl dark:bg-[#1A1829] bg-white border border-[#8D6CE5]/20 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b border-[#8D6CE5]/15 flex items-start justify-between">
+        <div className="p-4 border-b border-border/80 dark:border-white/10 flex items-start justify-between">
           <div className="flex items-start gap-2.5">
             <VegBadge type={item.foodType} className="mt-1" />
             <div>
               <h3 className="font-bold text-lg text-text-primary dark:text-white leading-tight">{item.name}</h3>
               {item.description && (
-                <p className="text-xs text-text-muted mt-1 line-clamp-2">{item.description}</p>
+                <p className="text-xs text-text-muted dark:text-zinc-400 mt-1 line-clamp-2">{item.description}</p>
               )}
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-[#8D6CE5]/10 text-text-muted hover:text-text-primary transition-colors"
+            className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-text-muted hover:text-text-primary dark:hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -161,10 +161,10 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
                     key={v.id}
                     type="button"
                     onClick={() => setVariantId(v.id)}
-                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-sm transition-all ${
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-sm transition-all cursor-pointer ${
                       variantId === v.id
-                        ? 'border-[#8D6CE5] bg-[#8D6CE5]/10 font-semibold text-[#8D6CE5]'
-                        : 'border-[#8D6CE5]/15 hover:border-[#8D6CE5]/40 text-text-primary dark:text-zinc-200'
+                        ? 'border-primary bg-primary/10 font-semibold text-primary dark:border-[#D4AF37] dark:bg-[#D4AF37]/15 dark:text-[#D4AF37]'
+                        : 'border-border/80 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 text-text-primary dark:text-zinc-200'
                     }`}
                   >
                     <span>{v.name}</span>
@@ -189,10 +189,10 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
                     key={opt.id}
                     type="button"
                     onClick={() => setMods((prev) => ({ ...prev, [g.id]: opt.id }))}
-                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-sm transition-all ${
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-sm transition-all cursor-pointer ${
                       mods[g.id] === opt.id
-                        ? 'border-[#8D6CE5] bg-[#8D6CE5]/10 font-semibold text-[#8D6CE5]'
-                        : 'border-[#8D6CE5]/15 hover:border-[#8D6CE5]/40 text-text-primary dark:text-zinc-200'
+                        ? 'border-primary bg-primary/10 font-semibold text-primary dark:border-[#D4AF37] dark:bg-[#D4AF37]/15 dark:text-[#D4AF37]'
+                        : 'border-border/80 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 text-text-primary dark:text-zinc-200'
                     }`}
                   >
                     <span>{opt.name}</span>
@@ -216,26 +216,26 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
               placeholder="e.g., Less spicy, no onions, extra crispy..."
               maxLength={200}
               rows={2}
-              className="w-full text-xs p-3 rounded-xl border border-[#8D6CE5]/20 bg-transparent dark:text-white placeholder:text-text-muted/60 focus:outline-none focus:border-[#8D6CE5]"
+              className="w-full text-xs p-3 rounded-xl border border-border/80 dark:border-white/10 bg-transparent text-text-primary dark:text-white placeholder:text-text-muted/60 focus:outline-none focus:border-primary dark:focus:border-[#D4AF37]"
             />
           </div>
 
           {/* Quantity Stepper */}
-          <div className="flex items-center justify-between p-3 rounded-xl border border-[#8D6CE5]/15 dark:bg-[#141225]/40 bg-zinc-50">
+          <div className="flex items-center justify-between p-3 rounded-xl border border-border/80 dark:border-white/10 bg-zinc-50 dark:bg-white/5">
             <span className="text-xs font-medium text-text-primary dark:text-zinc-300">Quantity</span>
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setQty((q) => Math.max(1, q - 1))}
-                className="w-8 h-8 rounded-lg flex items-center justify-center border border-[#8D6CE5]/30 hover:bg-[#8D6CE5]/10 text-text-primary dark:text-white transition-colors"
+                className="w-8 h-8 rounded-lg flex items-center justify-center border border-border/80 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-text-primary dark:text-white transition-colors cursor-pointer"
               >
                 <Minus className="w-3.5 h-3.5" />
               </button>
-              <span className="w-6 text-center font-bold text-sm text-[#8D6CE5]">{qty}</span>
+              <span className="w-6 text-center font-bold text-sm text-primary dark:text-[#D4AF37]">{qty}</span>
               <button
                 type="button"
                 onClick={() => setQty((q) => q + 1)}
-                className="w-8 h-8 rounded-lg flex items-center justify-center border border-[#8D6CE5]/30 hover:bg-[#8D6CE5]/10 text-text-primary dark:text-white transition-colors"
+                className="w-8 h-8 rounded-lg flex items-center justify-center border border-border/80 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-text-primary dark:text-white transition-colors cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
               </button>
@@ -244,11 +244,11 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
         </div>
 
         {/* Footer Action */}
-        <div className="p-4 border-t border-[#8D6CE5]/15 dark:bg-[#141225]/50 bg-white">
+        <div className="p-4 border-t border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B]">
           <button
             type="button"
             onClick={handleAdd}
-            className="w-full py-3 px-4 rounded-xl bg-[#8D6CE5] hover:bg-[#7B59D8] text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-between"
+            className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-between cursor-pointer"
           >
             <span>Add to Cart</span>
             <span>₹{grandTotal.toFixed(2)}</span>
