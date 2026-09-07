@@ -1,4 +1,4 @@
-import type { User, Table, Token, DashboardReport } from '../types';
+import type { User, Table, Token, DashboardReport, MenuItem, GstTaxTag } from '../types';
 
 export const DEPLOYED_API_BASE_URL = 'https://api.nfc-qr.app.cloudshiftsolutions.in/api';
 export const getLocalApiBaseUrl = () => {
@@ -10,6 +10,7 @@ export const getLocalApiBaseUrl = () => {
 
 class ApiService {
   private activeBaseUrl: string | null = null;
+  private isRedirectingToLogin = false;
 
   public async getBaseUrl(): Promise<string> {
     if (this.activeBaseUrl) return this.activeBaseUrl;
@@ -58,7 +59,9 @@ class ApiService {
 
     const data = await response.json().catch(() => ({}));
 
-    if (response.status === 401) {
+    const isAuthError = response.status === 401 || (response.status === 403 && (data?.error?.code === 'AUTH_002' || data?.error?.code === 'AUTH_003'));
+    if (isAuthError) {
+      const hadToken = !!localStorage.getItem('bar_web_token');
       localStorage.removeItem('bar_web_token');
       localStorage.removeItem('bar_web_user');
       if (data && data.error && data.error.code === 'AUTH_DEACTIVATED') {
@@ -66,7 +69,10 @@ class ApiService {
       } else {
         localStorage.setItem('auth_error_msg', data.message || (data.error && typeof data.error === 'object' ? data.error.message : data.error) || 'Session expired. Please log in again.');
       }
-      window.location.reload();
+      if (hadToken && !this.isRedirectingToLogin) {
+        this.isRedirectingToLogin = true;
+        window.location.reload();
+      }
       throw new Error(data.message || 'Session expired. Please log in again.');
     }
 
@@ -778,7 +784,11 @@ class ApiService {
     });
   }
 
-  // Customer & Ordering APIs
+  async getSections() {
+    const data = await this.request<{ success: boolean; sections: any[] }>('/menu/sections');
+    return data.sections || [];
+  }
+
   async getMenu(includeUnavailable: boolean = false) {
     const data = await this.request<{ success: boolean; menu: any[] }>(`/menu?includeUnavailable=${includeUnavailable}`);
     return data.menu || [];
@@ -787,6 +797,90 @@ class ApiService {
   async getCategories() {
     const data = await this.request<{ success: boolean; categories: any[] }>('/menu/categories');
     return data.categories || [];
+  }
+
+  async createCategory(payload: { name: string; sectionId: string; description?: string; sortOrder?: number }) {
+    const data = await this.request<{ success: boolean; category: any }>('/menu/categories', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return data.category;
+  }
+
+  async updateCategory(id: string, payload: { name?: string; sectionId?: string; description?: string; sortOrder?: number }) {
+    const data = await this.request<{ success: boolean; category: any }>(`/menu/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return data.category;
+  }
+
+  async createSubcategory(payload: { name: string; categoryId: string; sortOrder?: number }) {
+    const data = await this.request<{ success: boolean; subcategory: any }>('/menu/subcategories', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return data.subcategory;
+  }
+
+  async createMenuItem(payload: any) {
+    const data = await this.request<{ success: boolean; item: any }>('/menu/items', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return data.item;
+  }
+
+  async updateMenuItem(id: string, payload: any) {
+    const data = await this.request<{ success: boolean; item: any }>(`/menu/items/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return data.item;
+  }
+
+  async deleteMenuItem(id: string) {
+    return this.request<{ success: boolean; softDeleted: boolean; message: string }>(`/menu/items/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async uploadMenuImage(file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('image', file);
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const baseUrl = await this.getBaseUrl();
+    const res = await fetch(`${baseUrl}/menu/upload-image`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error?.message || data.message || 'Image upload failed');
+    }
+    return data.imageUrl;
+  }
+
+  async getBillingConfig() {
+    const data = await this.request<{ success: boolean; config: any }>('/config/billing');
+    return data.config;
+  }
+
+  async updateBillingConfig(payload: {
+    gstEnabled?: boolean;
+    gstRate?: number;
+    scEnabled?: boolean;
+    scRate?: number;
+    roundingEnabled?: boolean;
+  }) {
+    const data = await this.request<{ success: boolean; config: any }>('/config/billing', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return data.config;
   }
 
   async getPromotions() {
@@ -861,7 +955,56 @@ class ApiService {
     });
     return data.request;
   }
+
+  // GST Tax Tags APIs
+  async getGstTaxTags() {
+    const data = await this.request<{ success: boolean; tags: GstTaxTag[] }>('/gst-tags');
+    return data.tags || [];
+  }
+
+  async createGstTaxTag(payload: { name: string; rate: number }) {
+    const data = await this.request<{ success: boolean; tag: GstTaxTag }>('/gst-tags', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return data.tag;
+  }
+
+  async updateGstTaxTag(id: string, payload: { name?: string; rate?: number; isActive?: boolean }) {
+    const data = await this.request<{ success: boolean; tag: GstTaxTag }>(`/gst-tags/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return data.tag;
+  }
+
+  async getGstAssignments() {
+    const data = await this.request<{ success: boolean; items: MenuItem[] }>('/gst-tags/assignments');
+    return data.items || [];
+  }
+
+  async bulkAssignGstTaxTag(id: string, itemIds: string[]) {
+    const data = await this.request<{ success: boolean; count: number; targetTag: GstTaxTag }>(
+      `/gst-tags/${id}/bulk-assign`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ itemIds }),
+      }
+    );
+    return data;
+  }
+
+  async deleteGstTaxTag(id: string) {
+    const data = await this.request<{
+      success: boolean;
+      deletedTag: { id: string; name: string; rate: number };
+      affectedProductsCount: number;
+      fallbackTag: { id: string; name: string };
+    }>(`/gst-tags/${id}`, {
+      method: 'DELETE',
+    });
+    return data;
+  }
 }
 
 export const api = new ApiService();
-

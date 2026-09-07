@@ -13,6 +13,7 @@ export interface PlaceOrderItemInput {
     optionId: string;
     optionName: string;
     priceDelta: number;
+    name?: string;
   }>;
   specialInstructions?: string;
   quantity: number;
@@ -77,18 +78,23 @@ export class OrderService {
 
     // 3. Fetch Menu Items for Server-Side Validation & Price Snapshots
     const menuItemIds = input.items.map((i) => i.menuItemId);
-    const menuItems = await prisma.menuItem.findMany({
-      where: { id: { in: menuItemIds } },
-      include: {
-        variants: true,
-        modifierGroups: {
-          include: { options: true },
+    const [menuItems, venueConfig] = await Promise.all([
+      prisma.menuItem.findMany({
+        where: { id: { in: menuItemIds } },
+        include: {
+          variants: true,
+          modifierGroups: {
+            include: { options: true },
+          },
+          section: true,
+          stockItem: true,
+          gstTaxTag: true,
         },
-        section: true,
-        stockItem: true,
-      },
-    });
+      }),
+      prisma.venueConfig.findUnique({ where: { id: 'default' } }),
+    ]);
 
+    const isGstGloballyEnabled = venueConfig?.gstEnabled ?? true;
     const menuItemMap = new Map(menuItems.map((m) => [m.id, m]));
 
     // 4. Validate Availability, Quantities & Modifiers
@@ -106,14 +112,18 @@ export class OrderService {
       station: Station;
       foodType: any;
       status: OrderStatus;
+      gstTaxTagId?: string | null;
+      gstTaxTagName?: string | null;
+      gstRate?: Decimal;
+      gstAmount?: Decimal;
     }> = [];
 
     const stockDeductions: Array<{ stockItemId: string; quantity: number; itemName: string }> = [];
 
     for (const itemInput of input.items) {
       const menuItem = menuItemMap.get(itemInput.menuItemId);
-      if (!menuItem) {
-        throw new Error(`MenuItem ${itemInput.menuItemId} does not exist`);
+      if (!menuItem || menuItem.isArchived) {
+        throw new Error(`MenuItem ${itemInput.menuItemId} does not exist or has been archived`);
       }
 
       if (!menuItem.isAvailable) {
@@ -134,7 +144,7 @@ export class OrderService {
         });
       }
 
-      let baseUnitPrice = new Decimal(menuItem.basePrice);
+      let baseUnitPrice = new Decimal(menuItem.finalPrice ?? menuItem.basePrice);
 
       // Validate Variant Price Delta
       if (itemInput.variantName) {
@@ -144,16 +154,58 @@ export class OrderService {
         }
       }
 
-      // Validate Modifiers Price Deltas
-      const safeModifiers = itemInput.selectedModifiers || [];
-      for (const mod of safeModifiers) {
-        if (mod.priceDelta) {
-          baseUnitPrice = baseUnitPrice.plus(new Decimal(mod.priceDelta));
+      // Validate Modifiers Price Deltas strictly from DB authoritative options
+      const safeModifiers: any[] = [];
+      const clientModifiers = itemInput.selectedModifiers || [];
+      for (const clientMod of clientModifiers) {
+        let foundOpt: any = null;
+        let foundGroup: any = null;
+
+        for (const mg of menuItem.modifierGroups) {
+          const opt = mg.options.find(
+            (o) =>
+              (clientMod.optionId && o.id === clientMod.optionId) ||
+              o.name.toLowerCase() === (clientMod.optionName || clientMod.name || '').toLowerCase()
+          );
+          if (opt) {
+            foundOpt = opt;
+            foundGroup = mg;
+            break;
+          }
         }
+
+        const authoritativeDelta = foundOpt ? new Decimal(foundOpt.priceDelta) : new Decimal(0);
+        baseUnitPrice = baseUnitPrice.plus(authoritativeDelta);
+
+        safeModifiers.push({
+          groupId: foundGroup?.id || clientMod.groupId || '',
+          groupName: foundGroup?.name || clientMod.groupName || '',
+          optionId: foundOpt?.id || clientMod.optionId || '',
+          optionName: foundOpt?.name || clientMod.optionName || clientMod.name || '',
+          priceDelta: authoritativeDelta.toNumber(),
+        });
       }
 
       const lineTotal = baseUnitPrice.times(qty);
       orderSubtotal = orderSubtotal.plus(lineTotal);
+
+      // Resolve GST snapshot values
+      let itemGstRate = new Decimal(0);
+      let itemGstTagName = 'No GST';
+      let itemGstTagId: string | null = null;
+
+      if (isGstGloballyEnabled) {
+        if (menuItem.gstTaxTag) {
+          itemGstRate = new Decimal(menuItem.gstTaxTag.rate);
+          itemGstTagName = menuItem.gstTaxTag.name;
+          itemGstTagId = menuItem.gstTaxTag.id;
+        } else if (venueConfig?.gstRate) {
+          itemGstRate = new Decimal(venueConfig.gstRate);
+          itemGstTagName = `${itemGstRate.times(100).toNumber()}% GST`;
+        }
+      }
+
+      const itemGstAmount = lineTotal.times(itemGstRate).toDecimalPlaces(2);
 
       validatedOrderItems.push({
         menuItemId: menuItem.id,
@@ -168,6 +220,10 @@ export class OrderService {
         station: menuItem.station,
         foodType: menuItem.foodType,
         status: OrderStatus.PLACED,
+        gstTaxTagId: itemGstTagId,
+        gstTaxTagName: itemGstTagName,
+        gstRate: itemGstRate,
+        gstAmount: itemGstAmount,
       });
     }
 

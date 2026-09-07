@@ -161,7 +161,7 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
       console.warn(`External token validation failed/timed out: ${extErr.message}`);
     }
 
-    return res.status(403).json({ success: false, error: { code: 'AUTH_002', message: 'Invalid or expired token' } });
+    return res.status(401).json({ success: false, error: { code: 'AUTH_002', message: 'Invalid or expired token' } });
   } else {
     res.status(401).json({ success: false, error: { code: 'AUTH_003', message: 'Authorization header missing' } });
   }
@@ -5319,7 +5319,19 @@ router.get('/config', async (req: Request, res: Response) => {
 // 1. MENU & CATALOG APIS
 // ==========================================
 
-// GET /api/menu (Full public/customer catalog)
+// GET /api/menu/sections (List sections for category management)
+router.get('/menu/sections', async (req: Request, res: Response) => {
+  try {
+    const sections = await prisma.menuSection.findMany({
+      orderBy: { sortOrder: 'asc' },
+    });
+    return res.json({ success: true, sections });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/menu (Full public/customer catalog or admin including unavailable)
 router.get('/menu', async (req: Request, res: Response) => {
   try {
     const includeUnavailable = req.query.includeUnavailable === 'true';
@@ -5340,8 +5352,94 @@ router.get('/menu/categories', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/menu/items/:id/availability (86 toggle)
-router.put('/menu/items/:id/availability', authenticate, async (req: Request, res: Response) => {
+// POST /api/menu/categories
+router.post('/menu/categories', authenticate, authorize(['admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { name, sectionId, description, sortOrder } = req.body;
+    if (!name || !sectionId) {
+      return res.status(400).json({ success: false, error: { message: 'Name and sectionId are required' } });
+    }
+    const category = await menuService.createCategory({ name, sectionId, description, sortOrder });
+    return res.status(201).json({ success: true, category });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// PUT /api/menu/categories/:id
+router.put('/menu/categories/:id', authenticate, authorize(['admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const category = await menuService.updateCategory(req.params.id, req.body);
+    return res.json({ success: true, category });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/menu/subcategories
+router.post('/menu/subcategories', authenticate, authorize(['admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { name, categoryId, sortOrder } = req.body;
+    if (!name || !categoryId) {
+      return res.status(400).json({ success: false, error: { message: 'Name and categoryId are required' } });
+    }
+    const subcategory = await menuService.createSubcategory({ name, categoryId, sortOrder });
+    return res.status(201).json({ success: true, subcategory });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/menu/upload-image (Stream to S3 or local uploads fallback)
+router.post('/menu/upload-image', authenticate, authorize(['admin', 'manager']), upload.single('image'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: { message: 'No image file uploaded' } });
+    }
+    const imageUrl = await s3Service.uploadMenuImage({
+      buffer: req.file.buffer,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+    });
+    return res.json({ success: true, imageUrl });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message || 'Image upload failed' } });
+  }
+});
+
+// POST /api/menu/items (Create Menu Item - Admin Only)
+router.post('/menu/items', authenticate, authorize(['admin']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const item = await menuService.createMenuItem(req.body, req.user!.role);
+    return res.status(201).json({ success: true, item });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// PUT /api/menu/items/:id (Edit Menu Item - Admin can edit all; Manager cannot edit price fields)
+router.put('/menu/items/:id', authenticate, authorize(['admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const item = await menuService.updateMenuItem(req.params.id, req.body, req.user!.role);
+    return res.json({ success: true, item });
+  } catch (err: any) {
+    const status = err.message?.includes('Forbidden') ? 403 : 400;
+    return res.status(status).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// DELETE /api/menu/items/:id (Hard delete if 0 orders, Soft-archive if orders exist)
+router.delete('/menu/items/:id', authenticate, authorize(['admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await menuService.deleteMenuItem(req.params.id);
+    return res.json({ success: true, ...result });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// PUT /api/menu/items/:id/availability (86 operational toggle)
+router.put('/menu/items/:id/availability', authenticate, authorize(['admin', 'manager', 'bartender']), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { isAvailable } = req.body;
     if (typeof isAvailable !== 'boolean') {
@@ -5361,6 +5459,92 @@ router.get('/promotions', async (req: Request, res: Response) => {
     return res.json({ success: true, promotions });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/config/billing (Venue configuration for GST%, SC%, Rounding)
+router.get('/config/billing', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const config = await menuService.getVenueConfig();
+    return res.json({ success: true, config });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// PUT /api/config/billing (Update Venue configuration - Admin Only)
+router.put('/config/billing', authenticate, authorize(['admin']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const config = await menuService.updateVenueConfig(req.body, req.user?.id);
+    return res.json({ success: true, config });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// ==========================================
+// GST TAX TAG MANAGEMENT APIS
+// ==========================================
+
+// GET /api/gst-tags (List all active GST Tax Tags)
+router.get('/gst-tags', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const tags = await menuService.getGstTaxTags();
+    return res.json({ success: true, tags });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/gst-tags (Create GST Tax Tag - Admin Only)
+router.post('/gst-tags', authenticate, authorize(['admin']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { name, rate } = req.body;
+    const tag = await menuService.createGstTaxTag({ name, rate });
+    return res.status(201).json({ success: true, tag });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// PUT /api/gst-tags/:id (Update GST Tax Tag - Admin Only)
+router.put('/gst-tags/:id', authenticate, authorize(['admin']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const tag = await menuService.updateGstTaxTag(req.params.id, req.body);
+    return res.json({ success: true, tag });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/gst-tags/assignments (List all items with current GST assignments - Admin Only)
+router.get('/gst-tags/assignments', authenticate, authorize(['admin']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const items = await menuService.getGstItemAssignments();
+    return res.json({ success: true, items });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// DELETE /api/gst-tags/:id (Delete GST Tax Tag & atomically move items to No GST - Admin Only)
+router.delete('/gst-tags/:id', authenticate, authorize(['admin']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await menuService.deleteGstTaxTag(req.params.id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// PUT /api/gst-tags/:id/bulk-assign (Bulk assign products to target GST tag - Admin Only)
+router.put('/gst-tags/:id/bulk-assign', authenticate, authorize(['admin']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itemIds } = req.body;
+    const result = await menuService.bulkAssignGstTaxTag(req.params.id, itemIds);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
   }
 });
 

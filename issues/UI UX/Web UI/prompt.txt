@@ -23,13 +23,22 @@ If any incorrectly created report/file/folder exists outside this exact location
 ============================================================
 Use exactly one Markdown file per calendar date:
 
-YYYY-MM-DD-[Relevant-Report-Title].md
+YYYY-MM-DD-[Common-Issue-Topic-Title].md
 
-The title must be derived from the overall report title or the main module work completed that day.
+The documentation file name must be derived directly from the first-line title.
+The first-line title and file name must represent the same common topic/subject matter.
+
+Do NOT use:
+* Date-only naming (e.g. YYYY-MM-DD.md)
+* "Daily Technical & Architectural Issues Log"
+* Process/meta-titles describing documentation (e.g. "Consolidate daily technical issues...")
+* A title referring to only one individual issue
+* A title based on only the first issue
+* A title that ignores the common theme of the remaining issues
 
 Example:
 
-Issues/UI UX/Web UI/2026-08-11-Admin-Chart-Responsive-Optimization.md
+Issues/UI UX/Web UI/2026-09-07-Dynamic-GST-Tag-Management-Product-Reassignment-And-Venue-Charges-Configuration.md
 
 Never create multiple Markdown files for the same date. Use the existing matching dated file when updating that day's report.
 
@@ -42,6 +51,7 @@ When "Read prompt" is triggered:
 - Check whether today's Markdown file already exists.
 - If it does not exist, create it.
 - If it already exists, update/append to that same file.
+- If the issue set changes significantly, update the first-line common topic title and file name based on the new overall subject matter.
 - NEVER create another file for the same date.
 - NEVER overwrite existing issues.
 - Continue issue numbering from the highest existing issue number.
@@ -58,17 +68,29 @@ Only read today's existing file when necessary to append new issues and determin
 ============================================================
 5. REPORT TITLE
 ============================================================
-Do NOT use generic headings like "# Daily Technical & Architectural Issues Log — [Full Month Day, Year]".
+The old format:
+"# Daily Technical & Architectural Issues Log — [Full Month Day, Year]"
+must NO longer be used.
 
-Every daily file must begin with a clear, reasonable, and professional overarching title that synthesizes and reflects all the issues and work completed in that file.
+Do NOT generate artificial or process-oriented documentation titles (such as "# Consolidate daily technical and architectural issues into a unified summary") that describe the documentation process instead of the actual issues.
+
+Generate the first-line title from the common subject of all issues in the current issue file. The title should be a meaningful approximately 10-word topic describing the actual issues, not the documentation process. Use the same topic-derived wording for the issue file name.
 
 Format:
-# [Reasonable General Topic / Comprehensive Report Title Considering All Issues]
+# [Common Issue Topic Title (~10 Words Describing Actual Issues)]
 
-Examples:
-# Customer Portal Full-Stack Hardening: Menu Separation, Order Tracking, Fiscal Engine Reconciliation, Session Identity, Responsive Interaction & Rate Limiting Optimization
-# Web Frontend End-to-End UI/UX Alignment, Design System Compliance & Operational Workflow Hardening Log
-# TableFlow Environment Setup, Multi-Role Architecture & Database Audit Report
+Example:
+# Dynamic GST Tag Management, Product Reassignment, and Venue Charges Configuration
+
+Topic Title Generation Procedure:
+1. Read all issues present in the current issue file.
+2. Identify the common technical, functional, UI/UX, or architectural subject connecting those issues.
+3. Determine the broader topic that naturally describes the majority/all of the issues.
+4. Generate a professional, meaningful title describing that subject matter in approximately 10 words.
+5. Do not mention the documentation process, issue consolidation, daily logging, or the date unless the date is specifically part of the actual issue context.
+6. The title must represent the complete set of issues, not just a single issue.
+7. Use the same topic-derived wording to name the file: YYYY-MM-DD-[Common-Issue-Topic-Title].md.
+8. If new issues added to the file significantly alter the overall subject matter, recalculate the common topic title and rename the file accordingly.
 
 ============================================================
 6. ISSUE TEMPLATE
@@ -171,7 +193,7 @@ If today's file already exists:
 - Find the highest existing issue number.
 - Append the next issue using the exact same table-based structure. Ensure there is a `---` horizontal rule separating the previous issue and the new issue.
 - Preserve every existing issue.
-- Do not recreate the title.
+- Do not recreate the title unless the overall issue theme changes significantly.
 - Do not duplicate existing issues.
 
 ============================================================
@@ -193,8 +215,9 @@ The final response should briefly confirm:
 ============================================================
 Before finishing, verify:
 
-- Correct directory
-- Correct YYYY-MM-DD-[Relevant-Report-Title].md filename
+- Correct directory (Issues/UI UX/Web UI/)
+- Correct YYYY-MM-DD-[Common-Issue-Topic-Title].md filename derived directly from first-line topic title
+- First line is a meaningful ~10-word topic title describing the actual issues (not the documentation process)
 - Only one file for today's date
 - Existing issues preserved
 - Correct next issue number
@@ -210,3 +233,8 @@ This prompt.txt is the permanent master instruction.
 
 Do not require the user to explain these rules again in future sessions.
 Whenever the user says "Read prompt" or "Read prompt file", execute this procedure automatically.
+
+============================================================
+15. TESTING REPORT POLICY
+============================================================
+Testing activities must be recorded in the date-wise Test Reports system, and testing itself should not be converted into multiple normal issues. Only major testing-discovered issues may be added to the Issue Log, with a maximum of two testing-related issues per day.

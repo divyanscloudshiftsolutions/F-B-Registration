@@ -1,6 +1,7 @@
 import React from 'react';
 import { VegBadge } from './VegBadge';
 import { Star, Sparkles, Plus, Minus } from 'lucide-react';
+import { formatImageUrl } from '../../utils/imageUrl';
 import type { CustomizerItem } from './ProductCustomizer';
 
 interface MenuItemCardProps {
@@ -29,6 +30,10 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
     (item.variants && item.variants.length > 0) ||
     (item.modifierGroups && item.modifierGroups.length > 0);
   const isAvailable = item.isAvailable !== false;
+  const displayImage = (item as any).image || item.imageUrl;
+  const numBasePrice = Number(item.basePrice);
+  const numFinalPrice = Number((item as any).finalPrice ?? item.basePrice);
+  const hasDiscount = numFinalPrice < numBasePrice;
 
   const handleAddClick = () => {
     if (!isAvailable) return;
@@ -85,10 +90,26 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
           )}
         </div>
 
-        <div className="mt-3 flex items-center gap-2">
-          <span className="text-sm sm:text-base font-extrabold text-primary dark:text-[#D4AF37]">
-            {hasModifiers ? `from ₹${item.basePrice}` : `₹${item.basePrice}`}
-          </span>
+        <div className="mt-3 flex flex-wrap items-baseline gap-2">
+          {hasDiscount ? (
+            <>
+              <span className="text-sm sm:text-base font-extrabold text-primary dark:text-[#D4AF37]">
+                {hasModifiers ? `from ₹${numFinalPrice}` : `₹${numFinalPrice}`}
+              </span>
+              <span className="text-xs text-text-muted dark:text-zinc-500 line-through">
+                ₹{numBasePrice}
+              </span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                {item.discountMode === 'PERCENTAGE'
+                  ? `${item.discountValue}% OFF`
+                  : `₹${item.discountValue} OFF`}
+              </span>
+            </>
+          ) : (
+            <span className="text-sm sm:text-base font-extrabold text-primary dark:text-[#D4AF37]">
+              {hasModifiers ? `from ₹${numBasePrice}` : `₹${numBasePrice}`}
+            </span>
+          )}
           {hasModifiers && (
             <span className="text-[10px] text-text-muted dark:text-zinc-400 font-medium">
               Customizable
@@ -100,8 +121,8 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
       {/* Right Side: Image + Add / Quantity Stepper */}
       <div className="w-24 sm:w-28 shrink-0 flex flex-col items-center justify-between">
         <div className="w-20 sm:w-24 h-16 sm:h-20 rounded-xl bg-primary/5 dark:bg-white/5 border border-border/60 dark:border-white/10 flex items-center justify-center text-xs font-semibold text-text-muted overflow-hidden">
-          {item.imageUrl ? (
-            <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+          {displayImage ? (
+            <img src={formatImageUrl(displayImage)} alt={item.name} className="w-full h-full object-cover" />
           ) : (
             <span className="text-2xl select-none" role="img" aria-label={item.name}>
               🍽️

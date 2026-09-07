@@ -16,7 +16,15 @@ export class BillingService {
         customer: true,
         orders: {
           include: {
-            items: true,
+            items: {
+              include: {
+                menuItem: {
+                  include: {
+                    gstTaxTag: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -30,7 +38,15 @@ export class BillingService {
           customer: true,
           orders: {
             include: {
-              items: true,
+              items: {
+                include: {
+                  menuItem: {
+                    include: {
+                      gstTaxTag: true,
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -41,10 +57,18 @@ export class BillingService {
       throw new Error(`Token ${tokenNumberOrId} not found`);
     }
 
-    // 1. Calculate Section Subtotals from all non-cancelled order items
+    // 1. Fetch Venue Configuration (Dynamic GST & Service Charge settings)
+    const venueConfig = await prisma.venueConfig.findUnique({ where: { id: 'default' } });
+    const isGstGloballyEnabled = venueConfig?.gstEnabled ?? true;
+    const serviceChargeRate = (venueConfig?.scEnabled ?? true) ? new Decimal(venueConfig?.scRate ?? 0.05) : new Decimal(0);
+    const defaultFallbackGstRate = new Decimal(venueConfig?.gstRate ?? 0.05);
+    const roundingEnabled = venueConfig?.roundingEnabled ?? true;
+
+    // 2. Calculate Section Subtotals & Item-level GST from non-cancelled order items
     let foodSubtotal = new Decimal(0);
     let drinkSubtotal = new Decimal(0);
     let merchandiseSubtotal = new Decimal(0);
+    let itemTaxTotalSum = new Decimal(0);
     const consolidatedItems: any[] = [];
 
     for (const order of token.orders) {
@@ -60,6 +84,28 @@ export class BillingService {
           foodSubtotal = foodSubtotal.plus(lineTot);
         }
 
+        // Authoritative resolution of product-level GST rate
+        let effectiveGstRate = new Decimal(0);
+        let effectiveGstTagName = 'No GST';
+
+        if (isGstGloballyEnabled) {
+          if (item.gstRate !== null && item.gstRate !== undefined) {
+            effectiveGstRate = new Decimal(item.gstRate);
+            effectiveGstTagName = item.gstTaxTagName || `${effectiveGstRate.times(100).toNumber()}% GST`;
+          } else if ((item as any).menuItem?.gstTaxTag) {
+            effectiveGstRate = new Decimal((item as any).menuItem.gstTaxTag.rate);
+            effectiveGstTagName = (item as any).menuItem.gstTaxTag.name;
+          } else {
+            effectiveGstRate = defaultFallbackGstRate;
+            effectiveGstTagName = `${effectiveGstRate.times(100).toNumber()}% GST`;
+          }
+        }
+
+        // Taxable basis per item includes service charge proportionate share
+        const itemTaxableBasis = lineTot.times(new Decimal(1).plus(serviceChargeRate));
+        const itemGstAmount = itemTaxableBasis.times(effectiveGstRate).toDecimalPlaces(2);
+        itemTaxTotalSum = itemTaxTotalSum.plus(itemGstAmount);
+
         consolidatedItems.push({
           id: item.id,
           orderNumber: order.orderNumber,
@@ -70,6 +116,10 @@ export class BillingService {
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           lineTotal: item.lineTotal,
+          gstRate: effectiveGstRate.toNumber(),
+          gstPercentage: effectiveGstRate.times(100).toNumber(),
+          gstTaxTagName: effectiveGstTagName,
+          gstAmount: itemGstAmount.toDecimalPlaces(2),
           station: item.station,
           status: item.status,
         });
@@ -79,15 +129,10 @@ export class BillingService {
     const grossSubtotal = foodSubtotal.plus(drinkSubtotal).plus(merchandiseSubtotal);
     const discountTotal = new Decimal(0); // Optional promo discounts
 
-    // 2. Taxes & Charges (5% SC + 5% GST default)
-    const serviceChargeRate = new Decimal(0.05);
-    const gstRate = new Decimal(0.05);
-
     const discountedSubtotal = Decimal.max(new Decimal(0), grossSubtotal.minus(discountTotal));
     const serviceChargeTotal = discountedSubtotal.times(serviceChargeRate).toDecimalPlaces(2);
+    const taxTotal = itemTaxTotalSum.toDecimalPlaces(2);
     const taxableAmount = discountedSubtotal.plus(serviceChargeTotal);
-    const taxTotal = taxableAmount.times(gstRate).toDecimalPlaces(2);
-
     const grossPayable = taxableAmount.plus(taxTotal);
 
     // 3. Redemption Entitlement Offset (Entitlement from entry fee, applied against eligible drinks)
@@ -97,7 +142,9 @@ export class BillingService {
 
     // 4. Final Balance & Cash Rounding
     const netBeforeRounding = Decimal.max(new Decimal(0), grossPayable.minus(redemptionDeduction));
-    const roundedFinalPayable = new Decimal(Math.round(netBeforeRounding.toNumber()));
+    const roundedFinalPayable = roundingEnabled
+      ? new Decimal(Math.round(netBeforeRounding.toNumber()))
+      : netBeforeRounding.toDecimalPlaces(2);
     const rounding = roundedFinalPayable.minus(netBeforeRounding).toDecimalPlaces(2);
 
     return {

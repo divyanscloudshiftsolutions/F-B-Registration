@@ -37,7 +37,26 @@ interface DataContextType {
  refreshAll: () => Promise<void>;
 }
 
-const DataContext = createContext<DataContextType | undefined>(undefined);
+const defaultDataContext: DataContextType = {
+  tokens: [],
+  allSessions: [],
+  tables: [],
+  reservations: [],
+  rates: [],
+  users: [],
+  isLoading: false,
+  sessionAlerts: [],
+  dismissAlert: () => {},
+  refreshTokens: async () => {},
+  refreshAllSessions: async () => {},
+  refreshTables: async () => {},
+  refreshReservations: async () => {},
+  refreshRates: async () => {},
+  refreshUsers: async () => {},
+  refreshAll: async () => {},
+};
+
+const DataContext = createContext<DataContextType>(defaultDataContext);
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
  const { user } = useAuth();
@@ -333,9 +352,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 };
 
 export const useData = () => {
- const context = useContext(DataContext);
- if (context === undefined) {
- throw new Error('useData must be used within a DataProvider');
- }
- return context;
+  const context = useContext(DataContext);
+  return context || defaultDataContext;
 };

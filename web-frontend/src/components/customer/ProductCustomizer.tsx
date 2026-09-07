@@ -7,8 +7,13 @@ export interface CustomizerItem {
   name: string;
   description?: string;
   basePrice: number;
+  finalPrice?: number;
+  discountMode?: string;
+  discountValue?: number;
   foodType: string;
   station: string;
+  image?: string;
+  imageUrl?: string;
   sectionSlug?: string;
   variants?: Array<{
     id: string;
@@ -83,7 +88,8 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
     return sum + (opt ? opt.priceDelta : 0);
   }, 0);
 
-  const unitPrice = item.basePrice + (selectedVariant ? selectedVariant.priceDelta : 0) + modAdditions;
+  const effectiveBasePrice = Number(item.finalPrice ?? item.basePrice);
+  const unitPrice = effectiveBasePrice + (selectedVariant ? Number(selectedVariant.priceDelta) : 0) + modAdditions;
   const grandTotal = unitPrice * qty;
 
   const handleAdd = () => {

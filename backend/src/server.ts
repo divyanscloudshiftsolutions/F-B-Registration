@@ -1,4 +1,5 @@
 import express from 'express';
+import path from 'path';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import router from './routes';
@@ -102,6 +103,9 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(requestLoggingMiddleware);
 app.use(limiter);
+
+// Static files (uploads)
+app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // Mount API router
 app.use('/api', router);

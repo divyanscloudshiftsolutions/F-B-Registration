@@ -156,3 +156,113 @@ export interface SessionAlert {
   type?: 'warning' | 'urgent' | 'info' | 'danger';
   severity?: 'warning' | 'urgent' | 'info' | 'danger';
 }
+
+export type FoodType = 'VEG' | 'NON_VEG' | 'EGG' | 'VEGAN';
+export type Station = 'KITCHEN' | 'BAR' | 'DESSERT' | 'CASHIER';
+export type DiscountMode = 'AMOUNT' | 'PERCENTAGE';
+
+export interface ItemVariant {
+  id?: string;
+  menuItemId?: string;
+  name: string;
+  priceDelta: number | string;
+  sortOrder?: number;
+}
+
+export interface ModifierOption {
+  id?: string;
+  groupId?: string;
+  name: string;
+  priceDelta: number | string;
+  sortOrder?: number;
+}
+
+export interface ModifierGroup {
+  id?: string;
+  menuItemId?: string;
+  name: string;
+  isRequired: boolean;
+  isMulti: boolean;
+  options: ModifierOption[];
+}
+
+export interface MenuSubcategory {
+  id: string;
+  categoryId: string;
+  name: string;
+  slug: string;
+  sortOrder: number;
+  items?: MenuItem[];
+}
+
+export interface MenuCategory {
+  id: string;
+  sectionId: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  sortOrder: number;
+  section?: MenuSection;
+  subcategories?: MenuSubcategory[];
+  items?: MenuItem[];
+}
+
+export interface MenuSection {
+  id: string;
+  name: string;
+  slug: string;
+  sortOrder: number;
+  categories?: MenuCategory[];
+}
+
+export interface GstTaxTag {
+  id: string;
+  name: string;
+  rate: number | string;
+  isActive: boolean;
+  createdAt?: string;
+  _count?: {
+    items: number;
+  };
+}
+
+export interface MenuItem {
+  id: string;
+  name: string;
+  description: string;
+  sectionId: string;
+  categoryId: string;
+  subcategoryId?: string | null;
+  gstTaxTagId?: string | null;
+  gstTaxTag?: GstTaxTag | null;
+  foodType?: FoodType | null;
+  station: Station;
+  image?: string | null;
+  basePrice: number | string;
+  discountMode: DiscountMode;
+  discountValue: number | string;
+  finalPrice: number | string;
+  isAvailable: boolean;
+  isFeatured: boolean;
+  isPopular: boolean;
+  isArchived?: boolean;
+  tags: string[];
+  allergens: string[];
+  preparationTime: number;
+  sortOrder: number;
+  variants?: ItemVariant[];
+  modifierGroups?: ModifierGroup[];
+  category?: MenuCategory;
+  subcategory?: MenuSubcategory;
+}
+
+export interface VenueConfig {
+  id: string;
+  gstEnabled: boolean;
+  gstRate: number | string;
+  scEnabled: boolean;
+  scRate: number | string;
+  roundingEnabled: boolean;
+  updatedAt?: string;
+  updatedBy?: string | null;
+}

@@ -19,6 +19,9 @@ export const SOCKET_EVENTS = {
   BILL_UPDATED: 'bill.updated',
   SESSION_UPDATED: 'session.updated',
 
+  // Menu catalog events
+  MENU_UPDATED: 'menu.updated',
+
   // Room Subscription events
   JOIN_ROOM: 'room:join',
   LEAVE_ROOM: 'room:leave',

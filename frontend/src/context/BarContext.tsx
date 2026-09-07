@@ -351,7 +351,7 @@ export const BarProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const interceptedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const response = await originalFetch(input, init);
       
-      if (response.status === 403) {
+      if (response.status === 403 || response.status === 401) {
         try {
           const clone = response.clone();
           const data = await clone.json();

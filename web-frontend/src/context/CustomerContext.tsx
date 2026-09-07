@@ -59,7 +59,43 @@ export interface CustomerContextType {
   logout: () => void;
 }
 
-const CustomerContext = createContext<CustomerContextType | undefined>(undefined);
+const defaultCustomerContext: CustomerContextType = {
+  tokenNumber: null,
+  tableNumber: null,
+  tableId: null,
+  setSession: () => {},
+  menu: [],
+  categories: [],
+  promotions: [],
+  cart: [],
+  addToCart: () => {},
+  updateCartQuantity: () => {},
+  removeFromCart: () => {},
+  clearCart: () => {},
+  cartTotal: 0,
+  cartCount: 0,
+  activeOrders: [],
+  activeRequests: [],
+  setActiveRequests: () => {},
+  refreshRequests: async () => {},
+  sessionData: null,
+  sessionError: null,
+  refreshSession: async () => {},
+  activeBill: null,
+  billError: null,
+  isLoading: false,
+  isOrdering: false,
+  placeOrder: async () => null,
+  refreshOrders: async () => {},
+  refreshBill: async () => null,
+  refreshMenu: async () => {},
+  isCallWaiterOpen: false,
+  setIsCallWaiterOpen: () => {},
+  isSessionClosed: false,
+  logout: () => {},
+};
+
+const CustomerContext = createContext<CustomerContextType>(defaultCustomerContext);
 
 export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [tokenNumber, setTokenNumberState] = useState<string | null>(() => {
@@ -316,6 +352,10 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     });
 
+    const unsubMenuUpdated = onSocketEvent('menu.updated', () => {
+      refreshMenu();
+    });
+
     return () => {
       unsubOrderCreated();
       unsubItemUpdated();
@@ -324,8 +364,9 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       unsubBillUpdated();
       unsubSessionUpdated();
       unsubSessionClosed();
+      unsubMenuUpdated();
     };
-  }, [tokenNumber, tableNumber, refreshOrders, refreshBill, handleSessionClosure]);
+  }, [tokenNumber, tableNumber, refreshOrders, refreshBill, refreshMenu, handleSessionClosure]);
 
   // Cart Handlers
   const addToCart = (item: Omit<CartItem, 'id'>) => {
@@ -442,8 +483,5 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
 export const useCustomer = (): CustomerContextType => {
   const context = useContext(CustomerContext);
-  if (!context) {
-    throw new Error('useCustomer must be used within a CustomerProvider');
-  }
-  return context;
+  return context || defaultCustomerContext;
 };
