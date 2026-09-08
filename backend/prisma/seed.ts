@@ -374,7 +374,7 @@ async function main() {
 
   const categorySpecs = [
     // Eat
-    { sectionSlug: 'eat', name: 'Bar Snacks', slug: 'bar-snacks', sortOrder: 1 },
+    { sectionSlug: 'eat', name: 'Starters', slug: 'bar-snacks', sortOrder: 1 },
     { sectionSlug: 'eat', name: 'Burgers & Sandwiches', slug: 'burgers', sortOrder: 2 },
     { sectionSlug: 'eat', name: 'Mains', slug: 'mains', sortOrder: 3 },
     { sectionSlug: 'eat', name: 'Accompaniments', slug: 'sides', sortOrder: 4 },
@@ -402,9 +402,15 @@ async function main() {
 
   // Subcategories
   const subcategorySpecs = [
+    // Starters
     { categorySlug: 'bar-snacks', name: 'Vegetarian', slug: 'veg', sortOrder: 1 },
     { categorySlug: 'bar-snacks', name: 'Chicken', slug: 'chicken', sortOrder: 2 },
-    { categorySlug: 'bar-snacks', name: 'Seafood', slug: 'seafood', sortOrder: 3 },
+    { categorySlug: 'bar-snacks', name: 'Paneer', slug: 'paneer', sortOrder: 3 },
+    { categorySlug: 'bar-snacks', name: 'Mutton', slug: 'mutton', sortOrder: 4 },
+    { categorySlug: 'bar-snacks', name: 'Seafood', slug: 'seafood', sortOrder: 5 },
+    // Mains
+    { categorySlug: 'mains', name: 'Curries', slug: 'curries', sortOrder: 1 },
+    { categorySlug: 'mains', name: 'Biryani', slug: 'biryani', sortOrder: 2 },
   ];
 
   const dbSubcategories: Record<string, string> = {};
@@ -413,6 +419,7 @@ async function main() {
       where: { categoryId: dbCategories[sc.categorySlug], slug: sc.slug },
     });
     if (existing) {
+      dbSubcategories[`${sc.categorySlug}_${sc.slug}`] = existing.id;
       dbSubcategories[sc.slug] = existing.id;
     } else {
       const created = await prisma.menuSubcategory.create({
@@ -423,6 +430,7 @@ async function main() {
           sortOrder: sc.sortOrder,
         },
       });
+      dbSubcategories[`${sc.categorySlug}_${sc.slug}`] = created.id;
       dbSubcategories[sc.slug] = created.id;
     }
   }

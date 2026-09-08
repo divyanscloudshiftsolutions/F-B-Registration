@@ -96,6 +96,27 @@ export class MenuService {
     const sections = await prisma.menuSection.findMany({
       orderBy: { sortOrder: 'asc' },
       include: {
+        items: {
+          where: includeUnavailable
+            ? { categoryId: null, isArchived: false }
+            : { categoryId: null, isAvailable: true, isArchived: false },
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            subcategory: true,
+            gstTaxTag: true,
+            variants: {
+              orderBy: { sortOrder: 'asc' },
+            },
+            modifierGroups: {
+              include: {
+                options: {
+                  orderBy: { sortOrder: 'asc' },
+                },
+              },
+            },
+            stockItem: true,
+          },
+        },
         categories: {
           orderBy: { sortOrder: 'asc' },
           include: {
@@ -108,6 +129,7 @@ export class MenuService {
                 : { isAvailable: true, isArchived: false },
               orderBy: { sortOrder: 'asc' },
               include: {
+                subcategory: true,
                 gstTaxTag: true,
                 variants: {
                   orderBy: { sortOrder: 'asc' },
@@ -127,14 +149,19 @@ export class MenuService {
       },
     });
 
+    const mappedSections = sections.map((s) => ({
+      ...s,
+      name: s.slug === 'eat' ? 'Food' : s.name,
+    }));
+
     // 3. Cache for 5 minutes
     try {
-      await redisService.setex(cacheKey, 300, JSON.stringify(sections));
+      await redisService.setex(cacheKey, 300, JSON.stringify(mappedSections));
     } catch (err: any) {
       logger.warn('[MenuService] Redis setex failed:', { error: err.message });
     }
 
-    return sections;
+    return mappedSections;
   }
 
   /**
@@ -161,13 +188,20 @@ export class MenuService {
       },
     });
 
+    const mappedCategories = categories.map((c) => {
+      if (c.section && c.section.slug === 'eat') {
+        return { ...c, section: { ...c.section, name: 'Food' } };
+      }
+      return c;
+    });
+
     try {
-      await redisService.setex(cacheKey, 600, JSON.stringify(categories));
+      await redisService.setex(cacheKey, 600, JSON.stringify(mappedCategories));
     } catch {
       // ignore
     }
 
-    return categories;
+    return mappedCategories;
   }
 
   /**
@@ -238,6 +272,45 @@ export class MenuService {
   }
 
   /**
+   * Delete Menu Category safely without deleting products
+   */
+  async deleteCategory(id: string) {
+    const category = await prisma.menuCategory.findUnique({
+      where: { id },
+    });
+
+    if (!category) {
+      throw new Error(`Category with ID ${id} not found`);
+    }
+
+    // Atomic transaction: Unlink all affected items, delete child subcategories, delete category
+    await prisma.$transaction(async (tx) => {
+      // 1. Unlink assigned products (categoryId = null, subcategoryId = null)
+      await tx.menuItem.updateMany({
+        where: { categoryId: id },
+        data: { categoryId: null, subcategoryId: null },
+      });
+
+      // 2. Delete child subcategories
+      await tx.menuSubcategory.deleteMany({
+        where: { categoryId: id },
+      });
+
+      // 3. Delete the category
+      await tx.menuCategory.delete({
+        where: { id },
+      });
+    });
+
+    await this.invalidateMenuCache();
+    this.notifyMenuUpdated({ action: 'category_deleted', details: { categoryId: id } });
+    return {
+      success: true,
+      message: `Category "${category.name}" deleted successfully. Assigned products were preserved under All Dishes.`,
+    };
+  }
+
+  /**
    * Create Menu Subcategory
    */
   async createSubcategory(data: { categoryId: string; name: string; sortOrder?: number }) {
@@ -254,6 +327,69 @@ export class MenuService {
     await this.invalidateMenuCache();
     this.notifyMenuUpdated({ action: 'subcategory_created', details: subcategory });
     return subcategory;
+  }
+
+  /**
+   * Update Menu Subcategory
+   */
+  async updateSubcategory(
+    id: string,
+    data: {
+      name?: string;
+      sortOrder?: number;
+      categoryId?: string;
+    }
+  ) {
+    const existing = await prisma.menuSubcategory.findUnique({ where: { id } });
+    if (!existing) {
+      throw new Error(`Subcategory with ID ${id} not found`);
+    }
+
+    const subcategory = await prisma.menuSubcategory.update({
+      where: { id },
+      data: {
+        ...(data.name && { name: data.name.trim(), slug: generateSlug(data.name.trim()) }),
+        ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
+        ...(data.categoryId && { categoryId: data.categoryId }),
+      },
+    });
+
+    await this.invalidateMenuCache();
+    this.notifyMenuUpdated({ action: 'subcategory_updated', details: subcategory });
+    return subcategory;
+  }
+
+  /**
+   * Delete Menu Subcategory safely without deleting products
+   */
+  async deleteSubcategory(id: string) {
+    const existing = await prisma.menuSubcategory.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new Error(`Subcategory with ID ${id} not found`);
+    }
+
+    // Atomic transaction: Unlink assigned products (subcategoryId = null) and delete subcategory
+    await prisma.$transaction(async (tx) => {
+      // 1. Unlink assigned products (retains parent categoryId)
+      await tx.menuItem.updateMany({
+        where: { subcategoryId: id },
+        data: { subcategoryId: null },
+      });
+
+      // 2. Delete the subcategory
+      await tx.menuSubcategory.delete({
+        where: { id },
+      });
+    });
+
+    await this.invalidateMenuCache();
+    this.notifyMenuUpdated({ action: 'subcategory_deleted', details: { subcategoryId: id } });
+    return {
+      success: true,
+      message: `Subcategory "${existing.name}" deleted successfully. Assigned products remain in their category under All Dishes.`,
+    };
   }
 
   /**
@@ -466,12 +602,19 @@ export class MenuService {
       sectionId = category.sectionId;
     }
 
+    const targetCategoryId =
+      data.categoryId !== undefined ? (data.categoryId || null) : existing.categoryId;
+
     if (data.subcategoryId) {
-      const targetCategoryId = data.categoryId || existing.categoryId;
+      if (!targetCategoryId) {
+        throw new Error('A category must be assigned before assigning a subcategory');
+      }
       const subcategory = await prisma.menuSubcategory.findUnique({ where: { id: data.subcategoryId } });
       if (!subcategory || subcategory.categoryId !== targetCategoryId) {
         throw new Error('Selected subcategory does not belong to the category');
       }
+    } else if (data.categoryId === null || data.categoryId === '') {
+      data.subcategoryId = null;
     }
 
     // Pricing update (only if admin modified it or base price exists)
@@ -499,8 +642,8 @@ export class MenuService {
         data: {
           ...(data.name && { name: data.name.trim() }),
           ...(data.description !== undefined && { description: data.description.trim() }),
-          ...(data.categoryId && { categoryId: data.categoryId, sectionId }),
-          ...(data.subcategoryId !== undefined && { subcategoryId: data.subcategoryId }),
+          ...(data.categoryId !== undefined ? { categoryId: data.categoryId || null, ...(data.categoryId ? { sectionId } : {}) } : {}),
+          ...(data.subcategoryId !== undefined ? { subcategoryId: data.subcategoryId || null } : {}),
           ...(data.gstTaxTagId !== undefined && { gstTaxTagId: data.gstTaxTagId || null }),
           ...(data.foodType !== undefined && { foodType: data.foodType }),
           ...(data.station !== undefined && { station: data.station }),

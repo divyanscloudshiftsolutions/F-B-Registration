@@ -16,6 +16,8 @@ interface MenuItemCardProps {
   onDirectAdd: (item: CustomizerItem) => void;
   onIncrement?: (item: CustomizerItem) => void;
   onDecrement?: (item: CustomizerItem) => void;
+  onOpenDetails?: (item: any) => void;
+  onOpenImageModal?: (imageUrl: string, itemName: string) => void;
 }
 
 export const MenuItemCard: React.FC<MenuItemCardProps> = ({
@@ -25,6 +27,8 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
   onDirectAdd,
   onIncrement,
   onDecrement,
+  onOpenDetails,
+  onOpenImageModal,
 }) => {
   const hasModifiers =
     (item.variants && item.variants.length > 0) ||
@@ -63,7 +67,10 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
   };
 
   return (
-    <div className="flex gap-3 sm:gap-4 p-3.5 sm:p-4 rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] shadow-xs hover:shadow-md hover:border-primary/40 dark:hover:border-[#D4AF37]/40 transition-all duration-200">
+    <div
+      onClick={() => onOpenDetails?.(item)}
+      className="flex gap-3 sm:gap-4 p-3.5 sm:p-4 rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] shadow-xs hover:shadow-md hover:border-primary/40 dark:hover:border-[#D4AF37]/40 transition-all duration-200 cursor-pointer"
+    >
       {/* Item Details */}
       <div className="flex-1 min-w-0 flex flex-col justify-between">
         <div>
@@ -120,7 +127,18 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
 
       {/* Right Side: Image + Add / Quantity Stepper */}
       <div className="w-24 sm:w-28 shrink-0 flex flex-col items-center justify-between">
-        <div className="w-20 sm:w-24 h-16 sm:h-20 rounded-xl bg-primary/5 dark:bg-white/5 border border-border/60 dark:border-white/10 flex items-center justify-center text-xs font-semibold text-text-muted overflow-hidden">
+        <div
+          onClick={(e) => {
+            if (displayImage) {
+              e.stopPropagation();
+              onOpenImageModal?.(displayImage, item.name);
+            }
+          }}
+          title={displayImage ? `View full image of ${item.name}` : undefined}
+          className={`w-20 sm:w-24 h-16 sm:h-20 rounded-xl bg-primary/5 dark:bg-white/5 border border-border/60 dark:border-white/10 flex items-center justify-center text-xs font-semibold text-text-muted overflow-hidden ${
+            displayImage ? 'cursor-pointer hover:border-primary/60 dark:hover:border-[#D4AF37]/60 hover:scale-105 transition-transform' : ''
+          }`}
+        >
           {displayImage ? (
             <img src={formatImageUrl(displayImage)} alt={item.name} className="w-full h-full object-cover" />
           ) : (
@@ -161,7 +179,10 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
           /* Initial Add Button with >= 44px touch area */
           <button
             type="button"
-            onClick={handleAddClick}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleAddClick();
+            }}
             aria-label={`Add ${item.name} to order`}
             className="mt-2 w-full min-h-[36px] py-1.5 px-3 rounded-xl border border-primary text-primary hover:bg-primary hover:text-white dark:border-[#D4AF37] dark:text-[#D4AF37] dark:hover:bg-[#D4AF37] dark:hover:text-black font-extrabold text-xs transition-colors flex items-center justify-center gap-1 shadow-2xs cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:focus-visible:outline-[#D4AF37]"
           >

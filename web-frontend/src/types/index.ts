@@ -213,6 +213,7 @@ export interface MenuSection {
   slug: string;
   sortOrder: number;
   categories?: MenuCategory[];
+  items?: MenuItem[];
 }
 
 export interface GstTaxTag {
@@ -231,7 +232,7 @@ export interface MenuItem {
   name: string;
   description: string;
   sectionId: string;
-  categoryId: string;
+  categoryId?: string | null;
   subcategoryId?: string | null;
   gstTaxTagId?: string | null;
   gstTaxTag?: GstTaxTag | null;

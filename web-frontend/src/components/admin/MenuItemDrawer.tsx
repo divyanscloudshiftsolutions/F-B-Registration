@@ -17,6 +17,7 @@ import {
   Tag,
   Check,
   ImageIcon,
+  Search,
 } from 'lucide-react';
 
 interface MenuItemDrawerProps {
@@ -83,6 +84,38 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
   const [isLoadingCatalog, setIsLoadingCatalog] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Inline Subcategory Creation State
+  const [isCreatingSubcategory, setIsCreatingSubcategory] = useState<boolean>(false);
+  const [newSubcategoryName, setNewSubcategoryName] = useState<string>('');
+  const [isSubmittingSubcategory, setIsSubmittingSubcategory] = useState<boolean>(false);
+
+  const handleCreateSubcategoryInline = async () => {
+    if (!newSubcategoryName.trim() || !selectedCategoryId) return;
+    setIsSubmittingSubcategory(true);
+    setErrorMsg(null);
+    try {
+      const created = await api.createSubcategory({
+        categoryId: selectedCategoryId,
+        name: newSubcategoryName.trim(),
+      });
+      setCategories((prev) =>
+        prev.map((c) =>
+          c.id === selectedCategoryId
+            ? { ...c, subcategories: [...(c.subcategories || []), created] }
+            : c
+        )
+      );
+      setSubcategories((prev) => [...prev, created]);
+      setSelectedSubcategoryId(created.id);
+      setNewSubcategoryName('');
+      setIsCreatingSubcategory(false);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to create subcategory');
+    } finally {
+      setIsSubmittingSubcategory(false);
+    }
+  };
 
   // Load catalog sections, categories, and GST tags
   useEffect(() => {
@@ -193,12 +226,19 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
   useEffect(() => {
     if (!selectedCategoryId) {
       setSubcategories([]);
+      setSelectedSubcategoryId('');
+      setIsCreatingSubcategory(false);
+      setNewSubcategoryName('');
       return;
     }
     const cat = categories.find((c) => c.id === selectedCategoryId);
     if (cat) {
       setSelectedSectionId(cat.sectionId);
       setSubcategories(cat.subcategories || []);
+      // If currently selected subcategory doesn't belong to this category, reset it
+      if (selectedSubcategoryId && !(cat.subcategories || []).some((s) => s.id === selectedSubcategoryId)) {
+        setSelectedSubcategoryId('');
+      }
     }
   }, [selectedCategoryId, categories]);
 
@@ -236,6 +276,44 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
       setErrorMsg(err.message || 'Image upload failed');
     } finally {
       setIsUploadingImage(false);
+    }
+  };
+
+  // Open Google Images search in user's default browser based primarily on Product Name
+  const handleSearchImage = () => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setErrorMsg('Please enter a Product Name first to search for images');
+      setActiveTab('details');
+      return;
+    }
+
+    // Product Name is the primary search term. Use concise keywords from description only if helpful
+    let query = trimmedName;
+    const trimmedDesc = description.trim();
+    if (trimmedDesc && trimmedDesc.length > 0 && trimmedDesc.length <= 40) {
+      // If description is brief and specific, append it cleanly
+      query = `${trimmedName} ${trimmedDesc}`;
+    }
+
+    const searchUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`;
+    if (typeof window !== 'undefined') {
+      window.open(searchUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  // Automatically paste clipboard content into the Direct Image URL input field on click/focus
+  const handleAutoPasteImageUrl = async () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.readText) {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim()) {
+          const trimmed = text.trim();
+          setImageUrl(trimmed);
+        }
+      } catch (err) {
+        // Fallback: If clipboard read permission is blocked or denied, normal focus/manual paste remains available
+      }
     }
   };
 
@@ -295,6 +373,12 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
       return;
     }
 
+    if (selectedSubcategoryId && !selectedCategoryId) {
+      setErrorMsg('Cannot select a subcategory without selecting a category first');
+      setActiveTab('details');
+      return;
+    }
+
     if (!isEditMode && (!basePrice || numBase <= 0)) {
       setErrorMsg('A valid base price greater than 0 is required');
       setActiveTab('pricing');
@@ -332,7 +416,7 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
         name: name.trim(),
         description: description.trim(),
         categoryId: selectedCategoryId,
-        subcategoryId: selectedSubcategoryId || null,
+        subcategoryId: selectedCategoryId ? (selectedSubcategoryId || null) : null,
         foodType: foodType || null,
         station,
         image: imageUrl.trim() || null,
@@ -408,7 +492,7 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
               {isEditMode ? 'Catalog Management' : 'New Item Creation'}
             </span>
             <h2 id="menu-drawer-title" className="text-base font-black text-zinc-900 dark:text-white">
-              {isEditMode ? `Edit: ${itemToEdit?.name}` : 'Create New Menu Item'}
+              {isEditMode ? `Edit Menu Item: ${itemToEdit?.name}` : 'Create New Menu Item'}
             </h2>
           </div>
           <button
@@ -479,37 +563,138 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
                     required
                     value={selectedCategoryId}
                     onChange={(e) => {
-                      setSelectedCategoryId(e.target.value);
+                      const newCatId = e.target.value;
+                      setSelectedCategoryId(newCatId);
                       setSelectedSubcategoryId('');
+                      const foundCat = categories.find((c) => c.id === newCatId);
+                      if (foundCat && foundCat.section) {
+                        const sSlug = foundCat.section.slug?.toLowerCase();
+                        if (sSlug === 'eat') {
+                          setStation('KITCHEN');
+                        } else if (sSlug === 'drink') {
+                          setStation('BAR');
+                        } else if (sSlug === 'merchandise') {
+                          setStation('CASHIER');
+                        }
+                      }
                     }}
                     className="w-full px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
                     <option value="">-- Select Category --</option>
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name} ({cat.section?.name || 'Section'})
-                      </option>
-                    ))}
+                    {categories.map((cat) => {
+                      const secDisplay =
+                        cat.section?.slug === 'eat' || cat.section?.name?.toLowerCase() === 'eat'
+                          ? 'Food'
+                          : cat.section?.name || 'Section';
+                      return (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name} ({secDisplay})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
-                    Subcategory (Optional)
-                  </label>
-                  <select
-                    value={selectedSubcategoryId}
-                    onChange={(e) => setSelectedSubcategoryId(e.target.value)}
-                    disabled={subcategories.length === 0}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
-                  >
-                    <option value="">-- None / General --</option>
-                    {subcategories.map((sub) => (
-                      <option key={sub.id} value={sub.id}>
-                        {sub.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
+                      <span>Subcategory (Optional)</span>
+                      {!selectedCategoryId && (
+                        <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-normal">
+                          (Disabled)
+                        </span>
+                      )}
+                    </label>
+                    {selectedCategoryId && !isCreatingSubcategory && (
+                      <button
+                        type="button"
+                        onClick={() => setIsCreatingSubcategory(true)}
+                        className="text-[11px] font-semibold text-purple-600 dark:text-[#D4AF37] hover:underline cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        New Subcategory
+                      </button>
+                    )}
+                  </div>
+
+                  {isCreatingSubcategory ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={newSubcategoryName}
+                        onChange={(e) => setNewSubcategoryName(e.target.value)}
+                        placeholder="New subcategory name..."
+                        className="flex-1 px-3 py-2 text-xs rounded-xl border border-purple-400 dark:border-[#D4AF37] bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white focus:outline-none"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleCreateSubcategoryInline();
+                          } else if (e.key === 'Escape') {
+                            setIsCreatingSubcategory(false);
+                            setNewSubcategoryName('');
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={!newSubcategoryName.trim() || isSubmittingSubcategory}
+                        onClick={handleCreateSubcategoryInline}
+                        className="px-2.5 py-2 rounded-xl bg-purple-600 dark:bg-[#D4AF37] text-white dark:text-black font-bold text-xs hover:opacity-90 disabled:opacity-50 cursor-pointer flex items-center gap-1"
+                      >
+                        {isSubmittingSubcategory ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                        <span>Add</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSubmittingSubcategory}
+                        onClick={() => {
+                          setIsCreatingSubcategory(false);
+                          setNewSubcategoryName('');
+                        }}
+                        className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+                        title="Cancel"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        value={selectedSubcategoryId}
+                        onChange={(e) => {
+                          if (!selectedCategoryId) return;
+                          setSelectedSubcategoryId(e.target.value);
+                        }}
+                        disabled={!selectedCategoryId}
+                        title={!selectedCategoryId ? 'Please select a category first to choose a subcategory' : undefined}
+                        className={`w-full px-3 py-2 text-xs rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                          !selectedCategoryId
+                            ? 'bg-zinc-100 dark:bg-zinc-800/40 text-zinc-400 dark:text-zinc-500 border-zinc-200 dark:border-zinc-800 cursor-not-allowed'
+                            : 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border-zinc-200 dark:border-zinc-700 cursor-pointer'
+                        }`}
+                      >
+                        <option value="">
+                          {!selectedCategoryId
+                            ? '-- Select Category First --'
+                            : subcategories.length === 0
+                            ? '-- None / No Subcategories --'
+                            : '-- None / General --'}
+                        </option>
+                        {selectedCategoryId &&
+                          subcategories.map((sub) => (
+                            <option key={sub.id} value={sub.id}>
+                              {sub.name}
+                            </option>
+                          ))}
+                      </select>
+                      {!selectedCategoryId && (
+                        <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1">
+                          Please select a Category first to enable subcategories.
+                        </p>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -517,7 +702,7 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
-                    Fulfillment Station
+                    Preparation Area
                   </label>
                   <select
                     value={station}
@@ -526,8 +711,10 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
                   >
                     <option value="KITCHEN">Kitchen</option>
                     <option value="BAR">Bar</option>
-                    <option value="DESSERT">Dessert Station</option>
-                    <option value="CASHIER">Cashier / Front Desk</option>
+                    <option value="CASHIER">Front Desk / Cashier</option>
+                    {station !== 'KITCHEN' && station !== 'BAR' && station !== 'CASHIER' && (
+                      <option value={station}>{station}</option>
+                    )}
                   </select>
                 </div>
 
@@ -836,8 +1023,20 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
                       placeholder="https://images.unsplash.com/..."
                       value={imageUrl}
                       onChange={(e) => setImageUrl(e.target.value)}
-                      className="flex-1 px-3.5 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-[#D4AF37]"
+                      onClick={handleAutoPasteImageUrl}
+                      onFocus={handleAutoPasteImageUrl}
+                      className="flex-1 min-w-0 px-3.5 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-[#D4AF37]"
                     />
+                    <button
+                      type="button"
+                      onClick={handleSearchImage}
+                      title="Search product image"
+                      aria-label="Search product image"
+                      className="shrink-0 px-3 py-2 text-xs font-bold rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 hover:text-zinc-900 dark:hover:text-[#D4AF37] dark:hover:border-[#D4AF37]/50 transition-all flex items-center gap-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-[#D4AF37]"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Search Image</span>
+                    </button>
                   </div>
                 </div>
               )}

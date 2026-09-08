@@ -5376,6 +5376,16 @@ router.put('/menu/categories/:id', authenticate, authorize(['admin', 'manager'])
   }
 });
 
+// DELETE /api/menu/categories/:id
+router.delete('/menu/categories/:id', authenticate, authorize(['admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await menuService.deleteCategory(req.params.id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
 // POST /api/menu/subcategories
 router.post('/menu/subcategories', authenticate, authorize(['admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -5385,6 +5395,26 @@ router.post('/menu/subcategories', authenticate, authorize(['admin', 'manager'])
     }
     const subcategory = await menuService.createSubcategory({ name, categoryId, sortOrder });
     return res.status(201).json({ success: true, subcategory });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// PUT /api/menu/subcategories/:id
+router.put('/menu/subcategories/:id', authenticate, authorize(['admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const subcategory = await menuService.updateSubcategory(req.params.id, req.body);
+    return res.json({ success: true, subcategory });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// DELETE /api/menu/subcategories/:id
+router.delete('/menu/subcategories/:id', authenticate, authorize(['admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await menuService.deleteSubcategory(req.params.id);
+    return res.json(result);
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { message: err.message } });
   }

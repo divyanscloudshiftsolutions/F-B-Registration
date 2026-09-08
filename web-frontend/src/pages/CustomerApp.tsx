@@ -4,6 +4,7 @@ import { VegBadge } from '../components/customer/VegBadge';
 import { MenuItemCard } from '../components/customer/MenuItemCard';
 import { ProductCustomizer, type CustomizerItem } from '../components/customer/ProductCustomizer';
 import { CallWaiterSheet } from '../components/customer/CallWaiterSheet';
+import { formatImageUrl } from '../utils/imageUrl';
 import {
   Home as HomeIcon,
   PhoneCall,
@@ -41,6 +42,8 @@ import {
   Check,
   ArrowRight,
   RefreshCw,
+  Square,
+  CheckSquare,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -48,6 +51,9 @@ type CustomerNavTab = 'home' | 'eat' | 'drink' | 'merch' | 'search' | 'cart' | '
 
 const CustomerAppInner: React.FC = () => {
   const { isDark, toggleTheme } = useAuth();
+
+  const [selectedImageModal, setSelectedImageModal] = useState<{ url: string; name: string } | null>(null);
+  const [selectedDetailItem, setSelectedDetailItem] = useState<any | null>(null);
   const {
     tokenNumber,
     tableNumber,
@@ -173,7 +179,7 @@ const CustomerAppInner: React.FC = () => {
 
   // Isolate background scroll when modal or bottom sheet is open
   useEffect(() => {
-    const isModalOpen = isCallWaiterOpen || !!customizingItem;
+    const isModalOpen = isCallWaiterOpen || !!customizingItem || !!selectedImageModal || !!selectedDetailItem;
     if (isModalOpen) {
       const prevOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
@@ -181,7 +187,7 @@ const CustomerAppInner: React.FC = () => {
         document.body.style.overflow = prevOverflow;
       };
     }
-  }, [isCallWaiterOpen, customizingItem]);
+  }, [isCallWaiterOpen, customizingItem, selectedImageModal, selectedDetailItem]);
 
   // Flatten all menu items
   const allItems: any[] = useMemo(() => {
@@ -195,10 +201,23 @@ const CustomerAppInner: React.FC = () => {
         (cat.items || []).forEach((item: any) => {
           list.push({
             ...item,
+            featured: Boolean(item.isFeatured ?? item.featured),
+            popular: Boolean(item.isPopular ?? item.popular),
             sectionSlug: section.slug,
             categoryName: catDisplayName,
             categoryId: cat.id || item.categoryId,
           });
+        });
+      });
+      // Unassigned items directly under section:
+      (section.items || []).forEach((item: any) => {
+        list.push({
+          ...item,
+          featured: Boolean(item.isFeatured ?? item.featured),
+          popular: Boolean(item.isPopular ?? item.popular),
+          sectionSlug: section.slug,
+          categoryName: 'None',
+          categoryId: null,
         });
       });
     });
@@ -277,6 +296,54 @@ const CustomerAppInner: React.FC = () => {
       return true;
     });
   };
+
+  // Subcategory Multi-Filter state per Category: { [categoryId]: string[] }
+  const [selectedSubcategories, setSelectedSubcategories] = useState<Record<string, string[]>>({});
+
+  const handleToggleSubcategory = (catId: string, subcatId: string) => {
+    setSelectedSubcategories((prev) => {
+      const current = prev[catId] || [];
+      const next = current.includes(subcatId)
+        ? current.filter((id) => id !== subcatId)
+        : [...current, subcatId];
+      return { ...prev, [catId]: next };
+    });
+  };
+
+  const handleClearSubcategories = (catId: string) => {
+    setSelectedSubcategories((prev) => ({ ...prev, [catId]: [] }));
+  };
+
+  const handleSelectEatCategory = (catId: string) => {
+    setSelectedEatCategory(catId);
+    setSelectedSubcategories({}); // Immediately reset subcategory selections on parent category switch!
+  };
+
+  const handleSelectDrinkCategory = (catId: string) => {
+    setSelectedDrinkCategory(catId);
+    setSelectedSubcategories({}); // Immediately reset subcategory selections on parent category switch!
+  };
+
+  // Recalculate and prune invalid subcategories when dietary filter changes
+  useEffect(() => {
+    setSelectedSubcategories((prev) => {
+      let changed = false;
+      const updated: Record<string, string[]> = {};
+      Object.entries(prev).forEach(([catId, subcatIds]) => {
+        if (subcatIds.length === 0) return;
+        const validItems = getSectionItems('eat').filter((i) => i.categoryId === catId);
+        const validSubcatIds = new Set(validItems.map((i) => i.subcategoryId).filter(Boolean));
+        const filtered = subcatIds.filter((id) => validSubcatIds.has(id));
+        if (filtered.length !== subcatIds.length) {
+          changed = true;
+        }
+        if (filtered.length > 0) {
+          updated[catId] = filtered;
+        }
+      });
+      return changed ? updated : prev;
+    });
+  }, [dietaryFilter]);
 
   const popularItems = useMemo(() => allItems.filter((i) => i.popular).slice(0, 6), [allItems]);
   const featuredItems = useMemo(() => allItems.filter((i) => i.featured).slice(0, 6), [allItems]);
@@ -528,7 +595,7 @@ const CustomerAppInner: React.FC = () => {
             <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-2.5 pt-1 text-xs scrollbar-none border-t border-border/40 dark:border-white/5">
               {[
                 { id: 'home', label: 'For You' },
-                { id: 'eat', label: 'Eat' },
+                { id: 'eat', label: 'Food' },
                 { id: 'drink', label: 'Drink' },
                 { id: 'merch', label: 'Merchandise' },
               ].map((tab) => (
@@ -661,6 +728,8 @@ const CustomerAppInner: React.FC = () => {
                       item={i}
                       onOpenCustomizer={setCustomizingItem}
                       onDirectAdd={handleDirectAdd}
+                      onOpenDetails={setSelectedDetailItem}
+                      onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
                     />
                   ))}
                 </div>
@@ -679,6 +748,8 @@ const CustomerAppInner: React.FC = () => {
                       item={i}
                       onOpenCustomizer={setCustomizingItem}
                       onDirectAdd={handleDirectAdd}
+                      onOpenDetails={setSelectedDetailItem}
+                      onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
                     />
                   ))}
                 </div>
@@ -697,6 +768,8 @@ const CustomerAppInner: React.FC = () => {
                       item={i}
                       onOpenCustomizer={setCustomizingItem}
                       onDirectAdd={handleDirectAdd}
+                      onOpenDetails={setSelectedDetailItem}
+                      onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
                     />
                   ))}
                 </div>
@@ -713,6 +786,8 @@ const CustomerAppInner: React.FC = () => {
                       item={i}
                       onOpenCustomizer={setCustomizingItem}
                       onDirectAdd={handleDirectAdd}
+                      onOpenDetails={setSelectedDetailItem}
+                      onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
                     />
                   ))}
                 </div>
@@ -787,7 +862,7 @@ const CustomerAppInner: React.FC = () => {
             {/* 2. Sticky Category Filter Chips (Mobile & Tablet) */}
             <div className="lg:hidden sticky top-[57px] z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 bg-[#F5F3FA]/95 dark:bg-[#111114]/95 backdrop-blur-md border-b border-border/40 dark:border-white/5 overflow-x-auto no-scrollbar flex items-center gap-2">
               <button
-                onClick={() => setSelectedEatCategory('ALL')}
+                onClick={() => handleSelectEatCategory('ALL')}
                 className={`text-xs font-bold px-3.5 py-1.5 rounded-full shrink-0 transition-all cursor-pointer ${
                   selectedEatCategory === 'ALL'
                     ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-extrabold'
@@ -802,7 +877,7 @@ const CustomerAppInner: React.FC = () => {
                 .map((cat) => (
                   <button
                     key={cat.id}
-                    onClick={() => setSelectedEatCategory(cat.id)}
+                    onClick={() => handleSelectEatCategory(cat.id)}
                     className={`text-xs font-bold px-3.5 py-1.5 rounded-full shrink-0 transition-all cursor-pointer ${
                       selectedEatCategory === cat.id
                         ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-extrabold'
@@ -823,7 +898,7 @@ const CustomerAppInner: React.FC = () => {
                     Categories
                   </div>
                   <button
-                    onClick={() => setSelectedEatCategory('ALL')}
+                    onClick={() => handleSelectEatCategory('ALL')}
                     className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
                       selectedEatCategory === 'ALL'
                         ? 'bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] font-extrabold'
@@ -843,7 +918,7 @@ const CustomerAppInner: React.FC = () => {
                       return (
                         <button
                           key={cat.id}
-                          onClick={() => setSelectedEatCategory(cat.id)}
+                          onClick={() => handleSelectEatCategory(cat.id)}
                           className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
                             selectedEatCategory === cat.id
                               ? 'bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] font-extrabold'
@@ -889,9 +964,13 @@ const CustomerAppInner: React.FC = () => {
                       .filter((c) => getCategorySectionSlug(c) === 'eat')
                       .filter((c) => selectedEatCategory === 'ALL' || selectedEatCategory === c.id);
 
+                    const unassignedEatItems = selectedEatCategory === 'ALL'
+                      ? getSectionItems('eat').filter((i) => !i.categoryId)
+                      : [];
+
                     const totalMatchingItems = activeCategories.reduce((sum, cat) => {
                       return sum + getSectionItems('eat').filter((i) => i.categoryId === cat.id).length;
-                    }, 0);
+                    }, 0) + unassignedEatItems.length;
 
                     if (totalMatchingItems === 0) {
                       return (
@@ -912,7 +991,7 @@ const CustomerAppInner: React.FC = () => {
                               onClick={() => {
                                 setEatSearchQuery('');
                                 setDietaryFilter('ALL');
-                                setSelectedEatCategory('ALL');
+                                handleSelectEatCategory('ALL');
                               }}
                               className="px-4 py-2 rounded-xl bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-bold text-xs hover:opacity-90 transition-opacity cursor-pointer inline-flex items-center gap-1.5"
                             >
@@ -929,6 +1008,40 @@ const CustomerAppInner: React.FC = () => {
                           const catItems = getSectionItems('eat').filter((i) => i.categoryId === cat.id);
                           if (catItems.length === 0) return null;
                           const isExpanded = expandedCategories[cat.id] !== false;
+
+                          // Derive unique subcategories from products currently matching this category view
+                          const subcatMap = new Map<string, { id: string; name: string; sortOrder: number }>();
+                          catItems.forEach((item) => {
+                            if (item.subcategory && item.subcategory.id && item.subcategory.name) {
+                              subcatMap.set(item.subcategory.id, {
+                                id: item.subcategory.id,
+                                name: item.subcategory.name,
+                                sortOrder: item.subcategory.sortOrder || 0,
+                              });
+                            } else if (item.subcategoryId) {
+                              const found = (cat.subcategories || []).find((s: any) => s.id === item.subcategoryId);
+                              if (found) {
+                                subcatMap.set(found.id, {
+                                  id: found.id,
+                                  name: found.name,
+                                  sortOrder: found.sortOrder || 0,
+                                });
+                              }
+                            }
+                          });
+                          const availableSubcategories = Array.from(subcatMap.values()).sort(
+                            (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.name.localeCompare(b.name)
+                          );
+
+                          // Active subcategory filters for this specific category
+                          const activeSubcatIds = selectedSubcategories[cat.id] || [];
+
+                          // Filter items: if no subcategories selected, show all items (including subcategoryId === null)
+                          // If subcategories are selected, show only items matching selected subcategories
+                          const displayedItems = catItems.filter((item) => {
+                            if (activeSubcatIds.length === 0) return true;
+                            return item.subcategoryId && activeSubcatIds.includes(item.subcategoryId);
+                          });
 
                           return (
                             <div
@@ -956,8 +1069,120 @@ const CustomerAppInner: React.FC = () => {
                               </button>
 
                               {isExpanded && (
-                                <div className="p-4 sm:p-5 pt-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 border-t border-border/40 dark:border-white/5">
-                                  {catItems.map((item) => (
+                                <div>
+                                  {/* Subcategory Multi-Filter Chips Bar */}
+                                  {availableSubcategories.length > 0 && (
+                                    <div className="px-4 sm:px-5 py-2.5 bg-black/[0.02] dark:bg-white/[0.02] border-t border-b border-border/40 dark:border-white/5 flex items-center justify-between gap-3">
+                                      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 flex-1">
+                                        {availableSubcategories.map((sub) => {
+                                          const isSelected = activeSubcatIds.includes(sub.id);
+                                          const subCount = catItems.filter((i) => i.subcategoryId === sub.id).length;
+                                          return (
+                                            <button
+                                              key={sub.id}
+                                              type="button"
+                                              onClick={() => handleToggleSubcategory(cat.id, sub.id)}
+                                              className={`text-xs font-bold px-3 py-1.5 rounded-xl shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+                                                isSelected
+                                                  ? 'bg-[#D4AF37]/20 border border-[#D4AF37] text-[#D4AF37] shadow-xs font-extrabold'
+                                                  : 'bg-white dark:bg-white/5 border border-border/70 dark:border-white/10 text-text-muted dark:text-zinc-300 hover:border-[#D4AF37]/50 hover:text-text-primary dark:hover:text-white'
+                                              }`}
+                                              aria-pressed={isSelected}
+                                            >
+                                              {isSelected ? (
+                                                <CheckSquare className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                                              ) : (
+                                                <Square className="w-3.5 h-3.5 text-text-muted/60 dark:text-zinc-500 shrink-0" />
+                                              )}
+                                              <span>{sub.name}</span>
+                                              <span className={`text-[10px] ${isSelected ? 'text-[#D4AF37]/80' : 'opacity-60'}`}>
+                                                ({subCount})
+                                              </span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                      {activeSubcatIds.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleClearSubcategories(cat.id)}
+                                          className="text-[11px] font-bold text-text-muted hover:text-rose-500 dark:text-zinc-400 dark:hover:text-rose-400 shrink-0 flex items-center gap-1 transition-colors cursor-pointer px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
+                                          title="Clear subcategory filters"
+                                        >
+                                          <X className="w-3 h-3" />
+                                          <span>Clear</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Products Grid */}
+                                  {displayedItems.length === 0 ? (
+                                    <div className="p-8 text-center text-xs text-text-muted dark:text-zinc-400 space-y-2">
+                                      <p>No dishes match the selected subcategories.</p>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleClearSubcategories(cat.id)}
+                                        className="px-3 py-1.5 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] font-bold text-xs hover:bg-[#D4AF37]/25 transition-colors cursor-pointer"
+                                      >
+                                        Show All in {getFoodCategoryDisplayName(cat)}
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className={`p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 ${
+                                      availableSubcategories.length === 0 ? 'border-t border-border/40 dark:border-white/5' : ''
+                                    }`}>
+                                      {displayedItems.map((item) => (
+                                        <MenuItemCard
+                                          key={item.id}
+                                          item={item}
+                                          cartQuantity={cartItemQuantityMap[item.id] || 0}
+                                          onOpenCustomizer={setCustomizingItem}
+                                          onDirectAdd={handleDirectAdd}
+                                          onIncrement={handleCardIncrement}
+                                          onDecrement={handleCardDecrement}
+                                          onOpenDetails={setSelectedDetailItem}
+                                          onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
+                                        />
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {unassignedEatItems.length > 0 && (() => {
+                          const isExpanded = expandedCategories['unassigned-eat'] !== false;
+                          return (
+                            <div
+                              key="unassigned-eat"
+                              className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] overflow-hidden shadow-xs"
+                            >
+                              <button
+                                onClick={() => toggleCategory('unassigned-eat')}
+                                aria-expanded={isExpanded}
+                                className="w-full flex items-center justify-between px-5 py-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <span className="font-black text-base sm:text-lg text-text-primary dark:text-white">
+                                    Other Dishes
+                                  </span>
+                                  <span className="text-xs text-text-muted dark:text-zinc-400 font-bold">
+                                    ({unassignedEatItems.length})
+                                  </span>
+                                </div>
+                                {isExpanded ? (
+                                  <ChevronUp className="w-5 h-5 text-text-muted" />
+                                ) : (
+                                  <ChevronDown className="w-5 h-5 text-text-muted" />
+                                )}
+                              </button>
+
+                              {isExpanded && (
+                                <div className="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 border-t border-border/40 dark:border-white/5">
+                                  {unassignedEatItems.map((item) => (
                                     <MenuItemCard
                                       key={item.id}
                                       item={item}
@@ -966,13 +1191,15 @@ const CustomerAppInner: React.FC = () => {
                                       onDirectAdd={handleDirectAdd}
                                       onIncrement={handleCardIncrement}
                                       onDecrement={handleCardDecrement}
+                                      onOpenDetails={setSelectedDetailItem}
+                                      onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
                                     />
                                   ))}
                                 </div>
                               )}
                             </div>
                           );
-                        })}
+                        })()}
                       </div>
                     );
                   })()
@@ -1025,7 +1252,7 @@ const CustomerAppInner: React.FC = () => {
             {/* 2. Sticky Category Filter Chips (Mobile & Tablet) */}
             <div className="lg:hidden sticky top-[57px] z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 bg-[#F5F3FA]/95 dark:bg-[#111114]/95 backdrop-blur-md border-b border-border/40 dark:border-white/5 overflow-x-auto no-scrollbar flex items-center gap-2">
               <button
-                onClick={() => setSelectedDrinkCategory('ALL')}
+                onClick={() => handleSelectDrinkCategory('ALL')}
                 className={`text-xs font-bold px-3.5 py-1.5 rounded-full shrink-0 transition-all cursor-pointer ${
                   selectedDrinkCategory === 'ALL'
                     ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-extrabold'
@@ -1040,7 +1267,7 @@ const CustomerAppInner: React.FC = () => {
                 .map((cat) => (
                   <button
                     key={cat.id}
-                    onClick={() => setSelectedDrinkCategory(cat.id)}
+                    onClick={() => handleSelectDrinkCategory(cat.id)}
                     className={`text-xs font-bold px-3.5 py-1.5 rounded-full shrink-0 transition-all cursor-pointer ${
                       selectedDrinkCategory === cat.id
                         ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-extrabold'
@@ -1061,7 +1288,7 @@ const CustomerAppInner: React.FC = () => {
                     Bar Categories
                   </div>
                   <button
-                    onClick={() => setSelectedDrinkCategory('ALL')}
+                    onClick={() => handleSelectDrinkCategory('ALL')}
                     className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
                       selectedDrinkCategory === 'ALL'
                         ? 'bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] font-extrabold'
@@ -1081,7 +1308,7 @@ const CustomerAppInner: React.FC = () => {
                       return (
                         <button
                           key={cat.id}
-                          onClick={() => setSelectedDrinkCategory(cat.id)}
+                          onClick={() => handleSelectDrinkCategory(cat.id)}
                           className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
                             selectedDrinkCategory === cat.id
                               ? 'bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] font-extrabold'
@@ -1127,9 +1354,13 @@ const CustomerAppInner: React.FC = () => {
                       .filter((c) => getCategorySectionSlug(c) === 'drink')
                       .filter((c) => selectedDrinkCategory === 'ALL' || selectedDrinkCategory === c.id);
 
+                    const unassignedDrinkItems = selectedDrinkCategory === 'ALL'
+                      ? getSectionItems('drink').filter((i) => !i.categoryId)
+                      : [];
+
                     const totalMatchingItems = activeCategories.reduce((sum, cat) => {
                       return sum + getSectionItems('drink').filter((i) => i.categoryId === cat.id).length;
-                    }, 0);
+                    }, 0) + unassignedDrinkItems.length;
 
                     if (totalMatchingItems === 0) {
                       return (
@@ -1149,7 +1380,7 @@ const CustomerAppInner: React.FC = () => {
                             <button
                               onClick={() => {
                                 setDrinkSearchQuery('');
-                                setSelectedDrinkCategory('ALL');
+                                handleSelectDrinkCategory('ALL');
                               }}
                               className="px-4 py-2 rounded-xl bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-bold text-xs hover:opacity-90 transition-opacity cursor-pointer inline-flex items-center gap-1.5"
                             >
@@ -1167,51 +1398,199 @@ const CustomerAppInner: React.FC = () => {
                           if (catItems.length === 0) return null;
                           const isExpanded = expandedCategories[cat.id] !== false;
 
+                          // Derive unique subcategories from products currently matching this category view
+                          const subcatMap = new Map<string, { id: string; name: string; sortOrder: number }>();
+                          catItems.forEach((item) => {
+                            if (item.subcategory && item.subcategory.id && item.subcategory.name) {
+                              subcatMap.set(item.subcategory.id, {
+                                id: item.subcategory.id,
+                                name: item.subcategory.name,
+                                sortOrder: item.subcategory.sortOrder || 0,
+                              });
+                            } else if (item.subcategoryId) {
+                              const found = (cat.subcategories || []).find((s: any) => s.id === item.subcategoryId);
+                              if (found) {
+                                subcatMap.set(found.id, {
+                                  id: found.id,
+                                  name: found.name,
+                                  sortOrder: found.sortOrder || 0,
+                                });
+                              }
+                            }
+                          });
+                          const availableSubcategories = Array.from(subcatMap.values()).sort(
+                            (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.name.localeCompare(b.name)
+                          );
+
+                          // Active subcategory filters for this specific category
+                          const activeSubcatIds = selectedSubcategories[cat.id] || [];
+
+                          // Filter items: if no subcategories selected, show all items (including subcategoryId === null)
+                          // If subcategories are selected, show only items matching selected subcategories
+                          const displayedItems = catItems.filter((item) => {
+                            if (activeSubcatIds.length === 0) return true;
+                            return item.subcategoryId && activeSubcatIds.includes(item.subcategoryId);
+                          });
+
                           return (
                             <div
                               key={cat.id}
                               className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] overflow-hidden shadow-xs"
-                            >
-                              <button
-                                onClick={() => toggleCategory(cat.id)}
-                                aria-expanded={isExpanded}
-                                className="w-full flex items-center justify-between px-5 py-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
                               >
-                                <div className="flex items-center gap-2.5">
-                                  <span className="font-black text-base sm:text-lg text-text-primary dark:text-white">
-                                    {cat.name}
-                                  </span>
-                                  <span className="text-xs text-text-muted dark:text-zinc-400 font-bold">
-                                    ({catItems.length})
-                                  </span>
-                                </div>
-                                {isExpanded ? (
-                                  <ChevronUp className="w-5 h-5 text-text-muted" />
-                                ) : (
-                                  <ChevronDown className="w-5 h-5 text-text-muted" />
-                                )}
-                              </button>
+                                <button
+                                  onClick={() => toggleCategory(cat.id)}
+                                  aria-expanded={isExpanded}
+                                  className="w-full flex items-center justify-between px-5 py-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="font-black text-base sm:text-lg text-text-primary dark:text-white">
+                                      {cat.name}
+                                    </span>
+                                    <span className="text-xs text-text-muted dark:text-zinc-400 font-bold">
+                                      ({catItems.length})
+                                    </span>
+                                  </div>
+                                  {isExpanded ? (
+                                    <ChevronUp className="w-5 h-5 text-text-muted" />
+                                  ) : (
+                                    <ChevronDown className="w-5 h-5 text-text-muted" />
+                                  )}
+                                </button>
 
-                              {isExpanded && (
-                                <div className="p-4 sm:p-5 pt-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 border-t border-border/40 dark:border-white/5">
-                                  {catItems.map((item) => (
-                                    <MenuItemCard
-                                      key={item.id}
-                                      item={item}
-                                      cartQuantity={cartItemQuantityMap[item.id] || 0}
-                                      onOpenCustomizer={setCustomizingItem}
-                                      onDirectAdd={handleDirectAdd}
-                                      onIncrement={handleCardIncrement}
-                                      onDecrement={handleCardDecrement}
-                                    />
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
+                                {isExpanded && (
+                                  <div>
+                                    {/* Subcategory Multi-Filter Chips Bar */}
+                                    {availableSubcategories.length > 0 && (
+                                      <div className="px-4 sm:px-5 py-2.5 bg-black/[0.02] dark:bg-white/[0.02] border-t border-b border-border/40 dark:border-white/5 flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 flex-1">
+                                          {availableSubcategories.map((sub) => {
+                                            const isSelected = activeSubcatIds.includes(sub.id);
+                                            const subCount = catItems.filter((i) => i.subcategoryId === sub.id).length;
+                                            return (
+                                              <button
+                                                key={sub.id}
+                                                type="button"
+                                                onClick={() => handleToggleSubcategory(cat.id, sub.id)}
+                                                className={`text-xs font-bold px-3 py-1.5 rounded-xl shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+                                                  isSelected
+                                                    ? 'bg-[#D4AF37]/20 border border-[#D4AF37] text-[#D4AF37] shadow-xs font-extrabold'
+                                                    : 'bg-white dark:bg-white/5 border border-border/70 dark:border-white/10 text-text-muted dark:text-zinc-300 hover:border-[#D4AF37]/50 hover:text-text-primary dark:hover:text-white'
+                                                }`}
+                                                aria-pressed={isSelected}
+                                              >
+                                                {isSelected ? (
+                                                  <CheckSquare className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                                                ) : (
+                                                  <Square className="w-3.5 h-3.5 text-text-muted/60 dark:text-zinc-500 shrink-0" />
+                                                )}
+                                                <span>{sub.name}</span>
+                                                <span className={`text-[10px] ${isSelected ? 'text-[#D4AF37]/80' : 'opacity-60'}`}>
+                                                  ({subCount})
+                                                </span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                        {activeSubcatIds.length > 0 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleClearSubcategories(cat.id)}
+                                            className="text-[11px] font-bold text-text-muted hover:text-rose-500 dark:text-zinc-400 dark:hover:text-rose-400 shrink-0 flex items-center gap-1 transition-colors cursor-pointer px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
+                                            title="Clear subcategory filters"
+                                          >
+                                            <X className="w-3 h-3" />
+                                            <span>Clear</span>
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    {/* Products Grid */}
+                                    {displayedItems.length === 0 ? (
+                                      <div className="p-8 text-center text-xs text-text-muted dark:text-zinc-400 space-y-2">
+                                        <p>No beverages match the selected subcategories.</p>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleClearSubcategories(cat.id)}
+                                          className="px-3 py-1.5 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] font-bold text-xs hover:bg-[#D4AF37]/25 transition-colors cursor-pointer"
+                                        >
+                                          Show All in {cat.name}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className={`p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 ${
+                                        availableSubcategories.length === 0 ? 'border-t border-border/40 dark:border-white/5' : ''
+                                      }`}>
+                                        {displayedItems.map((item) => (
+                                          <MenuItemCard
+                                            key={item.id}
+                                            item={item}
+                                            cartQuantity={cartItemQuantityMap[item.id] || 0}
+                                            onOpenCustomizer={setCustomizingItem}
+                                            onDirectAdd={handleDirectAdd}
+                                            onIncrement={handleCardIncrement}
+                                            onDecrement={handleCardDecrement}
+                                            onOpenDetails={setSelectedDetailItem}
+                                            onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
+                                          />
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+
+                          {unassignedDrinkItems.length > 0 && (() => {
+                            const isExpanded = expandedCategories['unassigned-drink'] !== false;
+                            return (
+                              <div
+                                key="unassigned-drink"
+                                className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] overflow-hidden shadow-xs"
+                              >
+                                <button
+                                  onClick={() => toggleCategory('unassigned-drink')}
+                                  aria-expanded={isExpanded}
+                                  className="w-full flex items-center justify-between px-5 py-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="font-black text-base sm:text-lg text-text-primary dark:text-white">
+                                      Other Beverages
+                                    </span>
+                                    <span className="text-xs text-text-muted dark:text-zinc-400 font-bold">
+                                      ({unassignedDrinkItems.length})
+                                    </span>
+                                  </div>
+                                  {isExpanded ? (
+                                    <ChevronUp className="w-5 h-5 text-text-muted" />
+                                  ) : (
+                                    <ChevronDown className="w-5 h-5 text-text-muted" />
+                                  )}
+                                </button>
+
+                                {isExpanded && (
+                                  <div className="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 border-t border-border/40 dark:border-white/5">
+                                    {unassignedDrinkItems.map((item) => (
+                                      <MenuItemCard
+                                        key={item.id}
+                                        item={item}
+                                        cartQuantity={cartItemQuantityMap[item.id] || 0}
+                                        onOpenCustomizer={setCustomizingItem}
+                                        onDirectAdd={handleDirectAdd}
+                                        onIncrement={handleCardIncrement}
+                                        onDecrement={handleCardDecrement}
+                                        onOpenDetails={setSelectedDetailItem}
+                                        onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      );
                   })()
                 )}
               </div>
@@ -1300,6 +1679,8 @@ const CustomerAppInner: React.FC = () => {
                       onDirectAdd={handleDirectAdd}
                       onIncrement={handleCardIncrement}
                       onDecrement={handleCardDecrement}
+                      onOpenDetails={setSelectedDetailItem}
+                      onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
                     />
                   ))}
                 </div>
@@ -1337,19 +1718,57 @@ const CustomerAppInner: React.FC = () => {
               {allItems
                 .filter((i) => {
                   if (!searchQuery.trim()) return true;
-                  const q = searchQuery.toLowerCase();
+                  const q = searchQuery.toLowerCase().trim();
+                  const cleanQ = q.replace(/[-\s_]/g, '');
+
+                  const matchesName = i.name.toLowerCase().includes(q);
+                  const matchesDesc = (i.description || '').toLowerCase().includes(q);
+                  const matchesCat = (i.categoryName || '').toLowerCase().includes(q);
+                  const matchesSubcat = (i.subcategory?.name || '').toLowerCase().includes(q);
+
+                  let matchesDietary = false;
+                  if (i.foodType) {
+                    const ft = i.foodType.toLowerCase();
+                    const cleanFt = ft.replace(/[_-\s]/g, '');
+                    if (cleanQ === 'veg' || cleanQ === 'vegetarian') {
+                      matchesDietary = ft === 'veg' || ft === 'vegan';
+                    } else if (cleanQ === 'nonveg' || cleanQ === 'nonvegetarian') {
+                      matchesDietary = ft === 'non_veg';
+                    } else if (cleanQ === 'egg' || cleanQ === 'eggetarian') {
+                      matchesDietary = ft === 'egg';
+                    } else if (cleanQ === 'vegan') {
+                      matchesDietary = ft === 'vegan';
+                    } else {
+                      matchesDietary = ft.includes(q) || cleanFt.includes(cleanQ);
+                    }
+                  }
+
+                  const matchesTags = Array.isArray(i.tags) && i.tags.some((t: string) => t.toLowerCase().includes(q));
+                  const matchesAllergens = Array.isArray(i.allergens) && i.allergens.some((a: string) => a.toLowerCase().includes(q));
+                  const matchesStation = (i.station || '').toLowerCase().includes(q);
+
                   return (
-                    i.name.toLowerCase().includes(q) ||
-                    (i.description || '').toLowerCase().includes(q) ||
-                    (i.categoryName || '').toLowerCase().includes(q)
+                    matchesName ||
+                    matchesDesc ||
+                    matchesCat ||
+                    matchesSubcat ||
+                    matchesDietary ||
+                    matchesTags ||
+                    matchesAllergens ||
+                    matchesStation
                   );
                 })
                 .map((item) => (
                   <MenuItemCard
                     key={item.id}
                     item={item}
+                    cartQuantity={cartItemQuantityMap[item.id] || 0}
                     onOpenCustomizer={setCustomizingItem}
                     onDirectAdd={handleDirectAdd}
+                    onIncrement={handleCardIncrement}
+                    onDecrement={handleCardDecrement}
+                    onOpenDetails={setSelectedDetailItem}
+                    onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
                   />
                 ))}
             </div>
@@ -2699,6 +3118,309 @@ const CustomerAppInner: React.FC = () => {
           setActiveRequests((prev) => [newReq, ...prev.filter((r) => r.id !== newReq.id)])
         }
       />
+
+      {/* 1. Customer Portal Maximized Image Preview (View-Only, Click-Outside-To-Close) */}
+      {selectedImageModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Image preview for ${selectedImageModal.name}`}
+          onClick={() => setSelectedImageModal(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-md sm:max-w-lg aspect-square bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center cursor-default"
+          >
+            {/* Blurred background filling the square container */}
+            <img
+              src={formatImageUrl(selectedImageModal.url)}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover blur-lg scale-110 opacity-40 pointer-events-none"
+            />
+            <div className="absolute inset-0 bg-black/25 pointer-events-none" />
+
+            {/* Sharp foreground image contained */}
+            <img
+              src={formatImageUrl(selectedImageModal.url)}
+              alt={selectedImageModal.name}
+              className="relative z-10 w-full h-full object-contain p-4 drop-shadow-2xl"
+            />
+
+            {/* Top Close Button */}
+            <button
+              type="button"
+              onClick={() => setSelectedImageModal(null)}
+              aria-label="Close image preview"
+              className="absolute top-3.5 right-3.5 z-20 p-2 rounded-full bg-black/70 hover:bg-black text-white/80 hover:text-white border border-white/20 transition-all cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Bottom Caption Pill */}
+            <div className="absolute bottom-3.5 inset-x-3.5 z-20 flex justify-center pointer-events-none">
+              <span className="px-3.5 py-1.5 rounded-full bg-black/70 backdrop-blur-md text-white text-xs font-bold border border-white/15 max-w-[90%] truncate">
+                {selectedImageModal.name}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Customer Portal Read-Only Product Details View */}
+      {selectedDetailItem && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="product-detail-title"
+          onClick={() => setSelectedDetailItem(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-xl max-h-[90vh] bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col cursor-default text-zinc-100"
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between shrink-0 bg-zinc-900/60">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {selectedDetailItem.foodType && (
+                  <VegBadge type={selectedDetailItem.foodType} size="sm" />
+                )}
+                <h3 id="product-detail-title" className="text-base sm:text-lg font-black text-white truncate">
+                  {selectedDetailItem.name}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedDetailItem(null)}
+                aria-label="Close product details"
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5 flex-1 text-xs">
+              {/* Product Image Preview: Aspect-square contained container with blurred background fill */}
+              {selectedDetailItem.image || selectedDetailItem.imageUrl ? (
+                <div
+                  onClick={() => {
+                    const imgUrl = selectedDetailItem.image || selectedDetailItem.imageUrl;
+                    setSelectedImageModal({ url: imgUrl, name: selectedDetailItem.name });
+                  }}
+                  title="Click to view full image"
+                  className="relative w-full aspect-square max-h-72 sm:max-h-80 rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 flex items-center justify-center cursor-pointer group shadow-inner"
+                >
+                  {/* Subtle blurred background fill */}
+                  <img
+                    src={formatImageUrl(selectedDetailItem.image || selectedDetailItem.imageUrl)}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 w-full h-full object-cover blur-xl scale-125 opacity-40 pointer-events-none"
+                  />
+                  {/* Sharp contained foreground image */}
+                  <img
+                    src={formatImageUrl(selectedDetailItem.image || selectedDetailItem.imageUrl)}
+                    alt={selectedDetailItem.name}
+                    className="relative z-10 max-h-full max-w-full object-contain p-3 drop-shadow-md group-hover:scale-105 transition-transform duration-200"
+                  />
+                  <span className="absolute bottom-2.5 right-2.5 z-20 px-2.5 py-1 rounded-lg bg-black/70 text-[10px] text-zinc-300 font-semibold backdrop-blur-md border border-white/10 shadow-sm">
+                    Click to Enlarge
+                  </span>
+                </div>
+              ) : (
+                <div className="w-full h-44 rounded-2xl bg-zinc-900/60 border border-dashed border-zinc-800 flex flex-col items-center justify-center text-zinc-500 gap-1.5">
+                  <span className="text-3xl select-none" role="img" aria-label="No image">🍽️</span>
+                  <span className="text-xs font-semibold text-zinc-300">Image: N/A</span>
+                  <span className="text-[10px] text-zinc-500">No product image assigned</span>
+                </div>
+              )}
+
+              {/* Price & Badges */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800/80">
+                <div>
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold block">
+                    Price
+                  </span>
+                  <div className="flex items-baseline gap-2 mt-0.5">
+                    <span className="text-lg sm:text-xl font-black text-[#D4AF37]">
+                      ₹{Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice ?? 0).toFixed(2)}
+                    </span>
+                    {Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice) < Number(selectedDetailItem.basePrice ?? 0) && (
+                      <span className="text-xs text-zinc-500 line-through">
+                        ₹{Number(selectedDetailItem.basePrice).toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {selectedDetailItem.isAvailable === false ? (
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-950/60 text-rose-400 border border-rose-800/60">
+                      Sold Out
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">
+                      In Stock
+                    </span>
+                  )}
+                  {Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice) < Number(selectedDetailItem.basePrice ?? 0) && (
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">
+                      {selectedDetailItem.discountMode === 'PERCENTAGE'
+                        ? `${selectedDetailItem.discountValue}% OFF`
+                        : `₹${selectedDetailItem.discountValue} OFF`}
+                    </span>
+                  )}
+                  {selectedDetailItem.featured && (
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-950/60 text-amber-400 border border-amber-800/60">
+                      Featured
+                    </span>
+                  )}
+                  {selectedDetailItem.popular && (
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30">
+                      Popular
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+                  Description
+                </span>
+                <p className="text-xs text-zinc-300 leading-relaxed p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
+                  {selectedDetailItem.description?.trim() || 'N/A'}
+                </p>
+              </div>
+
+              {/* Customer Specification Grid (Strict N/A & Not applicable Fallbacks) */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {/* Section */}
+                <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                    Section
+                  </span>
+                  <span className="text-xs font-semibold text-zinc-200 mt-0.5 block">
+                    {selectedDetailItem.sectionSlug === 'eat'
+                      ? 'Food'
+                      : selectedDetailItem.sectionName || (selectedDetailItem.sectionSlug ? selectedDetailItem.sectionSlug.toUpperCase() : 'N/A')}
+                  </span>
+                </div>
+
+                {/* Category */}
+                <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                    Category
+                  </span>
+                  <span className="text-xs font-semibold text-zinc-200 mt-0.5 block">
+                    {selectedDetailItem.categoryName || selectedDetailItem.category?.name || 'N/A'}
+                  </span>
+                </div>
+
+                {/* Subcategory */}
+                <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                    Subcategory
+                  </span>
+                  <span className="text-xs font-semibold text-zinc-200 mt-0.5 block">
+                    {selectedDetailItem.subcategory?.name || selectedDetailItem.subcategoryName
+                      ? (selectedDetailItem.subcategory?.name || selectedDetailItem.subcategoryName)
+                      : selectedDetailItem.subcategoryId
+                      ? 'N/A'
+                      : 'Not applicable'}
+                  </span>
+                </div>
+
+                {/* Dietary Classification */}
+                <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                    Dietary Classification
+                  </span>
+                  <span className="text-xs font-semibold text-zinc-200 mt-0.5 block">
+                    {selectedDetailItem.foodType
+                      ? selectedDetailItem.foodType === 'VEG'
+                        ? 'Vegetarian (Veg)'
+                        : selectedDetailItem.foodType === 'NON_VEG'
+                        ? 'Non-Vegetarian (Non-Veg)'
+                        : selectedDetailItem.foodType === 'EGG'
+                        ? 'Contains Egg'
+                        : selectedDetailItem.foodType === 'VEGAN'
+                        ? 'Vegan'
+                        : selectedDetailItem.foodType
+                      : selectedDetailItem.sectionSlug === 'merch'
+                      ? 'Not applicable'
+                      : 'N/A'}
+                  </span>
+                </div>
+
+                {/* Prep Time */}
+                <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                    Prep Time
+                  </span>
+                  <span className="text-xs font-semibold text-zinc-200 mt-0.5 block">
+                    {selectedDetailItem.sectionSlug === 'merch'
+                      ? 'Not applicable'
+                      : selectedDetailItem.preparationTime !== undefined && selectedDetailItem.preparationTime !== null
+                      ? `${selectedDetailItem.preparationTime} mins`
+                      : 'N/A'}
+                  </span>
+                </div>
+
+                {/* Pricing / Offers */}
+                <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                    Offers / Discounts
+                  </span>
+                  <span className="text-xs font-semibold text-zinc-200 mt-0.5 block">
+                    {Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice) < Number(selectedDetailItem.basePrice ?? 0)
+                      ? selectedDetailItem.discountMode === 'PERCENTAGE'
+                        ? `${selectedDetailItem.discountValue}% OFF`
+                        : `₹${selectedDetailItem.discountValue} OFF`
+                      : 'Not applicable'}
+                  </span>
+                </div>
+
+              </div>
+
+              {/* Variants (if present) */}
+              <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60 space-y-1.5">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                  Available Variants
+                </span>
+                {selectedDetailItem.variants && selectedDetailItem.variants.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedDetailItem.variants.map((v: any) => (
+                      <span
+                        key={v.id || v.name}
+                        className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-200 text-xs font-semibold border border-zinc-700"
+                      >
+                        {v.name} ({Number(v.priceDelta) >= 0 ? `+₹${v.priceDelta}` : `-₹${Math.abs(Number(v.priceDelta))}`})
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-xs text-zinc-400">Not applicable</span>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer (Strictly View-Only Close Action) */}
+            <div className="p-4 px-6 border-t border-zinc-800 bg-zinc-900/60 flex items-center justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setSelectedDetailItem(null)}
+                className="px-5 py-2 rounded-xl text-xs font-bold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Session Closed Auto-Exit Notification Overlay */}
       {isSessionClosed && (

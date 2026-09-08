@@ -815,12 +815,32 @@ class ApiService {
     return data.category;
   }
 
+  async deleteCategory(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/menu/categories/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async createSubcategory(payload: { name: string; categoryId: string; sortOrder?: number }) {
     const data = await this.request<{ success: boolean; subcategory: any }>('/menu/subcategories', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
     return data.subcategory;
+  }
+
+  async updateSubcategory(id: string, payload: { name?: string; sortOrder?: number; categoryId?: string }) {
+    const data = await this.request<{ success: boolean; subcategory: any }>(`/menu/subcategories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return data.subcategory;
+  }
+
+  async deleteSubcategory(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/menu/subcategories/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   async createMenuItem(payload: any) {
