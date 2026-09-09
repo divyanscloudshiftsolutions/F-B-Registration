@@ -343,6 +343,90 @@ export class OrderService {
   }
 
   /**
+   * Retrieve all completed historical orders for an authenticated customer identity
+   */
+  async getCustomerOrderHistory(customerId: string) {
+    if (!customerId) return [];
+
+    const orders = await prisma.order.findMany({
+      where: {
+        customerId,
+        status: { in: [OrderStatus.SERVED, OrderStatus.CANCELLED] },
+      },
+      orderBy: { placedAt: 'desc' },
+      include: {
+        items: {
+          orderBy: { createdAt: 'asc' },
+        },
+        table: {
+          select: {
+            id: true,
+            tableNumber: true,
+            placeType: {
+              select: { name: true },
+            },
+          },
+        },
+        token: {
+          select: {
+            id: true,
+            tokenNumber: true,
+            status: true,
+            startTime: true,
+            endTime: true,
+            closedAt: true,
+          },
+        },
+      },
+    });
+
+    return orders.map((o) => {
+      const itemServedTimes = o.items
+        .map((i) => (i.servedAt ? new Date(i.servedAt).getTime() : 0))
+        .filter((t) => t > 0);
+      const latestServedTimestamp =
+        itemServedTimes.length > 0
+          ? new Date(Math.max(...itemServedTimes)).toISOString()
+          : (o.updatedAt ? o.updatedAt.toISOString() : o.placedAt.toISOString());
+
+      return {
+        id: o.id,
+        orderNumber: o.orderNumber,
+        status: o.status,
+        placedAt: o.placedAt ? o.placedAt.toISOString() : o.createdAt.toISOString(),
+        createdAt: o.createdAt.toISOString(),
+        completedAt: latestServedTimestamp,
+        subtotal: Number(o.subtotal || 0),
+        notes: o.notes,
+        tableId: o.tableId,
+        tableNumber: o.table?.tableNumber || 'N/A',
+        areaName: o.table?.placeType?.name || 'Dine-In',
+        sessionTokenNumber: o.token?.tokenNumber || 'N/A',
+        sessionStatus: o.token?.status || 'CLOSED',
+        sessionStartTime: o.token?.startTime ? o.token.startTime.toISOString() : null,
+        sessionClosedAt: o.token?.closedAt ? o.token.closedAt.toISOString() : null,
+        totalItemsCount: (o.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 1), 0),
+        items: o.items.map((it) => ({
+          id: it.id,
+          menuItemId: it.menuItemId,
+          itemName: it.itemName,
+          sectionSlug: it.sectionSlug,
+          variantName: it.variantName,
+          selectedModifiers: it.selectedModifiers,
+          specialInstructions: it.specialInstructions,
+          quantity: it.quantity,
+          unitPrice: Number(it.unitPrice),
+          lineTotal: Number(it.lineTotal),
+          station: it.station,
+          foodType: it.foodType,
+          status: it.status,
+          servedAt: it.servedAt ? it.servedAt.toISOString() : null,
+        })),
+      };
+    });
+  }
+
+  /**
    * Update item status with strict State Machine enforcement
    */
   async updateOrderItemStatus(orderItemId: string, status: OrderStatus, staffUserId?: string) {

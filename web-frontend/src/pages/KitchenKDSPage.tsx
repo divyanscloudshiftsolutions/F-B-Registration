@@ -40,9 +40,8 @@ export const KitchenKDSPage: React.FC = () => {
   const fetchTickets = async () => {
     try {
       const res = await api.getKdsOrders('KITCHEN');
-      if (res && Array.isArray(res)) {
-        setTickets(res);
-      }
+      const ticketsList = Array.isArray(res) ? res : ((res as any)?.tickets || []);
+      setTickets(ticketsList);
     } catch (err: any) {
       console.warn('Failed to load KDS tickets:', err.message);
     } finally {

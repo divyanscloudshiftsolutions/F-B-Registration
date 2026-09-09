@@ -20,6 +20,9 @@ import {
   Sparkles,
   CalendarCheck,
   Phone,
+  Loader2,
+  Mail,
+  User,
 } from 'lucide-react';
 import { VegBadge } from '../components/customer/VegBadge';
 
@@ -55,6 +58,11 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   const [isAssistedOrderingOpen, setIsAssistedOrderingOpen] = useState<boolean>(false);
   const [isBillDetailsOpen, setIsBillDetailsOpen] = useState<boolean>(false);
   const [selectedBillTable, setSelectedBillTable] = useState<any | null>(null);
+  const [activeTableBill, setActiveTableBill] = useState<any | null>(null);
+  const [isBillLoading, setIsBillLoading] = useState<boolean>(false);
+  const [billFetchError, setBillFetchError] = useState<string | null>(null);
+  const [selectedReservationTable, setSelectedReservationTable] = useState<{ table: any; reservation: any } | null>(null);
+  const [isReservationModalOpen, setIsReservationModalOpen] = useState<boolean>(false);
   const [assistedCart, setAssistedCart] = useState<any[]>([]);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
@@ -275,8 +283,24 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     if (!selectedTable || assistedCart.length === 0) return;
     setIsSubmittingOrder(true);
     try {
+      let resolvedToken = selectedTable.currentTokenId || selectedTable.currentSessionId || selectedTable.activeSession?.tokenNumber;
+      if (!resolvedToken) {
+        try {
+          const sessionRes = await api.getTableActiveSession(selectedTable.tableNumber || selectedTable.id);
+          if (sessionRes?.session?.tokenNumber) {
+            resolvedToken = sessionRes.session.tokenNumber;
+          }
+        } catch {}
+      }
+
+      if (!resolvedToken) {
+        setFeedbackMsg(`Cannot place order: Table ${selectedTable.tableNumber || selectedTable.number} has no active dining session. Please check in guests at Reception first.`);
+        setIsSubmittingOrder(false);
+        return;
+      }
+
       const payload = {
-        tokenNumber: selectedTable.currentTokenId || selectedTable.currentSessionId || `BAR-${selectedTable.tableNumber}`,
+        tokenNumber: resolvedToken,
         tableId: selectedTable.id,
         orderSource: 'SERVER',
         handlerId: user?.id,
@@ -300,6 +324,47 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     }
   };
 
+  const handleOpenBillModal = async (table: any) => {
+    setSelectedBillTable(table);
+    setIsBillDetailsOpen(true);
+    setIsBillLoading(true);
+    setBillFetchError(null);
+    setActiveTableBill(null);
+
+    const lookupToken = table.currentTokenId || table.activeSession?.tokenNumber || table.currentSessionId || table.tokenNumber;
+    try {
+      if (lookupToken) {
+        const res = await api.calculateBill(lookupToken);
+        if (res && res.bill) {
+          setActiveTableBill(res.bill);
+          return;
+        }
+      }
+      const sessionRes = await api.getTableActiveSession(table.tableNumber || table.id).catch(() => null);
+      if (sessionRes && sessionRes.session?.tokenNumber) {
+        const res = await api.calculateBill(sessionRes.session.tokenNumber);
+        if (res && res.bill) {
+          setActiveTableBill(res.bill);
+          return;
+        }
+      }
+      if (table.bill) {
+        setActiveTableBill(table.bill);
+      } else {
+        setBillFetchError('No active bill or order items found for this table.');
+      }
+    } catch (err: any) {
+      console.warn('Failed to calculate bill for table:', err);
+      if (table.bill) {
+        setActiveTableBill(table.bill);
+      } else {
+        setBillFetchError(err.message || 'Unable to load bill details.');
+      }
+    } finally {
+      setIsBillLoading(false);
+    }
+  };
+
   // Flattened Menu Items for Assisted Order Modal
   const allMenuItems: any[] = [];
   menu.forEach((section: any) => {
@@ -320,103 +385,29 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
   // Statistics
   const openRequests = requests.filter((r) => r.status !== 'COMPLETED');
-  const activeTables = tables.filter((t) => t.status === 'occupied' || t.status === 'OCCUPIED' || t.status === 'BILL_REQUESTED');
-  const realBillRequestedTables = tables.filter((t) => t.status === 'BILL_REQUESTED' || t.isBillRequested);
+  const activeTables = tables.filter((t) => {
+    const s = (t.status || '').toUpperCase();
+    return s === 'OCCUPIED' || s === 'BILL_REQUESTED' || t.isBillRequested;
+  });
+  const realBillRequestedTables = tables.filter((t) => {
+    const s = (t.status || '').toUpperCase();
+    return s === 'BILL_REQUESTED' || t.isBillRequested;
+  });
 
-  // Hardcoded test data for /waiter/bills
-  const mockBillTables = [
-    {
-      id: 'mock-bill-1',
-      tableNumber: 'T-04',
-      number: '4',
-      status: 'BILL_REQUESTED',
-      isBillRequested: true,
-      currentTokenId: 'TOK-9821',
-      capacity: 4,
-      placeType: { name: 'Indoor AC' },
-      createdAt: new Date(Date.now() - 4 * 60000).toISOString(),
-      updatedAt: new Date(Date.now() - 4 * 60000).toISOString(),
-      bill: {
-        items: [
-          { name: 'Paneer Butter Masala', quantity: 2, unitPrice: 380, foodType: 'VEG' },
-          { name: 'Butter Naan', quantity: 6, unitPrice: 60, foodType: 'VEG' },
-          { name: 'Dal Makhani', quantity: 1, unitPrice: 320, foodType: 'VEG' },
-          { name: 'Fresh Lime Soda', quantity: 2, unitPrice: 90, foodType: 'VEG' },
-        ],
-        subtotal: 1620.0,
-        cgst: 40.5,
-        sgst: 40.5,
-        serviceCharge: 81.0,
-        total: 1782.0,
-      },
-    },
-    {
-      id: 'mock-bill-2',
-      tableNumber: 'T-12',
-      number: '12',
-      status: 'BILL_REQUESTED',
-      isBillRequested: true,
-      currentTokenId: 'TOK-9834',
-      capacity: 6,
-      placeType: { name: 'Garden Patio' },
-      createdAt: new Date(Date.now() - 11 * 60000).toISOString(),
-      updatedAt: new Date(Date.now() - 11 * 60000).toISOString(),
-      bill: {
-        items: [
-          { name: 'Chicken Biryani', quantity: 3, unitPrice: 380, foodType: 'NON_VEG' },
-          { name: 'Mutton Rogan Josh', quantity: 2, unitPrice: 490, foodType: 'NON_VEG' },
-          { name: 'Garlic Roti', quantity: 8, unitPrice: 60, foodType: 'VEG' },
-          { name: 'Gulab Jamun', quantity: 4, unitPrice: 80, foodType: 'VEG' },
-          { name: 'Mango Lassi', quantity: 3, unitPrice: 90, foodType: 'VEG' },
-        ],
-        subtotal: 3190.0,
-        cgst: 79.75,
-        sgst: 79.75,
-        serviceCharge: 159.5,
-        total: 3509.0,
-      },
-    },
-    {
-      id: 'mock-bill-3',
-      tableNumber: 'B-02',
-      number: 'B2',
-      status: 'BILL_REQUESTED',
-      isBillRequested: true,
-      currentTokenId: 'TOK-9849',
-      capacity: 2,
-      placeType: { name: 'Rooftop Bar' },
-      createdAt: new Date(Date.now() - 18 * 60000).toISOString(),
-      updatedAt: new Date(Date.now() - 18 * 60000).toISOString(),
-      bill: {
-        items: [
-          { name: 'Classic Mojito', quantity: 2, unitPrice: 290, foodType: 'VEG' },
-          { name: 'Loaded Nachos', quantity: 1, unitPrice: 320, foodType: 'VEG' },
-        ],
-        subtotal: 900.0,
-        cgst: 22.5,
-        sgst: 22.5,
-        serviceCharge: 45.0,
-        total: 990.0,
-      },
-    },
-  ];
+  const billRequestedTables = realBillRequestedTables;
 
   const getBillForTable = (table: any) => {
+    if (activeTableBill) return activeTableBill;
     if (table?.bill) return table.bill;
     return {
-      items: [
-        { name: 'Chef Special Platter', quantity: 1, unitPrice: 650, foodType: 'VEG' },
-        { name: 'Sparkling Water', quantity: 2, unitPrice: 120, foodType: 'VEG' },
-      ],
-      subtotal: 890.0,
-      cgst: 22.25,
-      sgst: 22.25,
-      serviceCharge: 44.5,
-      total: 979.0,
+      items: [],
+      subtotal: 0,
+      cgst: 0,
+      sgst: 0,
+      serviceCharge: 0,
+      total: 0,
     };
   };
-
-  const billRequestedTables = realBillRequestedTables.length > 0 ? realBillRequestedTables : mockBillTables;
 
   // Helper to match table with active reservation
   const getReservationForTable = (tableId: string) => {
@@ -628,7 +619,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-black text-sm text-zinc-900 dark:text-white">
-                          Table {req.tableNumber || req.table?.tableNumber || 'C5'}
+                          Table {req.tableNumber || req.table?.tableNumber || '-'}
                         </span>
                         <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50">
                           {formatRequestType(req.type)}
@@ -708,7 +699,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-black text-sm text-zinc-900 dark:text-white">
-                            Table {item.tableNumber || 'C5'}
+                            Table {item.tableNumber || '-'}
                           </span>
                           <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800/50">
                             {item.station}
@@ -762,7 +753,8 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
               ) : (
                 <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
                   {activeTables.map((table) => {
-                    const isBillReq = table.status === 'BILL_REQUESTED';
+                    const isBillReq = table.status === 'BILL_REQUESTED' || table.isBillRequested;
+                    const placeTypeName = table.placeType?.name || (typeof table.placeType === 'string' ? table.placeType : table.categoryName);
                     return (
                       <div
                         key={table.id}
@@ -776,7 +768,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-black text-sm text-zinc-900 dark:text-white">
-                              Table {table.tableNumber || table.number || 'T'}
+                              Table {table.tableNumber || table.number || '-'}
                             </span>
                             <span
                               className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
@@ -789,7 +781,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                             </span>
                           </div>
                           <div className="text-[10px] text-zinc-500 dark:text-text-muted mt-0.5 font-medium">
-                            Cap: {table.capacity || 4} · {table.placeType?.name || 'Standard'}
+                            {table.capacity ? `Cap: ${table.capacity}` : ''} {placeTypeName ? `· ${placeTypeName}` : ''}
                           </div>
                         </div>
 
@@ -849,19 +841,16 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   >
                     <div>
                       <div className="font-black text-sm text-zinc-900 dark:text-white">
-                        Table {t.tableNumber || t.number}
+                        Table {t.tableNumber || t.number || '-'}
                       </div>
                       <div className="text-xs text-zinc-500 dark:text-text-muted mt-0.5 font-medium">
-                        Token: {t.currentTokenId || 'ACTIVE'}
+                        Token: {t.currentTokenId || t.activeSession?.tokenNumber || '-'}
                       </div>
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelectedBillTable(t);
-                        setIsBillDetailsOpen(true);
-                      }}
+                      onClick={() => handleOpenBillModal(t)}
                       className="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer shrink-0"
                     >
                       View Details
@@ -971,24 +960,29 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {reservedTables.map((table) => {
                       const res = getReservationForTable(table.id);
-                      const guestName = res?.customerName || 'Reserved Guest';
+                      const guestName = res?.customerName || (table as any).reservationGuestName || '';
                       const guestPhone = res?.phoneNumber;
-                      const guestsCount = res?.personsCount || table.capacity || 4;
+                      const guestsCount = res?.personsCount || table.capacity;
 
                       return (
                         <div
                           key={table.id}
-                          onClick={() => setSelectedTable(table)}
+                          onClick={() => {
+                            setSelectedReservationTable(table);
+                            setIsReservationModalOpen(true);
+                          }}
                           className="p-3 sm:p-3.5 rounded-2xl border border-blue-200/80 dark:border-blue-900/40 bg-blue-50/20 dark:bg-[#141416] hover:border-blue-400 dark:hover:border-blue-600 transition-all cursor-pointer flex flex-col justify-between min-h-[140px] shadow-xs"
                         >
                           <div className="flex items-start justify-between gap-1.5">
                             <div className="min-w-0 flex-1">
                               <span className="font-black text-lg text-zinc-900 dark:text-white truncate block">
-                                Table {table.tableNumber || table.number || 'T'}
+                                Table {table.tableNumber || table.number || '-'}
                               </span>
-                              <div className="font-bold text-xs text-zinc-800 dark:text-zinc-200 mt-0.5 truncate">
-                                {guestName}
-                              </div>
+                              {guestName && (
+                                <div className="font-bold text-xs text-zinc-800 dark:text-zinc-200 mt-0.5 truncate">
+                                  {guestName}
+                                </div>
+                              )}
                             </div>
                             <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full shrink-0 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50">
                               Reserved
@@ -996,10 +990,12 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                           </div>
 
                           <div className="mt-2 space-y-1 text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
-                            <div className="flex items-center gap-1.5">
-                              <Users className="w-3.5 h-3.5 shrink-0" />
-                              <span>{guestsCount} Guests</span>
-                            </div>
+                            {guestsCount ? (
+                              <div className="flex items-center gap-1.5">
+                                <Users className="w-3.5 h-3.5 shrink-0" />
+                                <span>{guestsCount} Guests</span>
+                              </div>
+                            ) : null}
                             {guestPhone && (
                               <div className="flex items-center gap-1.5 truncate">
                                 <Phone className="w-3.5 h-3.5 shrink-0" />
@@ -1010,13 +1006,14 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
                           <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-white/5 flex items-center justify-between text-[11px] gap-2">
                             <span className="text-zinc-500 dark:text-zinc-400 truncate font-medium">
-                              {table.placeType?.name || (typeof table.placeType === 'string' ? table.placeType : 'Standard')}
+                              {table.placeType?.name || (typeof table.placeType === 'string' ? table.placeType : table.section || '')}
                             </span>
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedTable(table);
+                                setSelectedReservationTable(table);
+                                setIsReservationModalOpen(true);
                               }}
                               className="px-2.5 py-1 rounded-lg text-xs font-bold text-primary dark:text-[#D4AF37] hover:bg-primary/10 dark:hover:bg-[#D4AF37]/10 transition-colors shrink-0"
                             >
@@ -1078,10 +1075,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       return (
                         <div
                           key={table.id}
-                          onClick={() => {
-                            setSelectedBillTable(table);
-                            setIsBillDetailsOpen(true);
-                          }}
+                          onClick={() => handleOpenBillModal(table)}
                           className={`p-3 sm:p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between min-h-[140px] shadow-xs ${
                             isBillReq
                               ? 'border-amber-400 dark:border-amber-500/50 bg-amber-50/40 dark:bg-amber-950/20 hover:border-amber-500 ring-1 ring-amber-400/30'
@@ -1091,10 +1085,10 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                           <div className="flex items-start justify-between gap-1.5">
                             <div className="min-w-0 flex-1">
                               <span className="font-black text-lg text-zinc-900 dark:text-white truncate block">
-                                Table {table.tableNumber || table.number || 'T'}
+                                Table {table.tableNumber || table.number || '-'}
                               </span>
                               <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5 font-medium truncate">
-                                {table.currentTokenId ? `Token: ${table.currentTokenId}` : `Cap: ${table.capacity || 4} guests`}
+                                {table.currentTokenId ? `Token: ${table.currentTokenId}` : (table.capacity ? `Cap: ${table.capacity} guests` : '')}
                               </div>
                             </div>
                             <span
@@ -1106,14 +1100,13 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
                           <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-white/5 flex items-center justify-between text-[11px] gap-2">
                             <span className="text-zinc-500 dark:text-zinc-400 truncate font-medium max-w-[100px]">
-                              {table.placeType?.name || (typeof table.placeType === 'string' ? table.placeType : 'Standard')}
+                              {table.placeType?.name || (typeof table.placeType === 'string' ? table.placeType : table.section || '')}
                             </span>
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedBillTable(table);
-                                setIsBillDetailsOpen(true);
+                                handleOpenBillModal(table);
                               }}
                               className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] shadow-xs active:scale-95 transition-all shrink-0 cursor-pointer ${
                                 isBillReq
@@ -1304,7 +1297,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       {/* Top Header Row: Table Number + Station Badge */}
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-black text-base text-zinc-900 dark:text-white tracking-tight">
-                          Table {item.tableNumber || 'C5'}
+                          Table {item.tableNumber || '-'}
                         </span>
                         <span
                           className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${
@@ -1392,10 +1385,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
             billRequestedTables.map((t) => (
               <div
                 key={t.id}
-                onClick={() => {
-                  setSelectedBillTable(t);
-                  setIsBillDetailsOpen(true);
-                }}
+                onClick={() => handleOpenBillModal(t)}
                 className="p-4 rounded-2xl border border-zinc-200 dark:border-white/10 hover:border-amber-400 dark:hover:border-amber-500/60 dark:bg-[#18181A] bg-white flex items-center justify-between gap-4 shadow-xs cursor-pointer transition-colors"
               >
                 <div>
@@ -1406,9 +1396,15 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                     </span>
                   </div>
                   <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 font-medium flex items-center gap-2">
-                    <span>Token: <span className="font-mono font-bold text-zinc-700 dark:text-zinc-300">{t.currentTokenId || 'ACTIVE'}</span></span>
-                    <span>·</span>
-                    <span>{t.placeType?.name || 'Standard'}</span>
+                    {t.currentTokenId && (
+                      <span>Token: <span className="font-mono font-bold text-zinc-700 dark:text-zinc-300">{t.currentTokenId}</span></span>
+                    )}
+                    {t.placeType?.name && (
+                      <>
+                        <span>·</span>
+                        <span>{t.placeType.name}</span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -1416,8 +1412,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedBillTable(t);
-                    setIsBillDetailsOpen(true);
+                    handleOpenBillModal(t);
                   }}
                   className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer"
                 >
@@ -1546,7 +1541,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
       {/* Bill Details Modal */}
       {isBillDetailsOpen && selectedBillTable && (() => {
-        const bill = getBillForTable(selectedBillTable);
+        const bill = activeTableBill || getBillForTable(selectedBillTable);
         const waitMins = selectedBillTable.createdAt ? getWaitMinutes(selectedBillTable.createdAt) : 0;
         const waitTimeColor =
           waitMins >= 15
@@ -1574,7 +1569,10 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       </span>
                     </div>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                      Token: <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{selectedBillTable.currentTokenId || 'ACTIVE'}</span> · {selectedBillTable.placeType?.name || 'Standard'}
+                      {selectedBillTable.currentTokenId ? (
+                        <>Token: <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{selectedBillTable.currentTokenId}</span></>
+                      ) : null}
+                      {selectedBillTable.placeType?.name ? ` · ${selectedBillTable.placeType.name}` : ''}
                     </p>
                   </div>
                 </div>
@@ -1598,73 +1596,92 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   <Clock className="w-3.5 h-3.5 shrink-0" />
                   <span>Requested {selectedBillTable.createdAt ? getRelativeWaitTime(selectedBillTable.createdAt) : 'Recently'}</span>
                 </div>
-                <div className="flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
-                  <Users className="w-3.5 h-3.5 shrink-0" />
-                  <span>{selectedBillTable.capacity || 4} Guests</span>
-                </div>
+                {selectedBillTable.capacity ? (
+                  <div className="flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
+                    <Users className="w-3.5 h-3.5 shrink-0" />
+                    <span>{selectedBillTable.capacity} Guests</span>
+                  </div>
+                ) : null}
               </div>
 
               {/* Itemized Bill List */}
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                  Ordered Items ({bill.items.length})
-                </h4>
+                {isBillLoading ? (
+                  <div className="py-12 flex flex-col items-center justify-center text-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary dark:text-[#D4AF37] mb-2" />
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">Calculating current bill from active orders...</p>
+                  </div>
+                ) : billFetchError ? (
+                  <div className="py-8 text-center text-xs text-rose-600 dark:text-rose-400">
+                    {billFetchError}
+                  </div>
+                ) : (!bill || !bill.items || bill.items.length === 0) ? (
+                  <div className="py-8 text-center text-xs text-zinc-500 dark:text-zinc-400 font-medium">
+                    No billed items recorded yet for this table.
+                  </div>
+                ) : (
+                  <>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                      Ordered Items ({bill.items.length})
+                    </h4>
 
-                <div className="space-y-2">
-                  {bill.items.map((item: any, idx: number) => (
-                    <div
-                      key={idx}
-                      className="p-3 rounded-xl border border-zinc-200/80 dark:border-white/5 bg-zinc-50/50 dark:bg-[#141416]/50 flex items-center justify-between gap-3 text-xs"
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <VegBadge type={item.foodType} size="sm" />
-                        <span className="font-bold text-zinc-900 dark:text-white truncate">
-                          {item.name}
+                    <div className="space-y-2">
+                      {bill.items.map((item: any, idx: number) => (
+                        <div
+                          key={idx}
+                          className="p-3 rounded-xl border border-zinc-200/80 dark:border-white/5 bg-zinc-50/50 dark:bg-[#141416]/50 flex items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <VegBadge type={item.foodType} size="sm" />
+                            <span className="font-bold text-zinc-900 dark:text-white truncate">
+                              {item.name || item.itemName}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4 shrink-0">
+                            <span className="text-zinc-500 dark:text-zinc-400 font-semibold">
+                              ₹{Number(item.unitPrice || item.price || 0).toFixed(2)} × {item.quantity}
+                            </span>
+                            <span className="font-mono font-black text-zinc-900 dark:text-white w-16 text-right">
+                              ₹{((item.unitPrice || item.price || 0) * item.quantity).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Financial Summary */}
+                    <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-white/10 space-y-1.5 text-xs">
+                      <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+                        <span>Subtotal</span>
+                        <span className="font-mono font-semibold">₹{Number(bill.subtotal || 0).toFixed(2)}</span>
+                      </div>
+                      {Number(bill.cgst) > 0 && (
+                        <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
+                          <span>CGST {bill.rates?.cgstRate ? `(${bill.rates.cgstRate}%)` : ''}</span>
+                          <span className="font-mono">₹{Number(bill.cgst).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {Number(bill.sgst) > 0 && (
+                        <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
+                          <span>SGST {bill.rates?.sgstRate ? `(${bill.rates.sgstRate}%)` : ''}</span>
+                          <span className="font-mono">₹{Number(bill.sgst).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {Number(bill.serviceCharge) > 0 && (
+                        <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
+                          <span>Service Charge {bill.rates?.serviceChargeRate ? `(${bill.rates.serviceChargeRate}%)` : ''}</span>
+                          <span className="font-mono">₹{Number(bill.serviceCharge).toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center text-base font-black pt-2 border-t border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white">
+                        <span>Total Amount Due</span>
+                        <span className="text-primary dark:text-[#D4AF37] font-mono text-lg">
+                          ₹{Number(bill.total || 0).toFixed(2)}
                         </span>
                       </div>
-                      <div className="flex items-center gap-4 shrink-0">
-                        <span className="text-zinc-500 dark:text-zinc-400 font-semibold">
-                          ₹{Number(item.unitPrice).toFixed(2)} × {item.quantity}
-                        </span>
-                        <span className="font-mono font-black text-zinc-900 dark:text-white w-16 text-right">
-                          ₹{(item.unitPrice * item.quantity).toFixed(2)}
-                        </span>
-                      </div>
                     </div>
-                  ))}
-                </div>
-
-                {/* Financial Summary */}
-                <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-white/10 space-y-1.5 text-xs">
-                  <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
-                    <span>Subtotal</span>
-                    <span className="font-mono font-semibold">₹{bill.subtotal.toFixed(2)}</span>
-                  </div>
-                  {bill.cgst && (
-                    <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
-                      <span>CGST (2.5%)</span>
-                      <span className="font-mono">₹{bill.cgst.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {bill.sgst && (
-                    <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
-                      <span>SGST (2.5%)</span>
-                      <span className="font-mono">₹{bill.sgst.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {bill.serviceCharge && (
-                    <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
-                      <span>Service Charge (5%)</span>
-                      <span className="font-mono">₹{bill.serviceCharge.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center text-base font-black pt-2 border-t border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white">
-                    <span>Total Amount Due</span>
-                    <span className="text-primary dark:text-[#D4AF37] font-mono text-lg">
-                      ₹{bill.total.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
+                  </>
+                )}
               </div>
 
               {/* Modal Footer Actions */}
@@ -1690,6 +1707,136 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Acknowledge Bill</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Reservation Details Modal */}
+      {isReservationModalOpen && selectedReservationTable && (() => {
+        const res = getReservationForTable(selectedReservationTable.id);
+        const guestName = res?.customerName || (selectedReservationTable as any).reservationGuestName || 'Guest';
+        const guestPhone = res?.phoneNumber;
+        const guestEmail = (res as any)?.email;
+        const guestsCount = res?.personsCount || selectedReservationTable.capacity;
+        const reservationTime = res?.reservationTime || res?.date;
+        const reservationNotes = (res as any)?.notes || (res as any)?.specialRequests;
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-fade-in">
+            <div className="w-full max-w-md bg-white dark:bg-[#18181A] rounded-3xl border border-zinc-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col animate-scale-up">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 sm:p-5 border-b border-zinc-200 dark:border-white/10">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                    <CalendarCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-lg sm:text-xl text-zinc-900 dark:text-white tracking-tight">
+                      Table {selectedReservationTable.tableNumber || selectedReservationTable.number || '-'}
+                    </h3>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      {selectedReservationTable.placeType?.name || (typeof selectedReservationTable.placeType === 'string' ? selectedReservationTable.placeType : 'Table Reservation')}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsReservationModalOpen(false);
+                    setSelectedReservationTable(null);
+                  }}
+                  className="p-2 rounded-xl text-zinc-400 hover:text-zinc-900 dark:text-zinc-500 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/10 cursor-pointer transition-colors"
+                  title="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Reservation Info Body */}
+              <div className="p-5 space-y-4 text-xs">
+                <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-sm shrink-0">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-black text-sm text-zinc-900 dark:text-white truncate">
+                      {guestName}
+                    </div>
+                    <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
+                      {res?.status || 'Confirmed'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  {guestsCount ? (
+                    <div className="flex items-center justify-between p-2.5 rounded-xl border border-zinc-100 dark:border-white/5 bg-zinc-50/50 dark:bg-[#141416]/50">
+                      <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
+                        <Users className="w-4 h-4 text-zinc-400" />
+                        <span className="font-medium">Party Size</span>
+                      </div>
+                      <span className="font-bold text-zinc-900 dark:text-white">{guestsCount} Guests</span>
+                    </div>
+                  ) : null}
+
+                  {guestPhone && (
+                    <div className="flex items-center justify-between p-2.5 rounded-xl border border-zinc-100 dark:border-white/5 bg-zinc-50/50 dark:bg-[#141416]/50">
+                      <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
+                        <Phone className="w-4 h-4 text-zinc-400" />
+                        <span className="font-medium">Contact Phone</span>
+                      </div>
+                      <a href={`tel:${guestPhone}`} className="font-bold text-primary dark:text-[#D4AF37] hover:underline">
+                        {guestPhone}
+                      </a>
+                    </div>
+                  )}
+
+                  {guestEmail && (
+                    <div className="flex items-center justify-between p-2.5 rounded-xl border border-zinc-100 dark:border-white/5 bg-zinc-50/50 dark:bg-[#141416]/50">
+                      <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
+                        <Mail className="w-4 h-4 text-zinc-400" />
+                        <span className="font-medium">Email</span>
+                      </div>
+                      <span className="font-bold text-zinc-900 dark:text-white truncate max-w-[200px]">{guestEmail}</span>
+                    </div>
+                  )}
+
+                  {reservationTime && (
+                    <div className="flex items-center justify-between p-2.5 rounded-xl border border-zinc-100 dark:border-white/5 bg-zinc-50/50 dark:bg-[#141416]/50">
+                      <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
+                        <Clock className="w-4 h-4 text-zinc-400" />
+                        <span className="font-medium">Reservation Time</span>
+                      </div>
+                      <span className="font-bold text-zinc-900 dark:text-white">
+                        {new Date(reservationTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                      </span>
+                    </div>
+                  )}
+
+                  {reservationNotes && (
+                    <div className="p-3 rounded-xl border border-zinc-100 dark:border-white/5 bg-zinc-50/50 dark:bg-[#141416]/50">
+                      <span className="text-[11px] font-semibold text-zinc-400 block mb-1">Special Notes</span>
+                      <p className="text-zinc-700 dark:text-zinc-300 italic">{reservationNotes}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 sm:p-5 border-t border-zinc-200 dark:border-white/10 bg-zinc-50/70 dark:bg-[#141416]/50 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsReservationModalOpen(false);
+                    setSelectedReservationTable(null);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-extrabold text-xs shadow-sm active:scale-95 transition-all cursor-pointer"
+                >
+                  Close
                 </button>
               </div>
             </div>

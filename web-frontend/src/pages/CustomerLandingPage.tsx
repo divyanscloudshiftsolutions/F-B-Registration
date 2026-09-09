@@ -18,8 +18,8 @@ import {
 export const CustomerLandingPage: React.FC = () => {
   const { isDark, toggleTheme } = useAuth();
   const [activeModal, setActiveModal] = useState<'NONE' | 'TOKEN' | 'PHONE' | 'SCAN'>('NONE');
-  const [tokenInput, setTokenInput] = useState<string>('BAR-20260902-00008');
-  const [phoneInput, setPhoneInput] = useState<string>('9833161990');
+  const [tokenInput, setTokenInput] = useState<string>('');
+  const [phoneInput, setPhoneInput] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 

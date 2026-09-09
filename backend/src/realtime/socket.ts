@@ -77,8 +77,32 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
       const rawToken = auth.token || (headers.authorization ? headers.authorization.replace(/^Bearer\s+/i, '') : null);
       const tokenNumber = auth.tokenNumber || query.tokenNumber;
 
-      // 1. Check for Staff JWT
+      // 1. Check for Staff Session in DB or JWT
       if (rawToken && typeof rawToken === 'string' && rawToken.trim() !== '') {
+        try {
+          const session = await prisma.staffSession.findUnique({
+            where: { id: rawToken },
+            include: { user: { include: { role: true } } },
+          });
+
+          if (session && session.expiresAt > new Date() && session.user && session.user.isActive) {
+            const permissions = typeof session.user.role?.permissions === 'object' && session.user.role?.permissions !== null
+              ? Object.keys(session.user.role.permissions)
+              : [];
+
+            const staffUser: StaffSocketUser = {
+              userId: session.user.id,
+              email: session.user.username,
+              role: session.user.role?.name || 'Staff',
+              permissions,
+            };
+            socket.data.auth = { type: 'STAFF', staffUser } as SocketAuthData;
+            return next();
+          }
+        } catch (sessionErr) {
+          // Fall through to JWT check
+        }
+
         try {
           const decoded: any = jwt.verify(rawToken, JWT_SECRET);
           const userId = decoded.id || decoded.userId;
@@ -104,7 +128,7 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
             }
           }
         } catch (jwtErr) {
-          logger.warn('Socket staff JWT verification failed', { error: String(jwtErr) });
+          logger.warn('Socket staff authentication failed', { error: String(jwtErr) });
         }
       }
 

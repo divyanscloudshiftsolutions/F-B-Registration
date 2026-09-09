@@ -40,9 +40,8 @@ export const BarKDSPage: React.FC = () => {
   const fetchTickets = async () => {
     try {
       const res = await api.getKdsOrders('BAR');
-      if (res && Array.isArray(res)) {
-        setTickets(res);
-      }
+      const ticketsList = Array.isArray(res) ? res : ((res as any)?.tickets || []);
+      setTickets(ticketsList);
     } catch (err: any) {
       console.warn('Failed to load Bar KDS tickets:', err.message);
     } finally {

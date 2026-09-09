@@ -39,6 +39,9 @@ export interface CustomerContextType {
   cartTotal: number;
   cartCount: number;
   activeOrders: any[];
+  orderHistory: any[];
+  isHistoryLoading: boolean;
+  refreshOrderHistory: () => Promise<void>;
   activeRequests: any[];
   setActiveRequests: React.Dispatch<React.SetStateAction<any[]>>;
   refreshRequests: () => Promise<void>;
@@ -75,6 +78,9 @@ const defaultCustomerContext: CustomerContextType = {
   cartTotal: 0,
   cartCount: 0,
   activeOrders: [],
+  orderHistory: [],
+  isHistoryLoading: false,
+  refreshOrderHistory: async () => {},
   activeRequests: [],
   setActiveRequests: () => {},
   refreshRequests: async () => {},
@@ -138,6 +144,8 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   });
 
   const [activeOrders, setActiveOrders] = useState<any[]>([]);
+  const [orderHistory, setOrderHistory] = useState<any[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(false);
   const [activeRequests, setActiveRequests] = useState<any[]>([]);
   const [sessionData, setSessionData] = useState<any | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -156,6 +164,8 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const handleSessionClosure = useCallback(() => {
     setIsSessionClosed(true);
     setCart([]);
+    setActiveOrders([]);
+    setOrderHistory([]);
     setSessionData(null);
     setSessionError(null);
     try {
@@ -178,6 +188,9 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } catch {}
     setSessionData(null);
     setSessionError(null);
+    setCart([]);
+    setActiveOrders([]);
+    setOrderHistory([]);
     window.location.assign('/customer/landing');
   }, []);
 
@@ -216,6 +229,22 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setActiveOrders(orders);
     } catch (err) {
       console.warn('Failed to load active orders:', err);
+    }
+  }, [tokenNumber]);
+
+  const refreshOrderHistory = useCallback(async () => {
+    if (!tokenNumber) {
+      setOrderHistory([]);
+      return;
+    }
+    setIsHistoryLoading(true);
+    try {
+      const history = await api.getCustomerOrderHistory(tokenNumber);
+      setOrderHistory(history);
+    } catch (err) {
+      console.warn('Failed to load customer order history:', err);
+    } finally {
+      setIsHistoryLoading(false);
     }
   }, [tokenNumber]);
 
@@ -281,14 +310,21 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     let mounted = true;
     setIsLoading(true);
 
-    Promise.all([refreshMenu(), refreshOrders(), refreshBill(), refreshRequests(), refreshSession()]).finally(() => {
+    Promise.all([
+      refreshMenu(),
+      refreshOrders(),
+      refreshOrderHistory(),
+      refreshBill(),
+      refreshRequests(),
+      refreshSession(),
+    ]).finally(() => {
       if (mounted) setIsLoading(false);
     });
 
     return () => {
       mounted = false;
     };
-  }, [refreshMenu, refreshOrders, refreshBill, refreshRequests, refreshSession]);
+  }, [refreshMenu, refreshOrders, refreshOrderHistory, refreshBill, refreshRequests, refreshSession]);
 
   // Real-Time Socket Room & Event Subscriptions
   useEffect(() => {
@@ -300,12 +336,14 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const unsubOrderCreated = onSocketEvent('order.created', (data: any) => {
       if (data && (data.tokenNumber === tokenNumber || data.tokenId === tokenNumber)) {
         refreshOrders();
+        refreshOrderHistory();
         refreshBill();
       }
     });
 
     const unsubItemUpdated = onSocketEvent('order.item.updated', (data: any) => {
       refreshOrders();
+      refreshOrderHistory();
     });
 
     const unsubReqCreated = onSocketEvent('service_request.created', (data: any) => {
@@ -456,6 +494,9 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         cartTotal,
         cartCount,
         activeOrders,
+        orderHistory,
+        isHistoryLoading,
+        refreshOrderHistory,
         activeRequests,
         setActiveRequests,
         refreshRequests,

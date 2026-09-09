@@ -41,13 +41,16 @@ import {
   Copy,
   Check,
   ArrowRight,
+  ArrowLeft,
+  History,
+  Calendar,
   RefreshCw,
   Square,
   CheckSquare,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-type CustomerNavTab = 'home' | 'eat' | 'drink' | 'merch' | 'search' | 'cart' | 'orders' | 'bill' | 'repeat' | 'account';
+type CustomerNavTab = 'home' | 'eat' | 'drink' | 'merch' | 'search' | 'cart' | 'orders' | 'bill' | 'repeat' | 'account' | 'history';
 
 const CustomerAppInner: React.FC = () => {
   const { isDark, toggleTheme } = useAuth();
@@ -68,6 +71,9 @@ const CustomerAppInner: React.FC = () => {
     cartTotal,
     cartCount,
     activeOrders,
+    orderHistory,
+    isHistoryLoading,
+    refreshOrderHistory,
     activeRequests,
     setActiveRequests,
     tableId,
@@ -135,13 +141,35 @@ const CustomerAppInner: React.FC = () => {
       if (p.includes('/customer/repeat')) return 'repeat';
       if (p.includes('/customer/search')) return 'search';
       if (p.includes('/customer/account')) return 'account';
+      if (p.includes('/customer/history') || p.includes('/customer/order-history')) return 'account';
     }
     return 'home';
   };
 
   const [activeTab, setActiveTabState] = useState<CustomerNavTab>(getCustomerTabFromPath);
+  const [accountSubTab, setAccountSubTab] = useState<'profile' | 'history'>(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      if (p.includes('/customer/history') || p.includes('/customer/order-history')) return 'history';
+    }
+    return 'profile';
+  });
 
   const setActiveTab = (tab: CustomerNavTab) => {
+    if (tab === 'history') {
+      setActiveTabState('account');
+      setAccountSubTab('history');
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/t/')) {
+        const targetPath = '/customer/account';
+        if (window.location.pathname !== targetPath) {
+          window.history.pushState(null, '', targetPath);
+        }
+      }
+      return;
+    }
+    if (tab === 'account') {
+      setAccountSubTab('profile');
+    }
     setActiveTabState(tab);
     if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/t/')) {
       const targetPath = tab === 'home' ? '/customer/home' : `/customer/${tab}`;
@@ -153,7 +181,14 @@ const CustomerAppInner: React.FC = () => {
 
   useEffect(() => {
     const handlePopState = () => {
-      setActiveTabState(getCustomerTabFromPath());
+      const tab = getCustomerTabFromPath();
+      setActiveTabState(tab);
+      const p = window.location.pathname.toLowerCase();
+      if (p.includes('/customer/history') || p.includes('/customer/order-history')) {
+        setAccountSubTab('history');
+      } else if (p.includes('/customer/account')) {
+        setAccountSubTab('profile');
+      }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -673,31 +708,29 @@ const CustomerAppInner: React.FC = () => {
             </div>
 
             {/* Promo Carousel Cards (1-col mobile, 2-col tablet, 3-col desktop) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-              {(promotions.length > 0 ? promotions : [
-                { id: 'p1', title: 'Happy Hour Pitchers', subtitle: 'Complimentary artisanal snacks on craft pitchers before 8 PM.', ctaLabel: 'Explore Pitchers', ctaTarget: 'drink' },
-                { id: 'p2', title: "Chef's Tasting Flight", subtitle: 'Three artisanal sliders paired with craft brew samplers.', ctaLabel: 'View Tasting', ctaTarget: 'eat' },
-                { id: 'p3', title: 'Late Night Spirits', subtitle: 'Single malt pours paired with smoked dark chocolate.', ctaLabel: 'Browse Spirits', ctaTarget: 'drink' },
-              ]).map((p: any) => (
-                <div
-                  key={p.id}
-                  onClick={() => setActiveTab(p.ctaTarget === 'drink' ? 'drink' : 'eat')}
-                  className="cursor-pointer rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-5 hover:border-primary/50 dark:hover:border-[#D4AF37]/50 transition-all group flex flex-col justify-between shadow-xs hover:shadow-md"
-                >
-                  <div>
-                    <h4 className="font-extrabold text-sm sm:text-base text-text-primary dark:text-white leading-tight">
-                      {p.title}
-                    </h4>
-                    <p className="text-xs text-text-muted dark:text-zinc-400 mt-1.5 leading-relaxed">
-                      {p.subtitle || p.description}
-                    </p>
+            {promotions.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+                {promotions.map((p: any) => (
+                  <div
+                    key={p.id}
+                    onClick={() => setActiveTab(p.ctaTarget === 'drink' ? 'drink' : 'eat')}
+                    className="cursor-pointer rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-5 hover:border-primary/50 dark:hover:border-[#D4AF37]/50 transition-all group flex flex-col justify-between shadow-xs hover:shadow-md"
+                  >
+                    <div>
+                      <h4 className="font-extrabold text-sm sm:text-base text-text-primary dark:text-white leading-tight">
+                        {p.title}
+                      </h4>
+                      <p className="text-xs text-text-muted dark:text-zinc-400 mt-1.5 leading-relaxed">
+                        {p.subtitle || p.description}
+                      </p>
+                    </div>
+                    <div className="mt-4 text-xs font-bold text-primary dark:text-[#D4AF37] flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                      <span>{p.ctaLabel || 'Explore'} →</span>
+                    </div>
                   </div>
-                  <div className="mt-4 text-xs font-bold text-primary dark:text-[#D4AF37] flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                    <span>{p.ctaLabel || 'Explore'} →</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
 
             {/* Cart Recovery Card */}
             {cart.length > 0 && (
@@ -2008,27 +2041,29 @@ const CustomerAppInner: React.FC = () => {
                 </p>
               </div>
 
-              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 w-fit shrink-0">
-                <button
-                  onClick={() => setActiveOrdersSubTab('pending')}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeOrdersSubTab === 'pending'
-                      ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs'
-                      : 'text-text-muted dark:text-zinc-400 hover:text-text-primary dark:hover:text-white'
-                  }`}
-                >
-                  Pending ({pendingOrders.length})
-                </button>
-                <button
-                  onClick={() => setActiveOrdersSubTab('done')}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeOrdersSubTab === 'done'
-                      ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs'
-                      : 'text-text-muted dark:text-zinc-400 hover:text-text-primary dark:hover:text-white'
-                  }`}
-                >
-                  Completed ({completedOrders.length})
-                </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 w-fit shrink-0">
+                  <button
+                    onClick={() => setActiveOrdersSubTab('pending')}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      activeOrdersSubTab === 'pending'
+                        ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs'
+                        : 'text-text-muted dark:text-zinc-400 hover:text-text-primary dark:hover:text-white'
+                    }`}
+                  >
+                    Pending ({pendingOrders.length})
+                  </button>
+                  <button
+                    onClick={() => setActiveOrdersSubTab('done')}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      activeOrdersSubTab === 'done'
+                        ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs'
+                        : 'text-text-muted dark:text-zinc-400 hover:text-text-primary dark:hover:text-white'
+                    }`}
+                  >
+                    Completed ({completedOrders.length})
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2601,7 +2636,7 @@ const CustomerAppInner: React.FC = () => {
         )}
 
         {/* ==================================================================== */}
-        {/* VIEW: ACCOUNT (Dining Session Details)                              */}
+        {/* VIEW: ACCOUNT & PROFILE (Includes Persistent Order History)         */}
         {/* ==================================================================== */}
         {activeTab === 'account' && (
           <div className="space-y-6 animate-fade-in pb-28 sm:pb-32 max-w-4xl mx-auto">
@@ -2610,10 +2645,10 @@ const CustomerAppInner: React.FC = () => {
               <div>
                 <h2 className="font-black text-2xl sm:text-3xl text-text-primary dark:text-white tracking-tight flex items-center gap-2.5">
                   <User className="w-7 h-7 text-primary dark:text-[#D4AF37]" />
-                  Account &amp; Dining Session
+                  Guest Profile &amp; Account
                 </h2>
                 <p className="text-xs sm:text-sm text-text-muted dark:text-zinc-400 mt-1">
-                  View your active table session details, guest profile, and preferences.
+                  View your active table session details, guest profile, and persistent order history.
                 </p>
               </div>
               {(sessionData || tokenNumber) && (
@@ -2628,366 +2663,678 @@ const CustomerAppInner: React.FC = () => {
               )}
             </div>
 
-            {/* Error Banner */}
-            {sessionError && (
-              <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-50 dark:bg-amber-950/20 text-amber-900 dark:text-amber-300 text-xs sm:text-sm flex items-start justify-between gap-3 shadow-xs">
-                <div className="flex items-start gap-2.5">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-                  <div>
-                    <p className="font-semibold">Unable to refresh session details</p>
-                    <p className="text-amber-700 dark:text-amber-400 text-xs mt-0.5">{sessionError}</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => refreshSession()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-200/60 dark:bg-amber-800/40 hover:bg-amber-200 dark:hover:bg-amber-800/60 transition-colors shrink-0 cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  Retry
-                </button>
-              </div>
-            )}
+            {/* Profile Sub-Tabs: Profile Details vs Order History */}
+            <div className="flex items-center gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-border/60 dark:border-white/10 w-fit">
+              <button
+                type="button"
+                onClick={() => setAccountSubTab('profile')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  accountSubTab === 'profile'
+                    ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs'
+                    : 'text-text-muted dark:text-zinc-400 hover:text-text-primary dark:hover:text-white'
+                }`}
+              >
+                <User className="w-4 h-4" />
+                <span>Profile Details</span>
+              </button>
 
-            {/* Loading Skeletons */}
-            {isLoading && !sessionData ? (
+              <button
+                type="button"
+                onClick={() => setAccountSubTab('history')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  accountSubTab === 'history'
+                    ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs'
+                    : 'text-text-muted dark:text-zinc-400 hover:text-text-primary dark:hover:text-white'
+                }`}
+              >
+                <History className="w-4 h-4" />
+                <span>Order History</span>
+                {orderHistory.length > 0 && (
+                  <span
+                    className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
+                      accountSubTab === 'history'
+                        ? 'bg-white/20 text-white dark:bg-black/20 dark:text-black'
+                        : 'bg-primary/15 text-primary dark:bg-[#D4AF37]/20 dark:text-[#D4AF37]'
+                    }`}
+                  >
+                    {orderHistory.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* TAB 1: PROFILE DETAILS */}
+            {accountSubTab === 'profile' && (
               <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="rounded-2xl border border-border/60 dark:border-white/10 bg-white dark:bg-[#18181B] p-6 space-y-4 animate-pulse">
-                    <div className="h-5 w-32 bg-zinc-200 dark:bg-white/10 rounded" />
-                    <div className="space-y-3 pt-2">
-                      <div className="h-4 w-full bg-zinc-100 dark:bg-white/5 rounded" />
-                      <div className="h-4 w-3/4 bg-zinc-100 dark:bg-white/5 rounded" />
-                      <div className="h-4 w-5/6 bg-zinc-100 dark:bg-white/5 rounded" />
+                {/* Error Banner */}
+                {sessionError && (
+                  <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-50 dark:bg-amber-950/20 text-amber-900 dark:text-amber-300 text-xs sm:text-sm flex items-start justify-between gap-3 shadow-xs">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                      <div>
+                        <p className="font-semibold">Unable to refresh session details</p>
+                        <p className="text-amber-700 dark:text-amber-400 text-xs mt-0.5">{sessionError}</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => refreshSession()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-200/60 dark:bg-amber-800/40 hover:bg-amber-200 dark:hover:bg-amber-800/60 transition-colors shrink-0 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Retry
+                    </button>
+                  </div>
+                )}
+
+                {/* Loading Skeletons */}
+                {isLoading && !sessionData ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="rounded-2xl border border-border/60 dark:border-white/10 bg-white dark:bg-[#18181B] p-6 space-y-4 animate-pulse">
+                        <div className="h-5 w-32 bg-zinc-200 dark:bg-white/10 rounded" />
+                        <div className="space-y-3 pt-2">
+                          <div className="h-4 w-full bg-zinc-100 dark:bg-white/5 rounded" />
+                          <div className="h-4 w-3/4 bg-zinc-100 dark:bg-white/5 rounded" />
+                          <div className="h-4 w-5/6 bg-zinc-100 dark:bg-white/5 rounded" />
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-border/60 dark:border-white/10 bg-white dark:bg-[#18181B] p-6 space-y-4 animate-pulse">
+                        <div className="h-5 w-36 bg-zinc-200 dark:bg-white/10 rounded" />
+                        <div className="space-y-3 pt-2">
+                          <div className="h-4 w-full bg-zinc-100 dark:bg-white/5 rounded" />
+                          <div className="h-4 w-2/3 bg-zinc-100 dark:bg-white/5 rounded" />
+                          <div className="h-4 w-4/5 bg-zinc-100 dark:bg-white/5 rounded" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-border/60 dark:border-white/10 bg-white dark:bg-[#18181B] p-6 space-y-4 animate-pulse">
+                      <div className="h-5 w-40 bg-zinc-200 dark:bg-white/10 rounded" />
+                      <div className="h-12 w-full bg-zinc-100 dark:bg-white/5 rounded" />
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-border/60 dark:border-white/10 bg-white dark:bg-[#18181B] p-6 space-y-4 animate-pulse">
-                    <div className="h-5 w-36 bg-zinc-200 dark:bg-white/10 rounded" />
-                    <div className="space-y-3 pt-2">
-                      <div className="h-4 w-full bg-zinc-100 dark:bg-white/5 rounded" />
-                      <div className="h-4 w-2/3 bg-zinc-100 dark:bg-white/5 rounded" />
-                      <div className="h-4 w-4/5 bg-zinc-100 dark:bg-white/5 rounded" />
+                ) : !tokenNumber && !sessionData ? (
+                  /* Missing Session Empty State */
+                  <div className="rounded-2xl border border-dashed border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-8 sm:p-12 text-center max-w-lg mx-auto shadow-xs">
+                    <div className="w-16 h-16 rounded-full bg-primary/10 dark:bg-[#D4AF37]/10 flex items-center justify-center text-primary dark:text-[#D4AF37] mx-auto mb-4">
+                      <AlertCircle className="w-8 h-8" />
                     </div>
+                    <h3 className="text-lg sm:text-xl font-bold text-text-primary dark:text-white mb-2">
+                      No Active Dining Session
+                    </h3>
+                    <p className="text-xs sm:text-sm text-text-muted dark:text-zinc-400 mb-6 leading-relaxed">
+                      We could not detect an active table session on this device. Please scan the QR code at your dining table to join or view your table order.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => window.location.assign('/customer/landing')}
+                      className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white bg-primary hover:bg-primary/90 dark:bg-[#D4AF37] dark:hover:bg-[#D4AF37]/90 dark:text-black shadow-md transition-all cursor-pointer"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      Return to Welcome Page
+                    </button>
                   </div>
-                </div>
-                <div className="rounded-2xl border border-border/60 dark:border-white/10 bg-white dark:bg-[#18181B] p-6 space-y-4 animate-pulse">
-                  <div className="h-5 w-40 bg-zinc-200 dark:bg-white/10 rounded" />
-                  <div className="h-12 w-full bg-zinc-100 dark:bg-white/5 rounded" />
-                </div>
-              </div>
-            ) : !tokenNumber && !sessionData ? (
-              /* Missing Session Empty State */
-              <div className="rounded-2xl border border-dashed border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-8 sm:p-12 text-center max-w-lg mx-auto shadow-xs">
-                <div className="w-16 h-16 rounded-full bg-primary/10 dark:bg-[#D4AF37]/10 flex items-center justify-center text-primary dark:text-[#D4AF37] mx-auto mb-4">
-                  <AlertCircle className="w-8 h-8" />
-                </div>
-                <h3 className="text-lg sm:text-xl font-bold text-text-primary dark:text-white mb-2">
-                  No Active Dining Session
-                </h3>
-                <p className="text-xs sm:text-sm text-text-muted dark:text-zinc-400 mb-6 leading-relaxed">
-                  We could not detect an active table session on this device. Please scan the QR code at your dining table to join or view your table order.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => window.location.assign('/customer/landing')}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white bg-primary hover:bg-primary/90 dark:bg-[#D4AF37] dark:hover:bg-[#D4AF37]/90 dark:text-black shadow-md transition-all cursor-pointer"
-                >
-                  <ArrowRight className="w-4 h-4" />
-                  Return to Welcome Page
-                </button>
-              </div>
-            ) : (
-              /* Active Session Cards */
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Card 1: Guest Information */}
-                  <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-6 space-y-4 shadow-xs">
-                    <div className="flex items-center justify-between pb-3 border-b border-border/40 dark:border-white/5">
-                      <div className="flex items-center gap-2">
-                        <User className="w-4 h-4 text-primary dark:text-[#D4AF37]" />
-                        <h3 className="font-bold text-sm sm:text-base text-text-primary dark:text-white">
-                          Guest Information
-                        </h3>
-                      </div>
-                      {sessionData?.customerName && (
-                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-white/10 text-text-muted dark:text-zinc-300">
-                          Registered
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="space-y-3.5 text-xs sm:text-sm">
-                      <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
-                        <span className="text-text-muted dark:text-zinc-400">Customer Name</span>
-                        <span className="font-bold text-text-primary dark:text-white">
-                          {sessionData?.customerName || 'Dine-In Guest'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
-                        <span className="text-text-muted dark:text-zinc-400 flex items-center gap-1.5">
-                          <Phone className="w-3.5 h-3.5 text-zinc-400" />
-                          Phone Number
-                        </span>
-                        <span className="font-medium text-text-primary dark:text-white">
-                          {sessionData?.phoneNumber || 'Not provided'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
-                        <span className="text-text-muted dark:text-zinc-400 flex items-center gap-1.5">
-                          <Mail className="w-3.5 h-3.5 text-zinc-400" />
-                          Email Address
-                        </span>
-                        <span
-                          className="font-medium text-text-primary dark:text-white truncate max-w-[180px] sm:max-w-[220px]"
-                          title={sessionData?.email || ''}
-                        >
-                          {sessionData?.email || 'Not provided'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between py-1.5">
-                        <span className="text-text-muted dark:text-zinc-400 flex items-center gap-1.5">
-                          <Users className="w-3.5 h-3.5 text-zinc-400" />
-                          Party Size
-                        </span>
-                        <span className="font-semibold text-text-primary dark:text-white">
-                          {sessionData?.personsCount
-                            ? `${sessionData.personsCount} ${sessionData.personsCount === 1 ? 'Guest' : 'Guests'}`
-                            : '1 Guest'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Card 2: Table & Dining Session */}
-                  <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-6 space-y-4 shadow-xs">
-                    <div className="flex items-center justify-between pb-3 border-b border-border/40 dark:border-white/5">
-                      <div className="flex items-center gap-2">
-                        <UtensilsCrossed className="w-4 h-4 text-primary dark:text-[#D4AF37]" />
-                        <h3 className="font-bold text-sm sm:text-base text-text-primary dark:text-white">
-                          Table &amp; Session
-                        </h3>
-                      </div>
-                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        {sessionData?.status ? String(sessionData.status).toUpperCase() : 'ACTIVE'}
-                      </span>
-                    </div>
-
-                    <div className="space-y-3.5 text-xs sm:text-sm">
-                      <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
-                        <span className="text-text-muted dark:text-zinc-400">Table</span>
-                        <span className="font-bold text-text-primary dark:text-white">
-                          {sessionData?.tableNumber || tableNumber
-                            ? `Table ${sessionData?.tableNumber || tableNumber}`
-                            : 'Unassigned Table'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
-                        <span className="text-text-muted dark:text-zinc-400 flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-zinc-400" />
-                          Dining Area
-                        </span>
-                        <span className="font-medium text-text-primary dark:text-white capitalize">
-                          {sessionData?.placeType
-                            ? String(sessionData.placeType).toLowerCase().replace(/_/g, ' ')
-                            : 'Dine-In'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
-                        <span className="text-text-muted dark:text-zinc-400">Session Token</span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-semibold text-primary dark:text-[#D4AF37]">
-                            {tokenNumber || sessionData?.tokenNumber || '—'}
-                          </span>
-                          {(tokenNumber || sessionData?.tokenNumber) && (
-                            <button
-                              type="button"
-                              onClick={() => handleCopyToken(tokenNumber || sessionData?.tokenNumber || '')}
-                              className="p-1 rounded-md hover:bg-zinc-100 dark:hover:bg-white/10 text-zinc-400 hover:text-text-primary dark:hover:text-white transition-colors cursor-pointer"
-                              title="Copy session token"
-                            >
-                              {copiedToken ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-500" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
-                            </button>
+                ) : (
+                  /* Active Session Cards */
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Card 1: Guest Information */}
+                      <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-6 space-y-4 shadow-xs">
+                        <div className="flex items-center justify-between pb-3 border-b border-border/40 dark:border-white/5">
+                          <div className="flex items-center gap-2">
+                            <User className="w-4 h-4 text-primary dark:text-[#D4AF37]" />
+                            <h3 className="font-bold text-sm sm:text-base text-text-primary dark:text-white">
+                              Guest Information
+                            </h3>
+                          </div>
+                          {sessionData?.customerName && (
+                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-white/10 text-text-muted dark:text-zinc-300">
+                              Registered
+                            </span>
                           )}
+                        </div>
+
+                        <div className="space-y-3.5 text-xs sm:text-sm">
+                          <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
+                            <span className="text-text-muted dark:text-zinc-400">Customer Name</span>
+                            <span className="font-bold text-text-primary dark:text-white">
+                              {sessionData?.customerName || 'Dine-In Guest'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
+                            <span className="text-text-muted dark:text-zinc-400 flex items-center gap-1.5">
+                              <Phone className="w-3.5 h-3.5 text-zinc-400" />
+                              Phone Number
+                            </span>
+                            <span className="font-medium text-text-primary dark:text-white">
+                              {sessionData?.phoneNumber || 'Not provided'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
+                            <span className="text-text-muted dark:text-zinc-400 flex items-center gap-1.5">
+                              <Mail className="w-3.5 h-3.5 text-zinc-400" />
+                              Email Address
+                            </span>
+                            <span
+                              className="font-medium text-text-primary dark:text-white truncate max-w-[180px] sm:max-w-[220px]"
+                              title={sessionData?.email || ''}
+                            >
+                              {sessionData?.email || 'Not provided'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between py-1.5">
+                            <span className="text-text-muted dark:text-zinc-400 flex items-center gap-1.5">
+                              <Users className="w-3.5 h-3.5 text-zinc-400" />
+                              Party Size
+                            </span>
+                            <span className="font-semibold text-text-primary dark:text-white">
+                              {sessionData?.personsCount
+                                ? `${sessionData.personsCount} ${sessionData.personsCount === 1 ? 'Guest' : 'Guests'}`
+                                : '1 Guest'}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
-                        <span className="text-text-muted dark:text-zinc-400 flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-zinc-400" />
-                          Check-In Time
-                        </span>
-                        <span className="font-medium text-text-primary dark:text-white">
-                          {sessionData?.startTime
-                            ? (() => {
-                                try {
-                                  return new Date(sessionData.startTime).toLocaleTimeString([], {
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                  });
-                                } catch {
-                                  return sessionData.startTime;
-                                }
-                              })()
-                            : 'Active'}
-                        </span>
+                      {/* Card 2: Table & Dining Session */}
+                      <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-6 space-y-4 shadow-xs">
+                        <div className="flex items-center justify-between pb-3 border-b border-border/40 dark:border-white/5">
+                          <div className="flex items-center gap-2">
+                            <UtensilsCrossed className="w-4 h-4 text-primary dark:text-[#D4AF37]" />
+                            <h3 className="font-bold text-sm sm:text-base text-text-primary dark:text-white">
+                              Table &amp; Session
+                            </h3>
+                          </div>
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            {sessionData?.status ? String(sessionData.status).toUpperCase() : 'ACTIVE'}
+                          </span>
+                        </div>
+
+                        <div className="space-y-3.5 text-xs sm:text-sm">
+                          <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
+                            <span className="text-text-muted dark:text-zinc-400">Table</span>
+                            <span className="font-bold text-text-primary dark:text-white">
+                              {sessionData?.tableNumber || tableNumber
+                                ? `Table ${sessionData?.tableNumber || tableNumber}`
+                                : 'Unassigned Table'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
+                            <span className="text-text-muted dark:text-zinc-400 flex items-center gap-1.5">
+                              <MapPin className="w-3.5 h-3.5 text-zinc-400" />
+                              Dining Area
+                            </span>
+                            <span className="font-medium text-text-primary dark:text-white capitalize">
+                              {sessionData?.placeType
+                                ? String(sessionData.placeType).toLowerCase().replace(/_/g, ' ')
+                                : 'Dine-In'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
+                            <span className="text-text-muted dark:text-zinc-400">Session Token</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-semibold text-primary dark:text-[#D4AF37]">
+                                {tokenNumber || sessionData?.tokenNumber || '—'}
+                              </span>
+                              {(tokenNumber || sessionData?.tokenNumber) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyToken(tokenNumber || sessionData?.tokenNumber || '')}
+                                  className="p-1 rounded-md hover:bg-zinc-100 dark:hover:bg-white/10 text-zinc-400 hover:text-text-primary dark:hover:text-white transition-colors cursor-pointer"
+                                  title="Copy session token"
+                                >
+                                  {copiedToken ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
+                            <span className="text-text-muted dark:text-zinc-400 flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                              Check-In Time
+                            </span>
+                            <span className="font-medium text-text-primary dark:text-white">
+                              {sessionData?.startTime
+                                ? (() => {
+                                    try {
+                                      return new Date(sessionData.startTime).toLocaleTimeString([], {
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                      });
+                                    } catch {
+                                      return sessionData.startTime;
+                                    }
+                                  })()
+                                : 'Active'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
+                            <span className="text-text-muted dark:text-zinc-400">Active Orders</span>
+                            <button
+                              type="button"
+                              onClick={() => setActiveTab('orders')}
+                              className="font-bold text-primary dark:text-[#D4AF37] hover:underline flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>{activeOrders.length} {activeOrders.length === 1 ? 'ticket' : 'tickets'}</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between py-1.5">
+                            <span className="text-text-muted dark:text-zinc-400 flex items-center gap-1.5">
+                              <History className="w-3.5 h-3.5 text-zinc-400" />
+                              Order History
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setAccountSubTab('history')}
+                              className="font-bold text-primary dark:text-[#D4AF37] hover:underline flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>{orderHistory.length} {orderHistory.length === 1 ? 'past order' : 'past orders'}</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Card 3: Preferences & Session Actions */}
+                    <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-6 space-y-6 shadow-xs">
+                      <div className="flex items-center justify-between pb-3 border-b border-border/40 dark:border-white/5">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-primary dark:text-[#D4AF37]" />
+                          <h3 className="font-bold text-sm sm:text-base text-text-primary dark:text-white">
+                            Preferences &amp; Actions
+                          </h3>
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-between py-1.5">
-                        <span className="text-text-muted dark:text-zinc-400">Active Orders</span>
+                      {/* Theme Switcher Row */}
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-xl bg-zinc-50 dark:bg-white/5 border border-border/60 dark:border-white/5">
+                        <div>
+                          <p className="text-xs sm:text-sm font-bold text-text-primary dark:text-white">
+                            Customer Appearance
+                          </p>
+                          <p className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 mt-0.5">
+                            Toggle between Light (Clean Purple) and Dark (Gold Luxury) mode
+                          </p>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => setActiveTab('orders')}
-                          className="font-bold text-primary dark:text-[#D4AF37] hover:underline flex items-center gap-1 cursor-pointer"
+                          onClick={toggleThemeWithWave}
+                          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] hover:bg-zinc-100 dark:hover:bg-white/10 text-text-primary dark:text-white shadow-xs transition-colors cursor-pointer w-full sm:w-auto"
                         >
-                          <span>{activeOrders.length} {activeOrders.length === 1 ? 'ticket' : 'tickets'}</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
+                          {isDark ? (
+                            <>
+                              <Sun className="w-4 h-4 text-[#D4AF37]" />
+                              <span>Switch to Light Mode</span>
+                            </>
+                          ) : (
+                            <>
+                              <Moon className="w-4 h-4 text-primary" />
+                              <span>Switch to Dark Mode</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Quick Navigation Shortcuts */}
+                      <div>
+                        <h4 className="text-xs font-bold text-text-muted dark:text-zinc-400 uppercase tracking-wider mb-3">
+                          Session Shortcuts
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setAccountSubTab('history')}
+                            className="flex items-center justify-between p-3.5 rounded-xl border border-border/60 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 bg-white dark:bg-[#18181B] hover:bg-zinc-50 dark:hover:bg-white/5 transition-all group text-left cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-lg bg-primary/10 dark:bg-[#D4AF37]/10 flex items-center justify-center text-primary dark:text-[#D4AF37]">
+                                <History className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <span className="block text-xs font-bold text-text-primary dark:text-white">
+                                  Order History
+                                </span>
+                                <span className="block text-[11px] text-text-muted dark:text-zinc-400">
+                                  {orderHistory.length} completed
+                                </span>
+                              </div>
+                            </div>
+                            <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:text-text-primary dark:group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('orders')}
+                            className="flex items-center justify-between p-3.5 rounded-xl border border-border/60 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 bg-white dark:bg-[#18181B] hover:bg-zinc-50 dark:hover:bg-white/5 transition-all group text-left cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-lg bg-primary/10 dark:bg-[#D4AF37]/10 flex items-center justify-center text-primary dark:text-[#D4AF37]">
+                                <ClipboardList className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <span className="block text-xs font-bold text-text-primary dark:text-white">
+                                  My Orders
+                                </span>
+                                <span className="block text-[11px] text-text-muted dark:text-zinc-400">
+                                  {activeOrders.length} active
+                                </span>
+                              </div>
+                            </div>
+                            <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:text-text-primary dark:group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('bill')}
+                            className="flex items-center justify-between p-3.5 rounded-xl border border-border/60 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 bg-white dark:bg-[#18181B] hover:bg-zinc-50 dark:hover:bg-white/5 transition-all group text-left cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-lg bg-primary/10 dark:bg-[#D4AF37]/10 flex items-center justify-center text-primary dark:text-[#D4AF37]">
+                                <Receipt className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <span className="block text-xs font-bold text-text-primary dark:text-white">
+                                  Table Bill
+                                </span>
+                                <span className="block text-[11px] text-text-muted dark:text-zinc-400">
+                                  Review summary
+                                </span>
+                              </div>
+                            </div>
+                            <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:text-text-primary dark:group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setIsCallWaiterOpen(true)}
+                            className="flex items-center justify-between p-3.5 rounded-xl border border-border/60 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 bg-white dark:bg-[#18181B] hover:bg-zinc-50 dark:hover:bg-white/5 transition-all group text-left cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-lg bg-primary/10 dark:bg-[#D4AF37]/10 flex items-center justify-center text-primary dark:text-[#D4AF37]">
+                                <PhoneCall className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <span className="block text-xs font-bold text-text-primary dark:text-white">
+                                  Call Waiter
+                                </span>
+                                <span className="block text-[11px] text-text-muted dark:text-zinc-400">
+                                  Assistance &amp; service
+                                </span>
+                              </div>
+                            </div>
+                            <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:text-text-primary dark:group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Exit Session Section */}
+                      <div className="pt-4 border-t border-border/40 dark:border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                          <p className="text-xs sm:text-sm font-bold text-text-primary dark:text-white">
+                            Exit Dining Session
+                          </p>
+                          <p className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 mt-0.5">
+                            Clears your active session from this device. Re-scan your table QR code at any time to resume.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={logout}
+                          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800/40 transition-colors cursor-pointer shrink-0"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>Exit Session</span>
                         </button>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
+              </div>
+            )}
 
-                {/* Card 3: Preferences & Session Actions */}
-                <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-6 space-y-6 shadow-xs">
-                  <div className="flex items-center justify-between pb-3 border-b border-border/40 dark:border-white/5">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-primary dark:text-[#D4AF37]" />
-                      <h3 className="font-bold text-sm sm:text-base text-text-primary dark:text-white">
-                        Preferences &amp; Actions
+            {/* TAB 2: ORDER HISTORY (INSIDE PROFILE) */}
+            {accountSubTab === 'history' && (
+              <div className="space-y-6 animate-fade-in">
+                {/* Header with Navigation & Refresh */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-border/60 dark:border-white/10">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setAccountSubTab('profile')}
+                      className="p-2 rounded-xl border border-border/80 dark:border-white/10 hover:bg-zinc-100 dark:hover:bg-white/5 text-text-primary dark:text-white transition-colors cursor-pointer"
+                      title="Back to Profile Details"
+                    >
+                      <ArrowLeft className="w-5 h-5" />
+                    </button>
+                    <div>
+                      <h3 className="font-black text-xl sm:text-2xl text-text-primary dark:text-white tracking-tight flex items-center gap-2.5">
+                        <History className="w-6 h-6 text-primary dark:text-[#D4AF37]" />
+                        Order History
                       </h3>
+                      <p className="text-xs text-text-muted dark:text-zinc-400 mt-0.5">
+                        Persistent record of your completed orders across all dining sessions.
+                      </p>
                     </div>
                   </div>
 
-                  {/* Theme Switcher Row */}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-xl bg-zinc-50 dark:bg-white/5 border border-border/60 dark:border-white/5">
-                    <div>
-                      <p className="text-xs sm:text-sm font-bold text-text-primary dark:text-white">
-                        Customer Appearance
-                      </p>
-                      <p className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 mt-0.5">
-                        Toggle between Light (Clean Purple) and Dark (Gold Luxury) mode
-                      </p>
-                    </div>
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={toggleThemeWithWave}
-                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] hover:bg-zinc-100 dark:hover:bg-white/10 text-text-primary dark:text-white shadow-xs transition-colors cursor-pointer w-full sm:w-auto"
+                      onClick={() => refreshOrderHistory()}
+                      disabled={isHistoryLoading}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] hover:bg-zinc-100 dark:hover:bg-white/10 text-text-primary dark:text-white shadow-xs transition-colors cursor-pointer disabled:opacity-50"
                     >
-                      {isDark ? (
-                        <>
-                          <Sun className="w-4 h-4 text-[#D4AF37]" />
-                          <span>Switch to Light Mode</span>
-                        </>
-                      ) : (
-                        <>
-                          <Moon className="w-4 h-4 text-primary" />
-                          <span>Switch to Dark Mode</span>
-                        </>
-                      )}
+                      <RefreshCw className={`w-3.5 h-3.5 ${isHistoryLoading ? 'animate-spin' : ''}`} />
+                      <span>Refresh</span>
                     </button>
-                  </div>
-
-                  {/* Quick Navigation Shortcuts */}
-                  <div>
-                    <h4 className="text-xs font-bold text-text-muted dark:text-zinc-400 uppercase tracking-wider mb-3">
-                      Session Shortcuts
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('orders')}
-                        className="flex items-center justify-between p-3.5 rounded-xl border border-border/60 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 bg-white dark:bg-[#18181B] hover:bg-zinc-50 dark:hover:bg-white/5 transition-all group text-left cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-primary/10 dark:bg-[#D4AF37]/10 flex items-center justify-center text-primary dark:text-[#D4AF37]">
-                            <ClipboardList className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <span className="block text-xs font-bold text-text-primary dark:text-white">
-                              My Orders
-                            </span>
-                            <span className="block text-[11px] text-text-muted dark:text-zinc-400">
-                              {activeOrders.length} active
-                            </span>
-                          </div>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:text-text-primary dark:group-hover:text-white group-hover:translate-x-0.5 transition-all" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('bill')}
-                        className="flex items-center justify-between p-3.5 rounded-xl border border-border/60 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 bg-white dark:bg-[#18181B] hover:bg-zinc-50 dark:hover:bg-white/5 transition-all group text-left cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-primary/10 dark:bg-[#D4AF37]/10 flex items-center justify-center text-primary dark:text-[#D4AF37]">
-                            <Receipt className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <span className="block text-xs font-bold text-text-primary dark:text-white">
-                              Table Bill
-                            </span>
-                            <span className="block text-[11px] text-text-muted dark:text-zinc-400">
-                              Review summary
-                            </span>
-                          </div>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:text-text-primary dark:group-hover:text-white group-hover:translate-x-0.5 transition-all" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setIsCallWaiterOpen(true)}
-                        className="flex items-center justify-between p-3.5 rounded-xl border border-border/60 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 bg-white dark:bg-[#18181B] hover:bg-zinc-50 dark:hover:bg-white/5 transition-all group text-left cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-primary/10 dark:bg-[#D4AF37]/10 flex items-center justify-center text-primary dark:text-[#D4AF37]">
-                            <PhoneCall className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <span className="block text-xs font-bold text-text-primary dark:text-white">
-                              Call Waiter
-                            </span>
-                            <span className="block text-[11px] text-text-muted dark:text-zinc-400">
-                              Assistance &amp; service
-                            </span>
-                          </div>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:text-text-primary dark:group-hover:text-white group-hover:translate-x-0.5 transition-all" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Exit Session Section */}
-                  <div className="pt-4 border-t border-border/40 dark:border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                      <p className="text-xs sm:text-sm font-bold text-text-primary dark:text-white">
-                        Exit Dining Session
-                      </p>
-                      <p className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 mt-0.5">
-                        Clears your active session from this device. Re-scan your table QR code at any time to resume.
-                      </p>
-                    </div>
                     <button
                       type="button"
-                      onClick={logout}
-                      className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800/40 transition-colors cursor-pointer shrink-0"
+                      onClick={() => setAccountSubTab('profile')}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] hover:bg-zinc-100 dark:hover:bg-white/10 text-text-primary dark:text-white shadow-xs transition-colors cursor-pointer"
                     >
-                      <LogOut className="w-4 h-4" />
-                      <span>Exit Session</span>
+                      <User className="w-3.5 h-3.5" />
+                      <span>Profile Details</span>
                     </button>
                   </div>
                 </div>
+
+                {/* Content: Loading, Empty, or Orders List */}
+                {isHistoryLoading && orderHistory.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <Loader2 className="w-8 h-8 text-primary dark:text-[#D4AF37] animate-spin mb-3" />
+                    <p className="text-sm font-semibold text-text-primary dark:text-white">
+                      Loading order history...
+                    </p>
+                    <p className="text-xs text-text-muted dark:text-zinc-400 mt-1">
+                      Fetching your past dining records from PostgreSQL.
+                    </p>
+                  </div>
+                ) : orderHistory.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-border/80 dark:border-white/15 bg-white/50 dark:bg-[#18181B]/50 p-12 text-center max-w-md mx-auto space-y-4">
+                    <div className="w-14 h-14 rounded-2xl bg-primary/10 dark:bg-[#D4AF37]/10 flex items-center justify-center mx-auto text-primary dark:text-[#D4AF37]">
+                      <History className="w-7 h-7" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-lg text-text-primary dark:text-white">
+                        No Past Orders Found
+                      </h3>
+                      <p className="text-xs text-text-muted dark:text-zinc-400 mt-1">
+                        Completed orders from your dining sessions are saved permanently and will appear here.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('home')}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white dark:bg-[#D4AF37] dark:text-black text-xs font-bold shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
+                    >
+                      <UtensilsCrossed className="w-4 h-4" />
+                      <span>Explore Menu</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between text-xs text-text-muted dark:text-zinc-400 px-1">
+                      <span>Showing {orderHistory.length} {orderHistory.length === 1 ? 'completed order' : 'completed orders'}</span>
+                      <span className="text-[11px]">Saved in database · Sorted newest first</span>
+                    </div>
+
+                    {orderHistory.map((order: any) => {
+                      const orderDate = order.placedAt ? new Date(order.placedAt) : null;
+                      const formattedDate = orderDate
+                        ? orderDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+                        : 'Recent';
+                      const formattedTime = orderDate
+                        ? orderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        : '';
+                      const totalItems = (order.items || []).reduce((sum: number, it: any) => sum + (it.quantity || 1), 0);
+                      const isServed = order.status === 'SERVED';
+                      const isCancelled = order.status === 'CANCELLED';
+
+                      return (
+                        <div
+                          key={order.id}
+                          className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-5 space-y-4 shadow-xs hover:border-primary/30 dark:hover:border-[#D4AF37]/30 transition-all"
+                        >
+                          {/* Order Header: ID, Date, Status */}
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-border/40 dark:border-white/5">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                <span className="font-mono font-black text-base text-text-primary dark:text-white">
+                                  Order #{order.orderNumber || order.id.slice(-6).toUpperCase()}
+                                </span>
+                                <span
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                                    isServed
+                                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                      : isCancelled
+                                      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                                      : 'bg-zinc-100 dark:bg-white/10 text-text-muted dark:text-zinc-400 border border-border/60 dark:border-white/10'
+                                  }`}
+                                >
+                                  <span
+                                    className={`w-1.5 h-1.5 rounded-full ${
+                                      isServed ? 'bg-emerald-500' : isCancelled ? 'bg-rose-500' : 'bg-zinc-400'
+                                    }`}
+                                  />
+                                  <span>{order.status || 'COMPLETED'}</span>
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-3 text-xs text-text-muted dark:text-zinc-400 flex-wrap">
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  <span>{formattedDate} {formattedTime && `at ${formattedTime}`}</span>
+                                </span>
+                                {(order.table?.tableNumber || order.tableNumber) && (
+                                  <span className="flex items-center gap-1">
+                                    <span className="opacity-50">·</span>
+                                    <span>Table {order.table?.tableNumber || order.tableNumber}</span>
+                                    {order.table?.area && <span className="opacity-70">({order.table.area})</span>}
+                                  </span>
+                                )}
+                                {(order.token?.tokenNumber || order.tokenNumber) && (
+                                  <span className="flex items-center gap-1 font-mono text-[11px]">
+                                    <span className="opacity-50">·</span>
+                                    <span>Token: {order.token?.tokenNumber || order.tokenNumber}</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="text-right sm:text-right flex sm:flex-col items-baseline sm:items-end justify-between sm:justify-center">
+                              <span className="text-[11px] text-text-muted dark:text-zinc-400 sm:block">
+                                {totalItems} {totalItems === 1 ? 'item' : 'items'}
+                              </span>
+                              <span className="font-black text-lg text-primary dark:text-[#D4AF37]">
+                                ₹{Number(order.subtotal || order.totalAmount || 0).toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Itemized list */}
+                          <div className="space-y-2 pt-1">
+                            {(order.items || []).map((item: any, idx: number) => {
+                              const itemPrice = Number(item.price || item.unitPrice || 0);
+                              const itemQty = Number(item.quantity || 1);
+                              return (
+                                <div
+                                  key={item.id || idx}
+                                  className="flex items-center justify-between py-1.5 text-xs text-text-primary dark:text-zinc-200"
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                                    <span className="w-5 h-5 rounded-md bg-zinc-100 dark:bg-white/5 flex items-center justify-center font-bold text-[11px] text-text-muted dark:text-zinc-400 shrink-0">
+                                      {itemQty}x
+                                    </span>
+                                    <div className="truncate">
+                                      <span className="font-semibold text-text-primary dark:text-white">
+                                        {item.name || item.menuItem?.name || 'Item'}
+                                      </span>
+                                      {item.notes && (
+                                        <span className="block text-[10px] text-text-muted dark:text-zinc-400 italic truncate">
+                                          Note: {item.notes}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {item.station && (
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-white/5 text-text-muted dark:text-zinc-400 uppercase shrink-0">
+                                        {item.station}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="font-medium text-text-muted dark:text-zinc-400 shrink-0">
+                                    ₹{(itemPrice * itemQty).toFixed(2)}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Reorder Action */}
+                          <div className="pt-3 border-t border-border/40 dark:border-white/5 flex items-center justify-between">
+                            <span className="text-[11px] text-text-muted dark:text-zinc-400 flex items-center gap-1">
+                              <Check className="w-3.5 h-3.5 text-emerald-500" />
+                              <span>Fulfilled &amp; Recorded</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                (order.items || []).forEach((item: any) => {
+                                  addToCart({
+                                    id: item.menuItemId || item.id,
+                                    name: item.name || item.menuItem?.name || 'Item',
+                                    basePrice: Number(item.price || item.unitPrice || 0),
+                                    station: item.station || 'KITCHEN',
+                                    foodType: item.foodType || 'VEG',
+                                  });
+                                });
+                                setActiveTab('cart');
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-white dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:hover:bg-[#D4AF37] dark:hover:text-black text-xs font-bold transition-colors cursor-pointer"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Re-order Items</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>

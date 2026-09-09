@@ -238,13 +238,18 @@ class ApiService {
       }
 
       return rawTables.map((t: any) => ({
-        id: t.id || t.tableId || String(Math.random()),
-        tableNumber: t.tableNumber || t.number || `T-${t.id}`,
-        placeTypeId: t.placeTypeId || t.placeType || (t.tableNumber?.startsWith('L-') ? 'PREMIUM_LOUNGE' : 'STANDING_BAR'),
-        capacity: t.capacity || t.seats || 4,
+        id: t.id || t.tableId || '',
+        tableNumber: t.tableNumber || t.number || '',
+        placeTypeId: t.placeTypeId || (typeof t.placeType === 'object' ? t.placeType?.id : '') || '',
+        placeType: t.placeType || null,
+        categoryName: t.categoryName || (typeof t.placeType === 'object' ? t.placeType?.name : (typeof t.placeType === 'string' ? t.placeType : undefined)),
+        capacity: Number(t.capacity || t.seats || 2),
         status: (t.status || 'available').toLowerCase() as any,
         isActive: t.isActive !== false,
-        categoryName: t.categoryName || (t.tableNumber?.startsWith('L-') ? 'Premium Lounge' : 'Standing Bar'),
+        currentTokenId: t.currentTokenId || (t.activeSession ? t.activeSession.tokenNumber : undefined),
+        activeSession: t.activeSession || null,
+        isBillRequested: Boolean(t.isBillRequested || (t.status || '').toUpperCase() === 'BILL_REQUESTED'),
+        occupiedSince: t.occupiedSince || null,
         lockedBy: t.lockedBy || null,
         lockedByRole: t.lockedByRole || null,
         lockedAt: t.lockedAt || null,
@@ -774,14 +779,16 @@ class ApiService {
 
   // KDS APIs
   async getKdsOrders(station: 'KITCHEN' | 'BAR' | 'DESSERT') {
-    return this.request<{ success: boolean; tickets: any[] }>(`/kds/orders/${station}`);
+    const data = await this.request<{ success: boolean; tickets: any[] }>(`/kds/orders/${station}`);
+    return data.tickets || [];
   }
 
   async updateOrderItemStatus(orderItemId: string, status: string, staffUserId?: string) {
-    return this.request<{ success: boolean; item: any }>(`/orders/items/${orderItemId}/status`, {
+    const data = await this.request<{ success: boolean; item: any }>(`/orders/items/${orderItemId}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status, staffUserId }),
     });
+    return data.item;
   }
 
   async getSections() {
@@ -938,6 +945,20 @@ class ApiService {
 
   async getActiveOrders(tokenNumber: string) {
     const data = await this.request<{ success: boolean; orders: any[] }>(`/orders/active?tokenNumber=${encodeURIComponent(tokenNumber)}`);
+    return data.orders || [];
+  }
+
+  async getCustomerOrderHistory(tokenNumber?: string) {
+    const token = tokenNumber || (typeof localStorage !== 'undefined' ? localStorage.getItem('bar_active_token') : '') || '';
+    if (!token) return [];
+    const data = await this.request<{ success: boolean; orders: any[]; customerId?: string; customerName?: string }>(
+      `/customer/orders/history?tokenNumber=${encodeURIComponent(token)}`,
+      {
+        headers: {
+          'x-customer-token': token,
+        },
+      }
+    );
     return data.orders || [];
   }
 

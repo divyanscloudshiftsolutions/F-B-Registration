@@ -1261,11 +1261,21 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
 
     await tokenService.reconcileSystemState();
     const tables = await prisma.table.findMany({
-      include: { placeType: true },
+      include: {
+        placeType: true,
+        tokens: {
+          where: {
+            status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] },
+          },
+          include: { customer: true },
+          orderBy: { issuedAt: 'desc' },
+          take: 1,
+        },
+      },
       orderBy: { tableNumber: 'asc' },
     });
     
-    // Map response keys for old client compatibility (e.g. number and placeType mapping)
+    // Map response keys for compatibility
     const oldTables = await Promise.all(tables.map(async (t) => {
       let lockedBy: string | null = null;
       let lockedByRole: string | null = null;
@@ -1284,6 +1294,10 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
         }
       }
 
+      const activeToken = t.tokens && t.tokens[0];
+      const tokenNumber = t.currentTokenId || (activeToken ? activeToken.tokenNumber : null);
+      const isBillReq = (t.status || '').toUpperCase() === 'BILL_REQUESTED';
+
       return {
         id: t.id,
         tableNumber: t.tableNumber,
@@ -1293,6 +1307,18 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
         capacity: t.capacity,
         status: t.status.toUpperCase(),
         isActive: t.isActive,
+        currentTokenId: tokenNumber,
+        occupiedSince: t.occupiedSince ? t.occupiedSince.toISOString() : null,
+        activeSession: activeToken ? {
+          tokenNumber: activeToken.tokenNumber,
+          customerName: activeToken.customer?.name || null,
+          phoneNumber: activeToken.customer?.phoneNumber || null,
+          personsCount: activeToken.personsCount,
+          startTime: activeToken.startTime.toISOString(),
+          endTime: activeToken.endTime.toISOString(),
+          status: activeToken.status,
+        } : null,
+        isBillRequested: isBillReq,
         lockedBy: lockedBy || (t.status === 'maintenance' ? 'Administrator' : t.status === 'in_checkin' ? 'Receptionist' : null),
         lockedByRole: lockedByRole || (t.status === 'maintenance' ? 'admin' : t.status === 'in_checkin' ? 'receptionist' : null),
         lockedAt: lockedAt || null,
@@ -5618,6 +5644,50 @@ router.get('/orders/active', async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
+
+// GET /api/customer/orders/history & GET /api/orders/history (Persistent Customer Order History)
+const getCustomerOrderHistoryHandler = async (req: Request, res: Response) => {
+  try {
+    const tokenNumber =
+      (req.query.tokenNumber as string) ||
+      (req.headers['x-customer-token'] as string) ||
+      (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.split(' ')[1] : undefined);
+
+    if (!tokenNumber) {
+      return res.status(401).json({
+        success: false,
+        error: { message: 'Authentication required: Customer session token missing' },
+      });
+    }
+
+    // Authoritatively resolve customer identity from PostgreSQL
+    const token = await prisma.token.findUnique({
+      where: { tokenNumber },
+      include: { customer: true },
+    });
+
+    if (!token || !token.customerId) {
+      return res.status(401).json({
+        success: false,
+        error: { message: 'Invalid or expired customer session' },
+      });
+    }
+
+    const orders = await orderService.getCustomerOrderHistory(token.customerId);
+
+    return res.json({
+      success: true,
+      customerId: token.customerId,
+      customerName: token.customer?.name,
+      orders,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+};
+
+router.get('/customer/orders/history', getCustomerOrderHistoryHandler);
+router.get('/orders/history', getCustomerOrderHistoryHandler);
 
 // PUT /api/orders/items/:id/status (Bump item status)
 router.put('/orders/items/:id/status', authenticate, authorize(['admin', 'manager', 'chef', 'bartender', 'waiter', 'server']), async (req: Request, res: Response) => {

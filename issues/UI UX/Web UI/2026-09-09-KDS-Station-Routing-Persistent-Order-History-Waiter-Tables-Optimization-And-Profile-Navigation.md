@@ -1,0 +1,49 @@
+# KDS Station Routing, Persistent Order History, Waiter Tables Optimization, and Profile Navigation
+
+---
+
+## Issue 1: Multi-Station Order Routing and Real-Time Kitchen/Bar KDS Preparation Lifecycle
+
+| Attribute | Details |
+| :--- | :--- |
+| **Project Overview** | TableFlow Ordering & Real-Time Production Fulfillment — Full dual-station routing (Kitchen KDS and Bar KDS) with real-time bidirectional WebSocket event synchronization. |
+| **Problems Identified** | 1. Mixed customer orders (containing both food and drink items) lacked guaranteed separate station assignment at the line-item level, risking food items appearing in Bar KDS or drinks appearing in Kitchen KDS.<br>2. Status transitions on individual station cards (e.g. marking a food item "PREPARING" or "READY" in Kitchen KDS) were not broadcasting granular item-level events to the customer order tracking interface.<br>3. Parent order status was not dynamically aggregating station item completion (e.g. transitioning to PARTIALLY_READY, READY, or SERVED only when all items from both stations reached respective states).<br>4. Station KDS interfaces lacked instant acoustic and visual feedback when new orders arrived without manual page refreshing. |
+| **Resolution** | 1. Hardened `OrderService.ts` to assign station routing (`KITCHEN` vs `BAR`) per item during order creation based on menu category taxonomy (`food` vs `drink`/`beverage`).<br>2. Implemented granular WebSocket emission in `socket.ts` and `OrderService.ts`: `order:new` targeted to station rooms, `order:item_status_changed` for real-time customer tracking, and aggregated `order:status_updated`.<br>3. Updated `KitchenKDSPage.tsx` and `BarKDSPage.tsx` to subscribe to station-specific socket rooms, render progressive waiting timers with severity coloring (green -> amber -> rose), and support 1-tap card transitions (`Start Prep` -> `Mark Ready` -> `Serve`).<br>4. Enhanced Customer Portal live order tracking to display dual-station breakdown with real-time status pills reflecting instant KDS updates. |
+| **Activities Completed** | 1. Validated multi-station item partitioning with mixed food and drink baskets.<br>2. Verified real-time WebSocket roundtrips between Customer App and dual KDS screens.<br>3. Confirmed progressive timer visual escalations and responsive KDS grid behavior across desktop and tablet viewports.<br>4. Verified zero compilation errors across frontend and backend services. |
+| **Files / Modules Updated** | - `backend/src/services/OrderService.ts`<br>- `backend/src/realtime/socket.ts`<br>- `web-frontend/src/pages/KitchenKDSPage.tsx`<br>- `web-frontend/src/pages/BarKDSPage.tsx`<br>- `web-frontend/src/pages/CustomerApp.tsx` |
+
+---
+
+## Issue 2: Persistent Database-Backed Customer Order History Architecture
+
+| Attribute | Details |
+| :--- | :--- |
+| **Project Overview** | Customer Portal Session & Order Architecture — Transitioning order history from ephemeral client state to persistent PostgreSQL database storage queryable across dining sessions. |
+| **Problems Identified** | 1. Customer order history was previously stored in local browser state or in-memory session arrays, causing customers to lose their past order records upon browser refresh, tab closing, or check-out.<br>2. The system lacked an authoritative backend API endpoint to retrieve past fulfilled orders filtered by customer identifier or session token.<br>3. Repeat ordering ("Re-order") workflows were impossible after session termination because historical items and prices were not persisted. |
+| **Resolution** | 1. Extended `OrderService.ts` and backend `routes.ts` with dedicated endpoint `GET /api/orders/history/customer` that queries PostgreSQL `orders` and associated `order_items`, filtering by `tokenNumber` / `customerId` and ordering by creation timestamp descending.<br>2. Updated `CustomerContext.tsx` with dedicated `orderHistory` state, `isHistoryLoading` indicator, and `refreshOrderHistory()` method invoked automatically on session initialization and socket order updates.<br>3. Enabled 1-tap re-ordering from historical tickets: customers can review fulfilled orders and click "Re-order Items" to instantly repopulate their active cart with the exact items, base prices, and dietary flags.<br>4. Ensured historical order queries gracefully handle expired sessions without throwing runtime 500 errors. |
+| **Activities Completed** | 1. Engineered database queries in Prisma/PostgreSQL joining orders, order items, and menuItem metadata.<br>2. Integrated reactive data synchronization in `CustomerContext.tsx` with fallback caching.<br>3. Tested re-order item injection into active cart and validated cart count badges.<br>4. Confirmed type safety across `CustomerContextType` and API response interfaces. |
+| **Files / Modules Updated** | - `backend/src/services/OrderService.ts`<br>- `backend/src/routes.ts`<br>- `web-frontend/src/context/CustomerContext.tsx`<br>- `web-frontend/src/types/index.ts` |
+
+---
+
+## Issue 3: Waiter Floor Tables Mock Data Elimination and Real-Time Bill Calculation
+
+| Attribute | Details |
+| :--- | :--- |
+| **Project Overview** | Waiter Station Floor Operations — Complete elimination of mock/test artifacts, hardcoded table IDs, and integration of real-time itemized billing on `/waiter/tables`. |
+| **Problems Identified** | 1. The Waiter Tables view (`WaiterStationPage.tsx`) contained hardcoded table number fallbacks (`'C5'`, `'T'`), dummy capacities (fallback `4`), and placeholder tokens (`'ACTIVE'`, `'BAR-${tableNumber}'`).<br>2. Clicking "View Bill" opened an empty mock shell with ₹0.00 values because `table.bill` was never retrieved or calculated from actual database tickets.<br>3. Tax percentages in bill calculations were hardcoded as static strings `(2.5%)` and `(5%)` rather than reflecting authoritative venue configuration rates.<br>4. Reserved tables lacked an interactive view to inspect booking guest details, phone numbers, and reservation timestamps. |
+| **Resolution** | 1. Updated backend `GET /tables` in `routes.ts` to attach live session tokens (`currentTokenId`), check-in timestamps (`occupiedSince`), and `activeSession` directly from PostgreSQL.<br>2. Replaced static bill calculations with asynchronous calls to `api.calculateBill(lookupToken)`, rendering a live itemized bill with real product quantities, unit prices, dynamic CGST/SGST/SC percentages, and loading spinners.<br>3. Replaced hardcoded fallback strings across overview cards, billing column, ready queue, and bills tab with dynamic table numbers (`table.tableNumber || table.number || '-'`) and actual guest counts.<br>4. Implemented an interactive Reservation Details Modal for reserved floor tables displaying guest name, phone, email, party size, reservation timestamp, and special requests. |
+| **Activities Completed** | 1. Refactored table mapping in `api.ts` and `routes.ts` to ensure full data fidelity without random or synthetic values.<br>2. Added state handling for `activeTableBill`, `isBillLoading`, `billFetchError`, and `isReservationModalOpen`.<br>3. Cleaned Ready Queue tab so items without an attached table number display clean hyphens instead of `Table C5`.<br>4. Verified TypeScript compilation across `backend` and `web-frontend` with 0 errors. |
+| **Files / Modules Updated** | - `backend/src/routes.ts`<br>- `web-frontend/src/services/api.ts`<br>- `web-frontend/src/types/index.ts`<br>- `web-frontend/src/pages/WaiterStationPage.tsx` |
+
+---
+
+## Issue 4: Customer Profile Navigation and Order History Exclusivity Reorganization
+
+| Attribute | Details |
+| :--- | :--- |
+| **Project Overview** | Customer Portal UI/UX Architecture — Centralizing Order History exclusively within the Guest Profile view and removing redundant navigation actions from the active Orders screen. |
+| **Problems Identified** | 1. An "Order History" button was placed in the My Orders tab header (`activeTab === 'orders'`), creating conceptual confusion between current in-progress session tickets and multi-session historical orders.<br>2. Order History lacked seamless sub-navigation inside the Customer Profile (`/customer/account`), forcing users to navigate across disconnected top-level view states.<br>3. Deep-linking to `/customer/history` or clicking profile shortcuts caused abrupt full-page mode switches rather than an integrated profile sub-tab experience. |
+| **Resolution** | 1. Removed the standalone "Order History" button from the My Orders screen (`activeTab === 'orders'`), keeping that view dedicated solely to active session tickets (`Pending` and `Completed`).<br>2. Restructured the Guest Profile (`activeTab === 'account'`) with a clean segmented sub-tab control at the top:<br>&nbsp;&nbsp;&nbsp;&nbsp;• **Profile Details**: Displays guest information, dining area, session token, check-in time, session shortcuts, theme switcher, and session exit.<br>&nbsp;&nbsp;&nbsp;&nbsp;• **Order History (`{count}`)**: Renders the full persistent history of past orders with items, pricing, fulfilled badges, and 1-tap re-order actions.<br>3. Updated the Table & Session card row and Session Shortcuts card inside the profile to smoothly switch `accountSubTab` to `'history'`.<br>4. Updated `getCustomerTabFromPath` and routing so paths `/customer/history` and `/customer/order-history` map cleanly to the Profile tab with `accountSubTab = 'history'`. |
+| **Activities Completed** | 1. Removed redundant button JSX from `CustomerApp.tsx` orders header.<br>2. Created responsive segmented pill controls adhering strictly to brand purple and gold design standards.<br>3. Validated tab switching between Profile Details and Order History within the Profile container.<br>4. Confirmed zero TypeScript compilation errors with `npx tsc --noEmit`. |
+| **Files / Modules Updated** | - `web-frontend/src/pages/CustomerApp.tsx` |

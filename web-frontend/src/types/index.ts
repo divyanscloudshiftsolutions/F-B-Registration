@@ -53,6 +53,9 @@ export interface Table {
   lockedBy?: string | null;
   lockedByRole?: string | null;
   lockedAt?: number | string | null;
+  isBillRequested?: boolean;
+  activeSession?: any;
+  bill?: any;
 }
 
 export interface Token {
