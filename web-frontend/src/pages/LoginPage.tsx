@@ -4,11 +4,11 @@ import { useAuth } from '../context/AuthContext';
 
 export const LoginPage: React.FC = () => {
  const { login, isDark, toggleTheme } = useAuth();
- const [selectedRole, setSelectedRole] = useState<'REC' | 'BAR' | 'ADM' | 'MGR' | 'CHF' | 'WTR'>('ADM');
- const [username, setUsername] = useState('');
- const [pin, setPin] = useState('');
- const [isSubmitting, setIsSubmitting] = useState(false);
- const [errorMsg, setErrorMsg] = useState(() => {
+  const [selectedRole, setSelectedRole] = useState<'REC' | 'BAR' | 'ADM' | 'MGR' | 'CHF' | 'WTR'>('ADM');
+  const [username, setUsername] = useState('admin');
+  const [pin, setPin] = useState('admin123');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(() => {
     const saved = localStorage.getItem('auth_error_msg');
     if (saved) {
       localStorage.removeItem('auth_error_msg');
@@ -17,10 +17,23 @@ export const LoginPage: React.FC = () => {
     return '';
   });
 
- const handleRoleSelect = (role: 'REC' | 'BAR' | 'ADM' | 'MGR' | 'CHF' | 'WTR') => {
- setSelectedRole(role);
- setErrorMsg('');
- };
+  const roleCredentials: Record<'REC' | 'BAR' | 'ADM' | 'MGR' | 'CHF' | 'WTR', { user: string; pin: string }> = {
+    ADM: { user: 'admin', pin: 'admin123' },
+    REC: { user: 'receptionist', pin: 'recep123' },
+    BAR: { user: 'bartender', pin: 'bar123' },
+    CHF: { user: 'chef', pin: 'chef123' },
+    WTR: { user: 'waiter', pin: 'waiter123' },
+    MGR: { user: 'manager', pin: 'manager123' },
+  };
+
+  const handleRoleSelect = (role: 'REC' | 'BAR' | 'ADM' | 'MGR' | 'CHF' | 'WTR') => {
+    setSelectedRole(role);
+    setErrorMsg('');
+    if (roleCredentials[role]) {
+      setUsername(roleCredentials[role].user);
+      setPin(roleCredentials[role].pin);
+    }
+  };
 
  const toggleThemeWithWave = (e: React.MouseEvent<HTMLButtonElement>) => {
  if (

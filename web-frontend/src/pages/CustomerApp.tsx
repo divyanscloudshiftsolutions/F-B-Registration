@@ -83,6 +83,7 @@ const CustomerAppInner: React.FC = () => {
     isOrdering,
     placeOrder,
     refreshBill,
+    requestBill,
     isCallWaiterOpen,
     setIsCallWaiterOpen,
     isSessionClosed,
@@ -435,10 +436,20 @@ const CustomerAppInner: React.FC = () => {
   };
 
   // Request Bill handler
+  const [isRequestingBill, setIsRequestingBill] = useState<boolean>(false);
   const handleRequestBill = async () => {
-    await refreshBill();
-    setBillRequested(true);
-    setTimeout(() => setBillRequested(false), 5000);
+    if (isRequestingBill || billRequested) return;
+    setIsRequestingBill(true);
+    try {
+      await requestBill();
+      setBillRequested(true);
+      setOrderSuccessToast('Bill request sent! A waiter has been alerted.');
+      setTimeout(() => setOrderSuccessToast(null), 4000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to request bill from waiter.');
+    } finally {
+      setIsRequestingBill(false);
+    }
   };
 
   // Reorder items
@@ -2521,11 +2532,15 @@ const CustomerAppInner: React.FC = () => {
 
                       <button
                         onClick={handleRequestBill}
-                        disabled={billRequested || grandTotal <= 0}
+                        disabled={isRequestingBill || billRequested || grandTotal <= 0}
                         className="w-full mt-3 py-3.5 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black text-white font-black text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Receipt className="w-4 h-4" />
-                        <span>{billRequested ? 'Staff Notified' : 'Request Bill from Waiter'}</span>
+                        {isRequestingBill ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Receipt className="w-4 h-4" />
+                        )}
+                        <span>{billRequested ? 'Staff Notified (Requested)' : isRequestingBill ? 'Requesting...' : 'Request Bill from Waiter'}</span>
                       </button>
                     </div>
                   </div>

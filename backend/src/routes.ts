@@ -5807,23 +5807,60 @@ router.post('/bills/calculate', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/bills/settle (Settle bill and release table)
-router.post('/bills/settle', authenticate, authorize(['admin', 'manager', 'receptionist']), async (req: Request, res: Response) => {
+// POST /api/bills/request (Customer-initiated persistent Bill Request)
+router.post('/bills/request', async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber, tokenId } = req.body;
+    const lookup = tokenNumber || tokenId;
+    if (!lookup) {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber or tokenId is required' } });
+    }
+    const result = await billingService.requestBill(lookup);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/bills/settle (Settle bill, confirm payment, close session and release table)
+router.post('/bills/settle', authenticate, authorize(['admin', 'manager', 'waiter', 'server', 'receptionist']), async (req: Request, res: Response) => {
   try {
     const { tokenNumber, tokenId, paymentMethod, settledByStaffId, settlementReference } = req.body;
     const lookup = tokenNumber || tokenId;
     if (!lookup || !paymentMethod) {
       return res.status(400).json({ success: false, error: { message: 'tokenNumber/tokenId and paymentMethod are required' } });
     }
+    const staffId = settledByStaffId || (req as any).user?.id;
     const result = await billingService.settleBill({
       tokenNumberOrId: lookup,
       paymentMethod: paymentMethod as PaymentMethod,
-      settledByStaffId,
+      settledByStaffId: staffId,
       settlementReference,
     });
     return res.json({ success: true, result });
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/bills/active (Fetch live pending bill requests for waitstaff)
+router.get('/bills/active', authenticate, authorize(['admin', 'manager', 'waiter', 'server', 'receptionist']), async (req: Request, res: Response) => {
+  try {
+    const bills = await billingService.getActiveBills();
+    return res.json({ success: true, bills });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/bills/history (Fetch settled bills audit history)
+router.get('/bills/history', authenticate, authorize(['admin', 'manager', 'waiter', 'server', 'receptionist']), async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const data = await billingService.getSettledBills(limit);
+    return res.json({ success: true, ...data });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
 

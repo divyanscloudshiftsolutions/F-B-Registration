@@ -770,11 +770,28 @@ class ApiService {
     });
   }
 
+  async requestBill(tokenNumberOrId: string) {
+    return this.request<{ success: boolean; bill: any; calculated: any }>('/bills/request', {
+      method: 'POST',
+      body: JSON.stringify({ tokenNumber: tokenNumberOrId }),
+    });
+  }
+
   async settleBill(payload: { tokenNumber: string; paymentMethod: string; settledByStaffId?: string; settlementReference?: string }) {
     return this.request<{ success: boolean; result: any }>('/bills/settle', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  }
+
+  async getActiveBills() {
+    const data = await this.request<{ success: boolean; bills: any[] }>('/bills/active');
+    return data.bills || [];
+  }
+
+  async getSettledBills(limit: number = 50) {
+    const data = await this.request<{ success: boolean; bills: any[]; summary: any }>(`/bills/history?limit=${limit}`);
+    return data;
   }
 
   // KDS APIs

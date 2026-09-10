@@ -99,10 +99,18 @@ export const CallWaiterSheet: React.FC<CallWaiterSheetProps> = ({
     setFeedback(null);
 
     try {
+      if (type === 'BILL') {
+        try {
+          await api.requestBill(tokenNumber);
+        } catch (bErr) {
+          console.warn('requestBill error in CallWaiterSheet:', bErr);
+        }
+      }
+
       const created = await api.createServiceRequest({
         tokenNumber,
         tableId,
-        type,
+        type: type === 'BILL' ? 'BILL_REQUEST' : type,
         note,
       });
 

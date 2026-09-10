@@ -53,8 +53,8 @@ export interface CustomerContextType {
   isLoading: boolean;
   isOrdering: boolean;
   placeOrder: () => Promise<any>;
-  refreshOrders: () => Promise<void>;
   refreshBill: () => Promise<any>;
+  requestBill: () => Promise<any>;
   refreshMenu: () => Promise<void>;
   isCallWaiterOpen: boolean;
   setIsCallWaiterOpen: (open: boolean) => void;
@@ -94,6 +94,7 @@ const defaultCustomerContext: CustomerContextType = {
   placeOrder: async () => null,
   refreshOrders: async () => {},
   refreshBill: async () => null,
+  requestBill: async () => null,
   refreshMenu: async () => {},
   isCallWaiterOpen: false,
   setIsCallWaiterOpen: () => {},
@@ -107,8 +108,8 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [tokenNumber, setTokenNumberState] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname;
-      const match = path.match(/^\/t\/([A-Za-z0-9_-]+)/);
-      if (match) return match[1];
+      const match = path.match(/^\/(?:customer\/access|t)\/([A-Za-z0-9_-]+)/);
+      if (match) return decodeURIComponent(match[1]);
       return localStorage.getItem('bar_active_token') || null;
     }
     return null;
@@ -273,6 +274,23 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('Failed to load active service requests:', err);
     }
   }, [tokenNumber]);
+
+  const requestBill = useCallback(async () => {
+    if (!tokenNumber) return null;
+    try {
+      setBillError(null);
+      const res = await api.requestBill(tokenNumber);
+      if (res && res.bill) {
+        setActiveBill(res.calculated || res.bill);
+      }
+      await refreshRequests();
+      return res;
+    } catch (err: any) {
+      console.warn('Failed to submit bill request:', err);
+      setBillError(err?.message || 'Failed to request table bill');
+      throw err;
+    }
+  }, [tokenNumber, refreshRequests]);
 
   const refreshSession = useCallback(async () => {
     if (!tokenNumber) {
@@ -510,6 +528,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         placeOrder,
         refreshOrders,
         refreshBill,
+        requestBill,
         refreshMenu,
         isCallWaiterOpen,
         setIsCallWaiterOpen,

@@ -23,6 +23,14 @@ import {
   Loader2,
   Mail,
   User,
+  Banknote,
+  QrCode,
+  CreditCard,
+  RotateCw,
+  ArrowRight,
+  ArrowLeft,
+  AlertTriangle,
+  History,
 } from 'lucide-react';
 import { VegBadge } from '../components/customer/VegBadge';
 
@@ -66,6 +74,21 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   const [assistedCart, setAssistedCart] = useState<any[]>([]);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'CASH' | 'UPI'>('CASH');
+  const [isSettlingBill, setIsSettlingBill] = useState<boolean>(false);
+  const [settlementError, setSettlementError] = useState<string | null>(null);
+
+  // Bills Workspace State
+  const [activeBills, setActiveBills] = useState<any[]>([]);
+  const [settledBills, setSettledBills] = useState<any[]>([]);
+  const [settledSummary, setSettledSummary] = useState<{ completedTodayCount: number; completedTodayRevenue: number }>({
+    completedTodayCount: 0,
+    completedTodayRevenue: 0,
+  });
+  const [isBillsLoading, setIsBillsLoading] = useState<boolean>(false);
+  const [billsSubTab, setBillsSubTab] = useState<'active' | 'history'>('active');
+  const [billsSearchQuery, setBillsSearchQuery] = useState<string>('');
+  const [settlementStep, setSettlementStep] = useState<'review' | 'payment'>('review');
 
   const fetchTables = useCallback(async () => {
     try {
@@ -112,9 +135,28 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     }
   }, []);
 
+  const fetchBillsData = useCallback(async () => {
+    setIsBillsLoading(true);
+    try {
+      const [active, settled] = await Promise.all([
+        api.getActiveBills().catch(() => []),
+        api.getSettledBills(50).catch(() => ({ bills: [], summary: { completedTodayCount: 0, completedTodayRevenue: 0 } })),
+      ]);
+      setActiveBills(Array.isArray(active) ? active : []);
+      setSettledBills(Array.isArray(settled?.bills) ? settled.bills : []);
+      if (settled?.summary) {
+        setSettledSummary(settled.summary);
+      }
+    } catch (err) {
+      console.warn('Failed to load bills data:', err);
+    } finally {
+      setIsBillsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     setIsLoading(true);
-    Promise.all([fetchTables(), fetchRequests(), fetchReadyItems(), fetchMenu(), fetchReservations()]).finally(() => {
+    Promise.all([fetchTables(), fetchRequests(), fetchReadyItems(), fetchMenu(), fetchReservations(), fetchBillsData()]).finally(() => {
       setIsLoading(false);
     });
 
@@ -122,19 +164,37 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     joinRoom('tables:all');
     joinRoom('staff:requests');
     joinRoom('staff:ready');
+    joinRoom('staff:billing');
 
     const unsubTable = onSocketEvent('table.updated', () => {
       fetchTables();
       fetchReservations();
+      fetchBillsData();
     });
-    const unsubReqCreated = onSocketEvent('service_request.created', () => fetchRequests());
-    const unsubReqUpdated = onSocketEvent('service_request.updated', () => fetchRequests());
+    const unsubReqCreated = onSocketEvent('service_request.created', () => {
+      fetchRequests();
+      fetchBillsData();
+    });
+    const unsubReqUpdated = onSocketEvent('service_request.updated', () => {
+      fetchRequests();
+      fetchBillsData();
+    });
     const unsubItemUpdated = onSocketEvent('order.item.updated', () => {
       fetchReadyItems();
       fetchTables();
+      fetchBillsData();
     });
     const unsubOrderCreated = onSocketEvent('order.created', () => {
       fetchReadyItems();
+      fetchTables();
+      fetchBillsData();
+    });
+    const unsubBillSettled = onSocketEvent('bill.settled', () => {
+      fetchBillsData();
+      fetchTables();
+    });
+    const unsubSessionClosed = onSocketEvent('table.session.closed', () => {
+      fetchBillsData();
       fetchTables();
     });
 
@@ -144,6 +204,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       fetchReadyItems();
       fetchMenu();
       fetchReservations();
+      fetchBillsData();
     };
     window.addEventListener('app:global-refresh', handleGlobalRefresh);
 
@@ -151,14 +212,17 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       leaveRoom('tables:all');
       leaveRoom('staff:requests');
       leaveRoom('staff:ready');
+      leaveRoom('staff:billing');
       unsubTable();
       unsubReqCreated();
       unsubReqUpdated();
       unsubItemUpdated();
       unsubOrderCreated();
+      unsubBillSettled();
+      unsubSessionClosed();
       window.removeEventListener('app:global-refresh', handleGlobalRefresh);
     };
-  }, [fetchTables, fetchRequests, fetchReadyItems, fetchMenu, fetchReservations]);
+  }, [fetchTables, fetchRequests, fetchReadyItems, fetchMenu, fetchReservations, fetchBillsData]);
 
   // Periodic tick for reactive elapsed waiting time
   const [, setTick] = useState<number>(0);
@@ -324,14 +388,23 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     }
   };
 
-  const handleOpenBillModal = async (table: any) => {
-    setSelectedBillTable(table);
+  const handleOpenBillModal = async (tableOrBill: any) => {
+    setSelectedBillTable(tableOrBill);
     setIsBillDetailsOpen(true);
     setIsBillLoading(true);
     setBillFetchError(null);
     setActiveTableBill(null);
+    setSelectedPaymentMethod('CASH');
+    setSettlementError(null);
+    setSettlementStep('review');
 
-    const lookupToken = table.currentTokenId || table.activeSession?.tokenNumber || table.currentSessionId || table.tokenNumber;
+    const lookupToken =
+      tableOrBill.tokenNumber ||
+      tableOrBill.currentTokenId ||
+      tableOrBill.tokenId ||
+      tableOrBill.activeSession?.tokenNumber ||
+      tableOrBill.currentSessionId;
+
     try {
       if (lookupToken) {
         const res = await api.calculateBill(lookupToken);
@@ -340,28 +413,82 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           return;
         }
       }
-      const sessionRes = await api.getTableActiveSession(table.tableNumber || table.id).catch(() => null);
-      if (sessionRes && sessionRes.session?.tokenNumber) {
-        const res = await api.calculateBill(sessionRes.session.tokenNumber);
-        if (res && res.bill) {
-          setActiveTableBill(res.bill);
-          return;
+      const tableIdentifier = tableOrBill.tableNumber || tableOrBill.number || tableOrBill.tableId || tableOrBill.id;
+      if (tableIdentifier) {
+        const sessionRes = await api.getTableActiveSession(tableIdentifier).catch(() => null);
+        if (sessionRes && sessionRes.session?.tokenNumber) {
+          const res = await api.calculateBill(sessionRes.session.tokenNumber);
+          if (res && res.bill) {
+            setActiveTableBill(res.bill);
+            return;
+          }
         }
       }
-      if (table.bill) {
-        setActiveTableBill(table.bill);
+      if (tableOrBill.bill) {
+        setActiveTableBill(tableOrBill.bill);
       } else {
         setBillFetchError('No active bill or order items found for this table.');
       }
     } catch (err: any) {
       console.warn('Failed to calculate bill for table:', err);
-      if (table.bill) {
-        setActiveTableBill(table.bill);
+      if (tableOrBill.bill) {
+        setActiveTableBill(tableOrBill.bill);
       } else {
         setBillFetchError(err.message || 'Unable to load bill details.');
       }
     } finally {
       setIsBillLoading(false);
+    }
+  };
+
+  const handleConfirmPayment = async () => {
+    if (!selectedBillTable || isSettlingBill) return;
+    const tokenToSettle =
+      activeTableBill?.tokenNumber ||
+      activeTableBill?.tokenId ||
+      selectedBillTable.tokenNumber ||
+      selectedBillTable.currentTokenId ||
+      selectedBillTable.tokenId ||
+      selectedBillTable.activeSession?.tokenNumber;
+
+    if (!tokenToSettle) {
+      setSettlementError('Missing active session token to settle.');
+      return;
+    }
+
+    setIsSettlingBill(true);
+    setSettlementError(null);
+
+    try {
+      const settlementRef =
+        selectedPaymentMethod === 'UPI'
+          ? `UPI-SIM-${Date.now().toString().slice(-6)}`
+          : `CASH-REC-${Date.now().toString().slice(-6)}`;
+
+      await api.settleBill({
+        tokenNumber: tokenToSettle,
+        paymentMethod: selectedPaymentMethod,
+        settledByStaffId: user?.id,
+        settlementReference: settlementRef,
+      });
+
+      const tblNum = selectedBillTable.tableNumber || selectedBillTable.number || activeTableBill?.tableNumber || 'N/A';
+      setFeedbackMsg(
+        `Payment of ₹${Number(activeTableBill?.grandTotal || activeTableBill?.total || 0).toFixed(2)} (${selectedPaymentMethod}) confirmed for Table ${tblNum}! Table released.`
+      );
+
+      setIsBillDetailsOpen(false);
+      setSelectedBillTable(null);
+      setActiveTableBill(null);
+      setSettlementStep('review');
+
+      await Promise.all([fetchTables(), fetchRequests(), fetchBillsData()]);
+      setTimeout(() => setFeedbackMsg(null), 5000);
+    } catch (err: any) {
+      console.error('Settlement error:', err);
+      setSettlementError(err.message || 'Failed to settle bill and confirm payment.');
+    } finally {
+      setIsSettlingBill(false);
     }
   };
 
@@ -535,7 +662,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
             }`}
           >
             <Receipt className="w-4 h-4" />
-            <span>Bills ({billRequestedTables.length})</span>
+            <span>Bills ({activeBills.length > 0 ? activeBills.length : billRequestedTables.length})</span>
           </button>
         </div>
       </div>
@@ -1371,58 +1498,417 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       )}
 
       {/* ==================================================================== */}
-      {/* 5. BILLS TAB                                                         */}
+      {/* 5. BILLS TAB — Complete Operational Workspace                        */}
       {/* ==================================================================== */}
-      {activeTab === 'bills' && (
-        <div className="flex-1 overflow-y-auto space-y-3 animate-fade-in">
-          {billRequestedTables.length === 0 ? (
-            <div className="p-16 text-center border border-dashed border-zinc-300 dark:border-white/15 rounded-2xl bg-zinc-50/70 dark:bg-[#141416]/50">
-              <Receipt className="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
-              <h3 className="font-bold text-sm text-zinc-900 dark:text-white">No Pending Bill Requests</h3>
-              <p className="text-xs text-zinc-500 dark:text-text-muted mt-1">When a customer requests their bill from their table, it will appear here.</p>
-            </div>
-          ) : (
-            billRequestedTables.map((t) => (
-              <div
-                key={t.id}
-                onClick={() => handleOpenBillModal(t)}
-                className="p-4 rounded-2xl border border-zinc-200 dark:border-white/10 hover:border-amber-400 dark:hover:border-amber-500/60 dark:bg-[#18181A] bg-white flex items-center justify-between gap-4 shadow-xs cursor-pointer transition-colors"
-              >
-                <div>
-                  <div className="font-black text-lg text-zinc-900 dark:text-white flex items-center gap-2">
-                    <span>Table {t.tableNumber || t.number}</span>
-                    <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30">
-                      Bill Requested
-                    </span>
-                  </div>
-                  <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 font-medium flex items-center gap-2">
-                    {t.currentTokenId && (
-                      <span>Token: <span className="font-mono font-bold text-zinc-700 dark:text-zinc-300">{t.currentTokenId}</span></span>
-                    )}
-                    {t.placeType?.name && (
-                      <>
-                        <span>·</span>
-                        <span>{t.placeType.name}</span>
-                      </>
-                    )}
+      {activeTab === 'bills' && (() => {
+        const filteredActiveBills = activeBills.filter((b) => {
+          if (!billsSearchQuery.trim()) return true;
+          const q = billsSearchQuery.toLowerCase();
+          return (
+            String(b.tableNumber).toLowerCase().includes(q) ||
+            String(b.tokenNumber).toLowerCase().includes(q) ||
+            String(b.customerName || '').toLowerCase().includes(q) ||
+            String(b.billNumber || '').toLowerCase().includes(q)
+          );
+        });
+
+        const filteredSettledBills = settledBills.filter((b) => {
+          if (!billsSearchQuery.trim()) return true;
+          const q = billsSearchQuery.toLowerCase();
+          return (
+            String(b.tableNumber).toLowerCase().includes(q) ||
+            String(b.tokenNumber).toLowerCase().includes(q) ||
+            String(b.customerName || '').toLowerCase().includes(q) ||
+            String(b.billNumber || '').toLowerCase().includes(q) ||
+            String(b.settlementReference || '').toLowerCase().includes(q)
+          );
+        });
+
+        const readyToSettleCount = activeBills.filter((b) => (b.unservedCount || 0) === 0).length;
+        const inPrepCount = activeBills.filter((b) => (b.unservedCount || 0) > 0).length;
+
+        return (
+          <div className="flex-1 overflow-y-auto space-y-4 animate-fade-in pr-0.5">
+            {/* Control & Navigation Toolbar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-200 dark:border-white/10">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white tracking-tight">
+                    Bills & Checkout
+                  </h2>
+                  <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Live Queue</span>
                   </div>
                 </div>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  Verify customer bills, check unserved items, collect payment, and release dining tables.
+                </p>
+              </div>
 
+              <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                {/* Sub-tab Navigation */}
+                <div className="flex items-center gap-1 p-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setBillsSubTab('active')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      billsSubTab === 'active'
+                        ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-black'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Receipt className="w-3.5 h-3.5" />
+                    <span>Active Requests</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                        billsSubTab === 'active'
+                          ? 'bg-white/20 text-white dark:bg-black/25 dark:text-black'
+                          : 'bg-zinc-200 dark:bg-white/10 text-zinc-700 dark:text-zinc-300'
+                      }`}
+                    >
+                      {activeBills.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBillsSubTab('history')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      billsSubTab === 'history'
+                        ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-black'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <History className="w-3.5 h-3.5" />
+                    <span>Settled Today</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                        billsSubTab === 'history'
+                          ? 'bg-white/20 text-white dark:bg-black/25 dark:text-black'
+                          : 'bg-zinc-200 dark:bg-white/10 text-zinc-700 dark:text-zinc-300'
+                      }`}
+                    >
+                      {settledSummary.completedTodayCount}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Refresh Action */}
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleOpenBillModal(t);
-                  }}
-                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer"
+                  onClick={fetchBillsData}
+                  disabled={isBillsLoading}
+                  title="Refresh bills data"
+                  className="p-2 rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] hover:bg-zinc-100 dark:hover:bg-white/5 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  View Details
+                  <RotateCw className={`w-4 h-4 ${isBillsLoading ? 'animate-spin' : ''}`} />
                 </button>
               </div>
-            ))
-          )}
-        </div>
-      )}
+            </div>
+
+            {/* Operational Summary Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="p-3.5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                    Active Requests
+                  </div>
+                  <div className="text-xl font-black text-zinc-900 dark:text-white">
+                    {activeBills.length}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                    Ready to Settle
+                  </div>
+                  <div className="text-xl font-black text-emerald-600 dark:text-emerald-400">
+                    {readyToSettleCount}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-3">
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    inPrepCount > 0
+                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                      : 'bg-zinc-100 dark:bg-white/5 text-zinc-400'
+                  }`}
+                >
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                    Items in Prep
+                  </div>
+                  <div
+                    className={`text-xl font-black ${
+                      inPrepCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-900 dark:text-white'
+                    }`}
+                  >
+                    {inPrepCount}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 dark:bg-[#D4AF37]/15 text-primary dark:text-[#D4AF37] flex items-center justify-center shrink-0">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                    Settled Today
+                  </div>
+                  <div className="text-xl font-black text-zinc-900 dark:text-white flex items-baseline gap-1.5">
+                    <span>{settledSummary.completedTodayCount}</span>
+                    <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                      · ₹{Number(settledSummary.completedTodayRevenue).toFixed(0)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Search and Filter Row */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder={
+                  billsSubTab === 'active'
+                    ? 'Search active bills by table, token, or customer name...'
+                    : 'Search settled history by table, bill #, token, or reference...'
+                }
+                value={billsSearchQuery}
+                onChange={(e) => setBillsSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-9 py-2.5 rounded-xl text-xs bg-white dark:bg-[#18181A] border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-hidden focus:border-primary dark:focus:border-[#D4AF37] transition-colors shadow-2xs"
+              />
+              {billsSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setBillsSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-white p-0.5 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* TAB 1: ACTIVE REQUESTS */}
+            {billsSubTab === 'active' && (
+              <div className="space-y-3">
+                {filteredActiveBills.length === 0 ? (
+                  <div className="p-16 text-center border border-dashed border-zinc-300 dark:border-white/15 rounded-3xl bg-zinc-50/70 dark:bg-[#141416]/50">
+                    <Receipt className="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
+                    <h3 className="font-bold text-sm text-zinc-900 dark:text-white">
+                      {billsSearchQuery ? 'No Matching Active Bill Requests' : 'No Pending Bill Requests'}
+                    </h3>
+                    <p className="text-xs text-zinc-500 dark:text-text-muted mt-1 max-w-sm mx-auto">
+                      {billsSearchQuery
+                        ? 'No active bill requests match your search criteria.'
+                        : 'When a customer requests their bill from their mobile device or table terminal, it will appear here instantly.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+                    {filteredActiveBills.map((b) => {
+                      const waitMins = b.requestedAt ? getWaitMinutes(b.requestedAt) : 0;
+                      const waitBadgeColor =
+                        waitMins >= 15
+                          ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30 font-bold'
+                          : waitMins >= 10
+                          ? 'bg-amber-500/15 text-amber-800 dark:text-amber-400 border-amber-500/30 font-bold'
+                          : 'bg-zinc-100 dark:bg-white/10 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-white/10';
+
+                      const isUnserved = (b.unservedCount || 0) > 0;
+
+                      return (
+                        <div
+                          key={b.id || b.tableId}
+                          onClick={() => handleOpenBillModal(b)}
+                          className={`p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-4 shadow-xs hover:shadow-md ${
+                            isUnserved
+                              ? 'border-amber-300 dark:border-amber-500/40 bg-amber-50/20 dark:bg-[#18181A] hover:border-amber-500'
+                              : 'border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] hover:border-primary dark:hover:border-[#D4AF37]'
+                          }`}
+                        >
+                          <div>
+                            {/* Card Header */}
+                            <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-zinc-100 dark:border-white/5">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <h3 className="font-black text-lg text-zinc-900 dark:text-white truncate">
+                                  Table {b.tableNumber}
+                                </h3>
+                                {b.placeType && (
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-white/10 text-zinc-600 dark:text-zinc-400 truncate">
+                                    {b.placeType}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className={`px-2 py-0.5 rounded-full text-[10px] border flex items-center gap-1 shrink-0 ${waitBadgeColor}`}>
+                                <Clock className="w-3 h-3" />
+                                <span>{waitMins}m waiting</span>
+                              </div>
+                            </div>
+
+                            {/* Session & Guest Info */}
+                            <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                              <div>
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Token</span>
+                                <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200 truncate block">
+                                  {b.tokenNumber || '—'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Guest</span>
+                                <span className="font-bold text-zinc-800 dark:text-zinc-200 truncate block">
+                                  {b.customerName || 'Guest'} {b.personsCount ? `(${b.personsCount}p)` : ''}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Kitchen/Bar Status Pill */}
+                            <div className="mt-3">
+                              {isUnserved ? (
+                                <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-800 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                  <span>{b.unservedCount} item(s) still in prep ({b.itemCount} total)</span>
+                                </div>
+                              ) : (
+                                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-400 text-xs font-bold flex items-center gap-1.5">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  <span>All {b.itemCount} items served</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Card Footer: Financials & Action */}
+                          <div className="pt-3 border-t border-zinc-100 dark:border-white/5 flex items-center justify-between gap-2">
+                            <div>
+                              <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Total Payable</div>
+                              <div className="font-mono font-black text-base text-zinc-900 dark:text-white">
+                                ₹{Number(b.grandTotal || 0).toFixed(2)}
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenBillModal(b);
+                              }}
+                              className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-black text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              <span>Review Bill</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: SETTLED TODAY (AUDIT TRAIL) */}
+            {billsSubTab === 'history' && (
+              <div className="space-y-3">
+                {filteredSettledBills.length === 0 ? (
+                  <div className="p-16 text-center border border-dashed border-zinc-300 dark:border-white/15 rounded-3xl bg-zinc-50/70 dark:bg-[#141416]/50">
+                    <History className="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
+                    <h3 className="font-bold text-sm text-zinc-900 dark:text-white">
+                      {billsSearchQuery ? 'No Matching Settled Bills' : 'No Settled Bills Today'}
+                    </h3>
+                    <p className="text-xs text-zinc-500 dark:text-text-muted mt-1 max-w-sm mx-auto">
+                      {billsSearchQuery
+                        ? 'No historical settled bills match your search criteria.'
+                        : 'Bills settled and confirmed by staff during today’s operational shift will appear here.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="border border-zinc-200 dark:border-white/10 rounded-2xl bg-white dark:bg-[#18181A] overflow-hidden shadow-xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-zinc-200 dark:border-white/10 bg-zinc-50/70 dark:bg-white/5 text-zinc-500 dark:text-zinc-400 font-bold uppercase text-[10px] tracking-wider">
+                            <th className="py-3 px-4">Bill & Table</th>
+                            <th className="py-3 px-4">Guest</th>
+                            <th className="py-3 px-4">Method & Ref</th>
+                            <th className="py-3 px-4">Settled By</th>
+                            <th className="py-3 px-4">Time</th>
+                            <th className="py-3 px-4 text-right">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-200/70 dark:divide-white/5">
+                          {filteredSettledBills.map((b) => (
+                            <tr key={b.id} className="hover:bg-zinc-50/50 dark:hover:bg-white/5 transition-colors">
+                              <td className="py-3 px-4">
+                                <div className="font-bold text-zinc-900 dark:text-white">Table {b.tableNumber}</div>
+                                <div className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400">{b.billNumber}</div>
+                              </td>
+                              <td className="py-3 px-4">
+                                <div className="font-medium text-zinc-800 dark:text-zinc-200">{b.customerName || 'Guest'}</div>
+                                {b.customerPhone && (
+                                  <div className="text-[10px] text-zinc-500 dark:text-zinc-400">{b.customerPhone}</div>
+                                )}
+                              </td>
+                              <td className="py-3 px-4">
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold ${
+                                      b.paymentMethod === 'UPI'
+                                        ? 'bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37]'
+                                        : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                                    }`}
+                                  >
+                                    {b.paymentMethod}
+                                  </span>
+                                </div>
+                                {b.settlementReference && (
+                                  <div className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400 mt-0.5">
+                                    {b.settlementReference}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-zinc-700 dark:text-zinc-300 font-medium">
+                                {b.settledBy || 'Staff'}
+                              </td>
+                              <td className="py-3 px-4 text-zinc-500 dark:text-zinc-400">
+                                {b.paidAt ? getRelativeWaitTime(b.paidAt) : 'Today'}
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                <div className="font-mono font-black text-sm text-zinc-900 dark:text-white">
+                                  ₹{Number(b.grandTotal || 0).toFixed(2)}
+                                </div>
+                                <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">
+                                  PAID
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Assisted Order Drawer */}
       {isAssistedOrderingOpen && selectedTable && (
@@ -1539,10 +2025,14 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
         </div>
       )}
 
-      {/* Bill Details Modal */}
+      {/* Bill Details Modal — Two-Stage Review & Payment Flow */}
       {isBillDetailsOpen && selectedBillTable && (() => {
         const bill = activeTableBill || getBillForTable(selectedBillTable);
-        const waitMins = selectedBillTable.createdAt ? getWaitMinutes(selectedBillTable.createdAt) : 0;
+        const waitMins = selectedBillTable.requestedAt
+          ? getWaitMinutes(selectedBillTable.requestedAt)
+          : selectedBillTable.createdAt
+          ? getWaitMinutes(selectedBillTable.createdAt)
+          : 0;
         const waitTimeColor =
           waitMins >= 15
             ? 'text-rose-700 dark:text-rose-400 font-bold'
@@ -1550,29 +2040,39 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
             ? 'text-amber-700 dark:text-amber-400 font-bold'
             : 'text-zinc-600 dark:text-zinc-400 font-medium';
 
+        const unservedItems = (bill?.items || []).filter(
+          (i: any) => i.status !== 'SERVED' && i.status !== 'CANCELLED'
+        );
+
+        const tableNum = selectedBillTable.tableNumber || selectedBillTable.number || bill?.tableNumber || '—';
+        const tokenNum =
+          selectedBillTable.tokenNumber ||
+          selectedBillTable.currentTokenId ||
+          selectedBillTable.tokenId ||
+          bill?.tokenNumber ||
+          '—';
+
         return (
           <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-fade-in">
             <div className="w-full max-w-md sm:max-w-lg bg-white dark:bg-[#18181A] rounded-3xl border border-zinc-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-scale-up">
               {/* Modal Header */}
               <div className="flex items-center justify-between p-4 sm:p-5 border-b border-zinc-200 dark:border-white/10">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] flex items-center justify-center shrink-0">
                     <Receipt className="w-5 h-5" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-black text-lg sm:text-xl text-zinc-900 dark:text-white tracking-tight">
-                        Table {selectedBillTable.tableNumber || selectedBillTable.number}
+                        Table {tableNum}
                       </h3>
                       <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30">
                         Bill Requested
                       </span>
                     </div>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                      {selectedBillTable.currentTokenId ? (
-                        <>Token: <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{selectedBillTable.currentTokenId}</span></>
-                      ) : null}
-                      {selectedBillTable.placeType?.name ? ` · ${selectedBillTable.placeType.name}` : ''}
+                      Token: <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{tokenNum}</span>
+                      {selectedBillTable.placeType?.name || selectedBillTable.placeType ? ` · ${selectedBillTable.placeType?.name || selectedBillTable.placeType}` : ''}
                     </p>
                   </div>
                 </div>
@@ -1582,6 +2082,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   onClick={() => {
                     setIsBillDetailsOpen(false);
                     setSelectedBillTable(null);
+                    setSettlementStep('review');
                   }}
                   className="p-2 rounded-xl text-zinc-400 hover:text-zinc-900 dark:text-zinc-500 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/10 cursor-pointer transition-colors"
                   title="Close"
@@ -1590,124 +2091,381 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                 </button>
               </div>
 
-              {/* Waiting Time Banner */}
-              <div className="px-5 py-2.5 bg-amber-50/60 dark:bg-amber-950/20 border-b border-amber-200/60 dark:border-amber-900/30 flex items-center justify-between text-xs">
-                <div className={`flex items-center gap-1.5 ${waitTimeColor}`}>
-                  <Clock className="w-3.5 h-3.5 shrink-0" />
-                  <span>Requested {selectedBillTable.createdAt ? getRelativeWaitTime(selectedBillTable.createdAt) : 'Recently'}</span>
-                </div>
-                {selectedBillTable.capacity ? (
-                  <div className="flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
-                    <Users className="w-3.5 h-3.5 shrink-0" />
-                    <span>{selectedBillTable.capacity} Guests</span>
-                  </div>
-                ) : null}
+              {/* Step Flow Progress Bar */}
+              <div className="grid grid-cols-2 text-center text-xs font-black border-b border-zinc-200 dark:border-white/10 bg-zinc-50/70 dark:bg-[#141416]/40">
+                <button
+                  type="button"
+                  onClick={() => setSettlementStep('review')}
+                  className={`py-2.5 px-3 border-b-2 flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    settlementStep === 'review'
+                      ? 'border-primary text-primary dark:border-[#D4AF37] dark:text-[#D4AF37] bg-white dark:bg-[#18181A]'
+                      : 'border-transparent text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                  }`}
+                >
+                  <span>1. Review Bill & Items</span>
+                  {unservedItems.length > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (bill && Number(bill.grandTotal || bill.total || 0) >= 0) {
+                      setSettlementStep('payment');
+                    }
+                  }}
+                  className={`py-2.5 px-3 border-b-2 flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    settlementStep === 'payment'
+                      ? 'border-primary text-primary dark:border-[#D4AF37] dark:text-[#D4AF37] bg-white dark:bg-[#18181A]'
+                      : 'border-transparent text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                  }`}
+                >
+                  <span>2. Payment & Release</span>
+                </button>
               </div>
 
-              {/* Itemized Bill List */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
+              {/* Modal Body */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5">
                 {isBillLoading ? (
                   <div className="py-12 flex flex-col items-center justify-center text-center">
                     <Loader2 className="w-8 h-8 animate-spin text-primary dark:text-[#D4AF37] mb-2" />
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">Calculating current bill from active orders...</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
+                      Calculating current bill from active orders...
+                    </p>
                   </div>
                 ) : billFetchError ? (
-                  <div className="py-8 text-center text-xs text-rose-600 dark:text-rose-400">
+                  <div className="py-8 text-center text-xs text-rose-600 dark:text-rose-400 font-medium">
                     {billFetchError}
                   </div>
-                ) : (!bill || !bill.items || bill.items.length === 0) ? (
+                ) : !bill || !bill.items || bill.items.length === 0 ? (
                   <div className="py-8 text-center text-xs text-zinc-500 dark:text-zinc-400 font-medium">
                     No billed items recorded yet for this table.
                   </div>
-                ) : (
+                ) : settlementStep === 'review' ? (
+                  /* ========================================================= */
+                  /* STAGE 1: BILL REVIEW                                      */
+                  /* ========================================================= */
                   <>
-                    <h4 className="text-xs font-black uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                      Ordered Items ({bill.items.length})
-                    </h4>
-
-                    <div className="space-y-2">
-                      {bill.items.map((item: any, idx: number) => (
-                        <div
-                          key={idx}
-                          className="p-3 rounded-xl border border-zinc-200/80 dark:border-white/5 bg-zinc-50/50 dark:bg-[#141416]/50 flex items-center justify-between gap-3 text-xs"
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <VegBadge type={item.foodType} size="sm" />
-                            <span className="font-bold text-zinc-900 dark:text-white truncate">
-                              {item.name || item.itemName}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-4 shrink-0">
-                            <span className="text-zinc-500 dark:text-zinc-400 font-semibold">
-                              ₹{Number(item.unitPrice || item.price || 0).toFixed(2)} × {item.quantity}
-                            </span>
-                            <span className="font-mono font-black text-zinc-900 dark:text-white w-16 text-right">
-                              ₹{((item.unitPrice || item.price || 0) * item.quantity).toFixed(2)}
-                            </span>
-                          </div>
+                    {/* Waiting Time & Guests Banner */}
+                    <div className="px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-white/5 border border-zinc-200 dark:border-white/10 flex items-center justify-between text-xs">
+                      <div className={`flex items-center gap-1.5 ${waitTimeColor}`}>
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        <span>Requested {waitMins}m ago</span>
+                      </div>
+                      {selectedBillTable.personsCount || selectedBillTable.capacity ? (
+                        <div className="flex items-center gap-1 text-zinc-600 dark:text-zinc-400 font-medium">
+                          <Users className="w-3.5 h-3.5 shrink-0" />
+                          <span>{selectedBillTable.personsCount || selectedBillTable.capacity} Guests</span>
                         </div>
-                      ))}
+                      ) : null}
+                    </div>
+
+                    {/* Unserved Items Alert */}
+                    {unservedItems.length > 0 && (
+                      <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2.5">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                        <div className="space-y-1">
+                          <div className="font-extrabold text-amber-900 dark:text-amber-100">
+                            Unresolved Orders ({unservedItems.length} items still in prep)
+                          </div>
+                          <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                            Some items are not yet marked as served. Confirm with kitchen/bar that all items have reached Table {tableNum} before settling payment.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Itemized Order List */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                        <span>Ordered Items ({bill.items.length})</span>
+                        <span>Item Status</span>
+                      </div>
+
+                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                        {bill.items.map((item: any, idx: number) => {
+                          const isItemServed = item.status === 'SERVED';
+                          const isItemReady = item.status === 'READY';
+                          const isItemPrep = item.status === 'PREPARING';
+
+                          return (
+                            <div
+                              key={idx}
+                              className="p-3 rounded-xl border border-zinc-200/80 dark:border-white/5 bg-zinc-50/50 dark:bg-[#141416]/50 flex items-center justify-between gap-3 text-xs"
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <VegBadge type={item.foodType} size="sm" />
+                                <div className="min-w-0">
+                                  <div className="font-bold text-zinc-900 dark:text-white truncate">
+                                    {item.name || item.itemName}
+                                  </div>
+                                  <div className="text-[10px] text-zinc-400">
+                                    ₹{Number(item.unitPrice || item.price || 0).toFixed(2)} × {item.quantity}
+                                    {item.station ? ` · ${item.station}` : ''}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-3 shrink-0">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider border ${
+                                    isItemServed
+                                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+                                      : isItemReady
+                                      ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20'
+                                      : isItemPrep
+                                      ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/30'
+                                      : 'bg-zinc-100 dark:bg-white/10 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-white/10'
+                                  }`}
+                                >
+                                  {item.status || 'PLACED'}
+                                </span>
+
+                                <span className="font-mono font-black text-zinc-900 dark:text-white w-16 text-right">
+                                  ₹{((item.unitPrice || item.price || 0) * item.quantity).toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     {/* Financial Summary */}
-                    <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-white/10 space-y-1.5 text-xs">
+                    <div className="pt-3 border-t border-zinc-200 dark:border-white/10 space-y-1.5 text-xs">
                       <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
                         <span>Subtotal</span>
-                        <span className="font-mono font-semibold">₹{Number(bill.subtotal || 0).toFixed(2)}</span>
+                        <span className="font-mono font-semibold">
+                          ₹{Number(bill.grossSubtotal || bill.subtotal || 0).toFixed(2)}
+                        </span>
                       </div>
-                      {Number(bill.cgst) > 0 && (
+
+                      {Number(bill.serviceChargeTotal || bill.serviceCharge || 0) > 0 && (
                         <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
-                          <span>CGST {bill.rates?.cgstRate ? `(${bill.rates.cgstRate}%)` : ''}</span>
-                          <span className="font-mono">₹{Number(bill.cgst).toFixed(2)}</span>
+                          <span>Service Charge (5%)</span>
+                          <span className="font-mono">
+                            ₹{Number(bill.serviceChargeTotal || bill.serviceCharge || 0).toFixed(2)}
+                          </span>
                         </div>
                       )}
-                      {Number(bill.sgst) > 0 && (
+
+                      {Number(bill.taxTotal || bill.cgst || bill.sgst || 0) > 0 && (
                         <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
-                          <span>SGST {bill.rates?.sgstRate ? `(${bill.rates.sgstRate}%)` : ''}</span>
-                          <span className="font-mono">₹{Number(bill.sgst).toFixed(2)}</span>
+                          <span>GST / Taxes (5%)</span>
+                          <span className="font-mono">
+                            ₹{Number(bill.taxTotal || Number(bill.cgst || 0) + Number(bill.sgst || 0)).toFixed(2)}
+                          </span>
                         </div>
                       )}
-                      {Number(bill.serviceCharge) > 0 && (
-                        <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
-                          <span>Service Charge {bill.rates?.serviceChargeRate ? `(${bill.rates.serviceChargeRate}%)` : ''}</span>
-                          <span className="font-mono">₹{Number(bill.serviceCharge).toFixed(2)}</span>
+
+                      {Number(bill.redemptionDeduction || 0) > 0 && (
+                        <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                          <span>Drink Entitlement Offset</span>
+                          <span className="font-mono">-₹{Number(bill.redemptionDeduction).toFixed(2)}</span>
                         </div>
                       )}
+
+                      {Number(bill.rounding || 0) !== 0 && (
+                        <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
+                          <span>Rounding Adjustment</span>
+                          <span className="font-mono">
+                            {Number(bill.rounding) > 0
+                              ? `+₹${Number(bill.rounding).toFixed(2)}`
+                              : `-₹${Math.abs(Number(bill.rounding)).toFixed(2)}`}
+                          </span>
+                        </div>
+                      )}
+
                       <div className="flex justify-between items-center text-base font-black pt-2 border-t border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white">
-                        <span>Total Amount Due</span>
-                        <span className="text-primary dark:text-[#D4AF37] font-mono text-lg">
-                          ₹{Number(bill.total || 0).toFixed(2)}
+                        <span>Final Amount Payable</span>
+                        <span className="text-primary dark:text-[#D4AF37] font-mono text-xl font-black">
+                          ₹{Number(bill.grandTotal || bill.total || 0).toFixed(2)}
                         </span>
                       </div>
                     </div>
                   </>
+                ) : (
+                  /* ========================================================= */
+                  /* STAGE 2: PAYMENT EXECUTION                                */
+                  /* ========================================================= */
+                  <div className="space-y-4">
+                    {/* Back to Review Link */}
+                    <button
+                      type="button"
+                      onClick={() => setSettlementStep('review')}
+                      className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Back to Itemized Review</span>
+                    </button>
+
+                    {/* Payable Summary Banner */}
+                    <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-white/5 border border-zinc-200 dark:border-white/10 flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                          Table {tableNum} · Due Amount
+                        </div>
+                        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                          {bill.items?.length || 0} items confirmed
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-2xl font-black font-mono text-primary dark:text-[#D4AF37]">
+                          ₹{Number(bill.grandTotal || bill.total || 0).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Payment Method Selector */}
+                    <div className="space-y-2">
+                      <div className="text-xs font-black uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                        Choose Payment Method
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPaymentMethod('CASH')}
+                          className={`p-3.5 rounded-2xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
+                            selectedPaymentMethod === 'CASH'
+                              ? 'border-primary dark:border-[#D4AF37] bg-primary/10 dark:bg-[#D4AF37]/15 ring-2 ring-primary/30 dark:ring-[#D4AF37]/30'
+                              : 'border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#141416] hover:border-zinc-300 dark:hover:border-white/20'
+                          }`}
+                        >
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                              selectedPaymentMethod === 'CASH'
+                                ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-black'
+                                : 'bg-zinc-200 dark:bg-white/10 text-zinc-600 dark:text-zinc-400'
+                            }`}
+                          >
+                            <Banknote className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="font-extrabold text-xs text-zinc-900 dark:text-white">Cash</div>
+                            <div className="text-[10px] text-zinc-500 dark:text-zinc-400">Manual Cash</div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPaymentMethod('UPI')}
+                          className={`p-3.5 rounded-2xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
+                            selectedPaymentMethod === 'UPI'
+                              ? 'border-primary dark:border-[#D4AF37] bg-primary/10 dark:bg-[#D4AF37]/15 ring-2 ring-primary/30 dark:ring-[#D4AF37]/30'
+                              : 'border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-[#141416] hover:border-zinc-300 dark:hover:border-white/20'
+                          }`}
+                        >
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                              selectedPaymentMethod === 'UPI'
+                                ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-black'
+                                : 'bg-zinc-200 dark:bg-white/10 text-zinc-600 dark:text-zinc-400'
+                            }`}
+                          >
+                            <QrCode className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="font-extrabold text-xs text-zinc-900 dark:text-white">UPI QR</div>
+                            <div className="text-[10px] text-zinc-500 dark:text-zinc-400">Scan & Pay</div>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Mode Guidance */}
+                    {selectedPaymentMethod === 'CASH' && (
+                      <div className="p-3.5 rounded-2xl border border-emerald-500/20 bg-emerald-50/50 dark:bg-emerald-950/20 text-xs text-emerald-800 dark:text-emerald-300 space-y-1.5">
+                        <div className="font-bold flex items-center gap-1.5">
+                          <Banknote className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>Cash Settlement Protocol</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-700 dark:text-emerald-400/85 leading-relaxed">
+                          Collect exact cash amount of <strong>₹{Number(bill.grandTotal || bill.total || 0).toFixed(2)}</strong> from the customer at Table {tableNum}. Once received, confirm below to release the table.
+                        </p>
+                      </div>
+                    )}
+
+                    {selectedPaymentMethod === 'UPI' && (
+                      <div className="p-4 rounded-2xl border border-primary/20 dark:border-[#D4AF37]/30 bg-primary/5 dark:bg-[#D4AF37]/10 text-center space-y-3">
+                        <div className="font-bold text-xs text-zinc-900 dark:text-white flex items-center justify-center gap-1.5">
+                          <QrCode className="w-4 h-4 text-primary dark:text-[#D4AF37]" />
+                          <span>UPI Simulation QR Code</span>
+                        </div>
+                        <div className="inline-block p-3 rounded-2xl bg-white shadow-md border border-zinc-200">
+                          <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
+                              `upi://pay?pa=tableflow@pegsnbottles&pn=PegsNBottles&am=${Number(
+                                bill.grandTotal || bill.total || 0
+                              ).toFixed(2)}&cu=INR&tn=Table-${tableNum}`
+                            )}`}
+                            alt="UPI Simulation QR"
+                            className="w-32 h-32 mx-auto"
+                          />
+                        </div>
+                        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 max-w-xs mx-auto leading-relaxed">
+                          Present this QR code to the customer. Once transfer verification is shown on their UPI app, click <strong>Confirm Payment</strong> to finalize.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Settlement Error */}
+                    {settlementError && (
+                      <div className="p-3.5 rounded-2xl border border-rose-400 dark:border-rose-500/50 bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 text-xs font-bold flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                        <span>{settlementError}</span>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
               {/* Modal Footer Actions */}
-              <div className="p-4 sm:p-5 border-t border-zinc-200 dark:border-white/10 bg-zinc-50/70 dark:bg-[#141416]/50 flex items-center justify-end gap-2.5">
+              <div className="p-4 sm:p-5 border-t border-zinc-200 dark:border-white/10 bg-zinc-50/70 dark:bg-[#141416]/50 flex items-center justify-between gap-2.5">
                 <button
                   type="button"
                   onClick={() => {
                     setIsBillDetailsOpen(false);
                     setSelectedBillTable(null);
+                    setSettlementError(null);
+                    setSettlementStep('review');
                   }}
-                  className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-white/15 bg-white dark:bg-[#18181A] text-zinc-700 dark:text-zinc-300 font-extrabold text-xs hover:bg-zinc-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
+                  disabled={isSettlingBill}
+                  className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-white/15 bg-white dark:bg-[#18181A] text-zinc-700 dark:text-zinc-300 font-extrabold text-xs hover:bg-zinc-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
                 >
                   Close
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFeedbackMsg(`Bill for Table ${selectedBillTable.tableNumber || selectedBillTable.number} acknowledged.`);
-                    setIsBillDetailsOpen(false);
-                    setSelectedBillTable(null);
-                  }}
-                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-extrabold text-xs shadow-sm active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Acknowledge Bill</span>
-                </button>
+
+                {settlementStep === 'review' ? (
+                  <button
+                    type="button"
+                    onClick={() => setSettlementStep('payment')}
+                    disabled={isBillLoading || !bill || Number(bill.grandTotal || bill.total || 0) < 0}
+                    className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-black text-xs shadow-sm active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <span>Proceed to Payment</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleConfirmPayment}
+                    disabled={isSettlingBill || isBillLoading || !bill || Number(bill.grandTotal || bill.total || 0) < 0}
+                    className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-black text-xs shadow-sm active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSettlingBill ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Confirming Settlement...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Confirm Payment ({selectedPaymentMethod})</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           </div>
