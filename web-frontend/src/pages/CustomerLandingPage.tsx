@@ -18,8 +18,8 @@ import {
 export const CustomerLandingPage: React.FC = () => {
   const { isDark, toggleTheme } = useAuth();
   const [activeModal, setActiveModal] = useState<'NONE' | 'TOKEN' | 'PHONE' | 'SCAN'>('NONE');
-  const [tokenInput, setTokenInput] = useState<string>('');
-  const [phoneInput, setPhoneInput] = useState<string>('');
+  const [tokenInput, setTokenInput] = useState<string>('BAR-20260902-00008');
+  const [phoneInput, setPhoneInput] = useState<string>('9833161990');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -172,10 +172,34 @@ export const CustomerLandingPage: React.FC = () => {
           </span>
         </h1>
 
-        <p className="text-xs text-text-muted leading-relaxed max-w-xs mx-auto mb-5 sm:mb-6">
+        <p className="text-xs text-text-muted leading-relaxed max-w-xs mx-auto mb-4 sm:mb-5">
           Order drinks, culinary specials, and request assistance directly from your smartphone.
           Use your pass token, phone number, or scan your pass QR.
         </p>
+
+        {/* Quick 1-Click Access for Active Pass BAR-20260902-00008 */}
+        <div className="mb-3.5 p-3 rounded-2xl bg-white dark:bg-white/5 border border-primary/30 dark:border-[#D4AF37]/30 shadow-xs flex items-center justify-between text-left">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-[10px] font-bold text-primary dark:text-[#D4AF37] uppercase tracking-wider">
+                Table L-02 · Active Pass
+              </div>
+              <div className="text-xs font-mono font-bold text-text-main dark:text-white">
+                BAR-20260902-00008
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => window.location.assign('/customer/access/BAR-20260902-00008')}
+            className="px-3 py-1.5 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-xs flex items-center gap-1 shadow-sm transition-all cursor-pointer"
+          >
+            <span>Order Now</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
         {/* Mobile Vertical Action Rows */}
         <div className="flex flex-col gap-2.5 sm:gap-3 w-full">
@@ -251,10 +275,34 @@ export const CustomerLandingPage: React.FC = () => {
           </span>
         </h1>
 
-        <p className="text-sm text-text-muted leading-relaxed max-w-lg mx-auto mb-8">
+        <p className="text-sm text-text-muted leading-relaxed max-w-lg mx-auto mb-6">
           Order drinks, culinary specials, and request assistance directly from your smartphone.
           Use your pass token, phone number, or scan your pass QR.
         </p>
+
+        {/* Quick 1-Click Access for Active Pass BAR-20260902-00008 */}
+        <div className="max-w-md mx-auto mb-6 p-3.5 rounded-2xl bg-white dark:bg-white/5 border border-primary/30 dark:border-[#D4AF37]/30 shadow-xs flex items-center justify-between text-left">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-[11px] font-bold text-primary dark:text-[#D4AF37] uppercase tracking-wider">
+                Table L-02 · Active Pass Ready
+              </div>
+              <div className="text-sm font-mono font-bold text-text-main dark:text-white">
+                BAR-20260902-00008
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => window.location.assign('/customer/access/BAR-20260902-00008')}
+            className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+          >
+            <span>Enter Ordering</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
 
         {/* Tablet 3-Card Symmetrical Grid */}
         <div className="grid grid-cols-3 gap-4 text-left">
@@ -365,6 +413,30 @@ export const CustomerLandingPage: React.FC = () => {
             <div className="p-4 rounded-2xl bg-white/60 dark:bg-white/5 border border-border-main dark:border-white/10 text-xs text-text-muted flex items-center gap-3">
               <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
               <span>Check in at reception to verify your entry payment and link your table pass.</span>
+            </div>
+
+            {/* Quick 1-Click Access for Active Pass BAR-20260902-00008 */}
+            <div className="mt-4 p-4 rounded-2xl bg-white dark:bg-white/5 border border-primary/30 dark:border-[#D4AF37]/30 shadow-sm flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-primary dark:text-[#D4AF37] uppercase tracking-wider">
+                    Table L-02 · Active Pass Ready
+                  </div>
+                  <div className="text-sm font-mono font-bold text-text-main dark:text-white">
+                    BAR-20260902-00008
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => window.location.assign('/customer/access/BAR-20260902-00008')}
+                className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              >
+                <span>Enter Ordering</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
 

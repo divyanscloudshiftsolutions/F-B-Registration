@@ -91,6 +91,7 @@ const CustomerAppInner: React.FC = () => {
     sessionData,
     sessionError,
     refreshSession,
+    tableStatus,
   } = useCustomer();
 
   // Circular wave theme transition
@@ -2019,14 +2020,32 @@ const CustomerAppInner: React.FC = () => {
                       Taxes, service charge, and applicable discounts are calculated as part of your final table bill.
                     </div>
 
+                    {tableStatus === 'SETTLING' && (
+                      <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5 text-amber-700 dark:text-amber-400 animate-fade-in">
+                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                        <div className="text-xs leading-relaxed">
+                          <p className="font-bold">Bill Settlement in Progress</p>
+                          <p className="mt-0.5 opacity-90">
+                            Your server is currently finalizing the bill at your table. Adding new items is temporarily paused.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     <button
-                      disabled={isOrdering || cart.length === 0}
+                      disabled={isOrdering || cart.length === 0 || tableStatus === 'SETTLING'}
                       onClick={handlePlaceOrder}
                       className="w-full h-13 mt-2 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black disabled:opacity-50 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-between px-5 cursor-pointer"
                     >
                       <span className="flex items-center gap-2">
                         {isOrdering && <Loader2 className="w-4 h-4 animate-spin" />}
-                        <span>{isOrdering ? 'Placing Order...' : 'Place Order'}</span>
+                        <span>
+                          {tableStatus === 'SETTLING'
+                            ? 'Ordering Locked (Settling)'
+                            : isOrdering
+                            ? 'Placing Order...'
+                            : 'Place Order'}
+                        </span>
                       </span>
                       <span>₹{Number(cartTotal || 0).toFixed(2)}</span>
                     </button>
@@ -3330,11 +3349,13 @@ const CustomerAppInner: React.FC = () => {
                               onClick={() => {
                                 (order.items || []).forEach((item: any) => {
                                   addToCart({
-                                    id: item.menuItemId || item.id,
+                                    menuItemId: item.menuItemId || item.id,
                                     name: item.name || item.menuItem?.name || 'Item',
-                                    basePrice: Number(item.price || item.unitPrice || 0),
+                                    unitPrice: Number(item.price || item.unitPrice || 0),
                                     station: item.station || 'KITCHEN',
                                     foodType: item.foodType || 'VEG',
+                                    quantity: 1,
+                                    modifiers: [],
                                   });
                                 });
                                 setActiveTab('cart');

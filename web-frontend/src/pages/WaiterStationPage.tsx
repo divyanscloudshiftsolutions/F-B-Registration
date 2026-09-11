@@ -76,6 +76,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'CASH' | 'UPI'>('CASH');
   const [isSettlingBill, setIsSettlingBill] = useState<boolean>(false);
+  const [isInitiatingSettlement, setIsInitiatingSettlement] = useState<boolean>(false);
   const [settlementError, setSettlementError] = useState<string | null>(null);
 
   // Bills Workspace State
@@ -438,6 +439,110 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       }
     } finally {
       setIsBillLoading(false);
+    }
+  };
+
+  const handleProceedToPayment = async () => {
+    if (!selectedBillTable || isInitiatingSettlement) return;
+    const tokenToSettle =
+      activeTableBill?.tokenNumber ||
+      activeTableBill?.tokenId ||
+      selectedBillTable.tokenNumber ||
+      selectedBillTable.currentTokenId ||
+      selectedBillTable.tokenId ||
+      selectedBillTable.activeSession?.tokenNumber;
+
+    if (!tokenToSettle) {
+      setSettlementError('Missing active session token to settle.');
+      return;
+    }
+
+    const unservedCount = (activeTableBill?.items || []).filter(
+      (it: any) => it.status !== 'SERVED' && it.status !== 'CANCELLED'
+    ).length;
+
+    if (unservedCount > 0) {
+      setSettlementError(`Cannot proceed to payment. There are ${unservedCount} unserved item(s). All items must be SERVED or CANCELLED first.`);
+      return;
+    }
+
+    setIsInitiatingSettlement(true);
+    setSettlementError(null);
+
+    try {
+      const res = await api.initiateBillSettlement(tokenToSettle);
+      if (res && res.success) {
+        setSettlementStep('payment');
+        if (res.calculated) {
+          setActiveTableBill(res.calculated);
+        }
+      } else {
+        setSettlementError('Failed to initiate bill settlement.');
+      }
+    } catch (err: any) {
+      console.error('Initiate settlement error:', err);
+      setSettlementError(err.message || 'Failed to initiate bill settlement.');
+    } finally {
+      setIsInitiatingSettlement(false);
+    }
+  };
+
+  const handleBackToReview = async () => {
+    const tokenToSettle =
+      activeTableBill?.tokenNumber ||
+      activeTableBill?.tokenId ||
+      selectedBillTable?.tokenNumber ||
+      selectedBillTable?.currentTokenId ||
+      selectedBillTable?.tokenId;
+
+    if (tokenToSettle) {
+      try {
+        await api.cancelBillSettlement(tokenToSettle);
+      } catch (err) {
+        console.warn('Failed to cancel settlement lock on backend:', err);
+      }
+    }
+    setSettlementStep('review');
+    setSettlementError(null);
+  };
+
+  const handleCloseBillModal = async () => {
+    if (settlementStep === 'payment') {
+      const tokenToSettle =
+        activeTableBill?.tokenNumber ||
+        activeTableBill?.tokenId ||
+        selectedBillTable?.tokenNumber ||
+        selectedBillTable?.currentTokenId ||
+        selectedBillTable?.tokenId;
+      if (tokenToSettle) {
+        api.cancelBillSettlement(tokenToSettle).catch(() => null);
+      }
+    }
+    setIsBillDetailsOpen(false);
+    setSelectedBillTable(null);
+    setSettlementError(null);
+    setSettlementStep('review');
+  };
+
+  const handleServeItemInline = async (orderItemId: string) => {
+    try {
+      await api.updateOrderItemStatus(orderItemId, 'SERVED', user?.id);
+      const tokenToSettle =
+        activeTableBill?.tokenNumber ||
+        activeTableBill?.tokenId ||
+        selectedBillTable?.tokenNumber ||
+        selectedBillTable?.currentTokenId;
+      if (tokenToSettle) {
+        const res = await api.calculateBill(tokenToSettle);
+        if (res && res.bill) {
+          setActiveTableBill(res.bill);
+        }
+      }
+      fetchReadyItems();
+      fetchTables();
+      fetchBillsData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to serve item.');
     }
   };
 
@@ -2175,6 +2280,23 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       </div>
                     )}
 
+                    {/* Unserved Items Alert Banner */}
+                    {(() => {
+                      const unservedCount = (bill.items || []).filter(
+                        (it: any) => it.status !== 'SERVED' && it.status !== 'CANCELLED'
+                      ).length;
+
+                      if (unservedCount > 0) {
+                        return (
+                          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs font-bold flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                            <span>{unservedCount} item(s) are still unserved or preparing. All items must be served or cancelled before proceeding to payment.</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
                     {/* Itemized Order List */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
@@ -2206,7 +2328,19 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-3 shrink-0">
+                              <div className="flex items-center gap-2 shrink-0">
+                                {isItemReady && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleServeItemInline(item.id)}
+                                    className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] shadow-xs active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+                                    title="Mark this ready item as served"
+                                  >
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>Serve</span>
+                                  </button>
+                                )}
+
                                 <span
                                   className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider border ${
                                     isItemServed
@@ -2292,7 +2426,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                     {/* Back to Review Link */}
                     <button
                       type="button"
-                      onClick={() => setSettlementStep('review')}
+                      onClick={handleBackToReview}
                       className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <ArrowLeft className="w-3.5 h-3.5" />
@@ -2424,29 +2558,41 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
               <div className="p-4 sm:p-5 border-t border-zinc-200 dark:border-white/10 bg-zinc-50/70 dark:bg-[#141416]/50 flex items-center justify-between gap-2.5">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsBillDetailsOpen(false);
-                    setSelectedBillTable(null);
-                    setSettlementError(null);
-                    setSettlementStep('review');
-                  }}
-                  disabled={isSettlingBill}
+                  onClick={handleCloseBillModal}
+                  disabled={isSettlingBill || isInitiatingSettlement}
                   className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-white/15 bg-white dark:bg-[#18181A] text-zinc-700 dark:text-zinc-300 font-extrabold text-xs hover:bg-zinc-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
                 >
                   Close
                 </button>
 
-                {settlementStep === 'review' ? (
-                  <button
-                    type="button"
-                    onClick={() => setSettlementStep('payment')}
-                    disabled={isBillLoading || !bill || Number(bill.grandTotal || bill.total || 0) < 0}
-                    className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-black text-xs shadow-sm active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <span>Proceed to Payment</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                ) : (
+                {settlementStep === 'review' ? (() => {
+                  const unservedCount = (bill.items || []).filter(
+                    (it: any) => it.status !== 'SERVED' && it.status !== 'CANCELLED'
+                  ).length;
+                  const isBlocked = unservedCount > 0 || isBillLoading || isInitiatingSettlement || !bill || Number(bill.grandTotal || bill.total || 0) < 0;
+
+                  return (
+                    <button
+                      type="button"
+                      onClick={handleProceedToPayment}
+                      disabled={isBlocked}
+                      title={unservedCount > 0 ? `Resolve ${unservedCount} unserved item(s) before proceeding to payment` : undefined}
+                      className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-black text-xs shadow-sm active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isInitiatingSettlement ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Locking Table & Initiating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Proceed to Payment</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  );
+                })() : (
                   <button
                     type="button"
                     onClick={handleConfirmPayment}
@@ -2474,11 +2620,12 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
       {/* Reservation Details Modal */}
       {isReservationModalOpen && selectedReservationTable && (() => {
-        const res = getReservationForTable(selectedReservationTable.id);
-        const guestName = res?.customerName || (selectedReservationTable as any).reservationGuestName || 'Guest';
+        const tableObj = (selectedReservationTable as any).table || selectedReservationTable;
+        const res = (selectedReservationTable as any).reservation || getReservationForTable(tableObj.id);
+        const guestName = res?.customerName || tableObj.reservationGuestName || 'Guest';
         const guestPhone = res?.phoneNumber;
         const guestEmail = (res as any)?.email;
-        const guestsCount = res?.personsCount || selectedReservationTable.capacity;
+        const guestsCount = res?.personsCount || tableObj.capacity;
         const reservationTime = res?.reservationTime || res?.date;
         const reservationNotes = (res as any)?.notes || (res as any)?.specialRequests;
 
@@ -2493,10 +2640,10 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   </div>
                   <div>
                     <h3 className="font-black text-lg sm:text-xl text-zinc-900 dark:text-white tracking-tight">
-                      Table {selectedReservationTable.tableNumber || selectedReservationTable.number || '-'}
+                      Table {tableObj.tableNumber || tableObj.number || '-'}
                     </h3>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                      {selectedReservationTable.placeType?.name || (typeof selectedReservationTable.placeType === 'string' ? selectedReservationTable.placeType : 'Table Reservation')}
+                      {tableObj.placeType?.name || (typeof tableObj.placeType === 'string' ? tableObj.placeType : 'Table Reservation')}
                     </p>
                   </div>
                 </div>

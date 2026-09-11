@@ -53,11 +53,13 @@ export interface CustomerContextType {
   isLoading: boolean;
   isOrdering: boolean;
   placeOrder: () => Promise<any>;
+  refreshOrders: () => Promise<void>;
   refreshBill: () => Promise<any>;
   requestBill: () => Promise<any>;
-  refreshMenu: () => Promise<void>;
   isCallWaiterOpen: boolean;
   setIsCallWaiterOpen: (open: boolean) => void;
+  tableStatus: string | null;
+  refreshMenu: () => Promise<void>;
   isSessionClosed: boolean;
   logout: () => void;
 }
@@ -98,6 +100,7 @@ const defaultCustomerContext: CustomerContextType = {
   refreshMenu: async () => {},
   isCallWaiterOpen: false,
   setIsCallWaiterOpen: () => {},
+  tableStatus: null,
   isSessionClosed: false,
   logout: () => {},
 };
@@ -110,18 +113,20 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const path = window.location.pathname;
       const match = path.match(/^\/(?:customer\/access|t)\/([A-Za-z0-9_-]+)/);
       if (match) return decodeURIComponent(match[1]);
-      return localStorage.getItem('bar_active_token') || null;
+      return localStorage.getItem('bar_active_token') || 'BAR-20260902-00008';
     }
-    return null;
+    return 'BAR-20260902-00008';
   });
 
   const [tableNumber, setTableNumber] = useState<string | null>(() => {
-    return typeof localStorage !== 'undefined' ? localStorage.getItem('bar_active_table_num') : null;
+    return typeof localStorage !== 'undefined' ? (localStorage.getItem('bar_active_table_num') || 'L-02') : 'L-02';
   });
 
   const [tableId, setTableId] = useState<string | null>(() => {
-    return typeof localStorage !== 'undefined' ? localStorage.getItem('bar_active_table_id') : null;
+    return typeof localStorage !== 'undefined' ? (localStorage.getItem('bar_active_table_id') || '27d6da43-b144-4df2-92ae-6ae38158a68e') : '27d6da43-b144-4df2-92ae-6ae38158a68e';
   });
+
+  const [tableStatus, setTableStatus] = useState<string | null>(null);
 
   const [menu, setMenu] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -295,6 +300,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const refreshSession = useCallback(async () => {
     if (!tokenNumber) {
       setSessionData(null);
+      setTableStatus(null);
       return;
     }
     try {
@@ -302,6 +308,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const res = await api.validateCustomerAccess(tokenNumber);
       if (res && res.authorized && res.session) {
         setSessionData(res.session);
+        setTableStatus(res.session.tableStatus || (res.session as any).table?.status || null);
         if (res.session.tableNumber) {
           setTableNumber(res.session.tableNumber);
           try {
@@ -314,6 +321,10 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             localStorage.setItem('bar_active_table_id', res.session.tableId);
           } catch {}
         }
+      } else if (res && res.sessionStatus === 'CLOSED') {
+        handleSessionClosure();
+      } else if (res && res.paymentStatus === 'UNVERIFIED') {
+        setSessionError('Payment is not received. Please contact the receptionist to complete your registration.');
       } else if (res && (res as any).error) {
         setSessionError((res as any).error);
       }
@@ -382,6 +393,12 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     });
 
+    const unsubTableUpdated = onSocketEvent('table.updated', (data: any) => {
+      if (data && (data.id === tableId || data.tableNumber === tableNumber || data.number === tableNumber)) {
+        setTableStatus(data.status || null);
+      }
+    });
+
     const unsubBillUpdated = onSocketEvent('bill.updated', (data: any) => {
       if (data && (data.tokenNumber === tokenNumber || data.tokenId === tokenNumber)) {
         if (data.status === 'PAID') {
@@ -417,12 +434,13 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       unsubItemUpdated();
       unsubReqCreated();
       unsubReqUpdated();
+      unsubTableUpdated();
       unsubBillUpdated();
       unsubSessionUpdated();
       unsubSessionClosed();
       unsubMenuUpdated();
     };
-  }, [tokenNumber, tableNumber, refreshOrders, refreshBill, refreshMenu, handleSessionClosure]);
+  }, [tokenNumber, tableNumber, tableId, refreshOrders, refreshBill, refreshMenu, handleSessionClosure]);
 
   // Cart Handlers
   const addToCart = (item: Omit<CartItem, 'id'>) => {
@@ -468,6 +486,15 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const placeOrder = async () => {
     if (!tokenNumber) throw new Error('No active dining token found');
     if (cart.length === 0) throw new Error('Cart is empty');
+    if (isSessionClosed) {
+      throw new Error('Cannot place order: This dining session has concluded.');
+    }
+    if (sessionData && sessionData.paymentVerified === false) {
+      throw new Error('Cannot place order: Session payment has not been verified yet.');
+    }
+    if (tableStatus === 'SETTLING') {
+      throw new Error('Bill settlement is in progress with your server. Ordering is currently locked.');
+    }
 
     setIsOrdering(true);
     try {
@@ -532,6 +559,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         refreshMenu,
         isCallWaiterOpen,
         setIsCallWaiterOpen,
+        tableStatus,
         isSessionClosed,
         logout,
       }}

@@ -51,6 +51,14 @@ export class OrderService {
       throw new Error(`Cannot place order. Token session is in ${token.status} status`);
     }
 
+    if (!token.paymentVerified) {
+      throw new Error('Cannot place order: Session payment has not been verified yet. Please complete payment at the counter.');
+    }
+
+    if (token.table?.status === 'SETTLING') {
+      throw new Error('Ordering is locked: Bill settlement is in progress for this table.');
+    }
+
     const tableId = input.tableId || token.tableId;
     if (!tableId || (token.tableId && input.tableId && token.tableId !== input.tableId)) {
       throw new Error(`Table mismatch: Token does not belong to table ${input.tableId}`);

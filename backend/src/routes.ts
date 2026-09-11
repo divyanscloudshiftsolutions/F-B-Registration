@@ -2859,6 +2859,26 @@ const activateSessionHandler = async (req: AuthenticatedRequest, res: Response) 
       );
     }
 
+    try {
+      broadcastTableSessionActivated({
+        tableId: updatedToken.tableId,
+        tableNumber: updatedToken.table?.tableNumber || '',
+        tokenNumber: updatedToken.tokenNumber,
+        customerName: updatedToken.customer?.name,
+        startTime: updatedToken.startTime,
+        endTime: updatedToken.endTime,
+      });
+      broadcastTableUpdated({
+        tableId: updatedToken.tableId,
+        tableNumber: updatedToken.table?.tableNumber || '',
+        status: 'occupied',
+        currentTokenId: updatedToken.id,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('Failed to broadcast session activation:', e);
+    }
+
     await redisService.del('tokens:active').catch(() => {});
     await redisService.del('tables:all').catch(() => {});
 
@@ -5816,6 +5836,36 @@ router.post('/bills/request', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: { message: 'tokenNumber or tokenId is required' } });
     }
     const result = await billingService.requestBill(lookup);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/bills/initiate-settlement (Lock table ordering and enter SETTLING status)
+router.post('/bills/initiate-settlement', authenticate, authorize(['admin', 'manager', 'waiter', 'server', 'receptionist']), async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber, tokenId } = req.body;
+    const lookup = tokenNumber || tokenId;
+    if (!lookup) {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber or tokenId is required' } });
+    }
+    const result = await billingService.initiateSettlement(lookup);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/bills/cancel-settlement (Unlock table ordering and return to BILL_REQUESTED status)
+router.post('/bills/cancel-settlement', authenticate, authorize(['admin', 'manager', 'waiter', 'server', 'receptionist']), async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber, tokenId } = req.body;
+    const lookup = tokenNumber || tokenId;
+    if (!lookup) {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber or tokenId is required' } });
+    }
+    const result = await billingService.cancelSettlement(lookup);
     return res.json(result);
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { message: err.message } });

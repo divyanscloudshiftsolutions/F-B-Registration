@@ -200,8 +200,8 @@ const AppContent: React.FC = () => {
       return <CustomerAccessPage />;
     }
 
-    // 2. Direct Customer Access Gateway (e.g. /customer/access/BAR-20260902-12345)
-    if (pathname.startsWith('/customer/access/')) {
+    // 2. Direct Customer Access Gateway (e.g. /customer/access/BAR-20260902-12345 or /customer/access)
+    if (pathname.startsWith('/customer/access/') || pathname === '/customer/access' || pathname === '/customer/access/') {
       return <CustomerAccessPage />;
     }
 
@@ -214,7 +214,7 @@ const AppContent: React.FC = () => {
     if (pathname.startsWith('/customer/')) {
       const activeToken = localStorage.getItem('bar_active_token');
       if (activeToken) {
-        return <CustomerApp />;
+        return <CustomerAccessPage tokenProp={activeToken} />;
       }
       return <CustomerLandingPage />;
     }

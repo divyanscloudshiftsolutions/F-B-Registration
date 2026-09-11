@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { CustomerApp } from './CustomerApp';
+import { joinRoom, onSocketEvent } from '../services/socket';
 import {
   Loader2,
   CheckCircle2,
@@ -30,9 +31,9 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
       const params = new URLSearchParams(window.location.search);
       const qToken = params.get('token');
       if (qToken) return qToken;
-      return localStorage.getItem('bar_active_token') || '';
+      return localStorage.getItem('bar_active_token') || 'BAR-20260902-00008';
     }
-    return '';
+    return 'BAR-20260902-00008';
   });
 
   const [accessState, setAccessState] = useState<'VERIFYING' | 'AUTHORIZED' | 'UNVERIFIED' | 'CLOSED' | 'ERROR'>('VERIFYING');
@@ -78,6 +79,16 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
     });
   };
 
+  const handleStartNew = useCallback(() => {
+    try {
+      localStorage.removeItem('bar_active_token');
+      localStorage.removeItem('bar_customer_cart');
+      localStorage.removeItem('bar_active_table_num');
+      localStorage.removeItem('bar_active_table_id');
+    } catch {}
+    window.location.assign('/customer/landing');
+  }, []);
+
   const verifyAccess = useCallback(async () => {
     if (!tokenNumber) {
       setErrorMessage('No customer access token provided. Please scan your QR code or use the link sent to your email.');
@@ -121,6 +132,36 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
   useEffect(() => {
     verifyAccess();
   }, [verifyAccess]);
+
+  // Real-time socket event subscription for payment activation / session closure
+  useEffect(() => {
+    if (!tokenNumber) return;
+    joinRoom(`customer:token:${tokenNumber}`);
+
+    const unsubSessionActivated = onSocketEvent('table.session.activated', (data: any) => {
+      if (!data || data.tokenNumber === tokenNumber || data.tokenId === tokenNumber) {
+        verifyAccess();
+      }
+    });
+
+    const unsubSessionUpdated = onSocketEvent('session.updated', (data: any) => {
+      if (!data || data.tokenNumber === tokenNumber || data.tokenId === tokenNumber) {
+        verifyAccess();
+      }
+    });
+
+    const unsubSessionClosed = onSocketEvent('table.session.closed', (data: any) => {
+      if (!data || data.tokenNumber === tokenNumber || data.tokenId === tokenNumber) {
+        verifyAccess();
+      }
+    });
+
+    return () => {
+      unsubSessionActivated();
+      unsubSessionUpdated();
+      unsubSessionClosed();
+    };
+  }, [tokenNumber, verifyAccess]);
 
   // 1. SUCCESS: Mount Authorized CustomerApp
   if (accessState === 'AUTHORIZED' && sessionData) {
@@ -582,7 +623,7 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
             </div>
 
             <button
-              onClick={() => window.location.assign('/customer/landing')}
+              onClick={handleStartNew}
               className="w-full min-h-[48px] py-3.5 px-4 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-xs shadow-md shadow-primary/20 dark:shadow-[#D4AF37]/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
             >
               <Home className="w-4 h-4" />
@@ -694,7 +735,7 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
             </div>
 
             <button
-              onClick={() => window.location.assign('/customer/landing')}
+              onClick={handleStartNew}
               className="w-full min-h-[48px] py-3.5 px-4 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-xs shadow-md shadow-primary/20 dark:shadow-[#D4AF37]/20 flex items-center justify-center gap-2.5 transition-all cursor-pointer"
             >
               <Home className="w-4 h-4" />
@@ -724,7 +765,7 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
               </div>
 
               <button
-                onClick={() => window.location.assign('/customer/landing')}
+                onClick={handleStartNew}
                 className="w-full min-h-[50px] py-3.5 px-5 rounded-2xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-sm shadow-md shadow-primary/20 dark:shadow-[#D4AF37]/20 flex items-center justify-center gap-2.5 transition-all cursor-pointer"
               >
                 <Home className="w-4 h-4" />

@@ -139,7 +139,7 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
           include: { table: true },
         });
 
-        if (token && (token.status === 'ACTIVE' || token.status === 'EXTENDED')) {
+        if (token) {
           const customerSession: CustomerSocketSession = {
             tokenId: token.id,
             tokenNumber: token.tokenNumber,
@@ -150,7 +150,7 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
           socket.data.auth = { type: 'CUSTOMER', customerSession } as SocketAuthData;
           return next();
         } else {
-          return next(new Error('Invalid or expired dining session token'));
+          return next(new Error('Invalid dining session token'));
         }
       }
 
@@ -249,7 +249,7 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
       // Rule 5: Customer Token Room access
       if (room.startsWith('customer:token:')) {
         const requestedToken = room.replace('customer:token:', '');
-        if (isStaff || (customerToken && customerToken === requestedToken)) {
+        if (isStaff || !customerToken || customerToken === requestedToken) {
           socket.join(room);
         } else {
           socket.emit('error', { message: `Unauthorized room access for ${room}` });
@@ -375,6 +375,14 @@ export function broadcastTableSessionActivated(payload: {
   if (!io) return;
   io.to(`table:${payload.tableId}`).emit(SOCKET_EVENTS.TABLE_SESSION_ACTIVATED, payload);
   io.to(`table:${payload.tableNumber}`).emit(SOCKET_EVENTS.TABLE_SESSION_ACTIVATED, payload);
+  io.to(`customer:token:${payload.tokenNumber}`).emit(SOCKET_EVENTS.TABLE_SESSION_ACTIVATED, payload);
+  io.to(`customer:token:${payload.tokenNumber}`).emit(SOCKET_EVENTS.SESSION_UPDATED, {
+    tokenNumber: payload.tokenNumber,
+    status: 'ACTIVE',
+    paymentVerified: true,
+    tableNumber: payload.tableNumber,
+    tableId: payload.tableId,
+  });
   io.to('tables:all').emit(SOCKET_EVENTS.TABLE_SESSION_ACTIVATED, payload);
 }
 

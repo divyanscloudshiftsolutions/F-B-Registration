@@ -338,6 +338,7 @@ class ApiService {
         email?: string;
         tableNumber?: string | null;
         tableId?: string | null;
+        tableStatus?: string | null;
         placeType?: string;
         personsCount?: number;
         startTime?: string;
@@ -772,6 +773,20 @@ class ApiService {
 
   async requestBill(tokenNumberOrId: string) {
     return this.request<{ success: boolean; bill: any; calculated: any }>('/bills/request', {
+      method: 'POST',
+      body: JSON.stringify({ tokenNumber: tokenNumberOrId }),
+    });
+  }
+
+  async initiateBillSettlement(tokenNumberOrId: string) {
+    return this.request<{ success: boolean; tableStatus: string; tableId: string; tableNumber: string; calculated: any }>('/bills/initiate-settlement', {
+      method: 'POST',
+      body: JSON.stringify({ tokenNumber: tokenNumberOrId }),
+    });
+  }
+
+  async cancelBillSettlement(tokenNumberOrId: string) {
+    return this.request<{ success: boolean; tableStatus: string; tableId?: string; tableNumber?: string }>('/bills/cancel-settlement', {
       method: 'POST',
       body: JSON.stringify({ tokenNumber: tokenNumberOrId }),
     });

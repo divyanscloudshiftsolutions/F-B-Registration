@@ -326,6 +326,107 @@ export class BillingService {
   }
 
   /**
+   * Initiate Settlement: locks ordering for the table and sets table status to SETTLING
+   */
+  async initiateSettlement(tokenNumberOrId: string) {
+    const calc = await this.calculateBill(tokenNumberOrId);
+
+    const unservedCount = (calc.items || []).filter(
+      (it: any) => it.status !== 'SERVED' && it.status !== 'CANCELLED'
+    ).length;
+
+    if (unservedCount > 0) {
+      throw new Error(`Cannot initiate settlement. There are ${unservedCount} unserved item(s). All items must be SERVED or CANCELLED before proceeding to payment.`);
+    }
+
+    const token = await prisma.token.findUnique({
+      where: { id: calc.tokenId },
+      include: { table: true },
+    });
+
+    if (!token) throw new Error('Token not found');
+    if (token.status === 'CLOSED' || token.status === 'CANCELLED') {
+      throw new Error(`Cannot initiate settlement for a session with status ${token.status}`);
+    }
+    if (!token.tableId) {
+      throw new Error('No active table assigned to this dining session');
+    }
+
+    await prisma.table.update({
+      where: { id: token.tableId },
+      data: {
+        status: 'SETTLING',
+      },
+    });
+
+    try {
+      broadcastTableUpdated({
+        tableId: token.tableId,
+        tableNumber: calc.tableNumber,
+        status: 'SETTLING',
+        currentTokenId: token.id,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('Failed to broadcast settlement initiation:', err);
+    }
+
+    return {
+      success: true,
+      tableStatus: 'SETTLING',
+      tableId: token.tableId,
+      tableNumber: calc.tableNumber,
+      calculated: calc,
+    };
+  }
+
+  /**
+   * Cancel Settlement: returns table status to BILL_REQUESTED (unlocking ordering if unpaid)
+   */
+  async cancelSettlement(tokenNumberOrId: string) {
+    const calc = await this.calculateBill(tokenNumberOrId);
+
+    const token = await prisma.token.findUnique({
+      where: { id: calc.tokenId },
+      include: { table: true },
+    });
+
+    if (!token) throw new Error('Token not found');
+    if (token.status === 'CLOSED') {
+      return { success: false, message: 'Session is already settled and closed' };
+    }
+    if (!token.tableId) {
+      throw new Error('No active table assigned to this dining session');
+    }
+
+    await prisma.table.update({
+      where: { id: token.tableId },
+      data: {
+        status: 'BILL_REQUESTED',
+      },
+    });
+
+    try {
+      broadcastTableUpdated({
+        tableId: token.tableId,
+        tableNumber: calc.tableNumber,
+        status: 'BILL_REQUESTED',
+        currentTokenId: token.id,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('Failed to broadcast settlement cancellation:', err);
+    }
+
+    return {
+      success: true,
+      tableStatus: 'BILL_REQUESTED',
+      tableId: token.tableId,
+      tableNumber: calc.tableNumber,
+    };
+  }
+
+  /**
    * Settle Bill, collect remaining payment, and trigger complete table turnover
    */
   async settleBill(input: {
@@ -335,6 +436,15 @@ export class BillingService {
     settlementReference?: string;
   }) {
     const calc = await this.calculateBill(input.tokenNumberOrId);
+
+    // Enforce unserved items check authoritatively
+    const unservedCount = (calc.items || []).filter(
+      (it: any) => it.status !== 'SERVED' && it.status !== 'CANCELLED'
+    ).length;
+
+    if (unservedCount > 0) {
+      throw new Error(`Cannot settle bill. There are ${unservedCount} unserved item(s). All items must be SERVED or CANCELLED before payment confirmation.`);
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       const token = await tx.token.findUnique({
@@ -587,10 +697,10 @@ export class BillingService {
       });
     }
 
-    // 2. Tables in BILL_REQUESTED status that may not have a Bill record yet
+    // 2. Tables in BILL_REQUESTED or SETTLING status that may not have a Bill record yet
     const billRequestedTables = await prisma.table.findMany({
       where: {
-        status: 'BILL_REQUESTED',
+        status: { in: ['BILL_REQUESTED', 'SETTLING'] },
         id: { notIn: Array.from(processedTableIds) },
       },
       include: {
