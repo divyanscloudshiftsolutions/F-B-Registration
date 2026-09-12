@@ -129,25 +129,22 @@ export class TokenService {
         orConditions.push({ customer: { email: finalEmail } });
       }
 
-      const activeOrPendingToken = await tx.token.findFirst({
+      const activeToken = await tx.token.findFirst({
         where: {
           OR: orConditions,
           status: {
-            in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT]
-          }
+            in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED]
+          },
+          paymentVerified: true
         },
         include: { customer: true }
       });
 
-      if (activeOrPendingToken) {
-        const isPending = activeOrPendingToken.status === TokenStatus.PENDING_PAYMENT;
-        const msg = isPending
-          ? `A pending payment session already exists for this customer (Phone: ${activeOrPendingToken.customer.phoneNumber}, Email: ${activeOrPendingToken.customer.email || 'N/A'}).`
-          : `Customer already has an active session (Phone: ${activeOrPendingToken.customer.phoneNumber}, Email: ${activeOrPendingToken.customer.email || 'N/A'}).`;
-        
+      if (activeToken) {
+        const msg = `Customer already has an active session (Phone: ${activeToken.customer.phoneNumber}, Email: ${activeToken.customer.email || 'N/A'}).`;
         const err = new Error(msg) as any;
-        err.code = isPending ? 'PENDING_SESSION_EXISTS' : 'ACTIVE_SESSION_EXISTS';
-        err.tokenNumber = activeOrPendingToken.tokenNumber;
+        err.code = 'ACTIVE_SESSION_EXISTS';
+        err.tokenNumber = activeToken.tokenNumber;
         throw err;
       }
 
@@ -196,13 +193,43 @@ export class TokenService {
         throw new Error('Table not found');
       }
 
-      if (table.status === 'in_checkin' && request.issuedBy) {
+      const tblStatus = (table.status || '').toLowerCase();
+      if (tblStatus === 'occupied') {
+        throw new Error(`Table ${table.tableNumber} is currently occupied.`);
+      }
+
+      if (tblStatus === 'reserved') {
+        const activeRes = await tx.reservation.findFirst({
+          where: { tableId: table.id, status: 'PENDING' },
+          include: { user: true }
+        });
+        if (activeRes && activeRes.userId && request.issuedBy && activeRes.userId !== request.issuedBy) {
+          const issuingUser = await tx.user.findUnique({
+            where: { id: request.issuedBy },
+            include: { role: true }
+          });
+          const roleName = (issuingUser?.role?.name || '').toLowerCase();
+          if (roleName !== 'admin' && roleName !== 'manager') {
+            const resOwner = activeRes.user?.fullName || activeRes.user?.username || activeRes.customerName || 'another user';
+            throw new Error(`Table ${table.tableNumber} is reserved by ${resOwner}.`);
+          }
+        }
+      }
+
+      if (tblStatus === 'in_checkin' && request.issuedBy) {
         const lockKey = `table:lock:${table.id}`;
         const lockDataStr = await redisService.get(lockKey);
         if (lockDataStr) {
           const lockData = JSON.parse(lockDataStr);
-          if (lockData.lockedBy !== request.issuedBy) {
-            throw new Error(`Table ${table.tableNumber} is already taken by another user.`);
+          if (lockData.lockedBy && lockData.lockedBy !== request.issuedBy) {
+            const lockingUser = await tx.user.findUnique({
+              where: { id: request.issuedBy },
+              include: { role: true }
+            });
+            const roleName = (lockingUser?.role?.name || '').toLowerCase();
+            if (roleName !== 'admin' && roleName !== 'manager') {
+              throw new Error(`Table ${table.tableNumber} is already taken by another user.`);
+            }
           }
         }
       }
@@ -267,22 +294,12 @@ export class TokenService {
       });
 
       // Note: Table status and occupancy logs are updated automatically by trigger in PostgreSQL!
-      if (request.tableId) {
-        await tx.reservation.updateMany({
-          where: {
-            tableId: request.tableId,
-            status: 'PENDING'
-          },
-          data: {
-            status: 'ASSIGNED'
-          }
-        });
-      }
 
       // Invalidate caches manually to keep in sync
       await redisService.del(`table:available:${request.placeTypeId}`);
       await redisService.del('table:available:all');
       await redisService.del(`table:${request.tableId}:status`);
+      await redisService.del(`table:lock:${request.tableId}`).catch(() => {});
 
       // Cache token
       await redisService.setex(
@@ -893,7 +910,7 @@ export class TokenService {
     const tokenNumber = await this.generateTokenNumber();
     const start = new Date();
 
-    return await prisma.$transaction(async (tx) => {
+    const token = await prisma.$transaction(async (tx) => {
       // Check for existing active or pending sessions by phone or email
       const orConditions: any[] = [
         { customer: { phoneNumber: finalPhoneNumber } }
@@ -902,26 +919,45 @@ export class TokenService {
         orConditions.push({ customer: { email: finalEmail } });
       }
 
-      const activeOrPendingToken = await tx.token.findFirst({
+      const activeToken = await tx.token.findFirst({
         where: {
           OR: orConditions,
           status: {
-            in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT]
-          }
+            in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED]
+          },
+          paymentVerified: true
         },
         include: { customer: true }
       });
 
-      if (activeOrPendingToken) {
-        const isPending = activeOrPendingToken.status === TokenStatus.PENDING_PAYMENT;
-        const msg = isPending
-          ? `A pending payment session already exists for this customer (Phone: ${activeOrPendingToken.customer.phoneNumber}, Email: ${activeOrPendingToken.customer.email || 'N/A'}).`
-          : `Customer already has an active session (Phone: ${activeOrPendingToken.customer.phoneNumber}, Email: ${activeOrPendingToken.customer.email || 'N/A'}).`;
-        
+      if (activeToken) {
+        const msg = `Customer already has an active session (Phone: ${activeToken.customer.phoneNumber}, Email: ${activeToken.customer.email || 'N/A'}).`;
         const err = new Error(msg) as any;
-        err.code = isPending ? 'PENDING_SESSION_EXISTS' : 'ACTIVE_SESSION_EXISTS';
-        err.tokenNumber = activeOrPendingToken.tokenNumber;
+        err.code = 'ACTIVE_SESSION_EXISTS';
+        err.tokenNumber = activeToken.tokenNumber;
         throw err;
+      }
+
+      // Automatically cancel any stale unpaid pending tokens for this customer/phone/email
+      const stalePendingTokens = await tx.token.findMany({
+        where: {
+          OR: orConditions,
+          status: TokenStatus.PENDING_PAYMENT,
+          paymentVerified: false
+        }
+      });
+
+      for (const staleToken of stalePendingTokens) {
+        await tx.token.update({
+          where: { id: staleToken.id },
+          data: {
+            status: TokenStatus.CANCELLED,
+            cancelledAt: start,
+            cancelledBy: request.issuedBy || 'SYSTEM',
+            cancelReason: CancelReason.SESSION_RESTARTED
+          }
+        });
+        await redisService.del(`token:${staleToken.tokenNumber}`).catch(() => {});
       }
 
       // Get or create customer
@@ -989,7 +1025,8 @@ export class TokenService {
         if (!table) {
           throw new Error('Table not found or does not match selected place type.');
         }
-        if (table.status !== 'available' && table.status !== 'in_checkin') {
+        const currentStatus = (table.status || '').toLowerCase();
+        if (currentStatus !== 'available' && currentStatus !== 'in_checkin') {
           throw new Error(`Table '${table.tableNumber}' is not available.`);
         }
         if (request.personsCount > table.capacity) {
@@ -1028,13 +1065,8 @@ export class TokenService {
       // Decoupled table occupancy from pending check-ins until payment is confirmed.
       // Table remains available; tableId is only stored on the token preference.
 
-      // Cache token and customer active status
+      // Cache token
       await redisService.setex(`token:${tokenNumber}`, 86400, JSON.stringify(token));
-      await redisService.setex(
-        `customer:active:${request.phoneNumber}`,
-        86400,
-        JSON.stringify({ tokenId: token.id, tokenNumber })
-      );
 
       if (resolvedTableId) {
         await redisService.del(`table:available:${request.placeTypeId}`);
@@ -1044,6 +1076,16 @@ export class TokenService {
 
       return token;
     }, { timeout: 15000 });
+
+    if (token.deliveryMode === 'EMAIL_QR' && token.customer?.email) {
+      emailNotificationService.enqueueEmailJob(
+        token.customer.email.trim().toLowerCase(),
+        token.tokenNumber,
+        token.customer.name
+      );
+    }
+
+    return token;
   }
 
   async activatePendingSession(
@@ -1102,22 +1144,20 @@ export class TokenService {
         orConditions.push({ customer: { email: customerRecord.email.trim().toLowerCase() } });
       }
 
-      const otherActiveOrPendingToken = await tx.token.findFirst({
+      const otherActiveToken = await tx.token.findFirst({
         where: {
           id: { not: token.id },
           OR: orConditions,
           status: {
-            in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT]
-          }
+            in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED]
+          },
+          paymentVerified: true
         },
         include: { customer: true }
       });
 
-      if (otherActiveOrPendingToken) {
-        const isPending = otherActiveOrPendingToken.status === TokenStatus.PENDING_PAYMENT;
-        const msg = isPending
-          ? `A pending payment session already exists for this customer (Phone: ${otherActiveOrPendingToken.customer.phoneNumber}, Email: ${otherActiveOrPendingToken.customer.email || 'N/A'}).`
-          : `Customer already has an active session (Phone: ${otherActiveOrPendingToken.customer.phoneNumber}, Email: ${otherActiveOrPendingToken.customer.email || 'N/A'}).`;
+      if (otherActiveToken) {
+        const msg = `Customer already has an active session (Phone: ${otherActiveToken.customer.phoneNumber}, Email: ${otherActiveToken.customer.email || 'N/A'}).`;
         throw new Error(msg);
       }
 
@@ -1147,7 +1187,8 @@ export class TokenService {
       if (!table) {
         throw new Error(`Table '${tableNumber || 'assigned to token'}' not found.`);
       }
-      if (table.status !== 'available' && table.status !== 'in_checkin' && table.currentTokenId !== token.id) {
+      const tblStatus = (table.status || '').toLowerCase();
+      if (tblStatus !== 'available' && tblStatus !== 'in_checkin' && table.currentTokenId !== token.id) {
         throw new Error(`Table '${tableNumber}' is not available.`);
       }
       if (table.status === 'in_checkin' && activatedBy) {
@@ -1219,27 +1260,24 @@ export class TokenService {
         }
       });
 
-      // 6. Update any pending reservation on this table to ASSIGNED
-      await tx.reservation.updateMany({
-        where: {
-          tableId: table.id,
-          status: 'PENDING'
-        },
-        data: {
-          status: 'ASSIGNED'
-        }
-      });
-
-      // 7. Invalidate caches
+      // 6. Invalidate caches
       await redisService.del(`table:lock:${table.id}`);
       await redisService.del(`table:available:${token.placeTypeId}`);
       await redisService.del('table:available:all');
       await redisService.del(`table:${table.id}:status`);
+      await redisService.del('tokens:active').catch(() => {});
       await redisService.setex(
         `token:${tokenNumber}`,
         86400,
         JSON.stringify(updatedToken)
       );
+      if (updatedToken.customer?.phoneNumber) {
+        await redisService.setex(
+          `customer:active:${updatedToken.customer.phoneNumber}`,
+          86400,
+          JSON.stringify({ tokenId: updatedToken.id, tokenNumber })
+        );
+      }
 
       return updatedToken;
     }, { timeout: 15000 });
@@ -1253,7 +1291,8 @@ export class TokenService {
     const now = new Date();
     return await prisma.$transaction(async (tx) => {
       const token = await tx.token.findUnique({
-        where: { tokenNumber }
+        where: { tokenNumber },
+        include: { customer: true }
       });
       if (!token) {
         throw new Error('Token not found.');
@@ -1276,11 +1315,19 @@ export class TokenService {
 
       if (token.tableId) {
         const table = await tx.table.findUnique({ where: { id: token.tableId } });
-        if (table && table.currentTokenId === token.id) {
+        if (table && (table.currentTokenId === token.id || (table.status || '').toLowerCase() === 'in_checkin')) {
+          let revertedStatus = 'available';
+          const pendingRes = await tx.reservation.findFirst({
+            where: { tableId: token.tableId, status: 'PENDING' }
+          });
+          if (pendingRes) {
+            revertedStatus = 'reserved';
+          }
+
           await tx.table.update({
             where: { id: token.tableId },
             data: {
-              status: 'available',
+              status: revertedStatus,
               currentTokenId: null,
               occupiedSince: null,
               maintenanceStart: null,
@@ -1297,12 +1344,20 @@ export class TokenService {
             data: { vacatedAt: now }
           });
 
+          await redisService.del(`table:lock:${token.tableId}`);
           await redisService.del(`table:${token.tableId}:status`);
+          await redisService.del(`table:available:${table.placeTypeId}`);
+          await redisService.del('table:available:all');
+          await redisService.del('tables:all');
         }
       }
 
       // Invalidate cache
       await redisService.del(`token:${tokenNumber}`);
+      await redisService.del('tokens:active').catch(() => {});
+      if (token.customer?.phoneNumber) {
+        await redisService.del(`customer:active:${token.customer.phoneNumber}`).catch(() => {});
+      }
 
       return updatedToken;
     }, { timeout: 15000 });

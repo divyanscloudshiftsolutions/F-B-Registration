@@ -143,7 +143,7 @@ export class TableService {
       });
 
       if (!table) throw new Error('Table not found');
-      if (table.currentTokenId !== tokenId) {
+      if (table.currentTokenId && table.currentTokenId !== tokenId) {
         throw new Error('Token does not match current table assignment');
       }
 
@@ -157,11 +157,17 @@ export class TableService {
         data: { vacatedAt: new Date() }
       });
 
+      // Check if any remaining PENDING reservation exists for this table
+      const activeRes = await tx.reservation.findFirst({
+        where: { tableId, status: 'PENDING' }
+      });
+      const targetStatus = activeRes ? 'reserved' : 'available';
+
       // Release table
       const updatedTable = await tx.table.update({
         where: { id: tableId },
         data: {
-          status: 'available',
+          status: targetStatus,
           currentTokenId: null,
           occupiedSince: null
         }
@@ -171,6 +177,7 @@ export class TableService {
       await redisService.del(`table:available:${table.placeTypeId}`);
       await redisService.del('table:available:all');
       await redisService.del(`table:${tableId}:status`);
+      await redisService.del(`table:lock:${tableId}`).catch(() => {});
 
       return updatedTable;
     });

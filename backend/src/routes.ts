@@ -1278,8 +1278,13 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
     // Map response keys for compatibility
     const oldTables = await Promise.all(tables.map(async (t) => {
       let lockedBy: string | null = null;
+      let lockedByName: string | null = null;
+      let lockedByUserId: string | null = null;
       let lockedByRole: string | null = null;
       let lockedAt: number | null = null;
+      let reservedBy: string | null = null;
+      let reservedByName: string | null = null;
+      let reservedByUserId: string | null = null;
 
       if (t.status === 'in_checkin' || t.status === 'maintenance') {
         const lockKey = `table:lock:${t.id}`;
@@ -1288,9 +1293,23 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
           try {
             const parsed = JSON.parse(lockDataStr);
             lockedBy = parsed.lockedByName || parsed.lockedBy || null;
+            lockedByName = parsed.lockedByName || parsed.lockedBy || null;
+            lockedByUserId = parsed.lockedByUserId || parsed.lockedBy || null;
             lockedByRole = parsed.lockedByRole || null;
             lockedAt = parsed.lockedAt || null;
           } catch {}
+        }
+      }
+
+      if (t.status === 'reserved') {
+        const activeRes = await prisma.reservation.findFirst({
+          where: { tableId: t.id, status: 'PENDING' },
+          include: { user: true }
+        }).catch(() => null);
+        if (activeRes) {
+          reservedBy = activeRes.user?.fullName || activeRes.user?.username || activeRes.customerName || 'Staff';
+          reservedByName = activeRes.user?.fullName || activeRes.user?.username || activeRes.customerName || 'Staff';
+          reservedByUserId = activeRes.userId || null;
         }
       }
 
@@ -1320,8 +1339,13 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
         } : null,
         isBillRequested: isBillReq,
         lockedBy: lockedBy || (t.status === 'maintenance' ? 'Administrator' : t.status === 'in_checkin' ? 'Receptionist' : null),
+        lockedByName: lockedByName || lockedBy || (t.status === 'maintenance' ? 'Administrator' : t.status === 'in_checkin' ? 'Receptionist' : null),
+        lockedByUserId: lockedByUserId || null,
         lockedByRole: lockedByRole || (t.status === 'maintenance' ? 'admin' : t.status === 'in_checkin' ? 'receptionist' : null),
         lockedAt: lockedAt || null,
+        reservedBy: reservedBy || (t.status === 'reserved' ? 'Staff' : null),
+        reservedByName: reservedByName || reservedBy || (t.status === 'reserved' ? 'Staff' : null),
+        reservedByUserId: reservedByUserId || null,
       };
     }));
 
@@ -2085,15 +2109,58 @@ router.post('/tables/:id/lock', authenticate, async (req: AuthenticatedRequest, 
       }
       const table = tables[0];
 
-      // Check current status in DB to ensure it is available or reserved
-      if (table.status !== 'available' && table.status !== 'reserved') {
-        throw new Error(`Table cannot be locked because its current status is '${table.status}'.`);
+      // Check current status in DB to ensure it is available, reserved, or already in_checkin by current owner
+      const tblStatus = (table.status || '').toLowerCase();
+      if (tblStatus !== 'available' && tblStatus !== 'reserved') {
+        if (tblStatus === 'in_checkin') {
+          const lockKey = `table:lock:${id}`;
+          const existingLockStr = await redisService.get(lockKey);
+          let canReacquire = false;
+          if (existingLockStr) {
+            try {
+              const existingLock = JSON.parse(existingLockStr);
+              if (existingLock.lockedBy === userId || existingLock.lockedByUserId === userId) {
+                canReacquire = true;
+              }
+            } catch (e) {}
+          }
+
+          if (!canReacquire) {
+            const customErr = new Error(`Table cannot be locked because it is already locked by another session.`) as any;
+            customErr.statusCode = 409;
+            customErr.code = 'TABLE_STATUS_INVALID';
+            throw customErr;
+          }
+        } else {
+          const customErr = new Error(`Table cannot be locked because its current status is '${table.status}'.`) as any;
+          customErr.statusCode = 409;
+          customErr.code = 'TABLE_STATUS_INVALID';
+          throw customErr;
+        }
+      }
+
+      // If table is reserved, enforce ownership check
+      if (tblStatus === 'reserved') {
+        const activeRes = await tx.reservation.findFirst({
+          where: { tableId: id, status: 'PENDING' },
+          include: { user: true }
+        });
+        const isAdmin = userRole.toLowerCase() === 'admin';
+        const isManager = userRole.toLowerCase() === 'manager';
+        if (activeRes && activeRes.userId && activeRes.userId !== userId && !isAdmin && !isManager) {
+          const resOwner = activeRes.user?.fullName || activeRes.user?.username || activeRes.customerName || 'another user';
+          const customErr = new Error(`You cannot check in this table. It was reserved by ${resOwner}.`) as any;
+          customErr.statusCode = 403;
+          customErr.code = 'RESERVATION_NOT_OWNED';
+          throw customErr;
+        }
       }
 
       // Save lock metadata to Redis (authoritative lock)
       const lockKey = `table:lock:${id}`;
       await redisService.setex(lockKey, 3600, JSON.stringify({
         lockedBy: userId,
+        lockedByUserId: userId,
         lockedByName: userName,
         lockedByRole: userRole,
         originalStatus: table.status,
@@ -2121,6 +2188,10 @@ router.post('/tables/:id/lock', authenticate, async (req: AuthenticatedRequest, 
         status: updatedTable.status,
         currentTokenId: updatedTable.currentTokenId || null,
         occupiedSince: updatedTable.occupiedSince ? updatedTable.occupiedSince.toISOString() : null,
+        lockedBy: userName,
+        lockedByName: userName,
+        lockedByUserId: userId,
+        lockedByRole: userRole,
         updatedAt: new Date().toISOString(),
       });
     } catch (e) {}
@@ -2129,7 +2200,8 @@ router.post('/tables/:id/lock', authenticate, async (req: AuthenticatedRequest, 
   } catch (err: any) {
     const isTechnical = err.message.includes('Prisma') || err.message.includes('queryRaw') || err.message.includes('SQL') || err.message.includes('column') || err.message.includes('relation');
     const friendlyMsg = isTechnical ? 'Failed to lock the table for check-in. Please try again.' : err.message;
-    return res.status(400).json({ success: false, error: { code: 'LOCK_ERR', message: friendlyMsg } });
+    const statusCode = err.statusCode || 400;
+    return res.status(statusCode).json({ success: false, error: { code: err.code || 'LOCK_ERR', message: friendlyMsg } });
   }
 });
 
@@ -2206,12 +2278,35 @@ router.post('/tables/:id/unlock', authenticate, async (req: AuthenticatedRequest
     await redisService.del('tables:all').catch(() => {});
 
     try {
+      let reservedBy: string | null = null;
+      let reservedByName: string | null = null;
+      let reservedByUserId: string | null = null;
+
+      if (updatedTable.status === 'reserved') {
+        const activeRes = await prisma.reservation.findFirst({
+          where: { tableId: updatedTable.id, status: 'PENDING' },
+          include: { user: true }
+        }).catch(() => null);
+        if (activeRes) {
+          reservedBy = activeRes.user?.fullName || activeRes.user?.username || activeRes.customerName || 'Staff';
+          reservedByName = activeRes.user?.fullName || activeRes.user?.username || activeRes.customerName || 'Staff';
+          reservedByUserId = activeRes.userId || null;
+        }
+      }
+
       broadcastTableUpdated({
         tableId: updatedTable.id,
         tableNumber: updatedTable.tableNumber,
         status: updatedTable.status,
         currentTokenId: updatedTable.currentTokenId || null,
         occupiedSince: updatedTable.occupiedSince ? updatedTable.occupiedSince.toISOString() : null,
+        lockedBy: null,
+        lockedByName: null,
+        lockedByUserId: null,
+        lockedByRole: null,
+        reservedBy,
+        reservedByName,
+        reservedByUserId,
         updatedAt: new Date().toISOString(),
       });
     } catch (e) {}
@@ -2223,7 +2318,9 @@ router.post('/tables/:id/unlock', authenticate, async (req: AuthenticatedRequest
 });
 
 router.post('/check-in/validate-duplicate', authenticate, async (req: AuthenticatedRequest, res: Response) => {
-  const { email, phoneNumber, tokenNumber } = req.body;
+  const { email, phoneNumber, tokenNumber, reservationId } = req.body;
+  const currentUserId = req.user?.id || 'session';
+  const currentUserName = req.user?.fullName || req.user?.username || 'User';
 
   const normalizedPhone = normalizePhone(phoneNumber);
   const normalizedEmail = normalizeEmail(email);
@@ -2234,29 +2331,214 @@ router.post('/check-in/validate-duplicate', authenticate, async (req: Authentica
     if (t) excludeTokenId = t.id;
   }
 
-  let emailConflict = false;
-  let phoneConflict = false;
-
-  if (normalizedPhone) {
-    const activePhoneToken = await prisma.token.findFirst({
-      where: {
-        id: excludeTokenId ? { not: excludeTokenId } : undefined,
-        status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
-        customer: { phoneNumber: normalizedPhone }
-      }
-    });
-    if (activePhoneToken) phoneConflict = true;
+  // Manage dynamic user claim cleanup in Redis:
+  // If the user previously held a phone claim that is different from current normalizedPhone (or if current is invalid/empty), delete previous claim
+  const userPhoneKey = `checkin:user:${currentUserId}:phone`;
+  const previousClaimedPhone = await redisService.get(userPhoneKey);
+  if (previousClaimedPhone && previousClaimedPhone !== normalizedPhone) {
+    await redisService.del(`checkin:active:phone:${previousClaimedPhone}`).catch(() => {});
+    await redisService.del(userPhoneKey).catch(() => {});
   }
 
-  if (normalizedEmail) {
-    const activeEmailToken = await prisma.token.findFirst({
-      where: {
-        id: excludeTokenId ? { not: excludeTokenId } : undefined,
-        status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
-        customer: { email: normalizedEmail }
+  // Manage dynamic user email claim cleanup in Redis:
+  const userEmailKey = `checkin:user:${currentUserId}:email`;
+  const previousClaimedEmail = await redisService.get(userEmailKey);
+  if (previousClaimedEmail && previousClaimedEmail !== normalizedEmail) {
+    await redisService.del(`checkin:active:email:${previousClaimedEmail}`).catch(() => {});
+    await redisService.del(userEmailKey).catch(() => {});
+  }
+
+  let emailConflict = false;
+  let phoneConflict = false;
+  let phoneConflictDetail: { type: 'CHECKIN' | 'RESERVATION'; name: string } | null = null;
+  let emailConflictDetail: { type: 'CHECKIN' | 'RESERVATION'; name: string } | null = null;
+  let activeTable: string | null = null;
+  let activeTokenNumber: string | null = null;
+
+  const formatUserName = (user: any, fallback: string) => {
+    if (!user) return fallback;
+    const name = user.fullName || user.username || fallback;
+    const role = user.role ? (user.role === 'admin' ? 'Lead Admin' : user.role === 'manager' ? 'Floor Manager' : user.role === 'receptionist' ? 'Receptionist' : user.role) : '';
+    return role ? `${name} (${role})` : name;
+  };
+
+  const rawPhone = normalizedPhone ? (normalizedPhone.startsWith('+91') ? normalizedPhone.substring(3) : normalizedPhone) : '';
+  const phoneVariants = normalizedPhone ? [normalizedPhone, rawPhone, `+91${rawPhone}`].filter(Boolean) as string[] : [];
+
+  if (rawPhone && rawPhone.length === 10) {
+    // 1. Check in-progress claims in Redis
+    const phoneClaimKey = `checkin:active:phone:${normalizedPhone}`;
+    const rawPhoneClaimKey = `checkin:active:phone:${rawPhone}`;
+    let activeClaimStr = await redisService.get(phoneClaimKey);
+    if (!activeClaimStr) {
+      activeClaimStr = await redisService.get(rawPhoneClaimKey);
+    }
+    if (activeClaimStr) {
+      try {
+        const claim = JSON.parse(activeClaimStr);
+        if (claim.userId && claim.userId !== currentUserId && (!tokenNumber || claim.tokenNumber !== tokenNumber)) {
+          phoneConflict = true;
+          phoneConflictDetail = {
+            type: 'CHECKIN',
+            name: claim.userName || 'another user'
+          };
+        }
+      } catch (e) {}
+    }
+
+    // 2. Check tokens in DB (ACTIVE, EXTENDED, and PENDING_PAYMENT)
+    if (!phoneConflict) {
+      const activePhoneToken = await prisma.token.findFirst({
+        where: {
+          id: excludeTokenId ? { not: excludeTokenId } : undefined,
+          status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
+          customer: { phoneNumber: { in: phoneVariants } }
+        },
+        include: { table: true, customer: true, creator: true }
+      });
+      if (activePhoneToken) {
+        const tokenOwnerName = formatUserName(activePhoneToken.creator, activePhoneToken.customer?.name || 'another user');
+        if (activePhoneToken.status === TokenStatus.PENDING_PAYMENT) {
+          if (activePhoneToken.issuedBy && activePhoneToken.issuedBy !== currentUserId && (!tokenNumber || activePhoneToken.tokenNumber !== tokenNumber)) {
+            phoneConflict = true;
+            phoneConflictDetail = {
+              type: 'CHECKIN',
+              name: tokenOwnerName
+            };
+            activeTable = activePhoneToken.table?.tableNumber || null;
+            activeTokenNumber = activePhoneToken.tokenNumber;
+          }
+        } else {
+          phoneConflict = true;
+          phoneConflictDetail = {
+            type: 'CHECKIN',
+            name: tokenOwnerName
+          };
+          activeTable = activePhoneToken.table?.tableNumber || null;
+          activeTokenNumber = activePhoneToken.tokenNumber;
+        }
       }
-    });
-    if (activeEmailToken) emailConflict = true;
+    }
+
+    // 3. Check pending reservations in DB
+    if (!phoneConflict) {
+      const activeRes = await prisma.reservation.findFirst({
+        where: {
+          id: reservationId ? { not: reservationId } : undefined,
+          status: 'PENDING',
+          phoneNumber: { in: phoneVariants }
+        },
+        include: { table: true, user: true }
+      });
+      if (activeRes) {
+        const resOwnerName = formatUserName(activeRes.user, activeRes.customerName || 'a customer');
+        phoneConflict = true;
+        phoneConflictDetail = {
+          type: 'RESERVATION',
+          name: resOwnerName
+        };
+        if (!activeTable) activeTable = activeRes.table?.tableNumber || null;
+      }
+    }
+
+    // If no conflict, register / refresh in-progress claim in Redis
+    if (!phoneConflict) {
+      const phoneClaimKey = `checkin:active:phone:${normalizedPhone}`;
+      await redisService.setex(phoneClaimKey, 300, JSON.stringify({
+        userId: currentUserId,
+        userName: currentUserName,
+        tokenNumber: tokenNumber || null,
+        reservationId: reservationId || null,
+        timestamp: Date.now()
+      }));
+      await redisService.setex(userPhoneKey, 300, normalizedPhone);
+    }
+  }
+
+  if (normalizedEmail && validateEmail(normalizedEmail)) {
+    // 1. Check in-progress claims in Redis
+    const emailClaimKey = `checkin:active:email:${normalizedEmail}`;
+    const activeClaimStr = await redisService.get(emailClaimKey);
+    if (activeClaimStr) {
+      try {
+        const claim = JSON.parse(activeClaimStr);
+        if (claim.userId && claim.userId !== currentUserId && (!tokenNumber || claim.tokenNumber !== tokenNumber)) {
+          emailConflict = true;
+          emailConflictDetail = {
+            type: 'CHECKIN',
+            name: claim.userName || 'another user'
+          };
+        }
+      } catch (e) {}
+    }
+
+    // 2. Check tokens in DB (ACTIVE, EXTENDED, and PENDING_PAYMENT)
+    if (!emailConflict) {
+      const activeEmailToken = await prisma.token.findFirst({
+        where: {
+          id: excludeTokenId ? { not: excludeTokenId } : undefined,
+          status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
+          customer: { email: { equals: normalizedEmail, mode: 'insensitive' } }
+        },
+        include: { table: true, customer: true, creator: true }
+      });
+      if (activeEmailToken) {
+        const tokenOwnerName = formatUserName(activeEmailToken.creator, activeEmailToken.customer?.name || 'another user');
+        if (activeEmailToken.status === TokenStatus.PENDING_PAYMENT) {
+          if (activeEmailToken.issuedBy && activeEmailToken.issuedBy !== currentUserId && (!tokenNumber || activeEmailToken.tokenNumber !== tokenNumber)) {
+            emailConflict = true;
+            emailConflictDetail = {
+              type: 'CHECKIN',
+              name: tokenOwnerName
+            };
+            if (!activeTable) activeTable = activeEmailToken.table?.tableNumber || null;
+            if (!activeTokenNumber) activeTokenNumber = activeEmailToken.tokenNumber;
+          }
+        } else {
+          emailConflict = true;
+          emailConflictDetail = {
+            type: 'CHECKIN',
+            name: tokenOwnerName
+          };
+          if (!activeTable) activeTable = activeEmailToken.table?.tableNumber || null;
+          if (!activeTokenNumber) activeTokenNumber = activeEmailToken.tokenNumber;
+        }
+      }
+    }
+
+    // 3. Check pending reservations in DB
+    if (!emailConflict) {
+      const activeRes = await prisma.reservation.findFirst({
+        where: {
+          id: reservationId ? { not: reservationId } : undefined,
+          status: 'PENDING',
+          email: { equals: normalizedEmail, mode: 'insensitive' }
+        },
+        include: { table: true, user: true }
+      });
+      if (activeRes) {
+        const resOwnerName = formatUserName(activeRes.user, activeRes.customerName || 'a customer');
+        emailConflict = true;
+        emailConflictDetail = {
+          type: 'RESERVATION',
+          name: resOwnerName
+        };
+        if (!activeTable) activeTable = activeRes.table?.tableNumber || null;
+      }
+    }
+
+    // If no conflict, register / refresh in-progress claim in Redis
+    if (!emailConflict) {
+      const emailClaimKey = `checkin:active:email:${normalizedEmail}`;
+      await redisService.setex(emailClaimKey, 300, JSON.stringify({
+        userId: currentUserId,
+        userName: currentUserName,
+        tokenNumber: tokenNumber || null,
+        reservationId: reservationId || null,
+        timestamp: Date.now()
+      }));
+      await redisService.setex(userEmailKey, 300, normalizedEmail);
+    }
   }
 
   return res.json({
@@ -2264,8 +2546,251 @@ router.post('/check-in/validate-duplicate', authenticate, async (req: Authentica
     conflicts: {
       email: emailConflict,
       phone: phoneConflict
-    }
+    },
+    conflictDetails: {
+      phone: phoneConflictDetail,
+      email: emailConflictDetail
+    },
+    activeTable,
+    tokenNumber: activeTokenNumber
   });
+});
+
+router.post('/check-in/pre-payment-validate', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const { tokenNumber, tableId, phoneNumber, email, reservationId } = req.body;
+  const userId = req.user?.id || 'receptionist';
+  const isAdmin = req.user?.role?.toLowerCase() === 'admin';
+  const isManager = req.user?.role?.toLowerCase() === 'manager';
+
+  const formatUserName = (user: any, fallback: string) => {
+    if (!user) return fallback;
+    const name = user.fullName || user.username || fallback;
+    const role = user.role ? (user.role === 'admin' ? 'Lead Admin' : user.role === 'manager' ? 'Floor Manager' : user.role === 'receptionist' ? 'Receptionist' : user.role) : '';
+    return role ? `${name} (${role})` : name;
+  };
+
+  try {
+    const normalizedPhone = phoneNumber ? normalizePhone(phoneNumber) : null;
+    const normalizedEmail = email ? normalizeEmail(email) : null;
+    const rawPhone = normalizedPhone ? (normalizedPhone.startsWith('+91') ? normalizedPhone.substring(3) : normalizedPhone) : null;
+    const phoneVariants = normalizedPhone ? [normalizedPhone, rawPhone, `+91${rawPhone}`].filter(Boolean) as string[] : [];
+
+    let excludeTokenId: string | undefined;
+    if (tokenNumber) {
+      const token = await prisma.token.findUnique({
+        where: { tokenNumber },
+        include: { table: true, customer: true }
+      });
+      if (!token) {
+        return res.status(400).json({
+          success: false,
+          valid: false,
+          conflictType: 'TOKEN',
+          message: 'Token not found or has been expired.',
+          redirectStage: 1
+        });
+      }
+      if (token.status === TokenStatus.CANCELLED || token.status === TokenStatus.EXPIRED || token.status === TokenStatus.CLOSED) {
+        return res.status(400).json({
+          success: false,
+          valid: false,
+          conflictType: 'TOKEN',
+          message: 'This check-in session was cancelled or expired. Please start a new check-in.',
+          redirectStage: 1
+        });
+      }
+      excludeTokenId = token.id;
+    }
+
+    // 1. Validate Phone Number uniqueness against other active sessions, in-progress claims, and pending reservations
+    if (normalizedPhone) {
+      const phoneClaimKey = `checkin:active:phone:${normalizedPhone}`;
+      const rawPhoneClaimKey = rawPhone ? `checkin:active:phone:${rawPhone}` : null;
+      let activeClaimStr = await redisService.get(phoneClaimKey);
+      if (!activeClaimStr && rawPhoneClaimKey) {
+        activeClaimStr = await redisService.get(rawPhoneClaimKey);
+      }
+      if (activeClaimStr) {
+        try {
+          const claim = JSON.parse(activeClaimStr);
+          if (claim.userId && claim.userId !== userId && (!tokenNumber || claim.tokenNumber !== tokenNumber)) {
+            const claimUser = claim.userName || 'another user';
+            return res.status(409).json({
+              success: false,
+              valid: false,
+              conflictType: 'PHONE',
+              message: `This phone number is currently being used by ${claimUser}.`,
+              redirectStage: 1
+            });
+          }
+        } catch (e) {}
+      }
+
+      const conflictingPhoneToken = await prisma.token.findFirst({
+        where: {
+          id: excludeTokenId ? { not: excludeTokenId } : undefined,
+          status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
+          customer: { phoneNumber: { in: phoneVariants } }
+        },
+        include: { customer: true, creator: true }
+      });
+      if (conflictingPhoneToken) {
+        const tokenUser = formatUserName(conflictingPhoneToken.creator, conflictingPhoneToken.customer?.name || 'another user');
+        return res.status(409).json({
+          success: false,
+          valid: false,
+          conflictType: 'PHONE',
+          message: `This phone number is currently being used by ${tokenUser}.`,
+          redirectStage: 1
+        });
+      }
+
+      const conflictingPhoneRes = await prisma.reservation.findFirst({
+        where: {
+          id: reservationId ? { not: reservationId } : undefined,
+          status: 'PENDING',
+          phoneNumber: { in: phoneVariants }
+        },
+        include: { user: true }
+      });
+      if (conflictingPhoneRes) {
+        const resUser = formatUserName(conflictingPhoneRes.user, conflictingPhoneRes.customerName || 'a customer');
+        return res.status(409).json({
+          success: false,
+          valid: false,
+          conflictType: 'PHONE',
+          message: `This phone number is already reserved by ${resUser}.`,
+          redirectStage: 1
+        });
+      }
+    }
+
+    // 2. Validate Email uniqueness against other active sessions, in-progress claims, and pending reservations
+    if (normalizedEmail) {
+      const emailClaimKey = `checkin:active:email:${normalizedEmail}`;
+      const activeEmailClaimStr = await redisService.get(emailClaimKey);
+      if (activeEmailClaimStr) {
+        try {
+          const claim = JSON.parse(activeEmailClaimStr);
+          if (claim.userId && claim.userId !== userId && (!tokenNumber || claim.tokenNumber !== tokenNumber)) {
+            const claimUser = claim.userName || 'another user';
+            return res.status(409).json({
+              success: false,
+              valid: false,
+              conflictType: 'EMAIL',
+              message: `This email address is currently being used by ${claimUser}.`,
+              redirectStage: 1
+            });
+          }
+        } catch (e) {}
+      }
+
+      const conflictingEmailToken = await prisma.token.findFirst({
+        where: {
+          id: excludeTokenId ? { not: excludeTokenId } : undefined,
+          status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
+          customer: { email: { equals: normalizedEmail, mode: 'insensitive' } }
+        },
+        include: { customer: true, creator: true }
+      });
+      if (conflictingEmailToken) {
+        const tokenUser = formatUserName(conflictingEmailToken.creator, conflictingEmailToken.customer?.name || 'another user');
+        return res.status(409).json({
+          success: false,
+          valid: false,
+          conflictType: 'EMAIL',
+          message: `This email address is currently being used by ${tokenUser}.`,
+          redirectStage: 1
+        });
+      }
+
+      const conflictingEmailRes = await prisma.reservation.findFirst({
+        where: {
+          id: reservationId ? { not: reservationId } : undefined,
+          status: 'PENDING',
+          email: { equals: normalizedEmail, mode: 'insensitive' }
+        },
+        include: { user: true }
+      });
+      if (conflictingEmailRes) {
+        const resUser = formatUserName(conflictingEmailRes.user, conflictingEmailRes.customerName || 'a customer');
+        return res.status(409).json({
+          success: false,
+          valid: false,
+          conflictType: 'EMAIL',
+          message: `This email address is already reserved by ${resUser}.`,
+          redirectStage: 1
+        });
+      }
+    }
+
+    // 3. Validate Table availability and lock ownership
+    if (tableId) {
+      const table = await prisma.table.findUnique({ where: { id: tableId } });
+      if (!table) {
+        return res.status(400).json({
+          success: false,
+          valid: false,
+          conflictType: 'TABLE',
+          message: 'The selected table was not found. Please select an available table.',
+          redirectStage: 2
+        });
+      }
+
+      const tblStatus = (table.status || '').toLowerCase();
+      if (tblStatus === 'occupied') {
+        return res.status(409).json({
+          success: false,
+          valid: false,
+          conflictType: 'TABLE',
+          message: 'The selected table is already occupied by another session. Please select another table.',
+          redirectStage: 2
+        });
+      }
+
+      // Check table reservation ownership if table is reserved
+      if (tblStatus === 'reserved') {
+        const activeRes = await prisma.reservation.findFirst({
+          where: { tableId: tableId, status: 'PENDING' },
+          include: { user: true }
+        });
+        if (activeRes && activeRes.userId && activeRes.userId !== userId && !isAdmin && !isManager) {
+          const resUser = formatUserName(activeRes.user, activeRes.customerName || 'another user');
+          return res.status(409).json({
+            success: false,
+            valid: false,
+            conflictType: 'TABLE',
+            message: `The selected table is reserved by ${resUser}. Please select another table.`,
+            redirectStage: 2
+          });
+        }
+      }
+
+      // Check Redis lock ownership if table is in_checkin
+      if (tblStatus === 'in_checkin') {
+        const lockKey = `table:lock:${tableId}`;
+        const lockStr = await redisService.get(lockKey);
+        if (lockStr) {
+          try {
+            const lockData = JSON.parse(lockStr);
+            if (lockData.lockedBy && lockData.lockedBy !== userId && !isAdmin && !isManager) {
+              return res.status(409).json({
+                success: false,
+                valid: false,
+                conflictType: 'TABLE',
+                message: 'The selected table is currently locked by another receptionist. Please select another table.',
+                redirectStage: 2
+              });
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
+    return res.json({ success: true, valid: true });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, valid: false, message: err.message, redirectStage: 1 });
+  }
 });
 
 // ==========================================
@@ -2546,8 +3071,9 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
         where: {
           id: { not: existingToken.id },
           status: {
-            in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT]
+            in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED]
           },
+          paymentVerified: true,
           OR: [
             { customer: { phoneNumber: finalPhoneNumber } },
             finalEmail ? { customer: { email: finalEmail } } : undefined
@@ -2557,10 +3083,7 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
       });
 
       if (otherActiveOrPendingToken) {
-        const isPending = otherActiveOrPendingToken.status === TokenStatus.PENDING_PAYMENT;
-        const msg = isPending
-          ? `A pending payment session already exists for this customer (Phone: ${otherActiveOrPendingToken.customer.phoneNumber}, Email: ${otherActiveOrPendingToken.customer.email || 'N/A'}).`
-          : `Customer already has an active session (Phone: ${otherActiveOrPendingToken.customer.phoneNumber}, Email: ${otherActiveOrPendingToken.customer.email || 'N/A'}).`;
+        const msg = `Customer already has an active session (Phone: ${otherActiveOrPendingToken.customer.phoneNumber}, Email: ${otherActiveOrPendingToken.customer.email || 'N/A'}).`;
         return res.status(400).json({
           success: false,
           error: {
@@ -2594,7 +3117,8 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
         if (!table) {
           return res.status(404).json({ success: false, error: { message: `Table ${tableNumber} not found` } });
         }
-        if (table.status !== 'available' && table.status !== 'in_checkin' && table.currentTokenId !== existingToken.id) {
+        const tblStatus = (table.status || '').toLowerCase();
+        if (tblStatus !== 'available' && tblStatus !== 'in_checkin' && table.currentTokenId !== existingToken.id) {
           return res.status(400).json({ success: false, error: { message: `Table ${tableNumber} is not available.` } });
         }
         resolvedTableId = table.id;
@@ -2624,6 +3148,18 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
 
       // Sync Redis cache
       await redisService.setex(`token:${tokenNumber}`, 86400, JSON.stringify(updatedToken));
+
+      if (updatedToken.deliveryMode === 'EMAIL_QR' && updatedToken.customer?.email) {
+        await prisma.token.update({
+          where: { id: updatedToken.id },
+          data: { emailDeliveryStatus: 'PENDING' }
+        }).catch(() => {});
+        emailNotificationService.enqueueEmailJob(
+          updatedToken.customer.email.trim().toLowerCase(),
+          updatedToken.tokenNumber,
+          updatedToken.customer.name
+        );
+      }
 
       const responseData = {
         id: updatedToken.id,
@@ -2659,6 +3195,44 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
     if (!finalIssuedBy) {
       const fallbackUser = await prisma.user.findFirst({ where: { role: { name: 'receptionist' } } });
       finalIssuedBy = fallbackUser?.id || (await prisma.user.findFirst())?.id || '';
+    }
+
+    // Authoritative check against concurrent in-progress Check-In processes
+    const currentUserId = req.user?.id || 'receptionist';
+    const phoneClaimKey = `checkin:active:phone:${finalPhoneNumber}`;
+    const activeClaimStr = await redisService.get(phoneClaimKey);
+    if (activeClaimStr) {
+      try {
+        const claim = JSON.parse(activeClaimStr);
+        if (claim.userId && claim.userId !== currentUserId) {
+          return res.status(409).json({
+            success: false,
+            error: {
+              code: 'CONFLICT_IN_PROGRESS',
+              message: 'This phone number is currently being used in another Check-In process.'
+            }
+          });
+        }
+      } catch (e) {}
+    }
+
+    if (finalEmail) {
+      const emailClaimKey = `checkin:active:email:${finalEmail}`;
+      const activeEmailClaimStr = await redisService.get(emailClaimKey);
+      if (activeEmailClaimStr) {
+        try {
+          const claim = JSON.parse(activeEmailClaimStr);
+          if (claim.userId && claim.userId !== currentUserId) {
+            return res.status(409).json({
+              success: false,
+              error: {
+                code: 'CONFLICT_IN_PROGRESS',
+                message: 'This email address is currently being used in another Check-In process.'
+              }
+            });
+          }
+        } catch (e) {}
+      }
     }
 
     const token = await tokenService.createPendingToken({
@@ -2892,6 +3466,155 @@ const activateSessionHandler = async (req: AuthenticatedRequest, res: Response) 
   }
 };
 
+const stopCheckInHandler = async (req: AuthenticatedRequest, res: Response) => {
+  const { reservationId, tokenNumber, tableId, phoneNumber, email } = req.body;
+  const userId = req.user?.id || 'receptionist';
+  const isAdmin = req.user?.role?.toLowerCase() === 'admin';
+  const isManager = req.user?.role?.toLowerCase() === 'manager';
+
+  try {
+    const normalizedPhone = phoneNumber ? normalizePhone(phoneNumber) : null;
+    const normalizedEmail = email ? normalizeEmail(email) : null;
+    const tablesToRelease = new Set<string>();
+
+    if (tableId && isValidUUID(tableId)) {
+      tablesToRelease.add(tableId);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Terminate pending token / session (Scoped strictly to check-in session)
+      if (tokenNumber) {
+        const token = await tx.token.findUnique({
+          where: { tokenNumber },
+          include: { customer: true }
+        });
+        if (token && token.status === TokenStatus.PENDING_PAYMENT) {
+          await tx.token.update({
+            where: { id: token.id },
+            data: {
+              status: TokenStatus.CANCELLED,
+              cancelledAt: new Date(),
+              cancelledBy: userId,
+              cancelReason: CancelReason.USER_CANCELLED
+            }
+          });
+          if (token.tableId) {
+            tablesToRelease.add(token.tableId);
+          }
+        }
+      } else if (normalizedPhone) {
+        const pendingTokens = await tx.token.findMany({
+          where: {
+            status: TokenStatus.PENDING_PAYMENT,
+            customer: { phoneNumber: normalizedPhone }
+          }
+        });
+        for (const pt of pendingTokens) {
+          await tx.token.update({
+            where: { id: pt.id },
+            data: {
+              status: TokenStatus.CANCELLED,
+              cancelledAt: new Date(),
+              cancelledBy: userId,
+              cancelReason: CancelReason.USER_CANCELLED
+            }
+          });
+          if (pt.tableId) {
+            tablesToRelease.add(pt.tableId);
+          }
+        }
+      }
+
+      // 3. Clean up tables
+      for (const tId of tablesToRelease) {
+        const tbl = await tx.table.findUnique({ where: { id: tId } });
+        if (tbl) {
+          // Check if any remaining PENDING reservation exists for this table
+          const activeRes = await tx.reservation.findFirst({
+            where: { tableId: tId, status: 'PENDING' }
+          });
+          const targetStatus = activeRes ? 'reserved' : 'available';
+
+          if (tbl.status === 'in_checkin' || tbl.status === 'reserved') {
+            await tx.table.update({
+              where: { id: tId },
+              data: {
+                status: targetStatus,
+                currentTokenId: null,
+                occupiedSince: null,
+                maintenanceStart: null,
+                maintenanceEnd: null
+              }
+            });
+          }
+        }
+      }
+    });
+
+    // Post-transaction Redis cache clearing & WebSocket broadcasts
+    if (tokenNumber) {
+      await redisService.del(`token:${tokenNumber}`).catch(() => {});
+    }
+    if (normalizedPhone) {
+      await redisService.del(`customer:active:${normalizedPhone}`).catch(() => {});
+      await redisService.del(`checkin:active:phone:${normalizedPhone}`).catch(() => {});
+    }
+    if (normalizedEmail) {
+      await redisService.del(`checkin:active:email:${normalizedEmail}`).catch(() => {});
+    }
+    await redisService.del(`checkin:user:${userId}:phone`).catch(() => {});
+    await redisService.del(`checkin:user:${userId}:email`).catch(() => {});
+    await redisService.del('tokens:active').catch(() => {});
+    await redisService.del('tables:all').catch(() => {});
+    await redisService.del('table:available:all').catch(() => {});
+
+    for (const tId of tablesToRelease) {
+      await redisService.del(`table:lock:${tId}`).catch(() => {});
+      await redisService.del(`table:${tId}:status`).catch(() => {});
+      try {
+        const updatedTbl = await prisma.table.findUnique({ where: { id: tId } });
+        if (updatedTbl) {
+          let reservedBy: string | null = null;
+          let reservedByName: string | null = null;
+          let reservedByUserId: string | null = null;
+
+          if (updatedTbl.status === 'reserved') {
+            const activeRes = await prisma.reservation.findFirst({
+              where: { tableId: updatedTbl.id, status: 'PENDING' },
+              include: { user: true }
+            }).catch(() => null);
+            if (activeRes) {
+              reservedBy = activeRes.user?.fullName || activeRes.user?.username || activeRes.customerName || 'Staff';
+              reservedByName = activeRes.user?.fullName || activeRes.user?.username || activeRes.customerName || 'Staff';
+              reservedByUserId = activeRes.userId || null;
+            }
+          }
+
+          broadcastTableUpdated({
+            tableId: updatedTbl.id,
+            tableNumber: updatedTbl.tableNumber,
+            status: updatedTbl.status,
+            currentTokenId: null,
+            occupiedSince: null,
+            reservedBy,
+            reservedByName,
+            reservedByUserId,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      } catch (e) {}
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Previous incomplete check-in completely terminated and resources released.'
+    });
+  } catch (err: any) {
+    console.error('Error during stopCheckInHandler:', err);
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+};
+
 const cancelSessionHandler = async (req: AuthenticatedRequest, res: Response) => {
   const { tokenNumber, cancelReason } = req.body;
   const cancelledBy = req.user?.id || 'receptionist';
@@ -2901,6 +3624,31 @@ const cancelSessionHandler = async (req: AuthenticatedRequest, res: Response) =>
     const updatedToken = await tokenService.cancelPendingSession(tokenNumber, cancelledBy, cancelEnum);
     await redisService.del('tokens:active').catch(() => {});
     await redisService.del('tables:all').catch(() => {});
+
+    if (updatedToken?.customer?.phoneNumber) {
+      const p = normalizePhone(updatedToken.customer.phoneNumber);
+      await redisService.del(`checkin:active:phone:${p}`).catch(() => {});
+    }
+    if (updatedToken?.customer?.email) {
+      const e = normalizeEmail(updatedToken.customer.email);
+      await redisService.del(`checkin:active:email:${e}`).catch(() => {});
+    }
+
+    if (updatedToken && updatedToken.tableId) {
+      try {
+        const tbl = await prisma.table.findUnique({ where: { id: updatedToken.tableId } });
+        if (tbl) {
+          broadcastTableUpdated({
+            tableId: tbl.id,
+            tableNumber: tbl.tableNumber,
+            status: tbl.status,
+            currentTokenId: null,
+            occupiedSince: null,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      } catch (e) {}
+    }
 
     return res.status(200).json({ success: true, message: 'Session cancelled successfully.', data: updatedToken });
   } catch (err: any) {
@@ -2948,27 +3696,152 @@ router.post('/reservations', authenticate, async (req: AuthenticatedRequest, res
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Verify table exists and is available
-      const table = await tx.table.findUnique({
-        where: { id: tableId }
-      });
+      // Verify table exists and is available using row lock to prevent concurrency conflicts
+      const tables = await tx.$queryRaw<any[]>`
+        SELECT id, status, capacity, "place_type_id" as "placeTypeId", "table_number" as "tableNumber"
+        FROM tables
+        WHERE id = ${tableId}
+        LIMIT 1
+        FOR UPDATE
+      `;
 
-      if (!table) {
+      if (!tables || tables.length === 0) {
         throw new Error('Selected table was not found.');
       }
+      const table = tables[0];
 
       if (parseInt(personsCount, 10) > table.capacity) {
         throw new Error(`Group size of ${personsCount} exceeds table capacity of ${table.capacity}.`);
       }
 
-      if (table.status !== 'available') {
-        throw new Error(`Table ${table.tableNumber} is not available for reservation (current status: ${table.status}).`);
+      const currentStatus = (table.status || '').toLowerCase();
+      if (currentStatus !== 'available') {
+        const customErr = new Error(`Table ${table.tableNumber} is not available for reservation (current status: ${table.status}).`) as any;
+        customErr.statusCode = 409;
+        customErr.code = 'TABLE_NOT_AVAILABLE';
+        throw customErr;
+      }
+
+      const formatUserName = (user: any, fallback: string) => {
+        if (!user) return fallback;
+        const name = user.fullName || user.username || fallback;
+        const role = user.role ? (user.role === 'admin' ? 'Lead Admin' : user.role === 'manager' ? 'Floor Manager' : user.role === 'receptionist' ? 'Receptionist' : user.role) : '';
+        return role ? `${name} (${role})` : name;
+      };
+
+      // Validate customer uniqueness: ensure phone and email are not tied to an active session, in-progress check-in, or another pending reservation
+      if (finalPhone) {
+        const rawFinalPhone = finalPhone.startsWith('+91') ? finalPhone.substring(3) : finalPhone;
+        const phoneVariants = [finalPhone, rawFinalPhone, `+91${rawFinalPhone}`].filter(Boolean);
+
+        // Check active in-progress check-in claim in Redis
+        const phoneClaimKey = `checkin:active:phone:${finalPhone}`;
+        const rawPhoneClaimKey = `checkin:active:phone:${rawFinalPhone}`;
+        let activeClaimStr = await redisService.get(phoneClaimKey);
+        if (!activeClaimStr) {
+          activeClaimStr = await redisService.get(rawPhoneClaimKey);
+        }
+        if (activeClaimStr) {
+          try {
+            const claim = JSON.parse(activeClaimStr);
+            if (claim.userId && claim.userId !== userId) {
+              const claimUser = claim.userName || 'another user';
+              const customErr = new Error(`This phone number is currently being used by ${claimUser}.`) as any;
+              customErr.statusCode = 409;
+              customErr.code = 'PHONE_CONFLICT';
+              throw customErr;
+            }
+          } catch (e: any) {
+            if (e.code === 'PHONE_CONFLICT') throw e;
+          }
+        }
+
+        const conflictingPhoneToken = await tx.token.findFirst({
+          where: {
+            status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
+            customer: { phoneNumber: { in: phoneVariants } }
+          },
+          include: { customer: true, creator: true }
+        });
+        if (conflictingPhoneToken) {
+          const userName = formatUserName(conflictingPhoneToken.creator, conflictingPhoneToken.customer?.name || 'another user');
+          const customErr = new Error(`This phone number is currently being used by ${userName}.`) as any;
+          customErr.statusCode = 409;
+          customErr.code = 'PHONE_CONFLICT';
+          throw customErr;
+        }
+
+        const conflictingPhoneRes = await tx.reservation.findFirst({
+          where: {
+            status: 'PENDING',
+            phoneNumber: { in: phoneVariants }
+          },
+          include: { user: true }
+        });
+        if (conflictingPhoneRes) {
+          const resName = formatUserName(conflictingPhoneRes.user, conflictingPhoneRes.customerName || 'a customer');
+          const customErr = new Error(`This phone number is already reserved by ${resName}.`) as any;
+          customErr.statusCode = 409;
+          customErr.code = 'PHONE_CONFLICT';
+          throw customErr;
+        }
+      }
+
+      if (finalEmail) {
+        // Check active in-progress check-in claim in Redis
+        const emailClaimKey = `checkin:active:email:${finalEmail}`;
+        const activeEmailClaimStr = await redisService.get(emailClaimKey);
+        if (activeEmailClaimStr) {
+          try {
+            const claim = JSON.parse(activeEmailClaimStr);
+            if (claim.userId && claim.userId !== userId) {
+              const claimUser = claim.userName || 'another user';
+              const customErr = new Error(`This email address is currently being used by ${claimUser}.`) as any;
+              customErr.statusCode = 409;
+              customErr.code = 'EMAIL_CONFLICT';
+              throw customErr;
+            }
+          } catch (e: any) {
+            if (e.code === 'EMAIL_CONFLICT') throw e;
+          }
+        }
+
+        const conflictingEmailToken = await tx.token.findFirst({
+          where: {
+            status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
+            customer: { email: { equals: finalEmail, mode: 'insensitive' } }
+          },
+          include: { customer: true, creator: true }
+        });
+        if (conflictingEmailToken) {
+          const userName = formatUserName(conflictingEmailToken.creator, conflictingEmailToken.customer?.name || 'another user');
+          const customErr = new Error(`This email address is currently being used by ${userName}.`) as any;
+          customErr.statusCode = 409;
+          customErr.code = 'EMAIL_CONFLICT';
+          throw customErr;
+        }
+
+        const conflictingEmailRes = await tx.reservation.findFirst({
+          where: {
+            status: 'PENDING',
+            email: { equals: finalEmail, mode: 'insensitive' }
+          },
+          include: { user: true }
+        });
+        if (conflictingEmailRes) {
+          const resName = formatUserName(conflictingEmailRes.user, conflictingEmailRes.customerName || 'a customer');
+          const customErr = new Error(`This email address is already reserved by ${resName}.`) as any;
+          customErr.statusCode = 409;
+          customErr.code = 'EMAIL_CONFLICT';
+          throw customErr;
+        }
       }
 
       // Update table status to reserved
-      await tx.table.update({
+      const updatedTable = await tx.table.update({
         where: { id: tableId },
-        data: { status: 'reserved' }
+        data: { status: 'reserved' },
+        include: { placeType: true }
       });
 
       // Create reservation
@@ -2985,13 +3858,32 @@ router.post('/reservations', authenticate, async (req: AuthenticatedRequest, res
         include: { table: true }
       });
 
-      return reservation;
+      return { reservation, updatedTable };
     });
 
     await redisService.del('tables:all').catch(() => {});
-    return res.status(201).json({ success: true, reservation: result });
+    await redisService.del(`table:available:${result.updatedTable.placeTypeId}`).catch(() => {});
+    await redisService.del('table:available:all').catch(() => {});
+
+    try {
+      broadcastTableUpdated({
+        tableId: result.updatedTable.id,
+        tableNumber: result.updatedTable.tableNumber,
+        status: result.updatedTable.status,
+        currentTokenId: result.updatedTable.currentTokenId || null,
+        occupiedSince: result.updatedTable.occupiedSince ? result.updatedTable.occupiedSince.toISOString() : null,
+        reservedBy: req.user?.fullName || req.user?.username || 'Staff',
+        reservedByName: req.user?.fullName || req.user?.username || 'Staff',
+        reservedByUserId: req.user?.id || null,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (e) {}
+
+    return res.status(201).json({ success: true, reservation: result.reservation });
   } catch (err: any) {
-    return res.status(400).json({ success: false, error: { message: err.message } });
+    const status = err.statusCode || 400;
+    const errorCode = err.code || 'RESERVATION_CREATE_ERR';
+    return res.status(status).json({ success: false, error: { code: errorCode, message: err.message } });
   }
 });
 
@@ -3025,7 +3917,7 @@ router.post('/reservations/:id/cancel', authenticate, async (req: AuthenticatedR
         throw new Error('You do not own this reservation.');
       }
 
-      // If a table is mapped, verify it is not locked for check-in
+      // If a table is mapped, verify it is not already occupied
       if (reservation.tableId) {
         const tables = await tx.$queryRaw<any[]>`
           SELECT id, status
@@ -3036,8 +3928,8 @@ router.post('/reservations/:id/cancel', authenticate, async (req: AuthenticatedR
         `;
         if (tables && tables.length > 0) {
           const table = tables[0];
-          if (table.status === 'in_checkin') {
-            throw new Error('Reservation cannot be cancelled while check-in is in progress.');
+          if ((table.status || '').toLowerCase() === 'occupied') {
+            throw new Error('Reservation cannot be cancelled because the table is currently occupied.');
           }
         }
       }
@@ -3057,6 +3949,39 @@ router.post('/reservations/:id/cancel', authenticate, async (req: AuthenticatedR
       }
     });
 
+    if (id) {
+      const resData = await prisma.reservation.findUnique({
+        where: { id },
+        include: { table: true }
+      }).catch(() => null);
+      if (resData?.tableId) {
+        await redisService.del(`table:lock:${resData.tableId}`).catch(() => {});
+        await redisService.del(`table:${resData.tableId}:status`).catch(() => {});
+        try {
+          broadcastTableUpdated({
+            tableId: resData.tableId,
+            tableNumber: resData.table?.tableNumber || '',
+            status: 'available',
+            currentTokenId: null,
+            occupiedSince: null,
+            reservedBy: null,
+            reservedByName: null,
+            reservedByUserId: null,
+            updatedAt: new Date().toISOString(),
+          });
+        } catch (e) {}
+      }
+      if (resData?.phoneNumber) {
+        const p = normalizePhone(resData.phoneNumber);
+        const rawP = p ? (p.startsWith('+91') ? p.substring(3) : p) : '';
+        if (p) await redisService.del(`checkin:active:phone:${p}`).catch(() => {});
+        if (rawP) await redisService.del(`checkin:active:phone:${rawP}`).catch(() => {});
+      }
+      if (resData?.email) {
+        const e = normalizeEmail(resData.email);
+        if (e) await redisService.del(`checkin:active:email:${e}`).catch(() => {});
+      }
+    }
     await redisService.del('tables:all').catch(() => {});
     return res.json({ success: true, message: 'Reservation cancelled successfully.' });
   } catch (err: any) {
@@ -3072,6 +3997,13 @@ router.put('/reservations/:id', authenticate, async (req: AuthenticatedRequest, 
   const userId = req.user?.id;
   const isAdmin = req.user?.role?.toLowerCase() === 'admin';
   const isManager = req.user?.role?.toLowerCase() === 'manager';
+
+  const formatUserName = (user: any, fallback: string) => {
+    if (!user) return fallback;
+    const name = user.fullName || user.username || fallback;
+    const role = user.role ? (user.role === 'admin' ? 'Lead Admin' : user.role === 'manager' ? 'Floor Manager' : user.role === 'receptionist' ? 'Receptionist' : user.role) : '';
+    return role ? `${name} (${role})` : name;
+  };
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
@@ -3095,6 +4027,115 @@ router.put('/reservations/:id', authenticate, async (req: AuthenticatedRequest, 
       const isClearingTable = tableId === null || tableId === '';
       const targetTableId = isClearingTable ? null : (tableId || reservation.tableId);
 
+      // Validate phone conflict if changed
+      if (finalPhone && finalPhone !== reservation.phoneNumber) {
+        const rawFinalPhone = finalPhone.startsWith('+91') ? finalPhone.substring(3) : finalPhone;
+        const phoneVariants = [finalPhone, rawFinalPhone, `+91${rawFinalPhone}`].filter(Boolean);
+
+        const phoneClaimKey = `checkin:active:phone:${finalPhone}`;
+        const rawPhoneClaimKey = `checkin:active:phone:${rawFinalPhone}`;
+        let activeClaimStr = await redisService.get(phoneClaimKey);
+        if (!activeClaimStr) {
+          activeClaimStr = await redisService.get(rawPhoneClaimKey);
+        }
+        if (activeClaimStr) {
+          try {
+            const claim = JSON.parse(activeClaimStr);
+            if (claim.userId && claim.userId !== userId) {
+              const claimUser = claim.userName || 'another user';
+              const customErr = new Error(`This phone number is currently being used by ${claimUser}.`) as any;
+              customErr.statusCode = 409;
+              customErr.code = 'PHONE_CONFLICT';
+              throw customErr;
+            }
+          } catch (e: any) {
+            if (e.code === 'PHONE_CONFLICT') throw e;
+          }
+        }
+
+        const conflictingPhoneToken = await tx.token.findFirst({
+          where: {
+            status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
+            customer: { phoneNumber: { in: phoneVariants } }
+          },
+          include: { customer: true, creator: true }
+        });
+        if (conflictingPhoneToken) {
+          const userName = formatUserName(conflictingPhoneToken.creator, conflictingPhoneToken.customer?.name || 'another user');
+          const customErr = new Error(`This phone number is currently being used by ${userName}.`) as any;
+          customErr.statusCode = 409;
+          customErr.code = 'PHONE_CONFLICT';
+          throw customErr;
+        }
+
+        const conflictingPhoneRes = await tx.reservation.findFirst({
+          where: {
+            id: { not: id },
+            status: 'PENDING',
+            phoneNumber: { in: phoneVariants }
+          },
+          include: { user: true }
+        });
+        if (conflictingPhoneRes) {
+          const resName = formatUserName(conflictingPhoneRes.user, conflictingPhoneRes.customerName || 'a customer');
+          const customErr = new Error(`This phone number is already reserved by ${resName}.`) as any;
+          customErr.statusCode = 409;
+          customErr.code = 'PHONE_CONFLICT';
+          throw customErr;
+        }
+      }
+
+      // Validate email conflict if changed
+      if (finalEmail && finalEmail !== reservation.email) {
+        const emailClaimKey = `checkin:active:email:${finalEmail}`;
+        const activeEmailClaimStr = await redisService.get(emailClaimKey);
+        if (activeEmailClaimStr) {
+          try {
+            const claim = JSON.parse(activeEmailClaimStr);
+            if (claim.userId && claim.userId !== userId) {
+              const claimUser = claim.userName || 'another user';
+              const customErr = new Error(`This email address is currently being used by ${claimUser}.`) as any;
+              customErr.statusCode = 409;
+              customErr.code = 'EMAIL_CONFLICT';
+              throw customErr;
+            }
+          } catch (e: any) {
+            if (e.code === 'EMAIL_CONFLICT') throw e;
+          }
+        }
+
+        const conflictingEmailToken = await tx.token.findFirst({
+          where: {
+            status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.PENDING_PAYMENT] },
+            customer: { email: { equals: finalEmail, mode: 'insensitive' } }
+          },
+          include: { customer: true, creator: true }
+        });
+        if (conflictingEmailToken) {
+          const userName = formatUserName(conflictingEmailToken.creator, conflictingEmailToken.customer?.name || 'another user');
+          const customErr = new Error(`This email address is currently being used by ${userName}.`) as any;
+          customErr.statusCode = 409;
+          customErr.code = 'EMAIL_CONFLICT';
+          throw customErr;
+        }
+
+        const conflictingEmailRes = await tx.reservation.findFirst({
+          where: {
+            id: { not: id },
+            status: 'PENDING',
+            email: { equals: finalEmail, mode: 'insensitive' }
+          },
+          include: { user: true }
+        });
+        if (conflictingEmailRes) {
+          const resName = formatUserName(conflictingEmailRes.user, conflictingEmailRes.customerName || 'a customer');
+          const customErr = new Error(`This email address is already reserved by ${resName}.`) as any;
+          customErr.statusCode = 409;
+          customErr.code = 'EMAIL_CONFLICT';
+          throw customErr;
+        }
+      }
+
       if (targetTableId) {
         const targetTable = targetTableId === reservation.tableId ? reservation.table : await tx.table.findUnique({ where: { id: targetTableId } });
         if (!targetTable) {
@@ -3111,7 +4152,8 @@ router.put('/reservations/:id', authenticate, async (req: AuthenticatedRequest, 
           if (!newTable) {
             throw new Error('New table not found');
           }
-          if (newTable.status !== 'in_checkin' && newTable.status !== 'available') {
+          const newTblStatus = (newTable.status || '').toLowerCase();
+          if (newTblStatus !== 'in_checkin' && newTblStatus !== 'available') {
             throw new Error('New table is not available or locked for check-in.');
           }
 
@@ -3203,11 +4245,14 @@ router.put('/reservations/:id', authenticate, async (req: AuthenticatedRequest, 
 
 router.post('/reservations/:id/assign', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
+  const userId = req.user?.id;
+  const isAdmin = req.user?.role?.toLowerCase() === 'admin';
+  const isManager = req.user?.role?.toLowerCase() === 'manager';
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const reservations = await tx.$queryRaw<any[]>`
-        SELECT id, status
+        SELECT id, status, "user_id" as "userId"
         FROM reservations
         WHERE id = ${id}
         LIMIT 1
@@ -3223,6 +4268,13 @@ router.post('/reservations/:id/assign', authenticate, async (req: AuthenticatedR
         throw new Error(`Reservation is no longer active (current status: ${reservation.status}).`);
       }
 
+      // Enforce ownership: only owner, Admin, or Manager can assign this reservation
+      if (reservation.userId && reservation.userId !== userId && !isAdmin && !isManager) {
+        const customErr = new Error('You do not own this reservation.') as any;
+        customErr.statusCode = 403;
+        throw customErr;
+      }
+
       const updatedRes = await tx.reservation.update({
         where: { id },
         data: { status: 'ASSIGNED' }
@@ -3236,7 +4288,8 @@ router.post('/reservations/:id/assign', authenticate, async (req: AuthenticatedR
   } catch (err: any) {
     const isTechnical = err.message.includes('Prisma') || err.message.includes('queryRaw') || err.message.includes('SQL') || err.message.includes('column') || err.message.includes('relation');
     const friendlyMsg = isTechnical ? 'Failed to assign the reservation. Please try again.' : err.message;
-    return res.status(400).json({ success: false, error: { message: friendlyMsg } });
+    const statusCode = err.statusCode || 400;
+    return res.status(statusCode).json({ success: false, error: { message: friendlyMsg } });
   }
 });
 
@@ -3283,6 +4336,7 @@ router.get('/check-in/pending-list', authenticate, authorize(['receptionist', 'a
 router.get('/check-in/verify-qr/:tokenNumber', authenticate, authorize(['receptionist', 'admin']), verifyQrHandler);
 router.post('/check-in/activate', authenticate, authorize(['receptionist', 'admin']), activateSessionHandler);
 router.post('/check-in/cancel', authenticate, authorize(['receptionist', 'admin']), cancelSessionHandler);
+router.post('/check-in/stop', authenticate, authorize(['receptionist', 'admin']), stopCheckInHandler);
 
 // Generate QR Base64 or URL
 router.post('/tokens/:id/generate-qr', authenticate, authorize(['receptionist', 'admin']), async (req: Request, res: Response) => {
@@ -3322,12 +4376,12 @@ const sendEmailHandler = async (req: Request, res: Response) => {
     if (!token.customer.email) {
       return res.status(400).json({ success: false, error: { message: 'Customer email is missing' } });
     }
-    if (!token.paymentVerified) {
-      return res.status(400).json({ success: false, error: { message: 'Cannot dispatch customer access email before entry payment verification.' } });
+    if (token.status === TokenStatus.CANCELLED || token.status === TokenStatus.EXPIRED) {
+      return res.status(400).json({ success: false, error: { message: `Cannot dispatch email for token with status ${token.status}` } });
     }
 
     emailNotificationService.enqueueEmailJob(
-      token.customer.email,
+      token.customer.email.trim().toLowerCase(),
       token.tokenNumber,
       token.customer.name
     );
@@ -3454,7 +4508,10 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
 
     await tokenService.reconcileSystemState();
     const activeTokens = await prisma.token.findMany({
-      where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] } },
+      where: {
+        status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] },
+        paymentVerified: true
+      },
       include: { customer: true, placeType: true, table: true },
       orderBy: { startTime: 'desc' },
     });
@@ -4265,11 +5322,21 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
   try {
     const { tokenNumber } = req.params;
     if (!tokenNumber) {
-      return res.status(400).json({ authorized: false, error: 'Token number is required' });
+      return res.status(400).json({ authorized: false, error: 'Access code or token number is required' });
     }
 
-    const token = await prisma.token.findUnique({
-      where: { tokenNumber },
+    let resolvedToken = tokenNumber.trim();
+    // 1. Check if tokenNumber is a cached 6-digit access code in Redis
+    try {
+      const cached = await redisService.get(`customer-code:${resolvedToken}`);
+      if (cached) {
+        resolvedToken = cached;
+      }
+    } catch (e: any) {}
+
+    // 2. Lookup in Prisma Token
+    let token = await prisma.token.findUnique({
+      where: { tokenNumber: resolvedToken },
       include: {
         customer: true,
         table: true,
@@ -4277,10 +5344,29 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
       },
     });
 
+    // 3. Fallback search by suffix / contains (e.g. 5-6 digit suffix of BAR-YYYYMMDD-XXXXX or token ID)
+    if (!token) {
+      token = await prisma.token.findFirst({
+        where: {
+          OR: [
+            { tokenNumber: { endsWith: resolvedToken } },
+            { tokenNumber: { contains: resolvedToken } },
+            { id: resolvedToken },
+          ],
+        },
+        orderBy: { issuedAt: 'desc' },
+        include: {
+          customer: true,
+          table: true,
+          placeType: true,
+        },
+      });
+    }
+
     if (!token) {
       return res.status(404).json({
         authorized: false,
-        error: 'Customer dining session not found. Please contact reception or your waiter.',
+        error: 'Customer dining session not found. Please verify your 6-digit access code or contact reception.',
       });
     }
 
@@ -4370,79 +5456,157 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
   }
 });
 
-// POST /api/customer/recover (Phone-based session recovery with payment check)
+// POST /api/customer/recover (Access-code and phone-based session recovery with payment check)
 router.post('/customer/recover', async (req: Request, res: Response) => {
   try {
-    const { phoneNumber, tableNumber } = req.body;
-    if (!phoneNumber) {
-      return res.status(400).json({ authorized: false, error: 'Phone number is required' });
-    }
+    const { phoneNumber, accessCode, code, tokenNumber, tableNumber } = req.body;
 
-    const cleanedPhone = String(phoneNumber).trim().replace(/[^\d]/g, '').slice(-10);
-    if (cleanedPhone.length !== 10) {
-      return res.status(400).json({ authorized: false, error: 'Please enter a valid 10-digit phone number' });
-    }
+    let targetTokenNumber: string | null = null;
+    const directCode = accessCode || code || tokenNumber;
 
-    const tokens = await prisma.token.findMany({
-      where: {
-        status: { in: ['ACTIVE', 'EXTENDED'] },
-        customer: {
-          phoneNumber: { endsWith: cleanedPhone },
-        },
-      },
-      include: {
-        customer: true,
-        table: true,
-        placeType: true,
-      },
-      orderBy: { issuedAt: 'desc' },
-      take: 1,
-    });
+    if (directCode) {
+      const codeStr = String(directCode).trim();
+      try {
+        const cached = await redisService.get(`customer-code:${codeStr}`);
+        if (cached) {
+          targetTokenNumber = cached;
+        }
+      } catch (e: any) {}
 
-    const activeToken = tokens[0];
-    if (!activeToken) {
-      return res.status(404).json({
-        authorized: false,
-        error: 'No active dining session found with the provided phone number. Please check in at reception.',
-      });
-    }
-
-    // If specific tableNumber was provided for table isolation
-    if (tableNumber && activeToken.table) {
-      if (activeToken.table.tableNumber.toLowerCase() !== tableNumber.toLowerCase()) {
-        return res.status(403).json({
-          authorized: false,
-          error: 'No active session found for this specific table with the provided phone number.',
+      if (!targetTokenNumber) {
+        const found = await prisma.token.findFirst({
+          where: {
+            OR: [
+              { tokenNumber: codeStr },
+              { tokenNumber: { endsWith: codeStr } },
+              { tokenNumber: { contains: codeStr } },
+              { id: codeStr },
+            ],
+          },
+          orderBy: { issuedAt: 'desc' },
         });
+        if (found) {
+          targetTokenNumber = found.tokenNumber;
+        }
       }
     }
 
+    let targetToken: any = null;
+
+    if (targetTokenNumber) {
+      targetToken = await prisma.token.findUnique({
+        where: { tokenNumber: targetTokenNumber },
+        include: {
+          customer: true,
+          table: true,
+          placeType: true,
+        },
+      });
+    } else if (phoneNumber) {
+      const cleanedPhone = String(phoneNumber).trim().replace(/[^\d]/g, '').slice(-10);
+      if (cleanedPhone.length !== 10) {
+        return res.status(400).json({ authorized: false, error: 'Please enter a valid 10-digit mobile number' });
+      }
+
+      const tokens = await prisma.token.findMany({
+        where: {
+          customer: {
+            phoneNumber: { endsWith: cleanedPhone },
+          },
+        },
+        include: {
+          customer: true,
+          table: true,
+          placeType: true,
+        },
+        orderBy: { issuedAt: 'desc' },
+        take: 1,
+      });
+      targetToken = tokens[0];
+    } else {
+      return res.status(400).json({ authorized: false, error: 'Please enter your 6-digit access code or mobile number' });
+    }
+
+    if (!targetToken) {
+      return res.status(404).json({
+        authorized: false,
+        error: 'No dining session found with the provided details. Please check in at reception or verify your code.',
+      });
+    }
+
+    // Check if session has closed / cancelled / expired
+    if (targetToken.status === 'CLOSED' || targetToken.status === 'CANCELLED' || targetToken.status === 'EXPIRED') {
+      const bill = await prisma.bill.findFirst({
+        where: { tokenId: targetToken.id },
+        include: {
+          orders: {
+            include: { items: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return res.status(200).json({
+        authorized: false,
+        sessionStatus: targetToken.status,
+        error: 'This dining session has ended. Payment was successfully completed.',
+        tokenNumber: targetToken.tokenNumber,
+        customerName: targetToken.customer.name,
+        tableNumber: targetToken.table?.tableNumber || null,
+        placeType: targetToken.placeType.name,
+        bill: bill ? {
+          billNumber: bill.billNumber,
+          foodSubtotal: Number(bill.foodSubtotal),
+          drinkSubtotal: Number(bill.drinkSubtotal),
+          merchandiseSubtotal: Number(bill.merchandiseSubtotal),
+          subtotal: Number(bill.subtotal),
+          discountTotal: Number(bill.discountTotal),
+          serviceChargeTotal: Number(bill.serviceChargeTotal),
+          taxTotal: Number(bill.taxTotal),
+          rounding: Number(bill.rounding),
+          grandTotal: Number(bill.grandTotal),
+          paymentMethod: bill.paymentMethod,
+          paidAt: bill.paidAt,
+          status: bill.status,
+          orders: bill.orders.map(o => ({
+            orderNumber: o.orderNumber,
+            items: o.items.map(it => ({
+              itemName: it.itemName,
+              quantity: it.quantity,
+              unitPrice: Number(it.unitPrice),
+              lineTotal: Number(it.lineTotal),
+            })),
+          })),
+        } : null,
+      });
+    }
+
     // Verify Entry Payment Gate
-    if (!activeToken.paymentVerified) {
+    if (!targetToken.paymentVerified) {
       return res.status(403).json({
         authorized: false,
         error: 'Your entry payment has not been verified yet. Please complete payment at reception.',
         paymentStatus: 'UNVERIFIED',
-        tokenNumber: activeToken.tokenNumber,
+        tokenNumber: targetToken.tokenNumber,
       });
     }
 
     return res.json({
       authorized: true,
-      tokenNumber: activeToken.tokenNumber,
+      tokenNumber: targetToken.tokenNumber,
       session: {
-        tokenNumber: activeToken.tokenNumber,
-        customerName: activeToken.customer.name,
-        phoneNumber: activeToken.customer.phoneNumber,
-        email: activeToken.customer.email,
-        tableNumber: activeToken.table?.tableNumber || null,
-        tableId: activeToken.tableId,
-        placeType: activeToken.placeType.name,
-        personsCount: activeToken.personsCount,
-        startTime: activeToken.startTime.toISOString(),
-        endTime: activeToken.endTime.toISOString(),
+        tokenNumber: targetToken.tokenNumber,
+        customerName: targetToken.customer.name,
+        phoneNumber: targetToken.customer.phoneNumber,
+        email: targetToken.customer.email,
+        tableNumber: targetToken.table?.tableNumber || null,
+        tableId: targetToken.tableId,
+        placeType: targetToken.placeType.name,
+        personsCount: targetToken.personsCount,
+        startTime: targetToken.startTime.toISOString(),
+        endTime: targetToken.endTime.toISOString(),
         paymentVerified: true,
-        status: activeToken.status,
+        status: targetToken.status,
       },
     });
   } catch (err: any) {

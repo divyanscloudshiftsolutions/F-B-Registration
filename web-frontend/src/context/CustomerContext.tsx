@@ -113,17 +113,17 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const path = window.location.pathname;
       const match = path.match(/^\/(?:customer\/access|t)\/([A-Za-z0-9_-]+)/);
       if (match) return decodeURIComponent(match[1]);
-      return localStorage.getItem('bar_active_token') || 'BAR-20260902-00008';
+      return localStorage.getItem('bar_active_token') || null;
     }
-    return 'BAR-20260902-00008';
+    return null;
   });
 
   const [tableNumber, setTableNumber] = useState<string | null>(() => {
-    return typeof localStorage !== 'undefined' ? (localStorage.getItem('bar_active_table_num') || 'L-02') : 'L-02';
+    return typeof localStorage !== 'undefined' ? (localStorage.getItem('bar_active_table_num') || null) : null;
   });
 
   const [tableId, setTableId] = useState<string | null>(() => {
-    return typeof localStorage !== 'undefined' ? (localStorage.getItem('bar_active_table_id') || '27d6da43-b144-4df2-92ae-6ae38158a68e') : '27d6da43-b144-4df2-92ae-6ae38158a68e';
+    return typeof localStorage !== 'undefined' ? (localStorage.getItem('bar_active_table_id') || null) : null;
   });
 
   const [tableStatus, setTableStatus] = useState<string | null>(null);

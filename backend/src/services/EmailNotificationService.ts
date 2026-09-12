@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import jwt from 'jsonwebtoken';
+import redisService from './RedisService';
 
 const prisma = new PrismaClient();
 const apiURL = process.env.NOTIFICATION_API_URL || 'https://notificationservice-virid.vercel.app/api/email/send';
@@ -118,7 +119,7 @@ export class EmailNotificationService {
     // Resolve the token details from database to see delivery mode and sign payload
     const frontendBaseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const accessUrl = `${frontendBaseUrl}/customer/access/${tokenNumber}`;
-    let qrData = accessUrl;
+    let isPremium = false;
     let personsCount = 1;
     let placeTypeName = 'Standing Bar';
     let tableNumber = 'Pending';
@@ -134,116 +135,331 @@ export class EmailNotificationService {
       if (tokenRecord) {
         personsCount = tokenRecord.personsCount;
         placeTypeName = tokenRecord.placeType.name.replace(/_/g, ' ');
-        tableNumber = tokenRecord.table ? tokenRecord.table.tableNumber : 'Pending';
+        isPremium = tokenRecord.placeType.name === 'PREMIUM_LOUNGE';
+        tableNumber = tokenRecord.table ? tokenRecord.table.tableNumber : (isPremium ? 'Pending' : 'Standing Bar');
       }
     } catch (e: any) {
       console.warn(`[Email Worker] Failed to check token details, falling back to defaults: ${e.message}`);
     }
 
-    let subject = 'Welcome to Pegs N Bottles — Your Digital Table Pass';
+    // Generate a random 6-digit access code for the customer
+    const accessCode = Math.floor(100000 + Math.random() * 900000).toString();
+    try {
+      await redisService.setex(`customer-code:${accessCode}`, 86400 * 7, tokenNumber);
+      await redisService.setex(`token-code:${tokenNumber}`, 86400 * 7, accessCode);
+    } catch (e: any) {
+      console.warn(`[Email Worker] Could not cache access code in redis: ${e.message}`);
+    }
+
+    let subject = isPremium
+      ? 'Welcome to Pegs N Bottles — Your Digital Table Pass'
+      : 'Welcome to Pegs N Bottles — Your Digital Entry Pass';
     let rawHtml = '';
 
     if (job.type === 'EXTENSION') {
       subject = 'Session Extension — Pegs N Bottles';
       const formattedEndTime = job.newEndTime ? new Date(job.newEndTime).toLocaleString() : 'N/A';
-      rawHtml = `
-        <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
-          <h2 style="color: #8D6CE5; margin-bottom: 16px; font-weight: 800;">Session Extension Confirmed</h2>
-          <p style="color: #475569; font-size: 16px; line-height: 1.5;">Dear ${customerName || 'Customer'},</p>
-          <p style="color: #475569; font-size: 14px; line-height: 1.5;">Your dining session at Pegs N Bottles has been extended. You can continue ordering directly from your phone below:</p>
-          
-          <div style="text-align: center; margin: 25px 0;">
-            <a href="${accessUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #8D6CE5 0%, #6366F1 100%); color: #ffffff; text-decoration: none; font-weight: bold; font-size: 16px; padding: 14px 28px; border-radius: 12px; box-shadow: 0 4px 14px rgba(141, 108, 229, 0.4);">
-              Resume Table Experience
-            </a>
-          </div>
+      
+      if (isPremium) {
+        rawHtml = `
+          <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+            <h2 style="color: #8D6CE5; margin-bottom: 16px; font-weight: 800;">Session Extension Confirmed</h2>
+            <p style="color: #475569; font-size: 16px; line-height: 1.5;">Dear ${customerName || 'Customer'},</p>
+            <p style="color: #475569; font-size: 14px; line-height: 1.5;">Your dining session at Pegs N Bottles has been extended! Here is your 6-digit access code to continue ordering from your phone:</p>
+            
+            <div style="text-align: center; margin: 20px 0; padding: 20px; background-color: #f8fafc; border-radius: 14px; border: 1px solid #e2e8f0;">
+              <p style="color: #64748b; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 10px 0;">6-Digit Table Access Code</p>
+              
+              <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto;">
+                <tr>
+                  <td style="background-color: #ffffff; border: 2px solid #8D6CE5; border-radius: 10px; padding: 8px 18px; font-family: monospace; font-size: 28px; font-weight: 900; color: #8D6CE5; letter-spacing: 6px; user-select: all; -webkit-user-select: all;">
+                    ${accessCode}
+                  </td>
+                  <td style="padding-left: 10px; vertical-align: middle;">
+                    <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 13px; font-weight: bold; padding: 10px 14px; border-radius: 8px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy access code">📋 Copy Code</span>
+                  </td>
+                </tr>
+              </table>
 
-          <div style="text-align: center; margin: 25px 0; padding: 20px; background-color: #f8fafc; border-radius: 12px;">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(accessUrl)}" alt="QR Code" style="border: 4px solid #8D6CE5; border-radius: 12px; max-width: 220px; height: auto;" />
-            <p style="color: #64748b; font-size: 12px; margin-top: 10px; margin-bottom: 0;">Scan to access ordering on your smartphone</p>
-          </div>
+              <p style="color: #475569; font-size: 13px; line-height: 1.5; margin: 14px 0 0 0; padding-top: 12px; border-top: 1px dashed #cbd5e1;">
+                💡 <strong>Important:</strong> Please copy this 6-digit code before clicking the button below to resume placing orders from your table.
+              </p>
+            </div>
 
-          <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-              <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Token Number:</td>
-              <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-family: monospace; font-weight: bold;">${tokenNumber}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-              <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Assigned Table:</td>
-              <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: bold;">${job.tableNumber || tableNumber}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-              <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Extension Duration:</td>
-              <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right;">+${job.extraMinutes} Minutes</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-              <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">New End Time:</td>
-              <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: bold;">${formattedEndTime}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-              <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Additional Amount:</td>
-              <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right;">₹${job.additionalAmount}</td>
-            </tr>
-          </table>
+            <div style="text-align: center; margin: 25px 0;">
+              <a href="${accessUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #8D6CE5 0%, #6366F1 100%); color: #ffffff; text-decoration: none; font-weight: bold; font-size: 16px; padding: 14px 28px; border-radius: 12px; box-shadow: 0 4px 14px rgba(141, 108, 229, 0.4);">
+                Resume Table Ordering
+              </a>
+            </div>
 
-          <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; color: #94a3b8; font-size: 12px;">
-            <p>Pegs N Bottles — Thank you for visiting.</p>
+            <div style="text-align: center; margin: 25px 0; padding: 20px; background-color: #f8fafc; border-radius: 12px;">
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(accessUrl)}" alt="QR Code" style="border: 4px solid #8D6CE5; border-radius: 12px; max-width: 220px; height: auto;" />
+              <p style="color: #64748b; font-size: 12px; margin-top: 10px; margin-bottom: 0;">Scan to access ordering on your smartphone</p>
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold; vertical-align: middle;">Access Code:</td>
+                <td style="padding: 10px 0; text-align: right; vertical-align: middle;">
+                  <table cellpadding="0" cellspacing="0" border="0" style="display: inline-table; margin-left: auto;">
+                    <tr>
+                      <td style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-family: monospace; font-size: 13px; font-weight: 800; color: #8D6CE5; letter-spacing: 1px; user-select: all; -webkit-user-select: all;">
+                        ${accessCode}
+                      </td>
+                      <td style="padding-left: 6px;">
+                        <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy code">📋 Copy Code</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold; vertical-align: middle;">Token Number:</td>
+                <td style="padding: 10px 0; text-align: right; vertical-align: middle;">
+                  <table cellpadding="0" cellspacing="0" border="0" style="display: inline-table; margin-left: auto;">
+                    <tr>
+                      <td style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-family: monospace; font-size: 13px; font-weight: 800; color: #111827; letter-spacing: 0.5px; user-select: all; -webkit-user-select: all;">
+                        ${tokenNumber}
+                      </td>
+                      <td style="padding-left: 6px;">
+                        <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy / select ID">📋 Copy ID</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Assigned Table:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: bold;">${job.tableNumber || tableNumber}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Extension Duration:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right;">+${job.extraMinutes} Minutes</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">New End Time:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: bold;">${formattedEndTime}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Additional Amount:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right;">₹${job.additionalAmount}</td>
+              </tr>
+            </table>
+
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; color: #94a3b8; font-size: 12px;">
+              <p>Pegs N Bottles — Thank you for visiting.</p>
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      } else {
+        rawHtml = `
+          <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+            <h2 style="color: #8D6CE5; margin-bottom: 16px; font-weight: 800;">Session Extension Confirmed</h2>
+            <p style="color: #475569; font-size: 16px; line-height: 1.5;">Dear ${customerName || 'Customer'},</p>
+            <p style="color: #475569; font-size: 14px; line-height: 1.5;">Your bar session at Pegs N Bottles has been extended. Please present the QR code below at the bar counter to continue enjoying your drinks and service.</p>
+            
+            <div style="text-align: center; margin: 25px 0; padding: 20px; background-color: #f8fafc; border-radius: 12px; border: 1px dashed #cbd5e1;">
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(tokenNumber)}" alt="QR Code" style="border: 4px solid #8D6CE5; border-radius: 12px; max-width: 220px; height: auto;" />
+              <p style="color: #64748b; font-size: 12px; margin-top: 10px; margin-bottom: 0;">Present this QR code to the bartender for drink redemption and service</p>
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold; vertical-align: middle;">Token Number:</td>
+                <td style="padding: 10px 0; text-align: right; vertical-align: middle;">
+                  <table cellpadding="0" cellspacing="0" border="0" style="display: inline-table; margin-left: auto;">
+                    <tr>
+                      <td style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-family: monospace; font-size: 13px; font-weight: 800; color: #111827; letter-spacing: 0.5px; user-select: all; -webkit-user-select: all;">
+                        ${tokenNumber}
+                      </td>
+                      <td style="padding-left: 6px;">
+                        <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy / select ID">📋 Copy ID</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Seating Area:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: bold;">${placeTypeName}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Extension Duration:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right;">+${job.extraMinutes} Minutes</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">New End Time:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: bold;">${formattedEndTime}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Additional Amount:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right;">₹${job.additionalAmount}</td>
+              </tr>
+            </table>
+
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; color: #94a3b8; font-size: 12px;">
+              <p>Pegs N Bottles — Thank you for visiting.</p>
+            </div>
+          </div>
+        `;
+      }
     } else {
-      rawHtml = `
-        <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
-          <div style="text-align: center; margin-bottom: 20px;">
-            <div style="display: inline-block; width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #8D6CE5 0%, #6366F1 100%); color: #ffffff; font-size: 22px; font-weight: 900; line-height: 44px; text-align: center;">P</div>
-            <h2 style="color: #111827; margin: 12px 0 4px 0; font-weight: 800; font-size: 22px;">Welcome to Pegs N Bottles</h2>
-            <p style="color: #64748b; font-size: 14px; margin: 0;">Your Digital Dining Pass & Self-Order Hub</p>
-          </div>
+      if (isPremium) {
+        rawHtml = `
+          <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+            <div style="text-align: center; margin-bottom: 20px;">
+              <div style="display: inline-block; width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #8D6CE5 0%, #6366F1 100%); color: #ffffff; font-size: 22px; font-weight: 900; line-height: 44px; text-align: center;">P</div>
+              <h2 style="color: #111827; margin: 12px 0 4px 0; font-weight: 800; font-size: 22px;">Welcome to Pegs N Bottles</h2>
+              <p style="color: #64748b; font-size: 14px; margin: 0;">Your Digital Dining Pass & Table Access</p>
+            </div>
 
-          <p style="color: #475569; font-size: 15px; line-height: 1.5;">Dear <strong>${customerName || 'Guest'}</strong>,</p>
-          <p style="color: #475569; font-size: 14px; line-height: 1.5;">Your check-in is complete! Tap the button below on your smartphone to start browsing the food & drink menu, ordering, and calling for assistance directly from your table:</p>
-          
-          <div style="text-align: center; margin: 28px 0 20px 0;">
-            <a href="${accessUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #8D6CE5 0%, #6366F1 100%); color: #ffffff; text-decoration: none; font-weight: 800; font-size: 16px; padding: 15px 32px; border-radius: 14px; box-shadow: 0 4px 16px rgba(141, 108, 229, 0.4);">
-              Open Your Table Experience
-            </a>
-            <p style="color: #64748b; font-size: 12px; margin-top: 10px;">No app download required. Opens instantly on your phone browser.</p>
-          </div>
+            <p style="color: #475569; font-size: 15px; line-height: 1.5;">Dear <strong>${customerName || 'Guest'}</strong>,</p>
+            <p style="color: #475569; font-size: 14px; line-height: 1.5;">Your table check-in is complete! Here is your 6-digit access code:</p>
+            
+            <!-- 6-Digit Access Code Box with Copy Code Button -->
+            <div style="text-align: center; margin: 20px 0; padding: 20px; background-color: #f8fafc; border-radius: 14px; border: 1px solid #e2e8f0;">
+              <p style="color: #64748b; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 10px 0;">6-Digit Table Access Code</p>
+              
+              <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto;">
+                <tr>
+                  <td style="background-color: #ffffff; border: 2px solid #8D6CE5; border-radius: 10px; padding: 8px 18px; font-family: monospace; font-size: 28px; font-weight: 900; color: #8D6CE5; letter-spacing: 6px; user-select: all; -webkit-user-select: all;">
+                    ${accessCode}
+                  </td>
+                  <td style="padding-left: 10px; vertical-align: middle;">
+                    <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 13px; font-weight: bold; padding: 10px 14px; border-radius: 8px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy access code">📋 Copy Code</span>
+                  </td>
+                </tr>
+              </table>
 
-          <div style="text-align: center; margin: 20px 0; padding: 20px; background-color: #f8fafc; border-radius: 14px; border: 1px dashed #cbd5e1;">
-            <p style="color: #8D6CE5; font-size: 13px; font-weight: bold; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 0.5px;">Or Scan QR Code with Phone Camera</p>
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(accessUrl)}" alt="Access QR Code" style="border: 4px solid #8D6CE5; border-radius: 12px; max-width: 200px; height: auto;" />
-          </div>
+              <p style="color: #475569; font-size: 13px; line-height: 1.5; margin: 14px 0 0 0; padding-top: 12px; border-top: 1px dashed #cbd5e1;">
+                💡 <strong>Important:</strong> Please copy this 6-digit code before clicking the <strong>Start Ordering from Table</strong> button below to open your menu.
+              </p>
+            </div>
 
-          <table style="width: 100%; border-collapse: collapse; margin-top: 24px;">
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-              <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Token Number:</td>
-              <td style="padding: 10px 0; color: #111827; font-size: 13px; text-align: right; font-family: monospace; font-weight: bold;">${tokenNumber}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-              <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Seating Area:</td>
-              <td style="padding: 10px 0; color: #111827; font-size: 13px; text-align: right;">${placeTypeName}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-              <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Party Size:</td>
-              <td style="padding: 10px 0; color: #111827; font-size: 13px; text-align: right;">${personsCount} Person(s)</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-              <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Assigned Table:</td>
-              <td style="padding: 10px 0; color: #8D6CE5; font-size: 14px; text-align: right; font-weight: 800;">Table ${tableNumber}</td>
-            </tr>
-          </table>
+            <!-- Start Ordering Button -->
+            <div style="text-align: center; margin: 26px 0 20px 0;">
+              <a href="${accessUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #8D6CE5 0%, #6366F1 100%); color: #ffffff; text-decoration: none; font-weight: 800; font-size: 16px; padding: 15px 32px; border-radius: 14px; box-shadow: 0 4px 16px rgba(141, 108, 229, 0.4);">
+                Start Ordering from Table
+              </a>
+              <p style="color: #64748b; font-size: 12px; margin-top: 10px;">Opens instantly on your phone browser. No app download needed.</p>
+            </div>
 
-          <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; color: #94a3b8; font-size: 12px;">
-            <p>Pegs N Bottles — Have a wonderful dining experience.</p>
+            <div style="text-align: center; margin: 20px 0; padding: 20px; background-color: #f8fafc; border-radius: 14px; border: 1px dashed #cbd5e1;">
+              <p style="color: #8D6CE5; font-size: 13px; font-weight: bold; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 0.5px;">Or Scan QR Code with Phone Camera</p>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(accessUrl)}" alt="Access QR Code" style="border: 4px solid #8D6CE5; border-radius: 12px; max-width: 200px; height: auto;" />
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse; margin-top: 24px;">
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold; vertical-align: middle;">Access Code:</td>
+                <td style="padding: 10px 0; text-align: right; vertical-align: middle;">
+                  <table cellpadding="0" cellspacing="0" border="0" style="display: inline-table; margin-left: auto;">
+                    <tr>
+                      <td style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-family: monospace; font-size: 13px; font-weight: 800; color: #8D6CE5; letter-spacing: 1px; user-select: all; -webkit-user-select: all;">
+                        ${accessCode}
+                      </td>
+                      <td style="padding-left: 6px;">
+                        <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy code">📋 Copy Code</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold; vertical-align: middle;">Token Number:</td>
+                <td style="padding: 10px 0; text-align: right; vertical-align: middle;">
+                  <table cellpadding="0" cellspacing="0" border="0" style="display: inline-table; margin-left: auto;">
+                    <tr>
+                      <td style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-family: monospace; font-size: 13px; font-weight: 800; color: #111827; letter-spacing: 0.5px; user-select: all; -webkit-user-select: all;">
+                        ${tokenNumber}
+                      </td>
+                      <td style="padding-left: 6px;">
+                        <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy / select ID">📋 Copy ID</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Seating Area:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 13px; text-align: right;">${placeTypeName}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Party Size:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 13px; text-align: right;">${personsCount} Person(s)</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Assigned Table:</td>
+                <td style="padding: 10px 0; color: #8D6CE5; font-size: 14px; text-align: right; font-weight: 800;">Table ${tableNumber}</td>
+              </tr>
+            </table>
+
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; color: #94a3b8; font-size: 12px;">
+              <p>Pegs N Bottles — Have a wonderful dining experience.</p>
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      } else {
+        rawHtml = `
+          <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+            <div style="text-align: center; margin-bottom: 20px;">
+              <div style="display: inline-block; width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #8D6CE5 0%, #6366F1 100%); color: #ffffff; font-size: 22px; font-weight: 900; line-height: 44px; text-align: center;">P</div>
+              <h2 style="color: #111827; margin: 12px 0 4px 0; font-weight: 800; font-size: 22px;">Welcome to Pegs N Bottles</h2>
+              <p style="color: #64748b; font-size: 14px; margin: 0;">Your Digital Entry Pass</p>
+            </div>
+
+            <p style="color: #475569; font-size: 15px; line-height: 1.5;">Dear <strong>${customerName || 'Guest'}</strong>,</p>
+            <p style="color: #475569; font-size: 14px; line-height: 1.5;">Your check-in is complete! Please present the QR code below at the bar counter to redeem your included drinks and place orders directly with our bartender.</p>
+
+            <div style="text-align: center; margin: 24px 0; padding: 20px; background-color: #f8fafc; border-radius: 14px; border: 1px dashed #cbd5e1;">
+              <p style="color: #8D6CE5; font-size: 13px; font-weight: bold; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 0.5px;">Entry Pass QR Code</p>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(tokenNumber)}" alt="Entry Pass QR Code" style="border: 4px solid #8D6CE5; border-radius: 12px; max-width: 200px; height: auto;" />
+              <p style="color: #64748b; font-size: 12px; margin-top: 10px; margin-bottom: 0;">Present this QR code to staff or bartender at the bar</p>
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse; margin-top: 24px;">
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold; vertical-align: middle;">Token Number:</td>
+                <td style="padding: 10px 0; text-align: right; vertical-align: middle;">
+                  <table cellpadding="0" cellspacing="0" border="0" style="display: inline-table; margin-left: auto;">
+                    <tr>
+                      <td style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-family: monospace; font-size: 13px; font-weight: 800; color: #111827; letter-spacing: 0.5px; user-select: all; -webkit-user-select: all;">
+                        ${tokenNumber}
+                      </td>
+                      <td style="padding-left: 6px;">
+                        <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy / select ID">📋 Copy ID</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Seating Area:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 13px; text-align: right;">${placeTypeName}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Party Size:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 13px; text-align: right;">${personsCount} Person(s)</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Assigned Table:</td>
+                <td style="padding: 10px 0; color: #8D6CE5; font-size: 14px; text-align: right; font-weight: 800;">Table ${tableNumber}</td>
+              </tr>
+            </table>
+
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; color: #94a3b8; font-size: 12px;">
+              <p>Pegs N Bottles — Have a wonderful dining experience.</p>
+            </div>
+          </div>
+        `;
+      }
     }
 
     // 2. HTML Sanitization
     const sanitizedHtml = this.sanitizeHtml(rawHtml);
-    const bodyText = `Your digital check-in has been successfully completed. Token: ${tokenNumber}.`;
+    const bodyText = isPremium
+      ? `Your table check-in has been completed. Your 6-digit access code is: ${accessCode}. Please copy this code before opening your table ordering portal: ${accessUrl} (Token: ${tokenNumber}).`
+      : `Your digital check-in has been successfully completed. Token: ${tokenNumber}. Please present this token at the bar counter for service.`;
 
     // 3. API Dispatch with x-api-key authentication
     const apiKey = process.env.NOTIFICATION_API_KEY || '';

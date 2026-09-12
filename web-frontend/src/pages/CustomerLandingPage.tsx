@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
-  QrCode,
+  Ticket,
   Sparkles,
   Phone,
   KeyRound,
@@ -17,9 +17,10 @@ import {
 
 export const CustomerLandingPage: React.FC = () => {
   const { isDark, toggleTheme } = useAuth();
-  const [activeModal, setActiveModal] = useState<'NONE' | 'TOKEN' | 'PHONE' | 'SCAN'>('NONE');
-  const [tokenInput, setTokenInput] = useState<string>('BAR-20260902-00008');
-  const [phoneInput, setPhoneInput] = useState<string>('9833161990');
+  const [activeModal, setActiveModal] = useState<'NONE' | 'CODE' | 'PHONE' | 'TOKEN'>('NONE');
+  const [codeInput, setCodeInput] = useState<string>('');
+  const [phoneInput, setPhoneInput] = useState<string>('');
+  const [tokenInput, setTokenInput] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -79,28 +80,12 @@ export const CustomerLandingPage: React.FC = () => {
     }
   }, [activeModal]);
 
-  // Handle direct Token submission (supports bare token or scanned QR URL)
-  const handleTokenSubmit = (e: React.FormEvent) => {
+  // Handle 6-Digit Access Code Submission
+  const handleCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    let cleaned = tokenInput.trim();
+    const cleaned = codeInput.trim();
     if (!cleaned) {
-      setErrorMsg('Please enter your access token number.');
-      return;
-    }
-    // If user pasted a full QR access link (e.g. http://localhost:5173/customer/access/BAR-20260902-00008)
-    const urlMatch = cleaned.match(/(?:access\/|t\/)([A-Za-z0-9_-]+)/);
-    if (urlMatch && urlMatch[1]) {
-      cleaned = urlMatch[1];
-    }
-    window.location.assign(`/customer/access/${encodeURIComponent(cleaned)}`);
-  };
-
-  // Handle Phone Recovery submission
-  const handlePhoneSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleaned = phoneInput.trim().replace(/[^\d]/g, '');
-    if (cleaned.length < 10) {
-      setErrorMsg('Please enter a valid 10-digit phone number.');
+      setErrorMsg('Please enter your 6-digit access code.');
       return;
     }
 
@@ -108,11 +93,37 @@ export const CustomerLandingPage: React.FC = () => {
     setErrorMsg(null);
 
     try {
-      const res = await api.recoverCustomerSession(cleaned);
-      if (res.authorized && res.tokenNumber) {
+      const res = await api.recoverCustomerSession({ accessCode: cleaned });
+      if (res.tokenNumber) {
         window.location.assign(`/customer/access/${encodeURIComponent(res.tokenNumber)}`);
       } else {
-        setErrorMsg(res.error || 'No active dining session found with this phone number.');
+        window.location.assign(`/customer/access/${encodeURIComponent(cleaned)}`);
+      }
+    } catch (err: any) {
+      window.location.assign(`/customer/access/${encodeURIComponent(cleaned)}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle Phone Recovery submission
+  const handlePhoneSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = phoneInput.trim().replace(/[^\d]/g, '');
+    if (cleaned.length < 10) {
+      setErrorMsg('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await api.recoverCustomerSession({ phoneNumber: cleaned });
+      if (res.tokenNumber) {
+        window.location.assign(`/customer/access/${encodeURIComponent(res.tokenNumber)}`);
+      } else {
+        setErrorMsg(res.error || 'No dining session found with this phone number.');
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Unable to find session. Please contact reception.');
@@ -121,13 +132,28 @@ export const CustomerLandingPage: React.FC = () => {
     }
   };
 
+  // Handle Token ID Submission
+  const handleTokenSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    let cleaned = tokenInput.trim();
+    if (!cleaned) {
+      setErrorMsg('Please enter your Token ID.');
+      return;
+    }
+    const urlMatch = cleaned.match(/(?:access\/|t\/)([A-Za-z0-9_-]+)/);
+    if (urlMatch && urlMatch[1]) {
+      cleaned = urlMatch[1];
+    }
+    window.location.assign(`/customer/access/${encodeURIComponent(cleaned)}`);
+  };
+
   return (
     <div className="min-h-[100dvh] w-full bg-[#F5F3FA] dark:bg-[#18181A] text-[#18181B] dark:text-white flex flex-col justify-between p-3.5 sm:p-6 md:p-8 lg:p-10 xl:p-12 font-sans select-text overflow-x-hidden relative transition-colors duration-200">
-      {/* Responsive ambient background glow (hidden on small mobile for 60fps performance, subtle on tablet/desktop) */}
+      {/* Responsive ambient background glow */}
       <div className="hidden sm:block absolute top-0 left-1/2 -translate-x-1/2 w-96 md:w-[500px] lg:w-[650px] xl:w-[750px] h-96 md:h-[500px] lg:h-[650px] xl:h-[750px] bg-primary/10 dark:bg-[#D4AF37]/5 rounded-full blur-3xl pointer-events-none" />
       <div className="hidden md:block absolute bottom-10 right-10 w-72 lg:w-96 h-72 lg:h-96 bg-primary/5 dark:bg-[#D4AF37]/5 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Top Header - Responsive across Mobile, Tablet, and Desktop */}
+      {/* Top Header */}
       <header className="w-full max-w-sm sm:max-w-md md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto flex items-center justify-between z-10 shrink-0">
         <div className="flex items-center gap-2.5 sm:gap-3.5">
           <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-primary to-primary-hover dark:from-[#D4AF37] dark:to-amber-500 text-white dark:text-black font-black flex items-center justify-center text-sm sm:text-base shadow-sm shrink-0">
@@ -173,68 +199,43 @@ export const CustomerLandingPage: React.FC = () => {
         </h1>
 
         <p className="text-xs text-text-muted leading-relaxed max-w-xs mx-auto mb-4 sm:mb-5">
-          Order drinks, culinary specials, and request assistance directly from your smartphone.
-          Use your pass token, phone number, or scan your pass QR.
+          Order food and drinks, view specials, and request assistance directly from your table.
         </p>
-
-        {/* Quick 1-Click Access for Active Pass BAR-20260902-00008 */}
-        <div className="mb-3.5 p-3 rounded-2xl bg-white dark:bg-white/5 border border-primary/30 dark:border-[#D4AF37]/30 shadow-xs flex items-center justify-between text-left">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-[10px] font-bold text-primary dark:text-[#D4AF37] uppercase tracking-wider">
-                Table L-02 · Active Pass
-              </div>
-              <div className="text-xs font-mono font-bold text-text-main dark:text-white">
-                BAR-20260902-00008
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => window.location.assign('/customer/access/BAR-20260902-00008')}
-            className="px-3 py-1.5 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-xs flex items-center gap-1 shadow-sm transition-all cursor-pointer"
-          >
-            <span>Order Now</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
 
         {/* Mobile Vertical Action Rows */}
         <div className="flex flex-col gap-2.5 sm:gap-3 w-full">
-          {/* Action 1: QR Access (Primary) */}
+          {/* Action 1: 6-Digit Access Code (Primary) */}
           <button
             onClick={() => {
               setErrorMsg(null);
-              setTokenInput('BAR-20260902-00008');
-              setActiveModal('SCAN');
+              setCodeInput('');
+              setActiveModal('CODE');
             }}
             className="w-full min-h-[50px] sm:min-h-[54px] py-3 px-4 rounded-2xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-xs sm:text-sm shadow-md shadow-primary/20 dark:shadow-[#D4AF37]/20 flex items-center justify-between transition-all active:scale-[0.99] cursor-pointer"
           >
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-xl bg-white/20 dark:bg-black/10 flex items-center justify-center shrink-0">
-                <QrCode className="w-4 h-4" />
+                <KeyRound className="w-4 h-4" />
               </div>
-              <span className="text-left font-bold">Scan Customer QR</span>
+              <span className="text-left font-bold">Enter 6-Digit Access Code</span>
             </div>
             <ArrowRight className="w-4 h-4 shrink-0" />
           </button>
 
-          {/* Action 2: Enter Token Number (Secondary) */}
+          {/* Action 2: Token ID (Secondary) */}
           <button
             onClick={() => {
               setErrorMsg(null);
-              setTokenInput('BAR-20260902-00008');
+              setTokenInput('');
               setActiveModal('TOKEN');
             }}
             className="w-full min-h-[50px] sm:min-h-[54px] py-3 px-4 rounded-2xl border border-border-main dark:border-white/10 bg-white hover:bg-zinc-50 dark:bg-white/5 dark:hover:bg-white/10 text-text-main dark:text-white font-extrabold text-xs sm:text-sm shadow-xs flex items-center justify-between transition-all active:scale-[0.99] cursor-pointer"
           >
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-xl bg-primary/10 dark:bg-white/10 flex items-center justify-center text-primary dark:text-zinc-400 shrink-0">
-                <KeyRound className="w-4 h-4" />
+                <Ticket className="w-4 h-4" />
               </div>
-              <span className="text-left font-bold">Enter Pass Token</span>
+              <span className="text-left font-bold">Enter Table Token ID</span>
             </div>
             <ArrowRight className="w-4 h-4 text-text-muted dark:text-zinc-400 shrink-0" />
           </button>
@@ -243,7 +244,7 @@ export const CustomerLandingPage: React.FC = () => {
           <button
             onClick={() => {
               setErrorMsg(null);
-              setPhoneInput('9833161990');
+              setPhoneInput('');
               setActiveModal('PHONE');
             }}
             className="w-full min-h-[50px] sm:min-h-[54px] py-3 px-4 rounded-2xl border border-border-main dark:border-white/10 bg-white hover:bg-zinc-50 dark:bg-white/5 dark:hover:bg-white/10 text-text-main dark:text-white font-extrabold text-xs sm:text-sm shadow-xs flex items-center justify-between transition-all active:scale-[0.99] cursor-pointer"
@@ -252,7 +253,7 @@ export const CustomerLandingPage: React.FC = () => {
               <div className="w-8 h-8 rounded-xl bg-primary/10 dark:bg-white/10 flex items-center justify-center text-primary dark:text-zinc-400 shrink-0">
                 <Phone className="w-4 h-4" />
               </div>
-              <span className="text-left font-bold">Find Session via Phone</span>
+              <span className="text-left font-bold">Find via Mobile Number</span>
             </div>
             <ArrowRight className="w-4 h-4 text-text-muted dark:text-zinc-400 shrink-0" />
           </button>
@@ -276,93 +277,68 @@ export const CustomerLandingPage: React.FC = () => {
         </h1>
 
         <p className="text-sm text-text-muted leading-relaxed max-w-lg mx-auto mb-6">
-          Order drinks, culinary specials, and request assistance directly from your smartphone.
-          Use your pass token, phone number, or scan your pass QR.
+          Order food & drinks, browse menus, and request service directly from your smartphone.
         </p>
-
-        {/* Quick 1-Click Access for Active Pass BAR-20260902-00008 */}
-        <div className="max-w-md mx-auto mb-6 p-3.5 rounded-2xl bg-white dark:bg-white/5 border border-primary/30 dark:border-[#D4AF37]/30 shadow-xs flex items-center justify-between text-left">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-[11px] font-bold text-primary dark:text-[#D4AF37] uppercase tracking-wider">
-                Table L-02 · Active Pass Ready
-              </div>
-              <div className="text-sm font-mono font-bold text-text-main dark:text-white">
-                BAR-20260902-00008
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => window.location.assign('/customer/access/BAR-20260902-00008')}
-            className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-          >
-            <span>Enter Ordering</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
 
         {/* Tablet 3-Card Symmetrical Grid */}
         <div className="grid grid-cols-3 gap-4 text-left">
-          {/* Card 1: Scan QR */}
+          {/* Card 1: 6-Digit Code (Primary) */}
           <div
             onClick={() => {
               setErrorMsg(null);
-              setTokenInput('BAR-20260902-00008');
-              setActiveModal('SCAN');
+              setCodeInput('');
+              setActiveModal('CODE');
             }}
             className="p-5 rounded-3xl bg-gradient-to-b from-primary to-primary-hover dark:from-[#D4AF37] dark:to-amber-500 text-white dark:text-black shadow-lg shadow-primary/20 dark:shadow-[#D4AF37]/20 flex flex-col justify-between group cursor-pointer transition-all hover:-translate-y-1 hover:shadow-xl min-h-[220px]"
           >
             <div>
               <div className="w-11 h-11 rounded-2xl bg-white/20 dark:bg-black/10 flex items-center justify-center mb-4">
-                <QrCode className="w-5 h-5 text-white dark:text-black" />
+                <KeyRound className="w-5 h-5 text-white dark:text-black" />
               </div>
               <h2 className="font-black text-base leading-tight mb-1.5">
-                Scan Customer QR
+                6-Digit Access Code
               </h2>
               <p className="text-xs text-white/80 dark:text-black/80 leading-relaxed font-medium">
-                Scan your dining pass QR or paste access link directly.
+                Enter the 6-digit access code sent to your email to open the menu.
               </p>
             </div>
             <div className="inline-flex items-center gap-2 text-xs font-extrabold mt-4 pt-3 border-t border-white/20 dark:border-black/10">
-              <span>Scan QR</span>
+              <span>Enter Code</span>
               <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
             </div>
           </div>
 
-          {/* Card 2: Pass Token */}
+          {/* Card 2: Table Token ID */}
           <div
             onClick={() => {
               setErrorMsg(null);
-              setTokenInput('BAR-20260902-00008');
+              setTokenInput('');
               setActiveModal('TOKEN');
             }}
             className="p-5 rounded-3xl bg-white dark:bg-[#111114] border border-border-main dark:border-white/10 text-text-main dark:text-white shadow-sm hover:border-primary/50 dark:hover:border-[#D4AF37]/50 flex flex-col justify-between group cursor-pointer transition-all hover:-translate-y-1 hover:shadow-md min-h-[220px]"
           >
             <div>
               <div className="w-11 h-11 rounded-2xl bg-primary/10 dark:bg-[#D4AF37]/10 text-primary dark:text-[#D4AF37] flex items-center justify-center mb-4">
-                <KeyRound className="w-5 h-5" />
+                <Ticket className="w-5 h-5" />
               </div>
               <h2 className="font-black text-base leading-tight mb-1.5">
-                Enter Pass Token
+                Table Token ID
               </h2>
               <p className="text-xs text-text-muted leading-relaxed font-medium">
-                Lookup session via code (e.g. <code className="select-all font-mono font-bold text-primary dark:text-[#D4AF37] bg-primary/10 dark:bg-[#D4AF37]/10 px-1.5 py-0.5 rounded">BAR-20260902-00008</code>).
+                Enter your Token ID (e.g. BAR-XXXXXXXX) from your receipt or email.
               </p>
             </div>
             <div className="inline-flex items-center gap-2 text-xs font-extrabold text-primary dark:text-[#D4AF37] mt-4 pt-3 border-t border-border-main dark:border-white/10">
-              <span>Enter Token</span>
+              <span>Enter Token ID</span>
               <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
             </div>
           </div>
 
-          {/* Card 3: Phone Lookup */}
+          {/* Card 3: Mobile Lookup */}
           <div
             onClick={() => {
               setErrorMsg(null);
-              setPhoneInput('9833161990');
+              setPhoneInput('');
               setActiveModal('PHONE');
             }}
             className="p-5 rounded-3xl bg-white dark:bg-[#111114] border border-border-main dark:border-white/10 text-text-main dark:text-white shadow-sm hover:border-primary/50 dark:hover:border-[#D4AF37]/50 flex flex-col justify-between group cursor-pointer transition-all hover:-translate-y-1 hover:shadow-md min-h-[220px]"
@@ -372,14 +348,14 @@ export const CustomerLandingPage: React.FC = () => {
                 <Phone className="w-5 h-5" />
               </div>
               <h2 className="font-black text-base leading-tight mb-1.5">
-                Phone Lookup
+                Mobile Number
               </h2>
               <p className="text-xs text-text-muted leading-relaxed font-medium">
-                Find session with your 10-digit registered number (e.g. <code className="select-all font-mono font-bold text-primary dark:text-[#D4AF37] bg-primary/10 dark:bg-[#D4AF37]/10 px-1.5 py-0.5 rounded">9833161990</code>).
+                Find your active table session with your 10-digit registered number.
               </p>
             </div>
             <div className="inline-flex items-center gap-2 text-xs font-extrabold text-primary dark:text-[#D4AF37] mt-4 pt-3 border-t border-border-main dark:border-white/10">
-              <span>Lookup Pass</span>
+              <span>Find Table</span>
               <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
             </div>
           </div>
@@ -391,7 +367,7 @@ export const CustomerLandingPage: React.FC = () => {
       {/* ========================================================================= */}
       <div className="hidden lg:block w-full max-w-5xl xl:max-w-6xl mx-auto my-auto z-10 py-8 xl:py-12 shrink-0">
         <div className="grid grid-cols-12 gap-8 xl:gap-12 items-center">
-          {/* Left Column: Brand Hero & Narrative */}
+          {/* Left Column: Brand Narrative */}
           <div className="col-span-5 text-left">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 dark:bg-[#D4AF37]/10 border border-primary/20 dark:border-[#D4AF37]/20 text-primary dark:text-[#D4AF37] text-xs font-bold tracking-wider mb-5">
               <Sparkles className="w-3.5 h-3.5 shrink-0" />
@@ -406,61 +382,36 @@ export const CustomerLandingPage: React.FC = () => {
             </h1>
 
             <p className="text-sm xl:text-base text-text-muted leading-relaxed mb-6 font-medium">
-              Order drinks, culinary specials, and request assistance directly from your smartphone.
-              Use your pass token, phone number, or scan your pass QR.
+              Browse food and drinks, order from your table, and request waiter service directly from your smartphone.
             </p>
 
             <div className="p-4 rounded-2xl bg-white/60 dark:bg-white/5 border border-border-main dark:border-white/10 text-xs text-text-muted flex items-center gap-3">
               <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-              <span>Check in at reception to verify your entry payment and link your table pass.</span>
-            </div>
-
-            {/* Quick 1-Click Access for Active Pass BAR-20260902-00008 */}
-            <div className="mt-4 p-4 rounded-2xl bg-white dark:bg-white/5 border border-primary/30 dark:border-[#D4AF37]/30 shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                  <CheckCircle2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="text-[11px] font-bold text-primary dark:text-[#D4AF37] uppercase tracking-wider">
-                    Table L-02 · Active Pass Ready
-                  </div>
-                  <div className="text-sm font-mono font-bold text-text-main dark:text-white">
-                    BAR-20260902-00008
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => window.location.assign('/customer/access/BAR-20260902-00008')}
-                className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-              >
-                <span>Enter Ordering</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+              <span>Check in at reception to receive your 6-digit access code or Table Token ID.</span>
             </div>
           </div>
 
           {/* Right Column: Spacious Web Action Cards */}
           <div className="col-span-7 flex flex-col gap-4 text-left">
-            {/* Action 1: QR Access (Primary Web Card) */}
+            {/* Action 1: 6-Digit Code (Primary Web Card) */}
             <div
               onClick={() => {
                 setErrorMsg(null);
-                setTokenInput('BAR-20260902-00008');
-                setActiveModal('SCAN');
+                setCodeInput('');
+                setActiveModal('CODE');
               }}
               className="p-6 rounded-2xl bg-gradient-to-r from-primary to-primary-hover dark:from-[#D4AF37] dark:to-amber-500 text-white dark:text-black shadow-xl shadow-primary/20 dark:shadow-[#D4AF37]/20 flex items-center justify-between group cursor-pointer transition-all hover:scale-[1.01] hover:shadow-2xl"
             >
               <div className="flex items-center gap-4">
                 <div className="w-13 h-13 rounded-2xl bg-white/20 dark:bg-black/10 flex items-center justify-center shrink-0">
-                  <QrCode className="w-7 h-7 text-white dark:text-black" />
+                  <KeyRound className="w-7 h-7 text-white dark:text-black" />
                 </div>
                 <div>
                   <h2 className="font-black text-lg leading-tight mb-1">
-                    Scan Customer QR
+                    Enter 6-Digit Access Code
                   </h2>
                   <p className="text-xs text-white/80 dark:text-black/80 leading-relaxed font-medium">
-                    Open your smartphone camera to scan your dining pass QR or paste your access link.
+                    Use the 6-digit access code from your check-in email to view the menu.
                   </p>
                 </div>
               </div>
@@ -469,25 +420,25 @@ export const CustomerLandingPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Action 2: Enter Pass Token (Secondary Web Card) */}
+            {/* Action 2: Table Token ID (Secondary Web Card) */}
             <div
               onClick={() => {
                 setErrorMsg(null);
-                setTokenInput('BAR-20260902-00008');
+                setTokenInput('');
                 setActiveModal('TOKEN');
               }}
               className="p-5 xl:p-6 rounded-2xl bg-white dark:bg-[#111114] border border-border-main dark:border-white/10 text-text-main dark:text-white shadow-sm hover:border-primary/50 dark:hover:border-[#D4AF37]/50 flex items-center justify-between group cursor-pointer transition-all hover:scale-[1.01] hover:shadow-md"
             >
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-2xl bg-primary/10 dark:bg-[#D4AF37]/10 text-primary dark:text-[#D4AF37] flex items-center justify-center shrink-0">
-                  <KeyRound className="w-6 h-6" />
+                  <Ticket className="w-6 h-6" />
                 </div>
                 <div>
                   <h2 className="font-black text-base xl:text-lg leading-tight mb-0.5">
-                    Enter Pass Token
+                    Enter Table Token ID
                   </h2>
                   <p className="text-xs text-text-muted leading-relaxed font-medium">
-                    Lookup your active session using your alphanumeric token code (e.g. <code className="select-all font-mono font-bold text-primary dark:text-[#D4AF37] bg-primary/10 dark:bg-[#D4AF37]/10 px-1.5 py-0.5 rounded">BAR-20260902-00008</code>).
+                    Enter the Token ID from your check-in receipt or email to view the menu.
                   </p>
                 </div>
               </div>
@@ -500,7 +451,7 @@ export const CustomerLandingPage: React.FC = () => {
             <div
               onClick={() => {
                 setErrorMsg(null);
-                setPhoneInput('9833161990');
+                setPhoneInput('');
                 setActiveModal('PHONE');
               }}
               className="p-5 xl:p-6 rounded-2xl bg-white dark:bg-[#111114] border border-border-main dark:border-white/10 text-text-main dark:text-white shadow-sm hover:border-primary/50 dark:hover:border-[#D4AF37]/50 flex items-center justify-between group cursor-pointer transition-all hover:scale-[1.01] hover:shadow-md"
@@ -511,10 +462,10 @@ export const CustomerLandingPage: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="font-black text-base xl:text-lg leading-tight mb-0.5">
-                    Find Session via Phone
+                    Find via Mobile Number
                   </h2>
                   <p className="text-xs text-text-muted leading-relaxed font-medium">
-                    Find your active dining session using the 10-digit mobile number registered during check-in (e.g. <code className="select-all font-mono font-bold text-primary dark:text-[#D4AF37] bg-primary/10 dark:bg-[#D4AF37]/10 px-1.5 py-0.5 rounded">9833161990</code>).
+                    Find your active dining session using your 10-digit registered phone number.
                   </p>
                 </div>
               </div>
@@ -526,22 +477,22 @@ export const CustomerLandingPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Footer - Responsive across all viewports */}
+      {/* Footer */}
       <footer className="w-full max-w-sm sm:max-w-md md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto text-center text-[11px] sm:text-xs text-text-muted z-10 py-3 border-t border-border-main/50 dark:border-white/5 flex flex-col sm:flex-row items-center justify-between gap-1 sm:gap-4 shrink-0">
         <div>Pegs N Bottles · Guest Dining Portal</div>
         <div>Please complete check-in at reception to verify entry payment.</div>
       </footer>
 
       {/* ========================================================================= */}
-      {/* RESPONSIVE MODALS: Bottom-sheet on Mobile (<768px), Centered on Tab/Desk  */}
+      {/* RESPONSIVE MODALS                                                         */}
       {/* ========================================================================= */}
 
-      {/* MODAL 1: Enter Token */}
-      {activeModal === 'TOKEN' && (
+      {/* MODAL 1: Enter 6-Digit Access Code */}
+      {activeModal === 'CODE' && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-labelledby="token-modal-title"
+          aria-labelledby="code-modal-title"
           onClick={(e) => {
             if (e.target === e.currentTarget) setActiveModal('NONE');
           }}
@@ -560,34 +511,35 @@ export const CustomerLandingPage: React.FC = () => {
               <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-primary/10 dark:bg-[#D4AF37]/10 text-primary dark:text-[#D4AF37] flex items-center justify-center mx-auto mb-3">
                 <KeyRound className="w-6 h-6 sm:w-7 sm:h-7" />
               </div>
-              <h3 id="token-modal-title" className="font-extrabold text-lg sm:text-xl text-text-main dark:text-white">
-                Enter Pass Token
+              <h3 id="code-modal-title" className="font-extrabold text-lg sm:text-xl text-text-main dark:text-white">
+                Enter 6-Digit Access Code
               </h3>
               <p className="text-xs sm:text-sm text-text-muted mt-1">
-                Enter your alphanumeric token (e.g. <code className="select-all font-mono font-bold text-primary dark:text-[#D4AF37] bg-primary/10 dark:bg-[#D4AF37]/10 px-1.5 py-0.5 rounded cursor-pointer" onClick={() => setTokenInput('BAR-20260902-00008')} title="Click to fill or select to copy">BAR-20260902-00008</code>)
+                Enter the 6-digit access code sent to your email to open your table menu.
               </p>
             </div>
 
-            <form onSubmit={handleTokenSubmit} className="space-y-4">
+            <form onSubmit={handleCodeSubmit} className="space-y-4">
               <div>
-                <label htmlFor="token-input" className="block text-xs sm:text-sm font-semibold text-text-muted mb-1.5 text-left">
-                  Pass Token Number
+                <label htmlFor="code-input" className="block text-xs sm:text-sm font-semibold text-text-muted mb-1.5 text-left">
+                  6-Digit Access Code
                 </label>
                 <input
-                  id="token-input"
+                  id="code-input"
                   type="text"
-                  value={tokenInput}
+                  value={codeInput}
                   onChange={(e) => {
-                    setTokenInput(e.target.value.toUpperCase());
+                    setCodeInput(e.target.value.replace(/\s+/g, ''));
                     setErrorMsg(null);
                   }}
-                  placeholder="e.g. BAR-20260902-00008"
-                  aria-describedby={errorMsg ? 'token-error-msg' : undefined}
-                  className="w-full h-11 sm:h-12 md:h-13 rounded-xl bg-bg-primary dark:bg-white/5 border border-border-main dark:border-white/10 px-4 text-sm md:text-base font-mono text-text-main dark:text-white placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 dark:focus:ring-[#D4AF37]/20 focus:border-primary dark:focus:border-[#D4AF37]"
+                  placeholder="e.g. 481923"
+                  maxLength={12}
+                  aria-describedby={errorMsg ? 'code-error-msg' : undefined}
+                  className="w-full h-12 sm:h-13 rounded-xl bg-bg-primary dark:bg-white/5 border border-border-main dark:border-white/10 px-4 text-center text-lg sm:text-xl font-mono font-bold tracking-widest text-text-main dark:text-white placeholder:text-text-muted placeholder:font-normal placeholder:text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 dark:focus:ring-[#D4AF37]/20 focus:border-primary dark:focus:border-[#D4AF37]"
                   autoFocus
                 />
                 {errorMsg && (
-                  <p id="token-error-msg" className="mt-2 text-xs font-semibold text-rose-500 dark:text-rose-400 flex items-center gap-1.5">
+                  <p id="code-error-msg" className="mt-2 text-xs font-semibold text-rose-500 dark:text-rose-400 flex items-center gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                     <span>{errorMsg}</span>
                   </p>
@@ -596,10 +548,20 @@ export const CustomerLandingPage: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full min-h-[46px] sm:min-h-[50px] py-3 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-sm md:text-base shadow-md shadow-primary/20 dark:shadow-[#D4AF37]/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                disabled={isLoading || !codeInput.trim()}
+                className="w-full min-h-[46px] sm:min-h-[50px] py-3 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-sm md:text-base shadow-md shadow-primary/20 dark:shadow-[#D4AF37]/20 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
               >
-                <span>Continue to Table</span>
-                <ArrowRight className="w-4 h-4" />
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Opening Table Menu...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Open Table Menu</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </form>
           </div>
@@ -634,7 +596,7 @@ export const CustomerLandingPage: React.FC = () => {
                 Find Your Dining Session
               </h3>
               <p className="text-xs sm:text-sm text-text-muted mt-1">
-                Enter the 10-digit phone number registered during check-in (e.g. <code className="select-all font-mono font-bold text-primary dark:text-[#D4AF37] bg-primary/10 dark:bg-[#D4AF37]/10 px-1.5 py-0.5 rounded cursor-pointer" onClick={() => setPhoneInput('9833161990')} title="Click to fill or select to copy">9833161990</code>).
+                Enter the 10-digit mobile number registered during check-in.
               </p>
             </div>
 
@@ -651,10 +613,10 @@ export const CustomerLandingPage: React.FC = () => {
                     setPhoneInput(e.target.value);
                     setErrorMsg(null);
                   }}
-                  placeholder="e.g. 9833161990"
+                  placeholder="e.g. 9876543210"
                   maxLength={10}
                   aria-describedby={errorMsg ? 'phone-error-msg' : undefined}
-                  className="w-full h-11 sm:h-12 md:h-13 rounded-xl bg-bg-primary dark:bg-white/5 border border-border-main dark:border-white/10 px-4 text-base sm:text-lg tracking-widest text-center font-bold text-text-main dark:text-white placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 dark:focus:ring-[#D4AF37]/20 focus:border-primary dark:focus:border-[#D4AF37]"
+                  className="w-full h-12 sm:h-13 rounded-xl bg-bg-primary dark:bg-white/5 border border-border-main dark:border-white/10 px-4 text-base sm:text-lg tracking-widest text-center font-bold text-text-main dark:text-white placeholder:text-text-muted placeholder:font-normal placeholder:text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 dark:focus:ring-[#D4AF37]/20 focus:border-primary dark:focus:border-[#D4AF37]"
                   autoFocus
                 />
                 {errorMsg && (
@@ -687,12 +649,12 @@ export const CustomerLandingPage: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL 3: Scan QR Helper */}
-      {activeModal === 'SCAN' && (
+      {/* MODAL 3: Enter Table Token ID */}
+      {activeModal === 'TOKEN' && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-labelledby="scan-modal-title"
+          aria-labelledby="token-modal-title"
           onClick={(e) => {
             if (e.target === e.currentTarget) setActiveModal('NONE');
           }}
@@ -708,36 +670,46 @@ export const CustomerLandingPage: React.FC = () => {
             </button>
 
             <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-primary/10 dark:bg-[#D4AF37]/10 text-primary dark:text-[#D4AF37] flex items-center justify-center mx-auto mb-3 sm:mb-4">
-              <QrCode className="w-6 h-6 sm:w-7 sm:h-7" />
+              <Ticket className="w-6 h-6 sm:w-7 sm:h-7" />
             </div>
 
-            <h3 id="scan-modal-title" className="font-extrabold text-lg sm:text-xl text-text-main dark:text-white mb-2">
-              Scan Customer Pass QR
+            <h3 id="token-modal-title" className="font-extrabold text-lg sm:text-xl text-text-main dark:text-white mb-2">
+              Enter Table Token ID
             </h3>
             <p className="text-xs sm:text-sm text-text-muted leading-relaxed mb-5">
-              Open your smartphone camera and scan the QR code received in your email, or enter the access link below:
+              Enter the Token ID (e.g. BAR-20260912-00025) from your check-in confirmation or email to access your table menu:
             </p>
 
             <form onSubmit={handleTokenSubmit} className="space-y-4">
               <div>
-                <label htmlFor="scan-input" className="block text-xs sm:text-sm font-semibold text-text-muted mb-1.5 text-left">
-                  Pass Link or Token
+                <label htmlFor="token-input" className="block text-xs sm:text-sm font-semibold text-text-muted mb-1.5 text-left">
+                  Token ID
                 </label>
                 <input
-                  id="scan-input"
+                  id="token-input"
                   type="text"
                   value={tokenInput}
-                  onChange={(e) => setTokenInput(e.target.value)}
-                  placeholder="e.g. BAR-20260902-00008"
+                  onChange={(e) => {
+                    setTokenInput(e.target.value);
+                    setErrorMsg(null);
+                  }}
+                  placeholder="e.g. BAR-20260912-00025"
                   className="w-full h-11 sm:h-12 md:h-13 rounded-xl bg-bg-primary dark:bg-white/5 border border-border-main dark:border-white/10 px-4 text-xs sm:text-sm font-mono text-text-main dark:text-white placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 dark:focus:ring-[#D4AF37]/20 focus:border-primary dark:focus:border-[#D4AF37]"
                 />
+                {errorMsg && (
+                  <p className="mt-2 text-xs font-semibold text-rose-500 dark:text-rose-400 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{errorMsg}</span>
+                  </p>
+                )}
               </div>
 
               <button
                 type="submit"
-                className="w-full min-h-[46px] sm:min-h-[50px] py-3 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-sm md:text-base shadow-md shadow-primary/20 dark:shadow-[#D4AF37]/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                disabled={!tokenInput.trim()}
+                className="w-full min-h-[46px] sm:min-h-[50px] py-3 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black font-extrabold text-sm md:text-base shadow-md shadow-primary/20 dark:shadow-[#D4AF37]/20 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
               >
-                <span>Open Experience</span>
+                <span>Open Table Menu</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>

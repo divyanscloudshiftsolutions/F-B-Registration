@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Grid3X3, X, CheckCircle2, Users, ArrowRight, Search, UserPlus, AlertTriangle, Clock, Lock, Mail, User, Phone } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Grid3X3, X, CheckCircle2, Users, ArrowRight, Search, UserPlus, AlertTriangle, Clock, Lock, Mail, User, Phone, Filter, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
 import type { Table, Token } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -124,55 +124,210 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  // Centered Table Inspection Dialog Modal State
  const [inspectingTable, setInspectingTable] = useState<Table | null>(null);
 
+  type ValidationStatus = 'IDLE' | 'PENDING' | 'VALID' | 'CONFLICT' | 'INVALID';
+
   // Reserve Form State
   const [reservingTable, setReservingTable] = useState<Table | null>(null);
   const [resName, setResName] = useState('');
   const [resPhone, setResPhone] = useState('');
   const [resEmail, setResEmail] = useState('');
   const [resPersons, setResPersons] = useState(2);
+  const [resPhoneValidationStatus, setResPhoneValidationStatus] = useState<ValidationStatus>('IDLE');
+  const [resEmailValidationStatus, setResEmailValidationStatus] = useState<ValidationStatus>('IDLE');
+  const [resValidatedPhone, setResValidatedPhone] = useState('');
+  const [resValidatedEmail, setResValidatedEmail] = useState('');
   const [resEmailConflict, setResEmailConflict] = useState(false);
   const [resPhoneConflict, setResPhoneConflict] = useState(false);
+  const [resPhoneConflictDetail, setResPhoneConflictDetail] = useState<{ type: 'CHECKIN' | 'RESERVATION'; name: string } | null>(null);
+  const [resEmailConflictDetail, setResEmailConflictDetail] = useState<{ type: 'CHECKIN' | 'RESERVATION'; name: string } | null>(null);
+  const [isResValidating, setIsResValidating] = useState(false);
+  const resValidationRequestIdRef = useRef<number>(0);
   const [isSubmittingReserve, setIsSubmittingReserve] = useState(false);
   const [isAssignFlow, setIsAssignFlow] = useState(false);
 
-  // Real-time backend validation with 400ms debounce for Assign/Reserve Table Dialog
+  const handleResPhoneChange = (val: string) => {
+    setResPhone(val);
+    setResPhoneConflictDetail(null);
+    const trimmed = val.trim();
+    if (!trimmed) {
+      setResPhoneValidationStatus('IDLE');
+      setResPhoneConflict(false);
+      setResValidatedPhone('');
+    } else if (!isValidPhone(trimmed)) {
+      setResPhoneValidationStatus('INVALID');
+      setResPhoneConflict(false);
+      setResValidatedPhone('');
+    } else {
+      setResPhoneValidationStatus('PENDING');
+      setResValidatedPhone('');
+    }
+  };
+
+  const handleResEmailChange = (val: string) => {
+    setResEmail(val);
+    setResEmailConflictDetail(null);
+    const trimmed = val.trim();
+    if (!trimmed) {
+      setResEmailValidationStatus('IDLE');
+      setResEmailConflict(false);
+      setResValidatedEmail('');
+    } else if (!isValidEmail(trimmed)) {
+      setResEmailValidationStatus('INVALID');
+      setResEmailConflict(false);
+      setResValidatedEmail('');
+    } else {
+      setResEmailValidationStatus('PENDING');
+      setResValidatedEmail('');
+    }
+  };
+
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [isResRefreshing, setIsResRefreshing] = useState(false);
+
+  const handleModalRefresh = async () => {
+    if (isResRefreshing) return;
+    setIsResRefreshing(true);
+    const start = Date.now();
+    try {
+      setResValidatedPhone('');
+      setResValidatedEmail('');
+      setRefreshTrigger(prev => prev + 1);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app:global-refresh'));
+      }
+      await Promise.allSettled([
+        refreshTables(),
+        refreshTokens(),
+        refreshReservations(),
+      ]);
+    } finally {
+      const elapsed = Date.now() - start;
+      const delay = Math.max(0, 500 - elapsed);
+      setTimeout(() => setIsResRefreshing(false), delay);
+    }
+  };
+
+  // Listen for global header refresh button click to immediately re-validate input state in the background without whole-page reload
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      setResValidatedPhone('');
+      setResValidatedEmail('');
+      setRefreshTrigger(prev => prev + 1);
+      refreshTables();
+      refreshTokens();
+      refreshReservations();
+    };
+    window.addEventListener('app:global-refresh', handleGlobalRefresh);
+    return () => {
+      window.removeEventListener('app:global-refresh', handleGlobalRefresh);
+    };
+  }, []);
+
+  // When global reservations or tokens update in background (e.g. reservation cancelled elsewhere), re-evaluate if in conflict
+  useEffect(() => {
+    if (resPhoneConflict || resEmailConflict || resPhoneValidationStatus === 'CONFLICT' || resEmailValidationStatus === 'CONFLICT') {
+      setResValidatedPhone('');
+      setResValidatedEmail('');
+      setRefreshTrigger(prev => prev + 1);
+    }
+  }, [realReservations, realTokens]);
+
+  // Real-time backend validation with request versioning and 300ms debounce for Assign/Reserve Table Dialog
   useEffect(() => {
     if (!reservingTable) {
       setResPhoneConflict(false);
       setResEmailConflict(false);
+      setResPhoneConflictDetail(null);
+      setResEmailConflictDetail(null);
+      setResPhoneValidationStatus('IDLE');
+      setResEmailValidationStatus('IDLE');
+      setResValidatedPhone('');
+      setResValidatedEmail('');
       return;
     }
 
     const p = resPhone.trim();
     const e = resEmail.trim();
 
-    if (!p && !e) {
+    const isPFormatValid = isValidPhone(p);
+    const isEFormatValid = isValidEmail(e);
+
+    if (!p) {
+      setResPhoneValidationStatus('IDLE');
       setResPhoneConflict(false);
+      setResPhoneConflictDetail(null);
+      setResValidatedPhone('');
+    } else if (!isPFormatValid) {
+      setResPhoneValidationStatus('INVALID');
+      setResPhoneConflict(false);
+      setResPhoneConflictDetail(null);
+      setResValidatedPhone('');
+    }
+
+    if (!e) {
+      setResEmailValidationStatus('IDLE');
       setResEmailConflict(false);
+      setResEmailConflictDetail(null);
+      setResValidatedEmail('');
+    } else if (!isEFormatValid) {
+      setResEmailValidationStatus('INVALID');
+      setResEmailConflict(false);
+      setResEmailConflictDetail(null);
+      setResValidatedEmail('');
+    }
+
+    const needsPhoneValidation = isPFormatValid && (resPhoneValidationStatus !== 'VALID' || resValidatedPhone !== p);
+    const needsEmailValidation = isEFormatValid && (resEmailValidationStatus !== 'VALID' || resValidatedEmail !== e);
+
+    if (!needsPhoneValidation && !needsEmailValidation) {
       return;
     }
+
+    if (needsPhoneValidation) {
+      setResPhoneValidationStatus('PENDING');
+    }
+    if (needsEmailValidation) {
+      setResEmailValidationStatus('PENDING');
+    }
+
+    const currentRequestId = ++resValidationRequestIdRef.current;
 
     const timer = setTimeout(async () => {
       try {
         const body: any = {};
-        if (p) body.phoneNumber = p;
-        if (e) body.email = e;
+        if (isPFormatValid) body.phoneNumber = p;
+        if (isEFormatValid) body.email = e;
 
         const res = await api.validateDuplicate(body);
-        if (res && res.conflicts) {
-          setResPhoneConflict(!!res.conflicts.phone);
-          setResEmailConflict(!!res.conflicts.email);
-        } else {
-          setResPhoneConflict(false);
-          setResEmailConflict(false);
+        if (currentRequestId !== resValidationRequestIdRef.current) {
+          return;
+        }
+
+        if (isPFormatValid) {
+          const hasPhoneConflict = !!res?.conflicts?.phone;
+          setResPhoneConflict(hasPhoneConflict);
+          setResPhoneConflictDetail(res?.conflictDetails?.phone || null);
+          setResPhoneValidationStatus(hasPhoneConflict ? 'CONFLICT' : 'VALID');
+          setResValidatedPhone(p);
+        }
+
+        if (isEFormatValid) {
+          const hasEmailConflict = !!res?.conflicts?.email;
+          setResEmailConflict(hasEmailConflict);
+          setResEmailConflictDetail(res?.conflictDetails?.email || null);
+          setResEmailValidationStatus(hasEmailConflict ? 'CONFLICT' : 'VALID');
+          setResValidatedEmail(e);
         }
       } catch (err) {
+        if (currentRequestId !== resValidationRequestIdRef.current) return;
         console.error('Error during duplicate validation in Assign/Reserve Dialog:', err);
+        if (isPFormatValid) setResPhoneValidationStatus('INVALID');
+        if (isEFormatValid) setResEmailValidationStatus('INVALID');
       }
-    }, 400);
+    }, 300);
 
     return () => clearTimeout(timer);
-  }, [resPhone, resEmail, reservingTable]);
+  }, [resPhone, resEmail, reservingTable, refreshTrigger]);
 
   // Validation functions matching CheckInPage exactly
   const isValidName = (name: string): boolean => {
@@ -186,7 +341,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   };
 
   const isValidEmail = (emailStr: string): boolean => {
-    if (!emailStr || !emailStr.trim()) return true;
+    if (!emailStr || !emailStr.trim()) return false;
     const trimmed = emailStr.trim().toLowerCase();
     const regex = /^(?!.*\.\.)(?!\.)(?!.*\.$)[a-z0-9]+(\.[a-z0-9]+)*@gmail\.com$/;
     return regex.test(trimmed);
@@ -196,20 +351,121 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   const normalizedResPhone = resPhone.trim().startsWith('+91') ? resPhone.trim() : `+91${resPhone.trim()}`;
   const isResPhoneActive = tokens.some(t => 
     (t.customer?.phoneNumber === resPhone.trim() || t.customer?.phoneNumber === normalizedResPhone) &&
-    (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED')
+    (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED') &&
+    t.paymentVerified === true
   );
 
   const isResEmailActive = resEmail.trim() ? tokens.some(t =>
     t.customer?.email?.toLowerCase() === resEmail.trim().toLowerCase() &&
-    (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED')
+    (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED') &&
+    t.paymentVerified === true
   ) : false;
 
   const isResNameOk = isValidName(resName);
-  const isResPhoneOk = isValidPhone(resPhone) && !isResPhoneActive && !resPhoneConflict;
-  const isResEmailOk = resEmail.trim().length > 0 && isValidEmail(resEmail) && !isResEmailActive && !resEmailConflict;
+  const isResPhoneOk =
+    isValidPhone(resPhone) &&
+    resPhoneValidationStatus === 'VALID' &&
+    resValidatedPhone === resPhone.trim() &&
+    !isResPhoneActive &&
+    !resPhoneConflict;
+
+  const isResEmailOk =
+    resEmail.trim().length > 0 &&
+    isValidEmail(resEmail) &&
+    resEmailValidationStatus === 'VALID' &&
+    resValidatedEmail === resEmail.trim() &&
+    !isResEmailActive &&
+    !resEmailConflict;
+
   const isResCapacityOk = typeof resPersons === 'number' && resPersons > 0 && (!reservingTable || resPersons <= (reservingTable.capacity || 4));
 
-  const isResFormValid = isResNameOk && isResPhoneOk && isResEmailOk && isResCapacityOk;
+  const isResFormValid = isResNameOk && isResPhoneOk && isResEmailOk && isResCapacityOk && !isResValidating;
+
+  // Reservation Tab Search and Filter States
+  const [reservationSearchQuery, setReservationSearchQuery] = useState('');
+  const [reservationUserFilter, setReservationUserFilter] = useState<'all' | 'mine' | 'others'>('all');
+  const [reservationCapacityFilter, setReservationCapacityFilter] = useState<number | 'all'>('all');
+
+  const getReservedByName = (res: any) => {
+    if (res.user) {
+      const name = res.user.fullName || res.user.username || 'Staff';
+      const roleName = res.user.role?.name || (typeof res.user.role === 'string' ? res.user.role : '');
+      const roleTitle = roleName.toLowerCase() === 'admin' 
+        ? 'Lead Admin' 
+        : roleName.toLowerCase() === 'manager' 
+        ? 'Floor Manager' 
+        : roleName.toLowerCase() === 'receptionist' 
+        ? 'Receptionist' 
+        : roleName;
+      return roleTitle ? `${name} (${roleTitle})` : name;
+    }
+    return res.customerName || 'Staff';
+  };
+
+  const availableReservationCapacities = useMemo(() => {
+    const caps = new Set<number>();
+    realReservations.forEach((r: any) => {
+      if (r.table?.capacity) caps.add(r.table.capacity);
+      if (r.personsCount) caps.add(r.personsCount);
+    });
+    realTables.forEach(t => {
+      if (t.capacity) caps.add(t.capacity);
+    });
+    return Array.from(caps).sort((a, b) => a - b);
+  }, [realReservations, realTables]);
+
+  const filteredReservations = useMemo(() => {
+    const pending = realReservations.filter((r: any) => r.status === 'PENDING');
+    const q = reservationSearchQuery.trim().toLowerCase();
+
+    return pending.filter((res: any) => {
+      // 1. User Filter ('all' | 'mine' | 'others')
+      const isMine = res.userId === user?.id;
+      if (reservationUserFilter === 'mine' && !isMine) return false;
+      if (reservationUserFilter === 'others' && isMine) return false;
+
+      // 2. Capacity Filter
+      if (reservationCapacityFilter !== 'all') {
+        const tableCap = res.table?.capacity;
+        const guestCount = res.personsCount;
+        if (tableCap !== reservationCapacityFilter && guestCount !== reservationCapacityFilter) {
+          return false;
+        }
+      }
+
+      // 3. Search Query (Customer Name, Reserving Staff Name, Phone Number, Email ID, Table Number, Capacity/Headcount)
+      if (q) {
+        const customerName = (res.customerName || '').toLowerCase();
+        const reservingUserName = (res.user?.fullName || res.user?.username || '').toLowerCase();
+        const phone = (res.phoneNumber || '').toLowerCase();
+        const email = (res.email || '').toLowerCase();
+        const tableNum = (res.table?.tableNumber || '').toLowerCase();
+        const capacityStr = String(res.table?.capacity || '');
+        const membersStr = String(res.personsCount || '');
+
+        const match =
+          customerName.includes(q) ||
+          reservingUserName.includes(q) ||
+          phone.includes(q) ||
+          email.includes(q) ||
+          tableNum.includes(q) ||
+          capacityStr === q ||
+          membersStr === q;
+
+        if (!match) return false;
+      }
+
+      return true;
+    });
+  }, [realReservations, reservationSearchQuery, reservationUserFilter, reservationCapacityFilter, user]);
+
+  const myReservationsCount = useMemo(() => {
+    return realReservations.filter((r: any) => r.status === 'PENDING' && r.userId === user?.id).length;
+  }, [realReservations, user]);
+
+  const otherReservationsCount = useMemo(() => {
+    return realReservations.filter((r: any) => r.status === 'PENDING' && r.userId !== user?.id).length;
+  }, [realReservations, user]);
 
   // Cancel Confirmation State
   const [cancellingReservation, setCancellingReservation] = useState<any | null>(null);
@@ -248,6 +504,19 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     return () => window.removeEventListener('keydown', handleInspectKeyDown);
   }, [inspectingTable]);
 
+  // Keyboard listener for Reserve / Assign Modal (Escape to close and unlock)
+  useEffect(() => {
+    if (!reservingTable) return;
+    const handleReserveKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCloseReserveModal();
+      }
+    };
+    window.addEventListener('keydown', handleReserveKeyDown);
+    return () => window.removeEventListener('keydown', handleReserveKeyDown);
+  }, [reservingTable, isAssignFlow]);
+
   // Extend Modal State
   const [extendingTable, setExtendingTable] = useState<Table | null>(null);
 
@@ -271,25 +540,33 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     };
   }, [activeTab]);
 
-  const inspectTableById = (tableId: string) => {
-    if (realTables.length > 0) {
-      const targetTable = realTables.find(t => t.id === tableId);
-      if (targetTable) {
-        localStorage.removeItem('bar_auto_inspect_table_id');
-        if (targetTable.status === 'occupied') {
-          const targetZone = targetTable.tableNumber.startsWith('L-') ? 'PREMIUM_LOUNGE' : 'STANDING_BAR';
-          if (placeZone !== targetZone) {
-            setPlaceZone(targetZone);
-          }
-          if (activeTab !== 'tables/layout') {
-            setActiveTab('tables/layout');
-          }
-          setInspectingTable(targetTable);
-        } else {
-          showToast(`Table ${targetTable.tableNumber}'s session has already expired or is no longer active.`, 'info');
-          refreshAllTableData();
-        }
+  const inspectTableById = (tableIdentifier: string) => {
+    if (!tableIdentifier || realTables.length === 0) return;
+    const clean = String(tableIdentifier).trim();
+
+    // Match table by table.id, table.tableNumber, currentTokenId, or token relation
+    const targetTable = realTables.find(t => 
+      t.id === clean || 
+      t.tableNumber.toLowerCase() === clean.toLowerCase() ||
+      t.tableNumber.toLowerCase() === clean.replace(/^t-/, '').toLowerCase() ||
+      (t.currentTokenId && t.currentTokenId === clean) ||
+      tokens.some(tk => (tk.id === clean || tk.tokenNumber === clean) && (tk.tableId === t.id || (tk.table && tk.table.id === t.id)))
+    );
+
+    if (targetTable) {
+      localStorage.removeItem('bar_auto_inspect_table_id');
+      
+      const isLounge = targetTable.placeTypeId === 'PREMIUM_LOUNGE' || targetTable.tableNumber.startsWith('L-');
+      const targetZone = isLounge ? 'PREMIUM_LOUNGE' : 'STANDING_BAR';
+      if (placeZone !== targetZone) {
+        setPlaceZone(targetZone);
       }
+      if (activeTab !== 'tables/occupied') {
+        setActiveTab('tables/occupied');
+      }
+      setInspectingTable(targetTable);
+    } else {
+      localStorage.removeItem('bar_auto_inspect_table_id');
     }
   };
 
@@ -384,15 +661,28 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  setIsSubmittingAssign(false);
  }
  };
-  const handleAssignClick = (tb: Table) => {
-    setReservingTable(tb);
-    setIsAssignFlow(true);
-    setResPersons(tb.capacity || 4);
-    setResName('');
-    setResPhone('');
-    setResEmail('');
-    setResPhoneConflict(false);
-    setResEmailConflict(false);
+  const handleAssignClick = async (tb: Table) => {
+    try {
+      await api.lockTable(tb.id);
+      setReservingTable(tb);
+      setIsAssignFlow(true);
+      setResPersons(tb.capacity || 4);
+      setResName('');
+      setResPhone('');
+      setResEmail('');
+      setResPhoneValidationStatus('IDLE');
+      setResEmailValidationStatus('IDLE');
+      setResPhoneConflict(false);
+      setResEmailConflict(false);
+      setResPhoneConflictDetail(null);
+      setResEmailConflictDetail(null);
+      setResValidatedPhone('');
+      setResValidatedEmail('');
+      refreshTables();
+    } catch (err: any) {
+      showToast(err.message || `Table ${tb.tableNumber} is locked or unavailable.`, 'danger');
+      refreshTables();
+    }
   };
 
   const handleReserveClick = (tb: Table) => {
@@ -402,8 +692,38 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     setResName('');
     setResPhone('');
     setResEmail('');
+    setResPhoneValidationStatus('IDLE');
+    setResEmailValidationStatus('IDLE');
     setResPhoneConflict(false);
     setResEmailConflict(false);
+    setResPhoneConflictDetail(null);
+    setResEmailConflictDetail(null);
+    setResValidatedPhone('');
+    setResValidatedEmail('');
+  };
+
+  const handleCloseReserveModal = async () => {
+    if (isAssignFlow && reservingTable) {
+      try {
+        await api.unlockTable(reservingTable.id);
+      } catch (err) {
+        console.warn('Failed to unlock table on modal close:', err);
+      }
+    }
+    setReservingTable(null);
+    setIsAssignFlow(false);
+    setResName('');
+    setResPhone('');
+    setResEmail('');
+    setResPhoneValidationStatus('IDLE');
+    setResEmailValidationStatus('IDLE');
+    setResPhoneConflict(false);
+    setResEmailConflict(false);
+    setResPhoneConflictDetail(null);
+    setResEmailConflictDetail(null);
+    setResValidatedPhone('');
+    setResValidatedEmail('');
+    refreshTables();
   };
 
   const handleReserveSubmit = async (e: React.FormEvent) => {
@@ -486,12 +806,26 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
         if (validateRes && validateRes.conflicts) {
           if (validateRes.conflicts.phone) {
-            showToast('This phone number is already checked in.', 'danger');
+            setResPhoneConflict(true);
+            setResPhoneConflictDetail(validateRes.conflictDetails?.phone || null);
+            setResPhoneValidationStatus('CONFLICT');
+            const phoneOwner = validateRes.conflictDetails?.phone?.name;
+            const phoneMsg = validateRes.conflictDetails?.phone?.type === 'RESERVATION'
+              ? `This phone number is already reserved by ${phoneOwner || 'a customer'}.`
+              : `This phone number is currently being used by ${phoneOwner || 'another user'}.`;
+            showToast(phoneMsg, 'danger');
             setIsSubmittingReserve(false);
             return;
           }
           if (validateRes.conflicts.email) {
-            showToast('This email ID is already checked in.', 'danger');
+            setResEmailConflict(true);
+            setResEmailConflictDetail(validateRes.conflictDetails?.email || null);
+            setResEmailValidationStatus('CONFLICT');
+            const emailOwner = validateRes.conflictDetails?.email?.name;
+            const emailMsg = validateRes.conflictDetails?.email?.type === 'RESERVATION'
+              ? `This email address is already reserved by ${emailOwner || 'a customer'}.`
+              : `This email address is currently being used by ${emailOwner || 'another user'}.`;
+            showToast(emailMsg, 'danger');
             setIsSubmittingReserve(false);
             return;
           }
@@ -500,9 +834,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
         console.warn('Backend duplicate validation check failed, relying on local state check:', validateErr);
       }
       if (isAssignFlow) {
-        // Direct table assignment: Lock the table directly (status becomes in_checkin, Redis lock created)
-        await api.lockTable(reservingTable.id);
-
+        // Store assign target details for check-in WITHOUT creating a reservation or pre-locking the table
         localStorage.setItem('bar_checkin_assign_target', JSON.stringify({
           customerName: resName.trim(),
           phoneNumber: resPhone.trim(),
@@ -511,11 +843,11 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
           tableId: reservingTable.id,
           tableNumber: reservingTable.tableNumber,
           capacity: reservingTable.capacity || 4,
-          placeTypeId: reservingTable.placeTypeId || (reservingTable.tableNumber.startsWith('L-') ? 'PREMIUM_LOUNGE' : 'STANDING_BAR')
+          placeTypeId: reservingTable.placeTypeId || (reservingTable.tableNumber.startsWith('L-') ? 'PREMIUM_LOUNGE' : 'STANDING_BAR'),
         }));
-        localStorage.setItem('bar_checkin_original_status', 'available');
+        localStorage.setItem('bar_checkin_just_assigned', 'true');
 
-        showToast(`Table ${reservingTable.tableNumber} locked! Proceeding to check-in.`, 'success');
+        showToast(`Table ${reservingTable.tableNumber} details saved! Proceeding to check-in.`, 'success');
         setReservingTable(null);
         setResName('');
         setResPhone('');
@@ -523,8 +855,6 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
         if (onNavigateToCheckIn) {
           onNavigateToCheckIn();
         }
-        refreshTables();
-        refreshReservations();
       } else {
         // Normal reservation creation flow
         const res = await api.createReservation({
@@ -593,6 +923,16 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   const handleAssignReservation = async (res: any) => {
     try {
       await api.lockTable(res.tableId);
+
+      try {
+        const oldDraftStr = localStorage.getItem('bar_incomplete_checkin');
+        if (oldDraftStr) {
+          const oldDraft = JSON.parse(oldDraftStr);
+          if (oldDraft.selectedTableId && oldDraft.selectedTableId !== res.tableId) {
+            api.unlockTable(oldDraft.selectedTableId).catch(() => {});
+          }
+        }
+      } catch (e) {}
       
       localStorage.setItem('bar_checkin_assign_target', JSON.stringify({
         reservationId: res.id,
@@ -606,6 +946,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
         placeTypeId: res.table?.placeTypeId || 'standing_bar'
       }));
       localStorage.setItem('bar_checkin_original_status', 'reserved');
+      localStorage.setItem('bar_checkin_just_assigned', 'true');
       
       setInspectingTable(null);
       if (onNavigateToCheckIn) {
@@ -631,6 +972,16 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     try {
       const originalStatus = tb.status; // 'available' or 'reserved'
       await api.lockTable(tb.id);
+
+      try {
+        const oldDraftStr = localStorage.getItem('bar_incomplete_checkin');
+        if (oldDraftStr) {
+          const oldDraft = JSON.parse(oldDraftStr);
+          if (oldDraft.selectedTableId && oldDraft.selectedTableId !== tb.id) {
+            api.unlockTable(oldDraft.selectedTableId).catch(() => {});
+          }
+        }
+      } catch (e) {}
       
       localStorage.setItem('bar_checkin_assign_target', JSON.stringify({
         tableId: tb.id,
@@ -639,6 +990,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
         placeTypeId: (tb.tableNumber.startsWith('S-') || tb.tableNumber.startsWith('M')) ? 'standing_bar' : 'premium_lounge'
       }));
       localStorage.setItem('bar_checkin_original_status', originalStatus);
+      localStorage.setItem('bar_checkin_just_assigned', 'true');
       
       setInspectingTable(null);
       if (onNavigateToCheckIn) {
@@ -710,94 +1062,258 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
   {/* Active Reservations View */}
   {activeTab === 'tables/reservations' ? (
-    isLoading ? (
-      <div className="py-20 text-center text-text-muted text-sm">Loading active reservations...</div>
-    ) : realReservations.filter((r: any) => r.status === 'PENDING').length === 0 ? (
-      <div className="glass-panel p-12 rounded-3xl border border-border-main text-center space-y-3">
-        <p className="text-text-muted text-sm">No active reservations found.</p>
-      </div>
-    ) : (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {realReservations
-          .filter((r: any) => r.status === 'PENDING')
-          .map((res: any) => (
-            <div
-              key={res.id}
-              className="p-5 rounded-3xl dark:rounded-xl border dark:border-white/10 dark:bg-[#1C1C1E] bg-bg-surface flex flex-col justify-between gap-4 animate-fadeIn"
+    <div className="space-y-6">
+      {/* Reservation Search & Filter Toolbar */}
+      <div className="p-4 sm:p-5 rounded-3xl dark:rounded-xl border dark:border-white/10 dark:bg-[#1C1C1E] bg-bg-surface space-y-4">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          {/* Search Input */}
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+            <input
+              type="text"
+              value={reservationSearchQuery}
+              onChange={(e) => setReservationSearchQuery(e.target.value)}
+              placeholder="Search by customer name, staff name, phone, email, table #..."
+              className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-border-main bg-bg-primary text-text-main text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-text-muted/60 transition-all"
+            />
+            {reservationSearchQuery && (
+              <button
+                onClick={() => setReservationSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-0.5 rounded cursor-pointer"
+                title="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Filters Group: Capacity Selector & Quick Reserve */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border-main bg-bg-primary text-xs shrink-0">
+              <Filter size={13} className="text-text-muted shrink-0" />
+              <span className="text-text-muted font-semibold hidden sm:inline">Capacity:</span>
+              <select
+                value={reservationCapacityFilter}
+                onChange={(e) => setReservationCapacityFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                className="bg-transparent text-text-main font-bold focus:outline-none cursor-pointer text-xs"
+              >
+                <option value="all" className="bg-bg-surface text-text-main">All Capacities</option>
+                {availableReservationCapacities.map((cap) => (
+                  <option key={cap} value={cap} className="bg-bg-surface text-text-main">
+                    {cap} Guests Max
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => {
+                setActiveTab('tables/all');
+                setFilter('available');
+              }}
+              className="px-4 py-2.5 rounded-xl primary-btn text-xs font-bold whitespace-nowrap flex items-center gap-1.5 cursor-pointer shrink-0"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-border-main/50">
-                <div>
-                  <h4 className="font-bold text-base text-text-main">{res.customerName}</h4>
-                  <p className="text-xs text-text-muted mt-0.5">{res.phoneNumber}</p>
-                </div>
-                <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider dark:bg-blue-500/15 bg-blue-500/10 dark:text-blue-400 text-blue-700 border border-blue-500/30">
-                  Reserved
-                </span>
-              </div>
-              
-              <div className="space-y-2 text-xs text-text-muted">
-                <div className="flex justify-between">
-                  <span>Email ID:</span>
-                  <span className="font-semibold text-text-main truncate max-w-[200px]">{res.email}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Guests count:</span>
-                  <span className="font-semibold text-text-main">{res.personsCount} members</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Table Number:</span>
-                  <span className="font-bold dark:text-primary text-primary font-mono text-sm">{res.table?.tableNumber || 'N/A'}</span>
-                </div>
-              </div>
-              {(() => {
-                const isOwner = !res.userId || res.userId === user?.id || user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
-                const isTableInCheckin = res.table?.status === 'in_checkin';
-                
-                const assignDisabled = !isOwner || isTableInCheckin;
-                const assignTooltip = !isOwner 
-                  ? "This reservation is owned by another receptionist." 
-                  : isTableInCheckin 
-                  ? "Check-in is already in progress for this reservation."
-                  : undefined;
+              <UserPlus size={14} />
+              <span>+ Reserve Table</span>
+            </button>
+          </div>
+        </div>
 
-                const cancelDisabled = !isOwner || isTableInCheckin;
-                const cancelTooltip = !isOwner 
-                  ? "This reservation is owned by another receptionist." 
-                  : isTableInCheckin 
-                  ? "Reservation cannot be cancelled while check-in is in progress."
-                  : undefined;
+        {/* Quick Filter Segmented Pills */}
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-border-main/50 flex-wrap">
+          <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 sm:pb-0">
+            <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Filter By:</span>
+            <button
+              onClick={() => setReservationUserFilter('all')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                reservationUserFilter === 'all'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
+              }`}
+            >
+              All Reservations ({realReservations.filter((r: any) => r.status === 'PENDING').length})
+            </button>
+            <button
+              onClick={() => setReservationUserFilter('mine')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                reservationUserFilter === 'mine'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
+              }`}
+            >
+              My Reservations ({myReservationsCount})
+            </button>
+            <button
+              onClick={() => setReservationUserFilter('others')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                reservationUserFilter === 'others'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
+              }`}
+            >
+              Other Staff ({otherReservationsCount})
+            </button>
+          </div>
 
-                return (
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      onClick={() => handleAssignReservation(res)}
-                      disabled={assignDisabled}
-                      title={assignTooltip}
-                      className={`flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1 ${
-                        assignDisabled ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
-                      }`}
-                    >
-                      <UserPlus size={14} /> Assign
-                    </button>
-                    <button
-                      onClick={() => setCancellingReservation(res)}
-                      disabled={cancelDisabled}
-                      title={cancelTooltip}
-                      className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
-                        cancelDisabled 
-                          ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40' 
-                          : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-300 active:bg-red-500/20 dark:active:bg-red-500/30 dark:text-red-400 text-red-600 border border-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer'
-                      }`}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                );
-              })()}            </div>
-          ))}
+          <div className="text-xs text-text-muted font-medium">
+            Showing <span className="font-bold text-text-main">{filteredReservations.length}</span> matching
+          </div>
+        </div>
       </div>
-    )
-  ) : isLoading ? (
+
+      {/* Content Cards */}
+      {isLoading && realReservations.length === 0 ? (
+        <div className="py-20 text-center text-text-muted text-sm">Loading active reservations...</div>
+      ) : filteredReservations.length === 0 ? (
+        <div className="glass-panel p-12 rounded-3xl border border-border-main text-center space-y-3">
+          <p className="text-text-muted text-sm">
+            {reservationSearchQuery || reservationUserFilter !== 'all' || reservationCapacityFilter !== 'all'
+              ? 'No reservations match your search or filter criteria.'
+              : 'No active reservations found.'}
+          </p>
+          {(reservationSearchQuery || reservationUserFilter !== 'all' || reservationCapacityFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setReservationSearchQuery('');
+                setReservationUserFilter('all');
+                setReservationCapacityFilter('all');
+              }}
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-bg-primary text-primary border border-primary/30 hover:bg-primary/10 transition-all cursor-pointer"
+            >
+              Reset Filters
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredReservations.map((res: any) => {
+            const isMine = res.userId === user?.id;
+            const isPrivileged = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+            const isOwner = !res.userId || isMine || isPrivileged;
+            const resOwner = getReservedByName(res);
+            const isTableOccupied = (res.table?.status || '').toLowerCase() === 'occupied';
+
+            const assignDisabled = !isOwner || isTableOccupied;
+            const assignTooltip = !isOwner
+              ? `This table was reserved by ${resOwner}. Only ${resOwner} or an Admin can check in this table.`
+              : isTableOccupied
+              ? 'Table is currently occupied by an active session.'
+              : undefined;
+
+            const cancelDisabled = !isOwner || isTableOccupied;
+            const cancelTooltip = !isOwner
+              ? `This reservation was created by ${resOwner}. Only ${resOwner} or an Admin can cancel it.`
+              : isTableOccupied
+              ? 'Reservation cannot be cancelled because table is occupied.'
+              : undefined;
+
+            return (
+              <div
+                key={res.id}
+                className={`p-5 rounded-3xl dark:rounded-xl border flex flex-col justify-between gap-4 transition-all animate-fadeIn ${
+                  isMine
+                    ? 'border-primary/40 dark:border-primary/40 dark:bg-[#1C1C1E] bg-bg-surface shadow-sm'
+                    : 'dark:border-white/10 dark:bg-[#1C1C1E] bg-bg-surface'
+                }`}
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between pb-3 border-b border-border-main/50 gap-2">
+                  <div>
+                    <h4 className="font-bold text-base text-text-main">{res.customerName}</h4>
+                    <p className="text-xs font-mono text-text-muted mt-0.5">{res.phoneNumber}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider dark:bg-blue-500/15 bg-blue-500/10 dark:text-blue-400 text-blue-700 border border-blue-500/30">
+                      Reserved
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-tight ${
+                      isMine
+                        ? 'bg-purple-500/15 text-primary dark:text-purple-300 border border-purple-500/30'
+                        : 'bg-neutral-500/10 text-text-muted border border-border-main'
+                    }`}>
+                      {isMine ? '👤 Reserved by You' : `🔒 Reserved by ${resOwner}`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Details */}
+                <div className="space-y-2 text-xs text-text-muted">
+                  <div className="flex justify-between items-center">
+                    <span>Table Assigned:</span>
+                    <span className="font-bold text-primary font-mono text-sm">
+                      {res.table?.tableNumber ? `Table ${res.table.tableNumber}` : 'N/A'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Capacity / Headcount:</span>
+                    <span className="font-semibold text-text-main">
+                      {res.personsCount} Guests (Max {res.table?.capacity || 4})
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Email ID:</span>
+                    <span className="font-semibold text-text-main truncate max-w-[190px]" title={res.email}>
+                      {res.email || '—'}
+                    </span>
+                  </div>
+                  {res.createdAt && (
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span>Created:</span>
+                      <span className="text-text-muted">
+                        {new Date(res.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Ownership Notice if not owner */}
+                {!isOwner && (
+                  <div className="p-2.5 rounded-xl bg-neutral-100 dark:bg-white/5 border border-border-main text-[11px] text-text-muted flex items-center gap-2">
+                    <Lock size={13} className="text-amber-500 shrink-0" />
+                    <span>Reserved by <strong className="text-text-main">{resOwner}</strong>. You cannot check in this table.</span>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => handleAssignReservation(res)}
+                    disabled={assignDisabled}
+                    title={assignTooltip}
+                    className={`flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 ${
+                      assignDisabled ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
+                  >
+                    {assignDisabled && !isOwner ? (
+                      <>
+                        <Lock size={13} /> Check-In Locked
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus size={14} /> Check-In / Assign
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setCancellingReservation(res)}
+                    disabled={cancelDisabled}
+                    title={cancelTooltip}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
+                      cancelDisabled
+                        ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40'
+                        : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-300 active:bg-red-500/20 dark:active:bg-red-500/30 dark:text-red-400 text-red-600 border border-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer'
+                    }`}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  ) : isLoading && filteredTables.length === 0 ? (
   <div className="py-20 text-center text-text-muted text-sm">Loading floor layout & seat maps...</div>
   ) : filteredTables.length === 0 ? (
   <div className="glass-panel p-12 rounded-3xl border border-border-main text-center space-y-3">
@@ -952,7 +1468,10 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     ) : tb.status === 'reserved' ? (
       (() => {
         const res = realReservations.find((r: any) => r.tableId === tb.id && r.status === 'PENDING');
-        const isOwner = !res || !res.userId || res.userId === user?.id || user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+        const isMine = res && res.userId === user?.id;
+        const isPrivileged = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+        const isOwner = !res || !res.userId || isMine || isPrivileged;
+        const resOwner = res ? getReservedByName(res) : 'Staff';
         return (
           <>
             <button
@@ -961,12 +1480,20 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                 handleCheckInReservedTable(tb);
               }}
               disabled={!isOwner}
-              title={!isOwner ? "This reservation is owned by another receptionist." : undefined}
+              title={!isOwner ? `This table was reserved by ${resOwner}. Only ${resOwner} or an Admin can check in this table.` : undefined}
               className={`flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 ${
                 !isOwner ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
               }`}
             >
-              <UserPlus size={14} /> Check-In
+              {!isOwner ? (
+                <>
+                  <Lock size={13} /> Locked
+                </>
+              ) : (
+                <>
+                  <UserPlus size={14} /> Check-In
+                </>
+              )}
             </button>
             <button
               onClick={(e) => {
@@ -974,10 +1501,10 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                 handleCancelClick(tb);
               }}
               disabled={!isOwner}
-              title={!isOwner ? "This reservation is owned by another receptionist." : undefined}
+              title={!isOwner ? `This reservation was created by ${resOwner}. Only ${resOwner} or an Admin can cancel it.` : undefined}
               className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
                 !isOwner 
-                  ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed' 
+                  ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40' 
                   : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-300 active:bg-red-500/20 dark:active:bg-red-500/30 dark:text-red-400 text-red-600 border border-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer'
               }`}
             >
@@ -1158,8 +1685,20 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             {inspectingTable.status === 'reserved' && (() => {
               const res = realReservations.find((r: any) => r.tableId === inspectingTable.id && (r.status === 'PENDING' || r.status === 'CONFIRMED'));
               if (!res) return null;
+              const isMine = res && res.userId === user?.id;
+              const resOwner = getReservedByName(res);
               return (
                 <div className="p-4 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-2.5 text-xs">
+                  <div className="flex justify-between items-center pb-2 border-b border-border-main/40">
+                    <span className="text-text-muted">Reserved By:</span>
+                    <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                      isMine 
+                        ? 'bg-purple-500/15 text-primary dark:text-purple-300 border border-purple-500/30' 
+                        : 'bg-neutral-500/10 text-text-muted border border-border-main'
+                    }`}>
+                      {isMine ? '👤 You' : `🔒 ${resOwner}`}
+                    </span>
+                  </div>
                   <div className="flex justify-between items-center">
                     <span className="text-text-muted">Reserved Customer:</span>
                     <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={res.customerName}>
@@ -1230,7 +1769,10 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             ) : (
               (() => {
                 const res = realReservations.find((r: any) => r.tableId === inspectingTable.id && r.status === 'PENDING');
-                const isOwner = !res || !res.userId || res.userId === user?.id || user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+                const isMine = res && res.userId === user?.id;
+                const isPrivileged = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+                const isOwner = !res || !res.userId || isMine || isPrivileged;
+                const resOwner = res ? getReservedByName(res) : 'Staff';
                 const isReserved = inspectingTable.status === 'reserved';
                 return (
                   <>
@@ -1238,13 +1780,22 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                       type="button"
                       onClick={() => isReserved ? handleCheckInReservedTable(inspectingTable) : handleAssignClick(inspectingTable)}
                       disabled={isReserved && !isOwner}
-                      title={isReserved && !isOwner ? "This reservation is owned by another receptionist." : undefined}
+                      title={isReserved && !isOwner ? `This table was reserved by ${resOwner}. Only ${resOwner} or an Admin can check in this table.` : undefined}
                       className={`w-full py-3 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 ${
                         isReserved && !isOwner ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
                       }`}
                     >
-                      <span>Assign Guest & Check-In</span>
-                      <ArrowRight size={14} />
+                      {isReserved && !isOwner ? (
+                        <>
+                          <Lock size={14} />
+                          <span>Check-In Locked</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Assign Guest & Check-In</span>
+                          <ArrowRight size={14} />
+                        </>
+                      )}
                     </button>
                     
                     {isReserved && (
@@ -1252,10 +1803,10 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                         type="button"
                         onClick={() => handleCancelClick(inspectingTable)}
                         disabled={!isOwner}
-                        title={!isOwner ? "This reservation is owned by another receptionist." : undefined}
+                        title={!isOwner ? `This reservation was created by ${resOwner}. Only ${resOwner} or an Admin can cancel it.` : undefined}
                         className={`w-full py-2.5 rounded-xl font-bold text-xs border transition-all text-center ${
                           !isOwner 
-                            ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed' 
+                            ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40' 
                             : 'bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/25 text-rose-700 dark:text-rose-400 border border-rose-500/30 cursor-pointer'
                         }`}
                       >
@@ -1290,77 +1841,107 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     );
   })()}
 
- {/* ASSIGN TABLE MODAL */}
- {assigningTable && (
- <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
- <div className="bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
- <button 
- onClick={() => setAssigningTable(null)}
- className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
- >
- <X size={18} />
- </button>
+  {/* ASSIGN TABLE MODAL */}
+  {assigningTable && (
+  <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
+  <div className="bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
+  <div className="absolute top-4 right-4 flex items-center gap-1.5">
+    <button 
+      type="button"
+      onClick={handleModalRefresh}
+      disabled={isResRefreshing}
+      className="w-8 h-8 rounded-full text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all disabled:opacity-50"
+      title={isResRefreshing ? "Refreshing live data..." : "Refresh Live Status"}
+      aria-label="Refresh live status"
+    >
+      <RefreshCw size={15} className={isResRefreshing ? 'animate-spin text-primary' : ''} />
+    </button>
+    <button 
+      type="button"
+      onClick={() => setAssigningTable(null)}
+      className="w-8 h-8 rounded-full text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all"
+      title="Close dialog"
+      aria-label="Close dialog"
+    >
+      <X size={18} />
+    </button>
+  </div>
 
- <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-8">
- <Grid3X3 size={18} className="shrink-0" /> <span className="truncate">Assign Table {assigningTable.tableNumber}</span>
- </div>
+  <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-20">
+  <Grid3X3 size={18} className="shrink-0" /> <span className="truncate">Assign Table {assigningTable.tableNumber}</span>
+  </div>
 
- <form onSubmit={handleAssignSubmit} className="space-y-4">
- <div>
- <label className="block text-xs font-semibold text-text-muted mb-1">Active Guest Token Pass</label>
- {tokens.length === 0 ? (
- <p className="text-xs text-text-muted p-2 bg-bg-primary rounded-xl">No active guest tokens available for assignment.</p>
- ) : (
- <select
- value={selectedTokenId}
- onChange={e => setSelectedTokenId(e.target.value)}
- className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
- required
- >
- <option value="">Select Token Pass...</option>
- {tokens.map(tk => (
- <option key={tk.id} value={tk.id}>
- {tk.tokenNumber} — {tk.customer?.name || 'Guest'} ({tk.personsCount} Persons)
- </option>
- ))}
- </select>
- )}
- </div>
+  <form onSubmit={handleAssignSubmit} className="space-y-4">
+  <div>
+  <label className="block text-xs font-semibold text-text-muted mb-1">Active Guest Token Pass</label>
+  {tokens.length === 0 ? (
+  <p className="text-xs text-text-muted p-2 bg-bg-primary rounded-xl">No active guest tokens available for assignment.</p>
+  ) : (
+  <select
+  value={selectedTokenId}
+  onChange={e => setSelectedTokenId(e.target.value)}
+  className="w-full bg-bg-primary border border-border-main rounded-xl px-3 py-2 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary"
+  required
+  >
+  <option value="">Select Token Pass...</option>
+  {tokens.map(tk => (
+  <option key={tk.id} value={tk.id}>
+  {tk.tokenNumber} — {tk.customer?.name || 'Guest'} ({tk.personsCount} Persons)
+  </option>
+  ))}
+  </select>
+  )}
+  </div>
 
- <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
- <button
- type="button"
- onClick={() => setAssigningTable(null)}
- className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
- >
- Cancel
- </button>
- <button
- type="submit"
- disabled={isSubmittingAssign || !selectedTokenId}
- title={isSubmittingAssign ? "Assigning seat..." : !selectedTokenId ? "Select active token" : undefined}
- className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
- >
+  <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+  <button
+  type="button"
+  onClick={() => setAssigningTable(null)}
+  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
+  >
+  Cancel
+  </button>
+  <button
+  type="submit"
+  disabled={isSubmittingAssign || !selectedTokenId}
+  title={isSubmittingAssign ? "Assigning seat..." : !selectedTokenId ? "Select active token" : undefined}
+  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+  >
 {isSubmittingAssign ? 'Assigning...' : 'Confirm Seating'}
- </button>
- </div>
- </form>
- </div>
- </div>
- )}
+  </button>
+  </div>
+  </form>
+  </div>
+  </div>
+  )}
 
- {/* RESERVE / ASSIGN TABLE MODAL */}
+  {/* RESERVE / ASSIGN TABLE MODAL */}
   {reservingTable && (
     <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
       <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn max-h-[90vh] overflow-y-auto custom-scrollbar">
-        <button 
-          onClick={() => setReservingTable(null)}
-          className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
-        >
-          <X size={18} />
-        </button>
+        <div className="absolute top-4 right-4 flex items-center gap-1.5">
+          <button 
+            type="button"
+            onClick={handleModalRefresh}
+            disabled={isResRefreshing}
+            className="w-8 h-8 rounded-full text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all disabled:opacity-50"
+            title={isResRefreshing ? "Refreshing live data..." : "Refresh Live Status"}
+            aria-label="Refresh live status"
+          >
+            <RefreshCw size={15} className={isResRefreshing ? 'animate-spin text-primary' : ''} />
+          </button>
+          <button 
+            type="button"
+            onClick={handleCloseReserveModal}
+            className="w-8 h-8 rounded-full text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all"
+            title="Close dialog"
+            aria-label="Close dialog"
+          >
+            <X size={18} />
+          </button>
+        </div>
 
-        <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-8">
+        <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-20">
           <Grid3X3 size={18} className="shrink-0" /> <span className="truncate">{isAssignFlow ? 'Assign' : 'Reserve'} Table {reservingTable.tableNumber}</span>
         </div>
 
@@ -1398,10 +1979,10 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             <input
               type="tel"
               value={resPhone}
-              onChange={e => setResPhone(e.target.value)}
+              onChange={e => handleResPhoneChange(e.target.value)}
               placeholder="e.g. 9999999999"
               className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
-                resPhone.trim().length > 0 && (!isValidPhone(resPhone) || resPhoneConflict || isResPhoneActive)
+                resPhone.trim().length > 0 && (!isValidPhone(resPhone) || resPhoneConflict || isResPhoneActive || resPhoneValidationStatus === 'CONFLICT')
                   ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
                   : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
               }`}
@@ -1413,10 +1994,14 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                 <span>Please enter a valid 10-digit Indian mobile number (starts with 6-9).</span>
               </div>
             )}
-            {isValidPhone(resPhone) && (resPhoneConflict || isResPhoneActive) && (
+            {(resPhoneConflict || resPhoneValidationStatus === 'CONFLICT') && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
                 <AlertTriangle size={14} className="shrink-0" />
-                <span>This phone number is already checked in.</span>
+                <span>
+                  {resPhoneConflictDetail?.type === 'RESERVATION'
+                    ? `This phone number is already reserved by ${resPhoneConflictDetail.name || 'a customer'}.`
+                    : `This phone number is currently being used by ${resPhoneConflictDetail?.name || 'another user'}.`}
+                </span>
               </div>
             )}
           </div>
@@ -1434,10 +2019,10 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             <input
               type="email"
               value={resEmail}
-              onChange={e => setResEmail(e.target.value)}
+              onChange={e => handleResEmailChange(e.target.value)}
               placeholder="e.g. name@example.com"
               className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
-                resEmail.trim().length === 0 || !isValidEmail(resEmail) || resEmailConflict || isResEmailActive
+                resEmail.trim().length === 0 || !isValidEmail(resEmail) || resEmailConflict || isResEmailActive || resEmailValidationStatus === 'CONFLICT'
                   ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
                   : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
               }`}
@@ -1455,10 +2040,14 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                 <span>Please enter a valid email address (e.g. name@domain.com).</span>
               </div>
             )}
-            {isValidEmail(resEmail) && (resEmailConflict || isResEmailActive) && (
+            {(resEmailConflict || resEmailValidationStatus === 'CONFLICT') && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
                 <AlertTriangle size={14} className="shrink-0" />
-                <span>This email ID is already checked in.</span>
+                <span>
+                  {resEmailConflictDetail?.type === 'RESERVATION'
+                    ? `This email address is already reserved by ${resEmailConflictDetail.name || 'a customer'}.`
+                    : `This email address is currently being used by ${resEmailConflictDetail?.name || 'another user'}.`}
+                </span>
               </div>
             )}
           </div>
@@ -1480,27 +2069,35 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             </select>
           </div>
 
-          {/* Step Validation Warning if incomplete */}
-          {!isResFormValid && (
-            <div className="pt-2 text-xs text-text-muted w-full text-center">
+          {/* Step Validation Status Indicator */}
+          <div className="pt-2 text-xs text-text-muted w-full text-center">
+            {resPhoneValidationStatus === 'PENDING' || resEmailValidationStatus === 'PENDING' || isResValidating ? (
+              <span className="dark:text-amber-400 text-amber-700 flex items-center justify-center gap-1 text-[11px] font-semibold">
+                <AlertTriangle size={14} className="animate-spin shrink-0" /> Validating guest details...
+              </span>
+            ) : !isResFormValid ? (
               <span className="dark:text-amber-400 text-amber-700 flex items-center justify-center gap-1 text-[11px]">
                 <AlertTriangle size={14} className="shrink-0" /> Complete all required fields above to proceed
               </span>
-            </div>
-          )}
+            ) : (
+              <span className="dark:text-emerald-400 text-emerald-700 font-bold flex items-center justify-center gap-1 text-[11px]">
+                ✓ All inputs validated
+              </span>
+            )}
+          </div>
 
           {/* Action Buttons */}
           <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
             <button
               type="button"
-              onClick={() => setReservingTable(null)}
+              onClick={handleCloseReserveModal}
               className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={!isResFormValid || isSubmittingReserve}
+              disabled={!isResFormValid || isSubmittingReserve || resPhoneValidationStatus !== 'VALID' || resEmailValidationStatus !== 'VALID' || resPhoneConflict || resEmailConflict || isResPhoneActive || isResEmailActive}
               className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
             >
               {isSubmittingReserve ? 'Confirming...' : isAssignFlow ? 'Confirm Assign & Check-In' : 'Confirm Reserve'}

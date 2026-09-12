@@ -359,16 +359,19 @@ class ApiService {
     }>(`/customer/access/${encodeURIComponent(tokenNumber)}`);
   }
 
-  async recoverCustomerSession(phoneNumber: string, tableNumber?: string) {
+  async recoverCustomerSession(params: string | { phoneNumber?: string; accessCode?: string; code?: string; tableNumber?: string }, tableNumber?: string) {
+    const payload = typeof params === 'string' ? { phoneNumber: params, tableNumber } : params;
     return this.request<{
       authorized: boolean;
       tokenNumber?: string;
       session?: any;
       paymentStatus?: string;
+      sessionStatus?: string;
+      bill?: any;
       error?: string;
     }>('/customer/recover', {
       method: 'POST',
-      body: JSON.stringify({ phoneNumber, tableNumber }),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -392,10 +395,54 @@ class ApiService {
     });
   }
 
-  async validateDuplicate(body: { phoneNumber?: string; email?: string; tokenNumber?: string }) {
-    return this.request<{ success: boolean; conflicts: { email: boolean; phone: boolean } }>('/check-in/validate-duplicate', {
+  async validateDuplicate(body: { phoneNumber?: string; email?: string; tokenNumber?: string; reservationId?: string }) {
+    return this.request<{
+      success: boolean;
+      conflicts: { email: boolean; phone: boolean };
+      conflictDetails?: {
+        phone?: { type: 'CHECKIN' | 'RESERVATION'; name: string } | null;
+        email?: { type: 'CHECKIN' | 'RESERVATION'; name: string } | null;
+      };
+      activeTable?: string | null;
+      tokenNumber?: string | null;
+    }>('/check-in/validate-duplicate', {
       method: 'POST',
       body: JSON.stringify(body),
+    });
+  }
+
+  async validatePrePayment(body: {
+    phoneNumber?: string;
+    email?: string;
+    tableId?: string;
+    tokenNumber?: string;
+    reservationId?: string;
+  }) {
+    return this.request<{
+      success: boolean;
+      valid: boolean;
+      conflictType?: 'PHONE' | 'EMAIL' | 'TABLE' | 'TOKEN';
+      message?: string;
+      redirectStage?: number;
+    }>('/check-in/pre-payment-validate', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async stopCheckIn(data: {
+    reservationId?: string;
+    tokenNumber?: string;
+    tableId?: string;
+    phoneNumber?: string;
+    email?: string;
+  }) {
+    return this.request<{
+      success: boolean;
+      message?: string;
+    }>('/check-in/stop', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   }
 

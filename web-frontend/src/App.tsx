@@ -303,6 +303,8 @@ const AppContent: React.FC = () => {
           onNavigate={(tabId, adminSubtab) => {
             if (tabId === 'admin' && adminSubtab) {
               setActiveTab(`admin/${adminSubtab}`);
+            } else if (tabId === 'tables' && adminSubtab) {
+              setActiveTab(`tables/${adminSubtab}`);
             } else if (tabId === 'tables') {
               setActiveTab('tables/layout');
             } else {
@@ -419,15 +421,26 @@ const AppContent: React.FC = () => {
             {sessionAlerts.filter(alert => !alert.dismissed).map(alert => (
               <div 
                 key={alert.id}
-                className="p-3 rounded-2xl flex items-center justify-between shadow-lg backdrop-blur-md border animate-bounce-short text-xs font-bold dark:bg-amber-500/20 bg-amber-50 border-amber-500/40 dark:text-amber-300 text-amber-700"
+                onClick={() => {
+                  const targetId = alert.tableId || alert.tableNumber;
+                  if (targetId) {
+                    localStorage.setItem('bar_auto_inspect_table_id', targetId);
+                    window.dispatchEvent(new CustomEvent('bar_auto_inspect', { detail: { tableId: targetId } }));
+                    setActiveTab('tables/occupied');
+                  }
+                }}
+                className="p-3 rounded-2xl flex items-center justify-between shadow-lg backdrop-blur-md border animate-bounce-short text-xs font-bold dark:bg-amber-500/20 bg-amber-50 border-amber-500/40 dark:text-amber-300 text-amber-700 cursor-pointer hover:opacity-90 transition-opacity"
               >
                 <div className="flex items-center gap-2">
-                  <AlertTriangle size={16} className="text-amber-500" />
+                  <AlertTriangle size={16} className="text-amber-500 shrink-0" />
                   <span>{alert.message}</span>
                 </div>
                 <button 
-                  onClick={() => dismissAlert(alert.id)}
-                  className="p-1 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    dismissAlert(alert.id);
+                  }}
+                  className="p-1 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition-colors shrink-0"
                 >
                   <X size={14} />
                 </button>

@@ -15,7 +15,9 @@ import {
  AlertTriangle,
  Camera,
  Minus,
- Plus
+ Plus,
+ Copy,
+ Check
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Token, Table } from '../types';
@@ -24,24 +26,36 @@ import { useData } from '../context/DataContext';
 import jsQR from 'jsqr';
 
 export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ onNavigate }) => {
- const { showToast, preselectedTable, setPreselectedTable } = useAuth();
- const { tables, rates, tokens: activeTokens, refreshTables, refreshTokens, refreshReservations } = useData();
- const [stage, setStage] = useState<1 | 2 | 3 | 4 | 5>(1);
- const [reservationId, setReservationId] = useState('');
+  const { showToast, preselectedTable, setPreselectedTable } = useAuth();
+  const { tables, rates, tokens: activeTokens, reservations, refreshTables, refreshTokens, refreshReservations } = useData();
+  const [stage, setStage] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [reservationId, setReservationId] = useState('');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
- // Stage 1: Form Input States
- const [phoneNumber, setPhoneNumber] = useState('');
+  // Stage 1: Form Input States
+  type ValidationStatus = 'IDLE' | 'PENDING' | 'VALID' | 'CONFLICT' | 'INVALID';
+
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [email, setEmail] = useState('');
+  const [phoneValidationStatus, setPhoneValidationStatus] = useState<ValidationStatus>('IDLE');
+  const [emailValidationStatus, setEmailValidationStatus] = useState<ValidationStatus>('IDLE');
+  const [validatedPhone, setValidatedPhone] = useState('');
+  const [validatedEmail, setValidatedEmail] = useState('');
   const [emailConflict, setEmailConflict] = useState(false);
   const [phoneConflict, setPhoneConflict] = useState(false);
+  const [phoneConflictDetail, setPhoneConflictDetail] = useState<{ type: 'CHECKIN' | 'RESERVATION'; name: string } | null>(null);
+  const [emailConflictDetail, setEmailConflictDetail] = useState<{ type: 'CHECKIN' | 'RESERVATION'; name: string } | null>(null);
+  const [isValidatingStage1, setIsValidatingStage1] = useState(false);
+  const validationRequestIdRef = useRef<number>(0);
   const [personsCount, setPersonsCount] = useState<number | ''>(2);
   const deliveryMode = 'EMAIL_QR';
   const [selectedPlaceTypeId, setSelectedPlaceTypeId] = useState('standing_bar');
 
- // Stage 2: Seating State
- const [selectedTableId, setSelectedTableId] = useState('');
- const [originalTableStatus, setOriginalTableStatus] = useState<'available' | 'reserved' | ''>('');
+  // Stage 2: Seating State
+  const [selectedTableId, setSelectedTableId] = useState('');
+  const [isTableValidating, setIsTableValidating] = useState(false);
+  const [originalTableStatus, setOriginalTableStatus] = useState<'available' | 'reserved' | ''>('');
 
  // Stage 3: Camera & QR Scanner State
  const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -63,6 +77,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
 
  // Stage 5: Output Pass Ticket
  const [createdToken, setCreatedToken] = useState<Token | null>(null);
+ const [copiedToken, setCopiedToken] = useState(false);
 
   // Pre-registered flow state
   const [activePendingToken, setActivePendingToken] = useState<Token | null>(null);
@@ -83,29 +98,27 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
 
   // Load incomplete check-in state on mount
   useEffect(() => {
-    const redirectOriginalStatus = localStorage.getItem('bar_checkin_original_status');
-    if (redirectOriginalStatus) {
-      setOriginalTableStatus(redirectOriginalStatus as 'available' | 'reserved' | '');
-      localStorage.removeItem('bar_checkin_original_status');
-    }
-
-    const saved = localStorage.getItem('bar_incomplete_checkin');
     const savedTarget = localStorage.getItem('bar_checkin_assign_target');
+    const redirectOriginalStatus = localStorage.getItem('bar_checkin_original_status');
+    const saved = localStorage.getItem('bar_incomplete_checkin');
 
     let isValidDraft = false;
     if (saved) {
       try {
         const state = JSON.parse(saved);
-        if (state.selectedTableId && tables.length > 0) {
-          const targetTable = tables.find(t => t.id === state.selectedTableId);
-          if (targetTable && targetTable.status !== 'in_checkin') {
-            localStorage.removeItem('bar_incomplete_checkin');
-            isValidDraft = false;
-          } else {
-            isValidDraft = true;
-          }
-        } else {
+        const hasCustomerData = Boolean(
+          (state.customerName && state.customerName.trim()) ||
+          (state.phoneNumber && state.phoneNumber.trim()) ||
+          (state.email && state.email.trim()) ||
+          state.activePendingToken
+        );
+        const hasTableSelection = Boolean(state.selectedTableId);
+
+        if (hasCustomerData || hasTableSelection) {
           isValidDraft = true;
+        } else {
+          localStorage.removeItem('bar_incomplete_checkin');
+          isValidDraft = false;
         }
       } catch (e) {
         localStorage.removeItem('bar_incomplete_checkin');
@@ -113,31 +126,44 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
       }
     }
 
-    if (isValidDraft && !hasCheckedIncomplete) {
+    if (isValidDraft) {
+      // Incomplete check-in draft exists! Prompt user with Resume or Stop
       setShowContinuePrompt(true);
     } else if (savedTarget) {
-      // If no draft, load target assignment directly
+      // If no incomplete draft, load direct target assignment
+      localStorage.removeItem('bar_checkin_just_assigned');
       try {
         const target = JSON.parse(savedTarget);
-        setCustomerName(target.customerName || '');
-        setPhoneNumber(target.phoneNumber ? (target.phoneNumber.startsWith('+91') ? target.phoneNumber.substring(3) : target.phoneNumber) : '');
-        setEmail(target.email || '');
-        setPersonsCount(target.personsCount || 2);
-        setSelectedTableId(target.tableId || '');
-        setSelectedPlaceTypeId(target.placeTypeId || 'standing_bar');
-        setReservationId(target.reservationId || '');
-        if (redirectOriginalStatus) {
-          setOriginalTableStatus(redirectOriginalStatus as any);
-        }
+        const name = target.customerName || '';
+        const rawPhone = target.phoneNumber || '';
+        const phone = rawPhone.startsWith('+91') ? rawPhone.substring(3) : rawPhone;
+        const mail = target.email || '';
+        const persons = target.personsCount || 2;
+        const tblId = target.tableId || '';
+        const placeType = target.placeTypeId || (target.tableNumber?.startsWith('L-') ? 'premium_lounge' : 'standing_bar');
+        const resId = target.reservationId || '';
+        const origStatus = (redirectOriginalStatus as any) || target.originalStatus || 'reserved';
+
+        setCustomerName(name);
+        setPhoneNumber(phone);
+        setEmail(mail);
+        setPersonsCount(persons);
+        setSelectedTableId(tblId);
+        setSelectedPlaceTypeId(placeType);
+        setReservationId(resId);
+        setOriginalTableStatus(origStatus);
+        setStage(1);
+        setShowContinuePrompt(false);
       } catch (e) {
         console.error("Failed to parse assign target on mount", e);
       }
       localStorage.removeItem('bar_checkin_assign_target');
+      localStorage.removeItem('bar_checkin_original_status');
     }
     setHasCheckedIncomplete(true);
-  }, [tables]);
+  }, []);
 
-  // Invalidate stale resume prompt if table lock was force-released by admin
+  // Invalidate stale resume prompt only if table lock was force-released by admin and no customer details exist
   useEffect(() => {
     if (showContinuePrompt && tables.length > 0) {
       const saved = localStorage.getItem('bar_incomplete_checkin');
@@ -146,7 +172,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
           const state = JSON.parse(saved);
           if (state.selectedTableId) {
             const currentTb = tables.find(t => t.id === state.selectedTableId);
-            if (currentTb && currentTb.status !== 'in_checkin') {
+            if (currentTb && currentTb.status !== 'in_checkin' && !state.customerName && !state.phoneNumber && !state.email && !state.activePendingToken) {
               localStorage.removeItem('bar_incomplete_checkin');
               setShowContinuePrompt(false);
               showToast(`Table ${currentTb.tableNumber} lock was released. Stale check-in draft cleared.`, 'info');
@@ -232,12 +258,14 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
 
   // Save incomplete check-in state to localStorage on change
   useEffect(() => {
-    if (stage === 5 || createdToken) {
-      localStorage.removeItem('bar_incomplete_checkin');
+    if (stage === 5 || createdToken || showContinuePrompt) {
+      if (stage === 5 || createdToken) {
+        localStorage.removeItem('bar_incomplete_checkin');
+      }
       return;
     }
 
-    if (phoneNumber || customerName || email || selectedTableId) {
+    if (phoneNumber || customerName || email || selectedTableId || activePendingToken) {
       const state = {
         phoneNumber,
         customerName,
@@ -254,144 +282,351 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
       };
       localStorage.setItem('bar_incomplete_checkin', JSON.stringify(state));
     }
-  }, [phoneNumber, customerName, email, personsCount, selectedPlaceTypeId, selectedTableId, stage, activePendingToken, qrVerificationSuccess, paymentMode, createdToken, originalTableStatus, reservationId]);
+  }, [phoneNumber, customerName, email, personsCount, selectedPlaceTypeId, selectedTableId, stage, activePendingToken, qrVerificationSuccess, paymentMode, createdToken, originalTableStatus, reservationId, showContinuePrompt]);
 
-  // Real-time backend validation with 400ms debounce
+  // EXACT VALIDATION REGEXES MATCHING REACT NATIVE SOURCE OF TRUTH
+  const isValidName = (name: string): boolean => {
+    const trimmed = name.trim();
+    return /^[a-zA-Z\s.'-]{2,100}$/.test(trimmed);
+  };
+
+  const isValidPhone = (phone: string): boolean => {
+    const trimmed = phone.trim();
+    return /^(?:\+91)?[6-9]\d{9}$/.test(trimmed);
+  };
+
+  const isValidEmail = (emailStr: string): boolean => {
+    if (!emailStr || !emailStr.trim()) return false;
+    const trimmed = emailStr.trim().toLowerCase();
+    const regex = /^(?!.*\.\.)(?!\.)(?!.*\.$)[a-z0-9]+(\.[a-z0-9]+)*@gmail\.com$/;
+    return regex.test(trimmed);
+  };
+
+  const handlePhoneChange = (val: string) => {
+    setPhoneNumber(val);
+    setPhoneConflictDetail(null);
+    const trimmed = val.trim();
+    if (!trimmed) {
+      setPhoneValidationStatus('IDLE');
+      setPhoneConflict(false);
+      setValidatedPhone('');
+    } else if (!isValidPhone(trimmed)) {
+      setPhoneValidationStatus('INVALID');
+      setPhoneConflict(false);
+      setValidatedPhone('');
+    } else {
+      setPhoneValidationStatus('PENDING');
+      setValidatedPhone('');
+    }
+  };
+
+  const handleEmailChange = (val: string) => {
+    setEmail(val);
+    setEmailConflictDetail(null);
+    const trimmed = val.trim();
+    if (!trimmed) {
+      setEmailValidationStatus('IDLE');
+      setEmailConflict(false);
+      setValidatedEmail('');
+    } else if (!isValidEmail(trimmed)) {
+      setEmailValidationStatus('INVALID');
+      setEmailConflict(false);
+      setValidatedEmail('');
+    } else {
+      setEmailValidationStatus('PENDING');
+      setValidatedEmail('');
+    }
+  };
+
+  // Listen for global header refresh button click to immediately re-validate input state in the background without whole-page reload
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      setValidatedPhone('');
+      setValidatedEmail('');
+      setRefreshTrigger(prev => prev + 1);
+      refreshTables();
+      refreshTokens();
+      refreshReservations();
+    };
+    window.addEventListener('app:global-refresh', handleGlobalRefresh);
+    return () => {
+      window.removeEventListener('app:global-refresh', handleGlobalRefresh);
+    };
+  }, []);
+
+  // When global reservations or tokens update in background (e.g. reservation cancelled elsewhere), re-evaluate if in conflict
+  useEffect(() => {
+    if (phoneConflict || emailConflict || phoneValidationStatus === 'CONFLICT' || emailValidationStatus === 'CONFLICT') {
+      setValidatedPhone('');
+      setValidatedEmail('');
+      setRefreshTrigger(prev => prev + 1);
+    }
+  }, [reservations, activeTokens]);
+
+  // Real-time backend validation with request versioning and zero optimistic window
   useEffect(() => {
     const p = phoneNumber.trim();
     const e = email.trim();
 
-    if (!p && !e) {
+    const isPFormatValid = isValidPhone(p);
+    const isEFormatValid = isValidEmail(e);
+
+    if (!p) {
+      setPhoneValidationStatus('IDLE');
       setPhoneConflict(false);
+      setPhoneConflictDetail(null);
+      setValidatedPhone('');
+    } else if (!isPFormatValid) {
+      setPhoneValidationStatus('INVALID');
+      setPhoneConflict(false);
+      setPhoneConflictDetail(null);
+      setValidatedPhone('');
+    }
+
+    if (!e) {
+      setEmailValidationStatus('IDLE');
       setEmailConflict(false);
+      setEmailConflictDetail(null);
+      setValidatedEmail('');
+    } else if (!isEFormatValid) {
+      setEmailValidationStatus('INVALID');
+      setEmailConflict(false);
+      setEmailConflictDetail(null);
+      setValidatedEmail('');
+    }
+
+    const needsPhoneValidation = isPFormatValid && (phoneValidationStatus !== 'VALID' || validatedPhone !== p);
+    const needsEmailValidation = isEFormatValid && (emailValidationStatus !== 'VALID' || validatedEmail !== e);
+
+    if (!needsPhoneValidation && !needsEmailValidation) {
       return;
     }
+
+    if (needsPhoneValidation) {
+      setPhoneValidationStatus('PENDING');
+    }
+    if (needsEmailValidation) {
+      setEmailValidationStatus('PENDING');
+    }
+
+    const currentRequestId = ++validationRequestIdRef.current;
 
     const timer = setTimeout(async () => {
       try {
         const body: any = {};
-        if (p) body.phoneNumber = p;
-        if (e) body.email = e;
+        if (isPFormatValid) body.phoneNumber = p;
+        if (isEFormatValid) body.email = e;
         if (activePendingToken?.tokenNumber) {
           body.tokenNumber = activePendingToken.tokenNumber;
         }
+        if (reservationId) {
+          body.reservationId = reservationId;
+        }
 
         const res = await api.validateDuplicate(body);
-        if (res && res.conflicts) {
-          setPhoneConflict(!!res.conflicts.phone);
-          setEmailConflict(!!res.conflicts.email);
-        } else {
-          setPhoneConflict(false);
-          setEmailConflict(false);
+        if (currentRequestId !== validationRequestIdRef.current) {
+          return; // Discard stale validation response
+        }
+
+        if (isPFormatValid) {
+          const hasPhoneConflict = !!res?.conflicts?.phone;
+          setPhoneConflict(hasPhoneConflict);
+          setPhoneConflictDetail(res?.conflictDetails?.phone || null);
+          setPhoneValidationStatus(hasPhoneConflict ? 'CONFLICT' : 'VALID');
+          setValidatedPhone(p);
+        }
+
+        if (isEFormatValid) {
+          const hasEmailConflict = !!res?.conflicts?.email;
+          setEmailConflict(hasEmailConflict);
+          setEmailConflictDetail(res?.conflictDetails?.email || null);
+          setEmailValidationStatus(hasEmailConflict ? 'CONFLICT' : 'VALID');
+          setValidatedEmail(e);
         }
       } catch (err) {
+        if (currentRequestId !== validationRequestIdRef.current) return;
         console.error('Error during duplicate validation:', err);
+        if (isPFormatValid) setPhoneValidationStatus('INVALID');
+        if (isEFormatValid) setEmailValidationStatus('INVALID');
       }
-    }, 400);
+    }, 300);
 
     return () => clearTimeout(timer);
-  }, [phoneNumber, email, activePendingToken]);
+  }, [phoneNumber, email, activePendingToken, reservationId, refreshTrigger]);
 
   const handleContinueCheckIn = async () => {
-    // Release new target table lock if they chose to resume previous draft instead
-    const savedTarget = localStorage.getItem('bar_checkin_assign_target');
-    if (savedTarget) {
+    const savedStr = localStorage.getItem('bar_incomplete_checkin');
+    let state: any = null;
+    if (savedStr) {
       try {
-        const target = JSON.parse(savedTarget);
-        if (target.tableId) {
-          await api.unlockTable(target.tableId);
-        }
-      } catch (e) {
-        console.warn('Failed to unlock target table on resume:', e);
-      }
-      localStorage.removeItem('bar_checkin_assign_target');
-    }
-
-    const saved = localStorage.getItem('bar_incomplete_checkin');
-    if (saved) {
-      try {
-        const state = JSON.parse(saved);
-        setPhoneNumber(state.phoneNumber || '');
-        setCustomerName(state.customerName || '');
-        setEmail(state.email || '');
-        setPersonsCount(state.personsCount || 2);
-        setSelectedPlaceTypeId(state.selectedPlaceTypeId || 'standing_bar');
-        setSelectedTableId(state.selectedTableId || '');
-        setStage(state.stage || 1);
-        setActivePendingToken(state.activePendingToken || null);
-        setQrVerificationSuccess(state.qrVerificationSuccess || false);
-        setPaymentMode(state.paymentMode || 'CASH');
-        setOriginalTableStatus(state.originalTableStatus || '');
-        setReservationId(state.reservationId || '');
+        state = JSON.parse(savedStr);
       } catch (e) {
         console.error("Failed to parse incomplete check-in state", e);
       }
     }
+
+    if (state) {
+      // CORE MANDATORY RULE: Restore EXACT entered values and EXACT UI state without assumptions or inference
+      const restoredPhone = state.phoneNumber || '';
+      const restoredName = state.customerName || '';
+      const restoredEmail = state.email || '';
+      const restoredPersons = state.personsCount !== undefined && state.personsCount !== '' ? state.personsCount : 2;
+      const restoredPlaceType = state.selectedPlaceTypeId || 'standing_bar';
+      const restoredTableId = state.selectedTableId || '';
+      const restoredReservationId = state.reservationId || '';
+      const restoredOriginalStatus = state.originalTableStatus || '';
+
+      setPhoneNumber(restoredPhone);
+      setCustomerName(restoredName);
+      setEmail(restoredEmail);
+      setPersonsCount(restoredPersons);
+      setSelectedPlaceTypeId(restoredPlaceType);
+      setSelectedTableId(restoredTableId);
+      setReservationId(restoredReservationId);
+      setOriginalTableStatus(restoredOriginalStatus as any);
+      setActivePendingToken(state.activePendingToken || null);
+      setQrVerificationSuccess(state.qrVerificationSuccess || false);
+      setPaymentMode(state.paymentMode || 'CASH');
+
+      // CORE RULE — RESUME MUST RESTORE THE EXACT LAST STATE:
+      // Always restore the exact saved stage (1, 2, 3, 4, 5) directly without inference or heuristics.
+      const exactStage: 1 | 2 | 3 | 4 | 5 = (state.stage >= 1 && state.stage <= 5) ? (Number(state.stage) as 1 | 2 | 3 | 4 | 5) : 1;
+      setStage(exactStage);
+    }
+
+    // Clean up assign target keys so they don't overwrite the resumed draft on future actions
+    // (The newly assigned reservation remains isolated and authoritative in PostgreSQL)
+    localStorage.removeItem('bar_checkin_assign_target');
+    localStorage.removeItem('bar_checkin_original_status');
+    localStorage.removeItem('bar_checkin_just_assigned');
+
     setShowContinuePrompt(false);
+    refreshTables();
+    refreshReservations();
   };
 
   const handleAbandonCheckIn = async () => {
-    const savedDraft = localStorage.getItem('bar_incomplete_checkin');
-    let draftTableId = '';
-    if (savedDraft) {
+    const savedDraftStr = localStorage.getItem('bar_incomplete_checkin');
+    const savedTargetStr = localStorage.getItem('bar_checkin_assign_target');
+
+    let savedDraft: any = null;
+    if (savedDraftStr) {
       try {
-        const state = JSON.parse(savedDraft);
-        draftTableId = state.selectedTableId || '';
+        savedDraft = JSON.parse(savedDraftStr);
       } catch (e) {
         console.error("Failed to parse saved draft inside abandon:", e);
       }
     }
 
-    const tableToUnlock = selectedTableId || draftTableId;
-    localStorage.removeItem('bar_incomplete_checkin');
-    
-    // Load new target check-in details if present
-    const savedTarget = localStorage.getItem('bar_checkin_assign_target');
-    let target: any = null;
-    if (savedTarget) {
+    let savedTarget: any = null;
+    if (savedTargetStr) {
       try {
-        target = JSON.parse(savedTarget);
+        savedTarget = JSON.parse(savedTargetStr);
       } catch (e) {
         console.error("Failed to parse assign target in abandon:", e);
       }
+    }
+
+    const assignTargetResId = savedTarget?.reservationId;
+    const assignTargetTableId = savedTarget?.tableId;
+
+    const oldTokenNumber = activePendingToken?.tokenNumber || savedDraft?.activePendingToken?.tokenNumber;
+
+    const oldTableId = (savedDraft?.selectedTableId && savedDraft.selectedTableId !== assignTargetTableId)
+      ? savedDraft.selectedTableId
+      : (selectedTableId && selectedTableId !== assignTargetTableId ? selectedTableId : undefined);
+
+    const oldPhone = savedDraft?.phoneNumber || (!savedTarget ? phoneNumber : undefined);
+    const oldEmail = savedDraft?.email || (!savedTarget ? email : undefined);
+
+    // Call authoritative backend stop endpoint to atomically terminate check-in draft / session
+    try {
+      await api.stopCheckIn({
+        tokenNumber: oldTokenNumber,
+        tableId: oldTableId,
+        phoneNumber: oldPhone,
+        email: oldEmail
+      });
+    } catch (err: any) {
+      console.warn('Failed to stop check-in via api.stopCheckIn:', err);
+      // Fallback: individual unlock & cancel if stopCheckIn encounters network error
+      if (oldTokenNumber) {
+        await api.cancelSession(oldTokenNumber, 'USER_CANCELLED').catch(() => {});
+      }
+      if (oldTableId) {
+        await api.unlockTable(oldTableId).catch(() => {});
+      }
+    }
+
+    // Purge the old incomplete draft completely
+    localStorage.removeItem('bar_incomplete_checkin');
+
+    // If a newly entered Assign target exists, PRESERVE and PRE-FILL it on Stage 1 (Customer Details)
+    if (savedTarget) {
+      const targetName = savedTarget.customerName || '';
+      const rawTargetPhone = savedTarget.phoneNumber || '';
+      const targetPhone = rawTargetPhone.startsWith('+91') ? rawTargetPhone.substring(3) : rawTargetPhone;
+      const targetEmail = savedTarget.email || '';
+      const targetPersons = savedTarget.personsCount || 2;
+      const targetTableId = savedTarget.tableId || '';
+      const targetPlaceType = savedTarget.placeTypeId || (savedTarget.tableNumber?.startsWith('L-') ? 'premium_lounge' : 'standing_bar');
+      const targetResId = savedTarget.reservationId || '';
+      const targetOrigStatus = savedTarget.originalStatus || 'reserved';
+
+      setCustomerName(targetName);
+      setPhoneNumber(targetPhone);
+      setEmail(targetEmail);
+      setPersonsCount(targetPersons);
+      setSelectedTableId(targetTableId);
+      setSelectedPlaceTypeId(targetPlaceType);
+      setReservationId(targetResId);
+      setOriginalTableStatus(targetOrigStatus as any);
+      setActivePendingToken(null);
+      setQrVerificationSuccess(false);
+      setPaymentMode('CASH');
+      setCreatedToken(null);
+      setPhoneConflict(false);
+      setEmailConflict(false);
+      setStage(1); // Land on Stage 1 (Guest Check-In Details / Customer Details) with editable fields
+      setShowContinuePrompt(false);
+      setPreselectedTable(null);
+
       localStorage.removeItem('bar_checkin_assign_target');
-    }
+      localStorage.removeItem('bar_checkin_original_status');
+      localStorage.removeItem('bar_checkin_just_assigned');
 
-    setPhoneNumber('');
-    setCustomerName('');
-    setEmail('');
-    setPersonsCount(2);
-    setSelectedTableId('');
-    setStage(1);
-    setActivePendingToken(null);
-    setQrVerificationSuccess(false);
-    setPaymentMode('CASH');
-    setOriginalTableStatus('');
-    setReservationId('');
-    setShowContinuePrompt(false);
+      refreshTables();
+      refreshReservations();
+      refreshTokens();
+      showToast(`Previous check-in stopped. Loaded table assignment for ${targetName || 'guest'}.`, 'success');
+    } else {
+      // Clean reset for stopping check-in without an assign target
+      setPhoneNumber('');
+      setCustomerName('');
+      setEmail('');
+      setPersonsCount(2);
+      setSelectedTableId('');
+      setSelectedPlaceTypeId('standing_bar');
+      setStage(1);
+      setActivePendingToken(null);
+      setQrVerificationSuccess(false);
+      setPaymentMode('CASH');
+      setOriginalTableStatus('');
+      setReservationId('');
+      setCreatedToken(null);
+      setPhoneConflict(false);
+      setEmailConflict(false);
+      setShowContinuePrompt(false);
+      setPreselectedTable(null);
 
-    if (target) {
-      setCustomerName(target.customerName || '');
-      setPhoneNumber(target.phoneNumber ? (target.phoneNumber.startsWith('+91') ? target.phoneNumber.substring(3) : target.phoneNumber) : '');
-      setEmail(target.email || '');
-      setPersonsCount(target.personsCount || 2);
-      setSelectedTableId(target.tableId || '');
-      setSelectedPlaceTypeId(target.placeTypeId || 'standing_bar');
-      setReservationId(target.reservationId || '');
-      const redirectOriginalStatus = localStorage.getItem('bar_checkin_original_status');
-      if (redirectOriginalStatus) {
-        setOriginalTableStatus(redirectOriginalStatus as any);
-      }
-    }
+      localStorage.removeItem('bar_checkin_assign_target');
+      localStorage.removeItem('bar_checkin_original_status');
+      localStorage.removeItem('bar_checkin_just_assigned');
 
-    // Unlock the old draft table if it is different from the new target table
-    if (tableToUnlock && (!target || target.tableId !== tableToUnlock)) {
-      try {
-        await api.unlockTable(tableToUnlock);
-        refreshTables();
-      } catch (err: any) {
-        console.warn('Failed to release lock on old draft table:', err);
-      }
+      refreshTables();
+      refreshReservations();
+      refreshTokens();
+      showToast('Check-in process stopped and temporary session cleared.', 'info');
     }
   };
 
@@ -459,119 +694,140 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
     return 'Proceed to QR';
   };
 
-  // EXACT VALIDATION REGEXES MATCHING REACT NATIVE SOURCE OF TRUTH
-  const isValidName = (name: string): boolean => {
-    const trimmed = name.trim();
-    return /^[a-zA-Z\s.'-]{2,100}$/.test(trimmed);
-  };
-
-  const isValidPhone = (phone: string): boolean => {
-    const trimmed = phone.trim();
-    return /^(?:\+91)?[6-9]\d{9}$/.test(trimmed);
-  };
-
-  const isValidEmail = (emailStr: string): boolean => {
-    if (!emailStr || !emailStr.trim()) return true;
-    const trimmed = emailStr.trim().toLowerCase();
-    const regex = /^(?!.*\.\.)(?!\.)(?!.*\.$)[a-z0-9]+(\.[a-z0-9]+)*@gmail\.com$/;
-    return regex.test(trimmed);
-  };
-
   // Active Check-in Duplicate Session Check
   const normalizedPhone = phoneNumber.trim().startsWith('+91') ? phoneNumber.trim() : `+91${phoneNumber.trim()}`;
   const isPhoneActive = activeTokens.some(t => 
     (t.customer?.phoneNumber === phoneNumber.trim() || t.customer?.phoneNumber === normalizedPhone) &&
-    (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED')
+    (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED') &&
+    t.paymentVerified === true
   );
 
   const isEmailActive = email.trim() ? activeTokens.some(t =>
     t.customer?.email?.toLowerCase() === email.trim().toLowerCase() &&
-    (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED')
+    (t.status?.toUpperCase() === 'ACTIVE' || t.status?.toUpperCase() === 'EXTENDED') &&
+    t.paymentVerified === true
   ) : false;
 
-  // React Native exact step validation booleans
+  // React Native exact step validation booleans with strict gating (No optimistic window)
   const isNameOk = isValidName(customerName);
-  const isPhoneOk = isValidPhone(phoneNumber) && !isPhoneActive && !phoneConflict;
-  const isEmailOk = email.trim().length > 0 && isValidEmail(email) && !isEmailActive && !emailConflict;
+  const isPhoneOk =
+    isValidPhone(phoneNumber) &&
+    phoneValidationStatus === 'VALID' &&
+    validatedPhone === phoneNumber.trim() &&
+    !isPhoneActive &&
+    !phoneConflict;
 
- const selectedTableObj = tables.find(t => t.id === selectedTableId);
- 
- // Dynamic Max Capacities based on tables configuration
- const maxCapacity = tables.length > 0 ? Math.max(...tables.map(t => t.capacity)) : 20;
- const isCapacityOk = typeof personsCount === 'number' && personsCount > 0 && personsCount <= maxCapacity;
+  const isEmailOk =
+    email.trim().length > 0 &&
+    isValidEmail(email) &&
+    emailValidationStatus === 'VALID' &&
+    validatedEmail === email.trim() &&
+    !isEmailActive &&
+    !emailConflict;
 
- // Zone specific max capacities
- const standardTables = tables.filter(t => t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-'));
- const premiumTables = tables.filter(t => t.placeTypeId === 'PREMIUM_LOUNGE' || t.tableNumber.startsWith('L-'));
- const standardMaxCapacity = standardTables.length > 0 ? Math.max(...standardTables.map(t => t.capacity)) : 6;
- const premiumMaxCapacity = premiumTables.length > 0 ? Math.max(...premiumTables.map(t => t.capacity)) : 20;
+  const selectedTableObj = tables.find(t => t.id === selectedTableId);
+  
+  // Dynamic Max Capacities based on tables configuration
+  const maxCapacity = tables.length > 0 ? Math.max(...tables.map(t => t.capacity)) : 20;
+  const isCapacityOk = typeof personsCount === 'number' && personsCount > 0 && personsCount <= maxCapacity;
 
- // Generate quick-select buttons dynamically from actual table capacities configuration
- const quickSelectButtons = useMemo(() => {
- if (tables.length === 0) return [1, 2, 3, 4, 5, 6, 8, 10];
- const capacities = Array.from(new Set(tables.map(t => t.capacity))).sort((a, b) => a - b);
- const list = new Set<number>();
- list.add(1);
- capacities.forEach(c => {
- if (c > 0) list.add(c);
- });
- return Array.from(list).sort((a, b) => a - b);
- }, [tables]);
+  // Zone specific max capacities
+  const standardTables = tables.filter(t => t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-'));
+  const premiumTables = tables.filter(t => t.placeTypeId === 'PREMIUM_LOUNGE' || t.tableNumber.startsWith('L-'));
+  const standardMaxCapacity = standardTables.length > 0 ? Math.max(...standardTables.map(t => t.capacity)) : 6;
+  const premiumMaxCapacity = premiumTables.length > 0 ? Math.max(...premiumTables.map(t => t.capacity)) : 20;
 
- // Find database UUIDs for standard bar and premium lounge
- const dbStandardRate = rates.find(r => r.name?.toUpperCase() === 'STANDING_BAR' || r.name?.toLowerCase().includes('standing'));
- const dbPremiumRate = rates.find(r => r.name?.toUpperCase() === 'PREMIUM_LOUNGE' || r.name?.toLowerCase().includes('lounge'));
- const standardId = dbStandardRate?.id || 'standing_bar';
- const premiumId = dbPremiumRate?.id || 'premium_lounge';
+  // Generate quick-select buttons dynamically from actual table capacities configuration
+  const quickSelectButtons = useMemo(() => {
+  if (tables.length === 0) return [1, 2, 3, 4, 5, 6, 8, 10];
+  const capacities = Array.from(new Set(tables.map(t => t.capacity))).sort((a, b) => a - b);
+  const list = new Set<number>();
+  list.add(1);
+  capacities.forEach(c => {
+  if (c > 0) list.add(c);
+  });
+  return Array.from(list).sort((a, b) => a - b);
+  }, [tables]);
 
- // Sync selectedPlaceTypeId to standardId once rates load
- useEffect(() => {
- if (selectedPlaceTypeId === 'standing_bar' && standardId !== 'standing_bar') {
- setSelectedPlaceTypeId(standardId);
- }
- }, [rates, standardId]);
+  // Find database UUIDs for standard bar and premium lounge
+  const dbStandardRate = rates.find(r => r.name?.toUpperCase() === 'STANDING_BAR' || r.name?.toLowerCase().includes('standing'));
+  const dbPremiumRate = rates.find(r => r.name?.toUpperCase() === 'PREMIUM_LOUNGE' || r.name?.toLowerCase().includes('lounge'));
+  const standardId = dbStandardRate?.id || 'standing_bar';
+  const premiumId = dbPremiumRate?.id || 'premium_lounge';
 
+  // Sync selectedPlaceTypeId to standardId once rates load
+  useEffect(() => {
+  if (selectedPlaceTypeId === 'standing_bar' && standardId !== 'standing_bar') {
+  setSelectedPlaceTypeId(standardId);
+  }
+  }, [rates, standardId]);
 
+  // Auto-adjust selected place category type if headcount exceeds the maximum capacity of the standard zone
+  useEffect(() => {
+  const personsCountNum = typeof personsCount === 'number' ? personsCount : 0;
+  if (selectedPlaceTypeId === standardId && personsCountNum > standardMaxCapacity) {
+  setSelectedPlaceTypeId(premiumId);
+  }
+  }, [personsCount, standardMaxCapacity, selectedPlaceTypeId, standardId, premiumId]);
 
- // Auto-adjust selected place category type if headcount exceeds the maximum capacity of the standard zone
- useEffect(() => {
- const personsCountNum = typeof personsCount === 'number' ? personsCount : 0;
- if (selectedPlaceTypeId === standardId && personsCountNum > standardMaxCapacity) {
- setSelectedPlaceTypeId(premiumId);
- }
- }, [personsCount, standardMaxCapacity, selectedPlaceTypeId, standardId, premiumId]);
+  // STEP 1 VALIDATION BARRIER (Strictly disabled until authoritative validation passes)
+  const isStep1Valid =
+    isNameOk &&
+    isPhoneOk &&
+    isEmailOk &&
+    isCapacityOk &&
+    phoneValidationStatus === 'VALID' &&
+    emailValidationStatus === 'VALID' &&
+    !isValidatingStage1;
 
- // STEP 1 VALIDATION BARRIER (Button disabled if false)
- const isStep1Valid = isNameOk && isPhoneOk && isEmailOk && isCapacityOk;
-
- // Pre-select table if navigated from Tables floor plan
- useEffect(() => {
- if (preselectedTable) {
- const matchedCategory = preselectedTable.number.startsWith('L-') ? premiumId : standardId;
- setSelectedPlaceTypeId(preselectedTable.placeTypeId || matchedCategory);
- setSelectedTableId(preselectedTable.id);
-setPersonsCount(preselectedTable.capacity);
-        showToast(`Table ${preselectedTable.number} (Max ${preselectedTable.capacity} guests) pre-selected for check-in.`, 'info');
-      }
-    }, [preselectedTable, standardId, premiumId]);
+  // Pre-select table if navigated from Tables floor plan
+  useEffect(() => {
+    if (preselectedTable && !showContinuePrompt) {
+      const matchedCategory = preselectedTable.number.startsWith('L-') ? premiumId : standardId;
+      setSelectedPlaceTypeId(preselectedTable.placeTypeId || matchedCategory);
+      setSelectedTableId(preselectedTable.id);
+      setPersonsCount(preselectedTable.capacity);
+      showToast(`Table ${preselectedTable.number} (Max ${preselectedTable.capacity} guests) pre-selected for check-in.`, 'info');
+    }
+  }, [preselectedTable, standardId, premiumId, showContinuePrompt]);
 
   const handleTableSelect = async (tb: Table) => {
+    if (isTableValidating) return;
+    setIsTableValidating(true);
     const isCurrentlySelected = selectedTableId === tb.id;
     if (isCurrentlySelected) {
       try {
         await api.unlockTable(tb.id);
         setSelectedTableId('');
         setOriginalTableStatus('');
+        if (reservationId) {
+          await api.updateReservation(reservationId, { tableId: null }).catch(() => {});
+        }
         refreshTables();
         showToast(`Table ${tb.tableNumber} released.`, 'info');
       } catch (err: any) {
         showToast(err.message || `Failed to release table ${tb.tableNumber}.`, 'danger');
+      } finally {
+        setIsTableValidating(false);
       }
     } else {
       const previousTableId = selectedTableId;
       try {
+        // 1. Acquire lock on new table first
         await api.lockTable(tb.id);
-        
+
+        // 2. If a reservation exists, update reservation tableId in PostgreSQL
+        if (reservationId) {
+          try {
+            await api.updateReservation(reservationId, { tableId: tb.id });
+          } catch (resUpdateErr: any) {
+            // Compensating Rollback: release new table lock and keep old table locked
+            await api.unlockTable(tb.id).catch(() => {});
+            throw resUpdateErr;
+          }
+        }
+
+        // 3. Only after successful lock and DB update, unlock previous table
         if (previousTableId) {
           try {
             await api.unlockTable(previousTableId);
@@ -579,47 +835,112 @@ setPersonsCount(preselectedTable.capacity);
             console.warn(`Failed to unlock previous table ${previousTableId}:`, unlockErr);
           }
         }
-        
+
         setSelectedTableId(tb.id);
         setOriginalTableStatus(tb.status as any);
         refreshTables();
         showToast(`Table ${tb.tableNumber} locked for check-in.`, 'success');
       } catch (err: any) {
         showToast(err.message || `Failed to lock table ${tb.tableNumber} for check-in.`, 'danger');
+      } finally {
+        setIsTableValidating(false);
       }
     }
   };
 
   // Derived current rate card
- const currentRateCard = rates.find(r => r.id === selectedPlaceTypeId) || {
- id: selectedPlaceTypeId,
- name: selectedPlaceTypeId === premiumId ? 'Premium Lounge' : 'Standing Bar',
- ratePerPerson: selectedPlaceTypeId === premiumId ? (dbPremiumRate?.ratePerPerson ?? 1000) : (dbStandardRate?.ratePerPerson ?? 500),
- baseTimeMinutes: selectedPlaceTypeId === premiumId ? (dbPremiumRate?.baseTimeMinutes ?? 180) : (dbStandardRate?.baseTimeMinutes ?? 120),
- redemptionsPerPerson: selectedPlaceTypeId === premiumId ? (dbPremiumRate?.redemptionsPerPerson ?? 4) : (dbStandardRate?.redemptionsPerPerson ?? 2),
- };
+  const currentRateCard = rates.find(r => r.id === selectedPlaceTypeId) || {
+    id: selectedPlaceTypeId,
+    name: selectedPlaceTypeId === premiumId ? 'Premium Lounge' : 'Standing Bar',
+    ratePerPerson: selectedPlaceTypeId === premiumId ? (dbPremiumRate?.ratePerPerson ?? 1000) : (dbStandardRate?.ratePerPerson ?? 500),
+    baseTimeMinutes: selectedPlaceTypeId === premiumId ? (dbPremiumRate?.baseTimeMinutes ?? 180) : (dbStandardRate?.baseTimeMinutes ?? 120),
+    redemptionsPerPerson: selectedPlaceTypeId === premiumId ? (dbPremiumRate?.redemptionsPerPerson ?? 4) : (dbStandardRate?.redemptionsPerPerson ?? 2),
+  };
 
- const personsCountNum = typeof personsCount === 'number' ? personsCount : 0;
- const calculatedTotal = personsCountNum * (currentRateCard.ratePerPerson || 0);
- const totalAllowedDrinks = personsCountNum * (currentRateCard.redemptionsPerPerson || 0);
+  const personsCountNum = typeof personsCount === 'number' ? personsCount : 0;
+  const calculatedTotal = personsCountNum * (currentRateCard.ratePerPerson || 0);
+  const totalAllowedDrinks = personsCountNum * (currentRateCard.redemptionsPerPerson || 0);
 
- const handleStage1Next = (e: React.FormEvent) => {
- e.preventDefault();
+  const handleStage1Next = async (e: React.FormEvent) => {
+    e.preventDefault();
 
- if (!isStep1Valid) {
- if (!isNameOk) showToast('Please enter a valid customer full name (2-100 letters).', 'danger');
- else if (!isPhoneOk) showToast('Please enter a valid 10-digit Indian mobile number.', 'danger');
- else if (!isEmailOk) showToast('Please enter a valid email address.', 'danger');
- else if (!isCapacityOk) showToast(`Please enter a valid headcount between 1 and ${maxCapacity} guests.`, 'danger');
- return;
- }
+    if (phoneValidationStatus === 'PENDING' || emailValidationStatus === 'PENDING' || isValidatingStage1) {
+      showToast('Validating guest details, please wait...', 'info');
+      return;
+    }
 
- if (preselectedTable) {
- setStage(3); // Go to Stage 3 (QR Scan) if preselected
- } else {
- setStage(2);
- }
- };
+    if (!isStep1Valid || phoneValidationStatus !== 'VALID' || emailValidationStatus !== 'VALID') {
+      if (!isNameOk) showToast('Please enter a valid customer full name (2-100 letters).', 'danger');
+      else if (phoneConflict || phoneValidationStatus === 'CONFLICT') showToast('This phone number is currently being used in another Check-In process.', 'danger');
+      else if (!isValidPhone(phoneNumber)) showToast('Please enter a valid 10-digit Indian mobile number.', 'danger');
+      else if (emailConflict || emailValidationStatus === 'CONFLICT') showToast('This email address is currently being used in another Check-In process.', 'danger');
+      else if (!isValidEmail(email) || !email.trim()) showToast('Please enter a valid email address.', 'danger');
+      else if (!isCapacityOk) showToast(`Please enter a valid headcount between 1 and ${maxCapacity} guests.`, 'danger');
+      return;
+    }
+
+    // Authoritative Final Backend Validation Barrier before Stage Transition
+    setIsValidatingStage1(true);
+    try {
+      const p = phoneNumber.trim();
+      const e = email.trim();
+      const body: any = { phoneNumber: p, email: e };
+      if (activePendingToken?.tokenNumber) body.tokenNumber = activePendingToken.tokenNumber;
+      if (reservationId) body.reservationId = reservationId;
+
+      const finalCheck = await api.validateDuplicate(body);
+      if (finalCheck && finalCheck.conflicts) {
+        if (finalCheck.conflicts.phone) {
+          setPhoneConflict(true);
+          setPhoneConflictDetail(finalCheck.conflictDetails?.phone || null);
+          setPhoneValidationStatus('CONFLICT');
+          const name = finalCheck.conflictDetails?.phone?.name;
+          const msg = finalCheck.conflictDetails?.phone?.type === 'RESERVATION'
+            ? `This phone number is already reserved by ${name || 'a customer'}.`
+            : `This phone number is currently being used by ${name || 'another user'}.`;
+          showToast(msg, 'danger');
+          setIsValidatingStage1(false);
+          return;
+        }
+        if (finalCheck.conflicts.email) {
+          setEmailConflict(true);
+          setEmailConflictDetail(finalCheck.conflictDetails?.email || null);
+          setEmailValidationStatus('CONFLICT');
+          const name = finalCheck.conflictDetails?.email?.name;
+          const msg = finalCheck.conflictDetails?.email?.type === 'RESERVATION'
+            ? `This email address is already reserved by ${name || 'a customer'}.`
+            : `This email address is currently being used by ${name || 'another user'}.`;
+          showToast(msg, 'danger');
+          setIsValidatingStage1(false);
+          return;
+        }
+      }
+
+      // Stage 1 Database Synchronization (Section 4 of MD)
+      if (reservationId) {
+        try {
+          await api.updateReservation(reservationId, {
+            customerName: customerName.trim(),
+            phoneNumber: p,
+            email: e,
+            personsCount: typeof personsCount === 'number' ? personsCount : 1,
+            tableId: selectedTableId || null
+          });
+        } catch (err: any) {
+          showToast(err.message || 'Failed to sync reservation details to database.', 'danger');
+          return;
+        }
+      }
+
+      // Always transition to Stage 2 (Table Seating / Seating Plan)
+      // Never skip Table Selection and never trigger automatic QR send from Stage 1
+      setStage(2);
+    } catch (err: any) {
+      showToast(err.message || 'Validation failed. Please try again.', 'danger');
+    } finally {
+      setIsValidatingStage1(false);
+    }
+  };
 
   // Capacity Warning State Handlers
   const handlePersonsCountChange = (val: number | string) => {
@@ -655,28 +976,38 @@ setPersonsCount(preselectedTable.capacity);
     setHasDismissedCapacityWarning(true);
   };
 
-  const handleChangeTable = async () => {
-    const tableToUnlock = selectedTableId;
-    if (tableToUnlock) {
+  const handleConfirmExtension = async () => {
+    const newCount = attemptedPersonsCount !== null ? attemptedPersonsCount : (selectedTableObj ? selectedTableObj.capacity + 1 : (typeof personsCount === 'number' ? personsCount : 1));
+    const tableToRelease = selectedTableId;
+    const tableNumber = selectedTableObj?.tableNumber;
+
+    setPersonsCount(newCount);
+    setSelectedTableId('');
+    setOriginalTableStatus('');
+    setPreselectedTable(null);
+    setAttemptedPersonsCount(null);
+    setShowCapacityWarning(false);
+    setHasDismissedCapacityWarning(true);
+
+    if (tableToRelease) {
       try {
-        await api.unlockTable(tableToUnlock);
-        refreshTables();
-      } catch (err: any) {
-        console.warn('Failed to unlock table on change table action:', err);
+        await api.unlockTable(tableToRelease);
+      } catch (e: any) {
+        console.warn(`Failed to unlock table ${tableToRelease} upon extension:`, e);
       }
     }
 
-    setSelectedTableId('');
-    setOriginalTableStatus('');
-
-    if (attemptedPersonsCount !== null) {
-      setPersonsCount(attemptedPersonsCount);
+    if (reservationId) {
+      try {
+        await api.updateReservation(reservationId, { tableId: null, personsCount: newCount });
+      } catch (e: any) {
+        console.warn(`Failed to update reservation tableId upon extension:`, e);
+      }
     }
 
-    setAttemptedPersonsCount(null);
-    setShowCapacityWarning(false);
-    setHasDismissedCapacityWarning(false);
-    setStage(2);
+    refreshTables();
+    refreshReservations();
+    showToast(tableNumber ? `Table ${tableNumber} released. Member count extended to ${newCount}.` : `Member count extended to ${newCount}.`, 'info');
   };
 
   // Trigger capacity popup when pre-filled count exceeds pre-filled table's capacity
@@ -684,6 +1015,7 @@ setPersonsCount(preselectedTable.capacity);
     const personsCountNum = typeof personsCount === 'number' ? personsCount : 0;
     if (selectedTableObj && personsCountNum > selectedTableObj.capacity) {
       if (!hasDismissedCapacityWarning) {
+        setAttemptedPersonsCount(personsCountNum);
         setShowCapacityWarning(true);
       }
     } else {
@@ -701,7 +1033,7 @@ setPersonsCount(preselectedTable.capacity);
         <div className="space-y-2">
           <h3 className="text-base font-black uppercase tracking-wider text-amber-500">Table Capacity Exceeded</h3>
           <p className="text-xs text-text-muted leading-relaxed">
-            Do you want to change the table because the capacity is {selectedTableObj.capacity}, or continue with the current table with {selectedTableObj.capacity} people?
+            This table has a capacity of {selectedTableObj.capacity}. You are assigning {attemptedPersonsCount || (typeof personsCount === 'number' ? personsCount : selectedTableObj.capacity + 1)} members. Do you want to keep the current table with {selectedTableObj.capacity} members or extend the member count?
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 pt-2">
@@ -710,14 +1042,14 @@ setPersonsCount(preselectedTable.capacity);
             onClick={handleKeepTable}
             className="flex-1 px-4 py-3 rounded-xl text-xs font-bold transition-all border border-border-main hover:bg-bg-primary text-text-muted hover:text-text-main cursor-pointer"
           >
-            Keep Current Table
+            Keep Table ({selectedTableObj.capacity})
           </button>
           <button
             type="button"
-            onClick={handleChangeTable}
+            onClick={handleConfirmExtension}
             className="flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all bg-amber-500 hover:bg-amber-600 text-white cursor-pointer"
           >
-            Change Table
+            Confirm Extension
           </button>
         </div>
       </div>
@@ -1009,6 +1341,36 @@ setPersonsCount(preselectedTable.capacity);
       setStage(1);
       return;
     }
+
+    try {
+      const finalTableId = selectedTableId || activePendingToken?.tableId || (activePendingToken?.table as any)?.id;
+      const preValidation = await api.validatePrePayment({
+        phoneNumber: phoneNumber.trim(),
+        email: email.trim(),
+        tableId: finalTableId || undefined,
+        tokenNumber: activePendingToken?.tokenNumber || undefined,
+        reservationId: reservationId || undefined
+      });
+
+      if (!preValidation.valid) {
+        showToast(preValidation.message || 'Validation conflict detected before payment.', 'danger');
+        refreshTables();
+        refreshReservations();
+        refreshTokens();
+
+        if (preValidation.redirectStage === 1) {
+          setStage(1);
+        } else if (preValidation.redirectStage === 2) {
+          setSelectedTableId('');
+          setStage(2);
+        }
+        return;
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Validation error before payment.', 'danger');
+      return;
+    }
+
     setShowPaymentCollectedConfirm(true);
   };
 
@@ -1084,39 +1446,35 @@ setPersonsCount(preselectedTable.capacity);
   };
 
   const handleResetWizard = async () => {
-    const savedDraft = localStorage.getItem('bar_incomplete_checkin');
-    let draftTableId = '';
-    if (savedDraft) {
-      try {
-        const state = JSON.parse(savedDraft);
-        draftTableId = state.selectedTableId || '';
-      } catch (e) {
-        console.error("Failed to parse saved draft inside reset:", e);
-      }
+    // If not in completed stage 5, execute full abandon/stop cleanup
+    if (stage !== 5 && !createdToken) {
+      await handleAbandonCheckIn();
+      return;
     }
 
-    const tableToUnlock = selectedTableId || draftTableId;
+    // Completed Stage 5 check-in: Clean reset for next guest without cancelling active paid token
     localStorage.removeItem('bar_incomplete_checkin');
+    localStorage.removeItem('bar_checkin_assign_target');
+    localStorage.removeItem('bar_checkin_original_status');
+    localStorage.removeItem('bar_checkin_just_assigned');
     setStage(1);
     setPhoneNumber('');
     setCustomerName('');
     setEmail('');
     setPersonsCount(2);
     setSelectedTableId('');
+    setSelectedPlaceTypeId('standing_bar');
     setCreatedToken(null);
     setPreselectedTable(null);
     setActivePendingToken(null);
     setQrVerificationSuccess(false);
     setOriginalTableStatus('');
-    
-    if (tableToUnlock && !createdToken) {
-      try {
-        await api.unlockTable(tableToUnlock);
-        refreshTables();
-      } catch (err: any) {
-        console.warn('Failed to release lock on table:', err);
-      }
-    }
+    setReservationId('');
+    setPhoneConflict(false);
+    setEmailConflict(false);
+    setShowContinuePrompt(false);
+    refreshTables();
+    refreshTokens();
   };
 
  // Filter available tables by place category & seating capacity compatibility matching React Native
@@ -1157,7 +1515,7 @@ setPersonsCount(preselectedTable.capacity);
         handleKeepTable();
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        handleChangeTable();
+        handleConfirmExtension();
       }
     };
 
@@ -1195,17 +1553,15 @@ setPersonsCount(preselectedTable.capacity);
 
       if (e.key === 'Enter') {
         if (stage === 1) {
-          if (isStep1Valid) {
-            e.preventDefault();
-            if (preselectedTable) {
-              setStage(3);
-            } else {
-              setStage(2);
-            }
+          e.preventDefault();
+          if (isStep1Valid && phoneValidationStatus === 'VALID' && emailValidationStatus === 'VALID' && !isValidatingStage1) {
+            handleStage1Next(e as any);
           }
         } else if (stage === 2) {
           e.preventDefault();
-          setStage(3);
+          if (selectedTableId && !isSendingQr && !isTableValidating) {
+            handleStage2Submit();
+          }
         } else if (stage === 3) {
           if (qrVerificationSuccess) {
             e.preventDefault();
@@ -1228,6 +1584,12 @@ setPersonsCount(preselectedTable.capacity);
   }, [
     stage,
     isStep1Valid,
+    phoneValidationStatus,
+    emailValidationStatus,
+    isValidatingStage1,
+    isTableValidating,
+    selectedTableId,
+    isSendingQr,
     preselectedTable,
     qrVerificationSuccess,
     isSubmitting,
@@ -1385,10 +1747,10 @@ setPersonsCount(preselectedTable.capacity);
  <input
  type="tel"
  value={phoneNumber}
- onChange={e => setPhoneNumber(e.target.value)}
+ onChange={e => handlePhoneChange(e.target.value)}
  placeholder="e.g. 9999999999"
  className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-base md:text-sm text-text-main focus:outline-none transition-all ${
- phoneNumber.trim().length > 0 && (!isValidPhone(phoneNumber) || phoneConflict)
+ phoneNumber.trim().length > 0 && (!isValidPhone(phoneNumber) || phoneConflict || isPhoneActive || phoneValidationStatus === 'CONFLICT')
  ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
  : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
  }`}
@@ -1400,10 +1762,14 @@ setPersonsCount(preselectedTable.capacity);
  <span>Please enter a valid 10-digit Indian mobile number (starts with 6-9).</span>
  </div>
  )}
- {phoneConflict && (
+ {(phoneConflict || phoneValidationStatus === 'CONFLICT') && (
  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
  <AlertTriangle size={14} className="shrink-0" />
- <span>This phone number is already checked in.</span>
+ <span>
+   {phoneConflictDetail?.type === 'RESERVATION'
+     ? `This phone number is already reserved by ${phoneConflictDetail.name || 'a customer'}.`
+     : `This phone number is currently being used by ${phoneConflictDetail?.name || 'another user'}.`}
+ </span>
  </div>
  )}
  </div>
@@ -1446,10 +1812,10 @@ setPersonsCount(preselectedTable.capacity);
  <input
  type="email"
  value={email}
- onChange={e => setEmail(e.target.value)}
+ onChange={e => handleEmailChange(e.target.value)}
  placeholder="e.g. name@gmail.com"
  className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-base md:text-sm text-text-main focus:outline-none transition-all ${
-    email.trim().length === 0 || !isValidEmail(email) || emailConflict
+    email.trim().length === 0 || !isValidEmail(email) || emailConflict || isEmailActive || emailValidationStatus === 'CONFLICT'
     ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
     : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
   }`}
@@ -1466,10 +1832,14 @@ setPersonsCount(preselectedTable.capacity);
  <span>Please enter a valid email address (e.g. name@domain.com).</span>
  </div>
  )}
- {emailConflict && (
+ {(emailConflict || emailValidationStatus === 'CONFLICT') && (
  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
  <AlertTriangle size={14} className="shrink-0" />
- <span>This email ID is already checked in.</span>
+ <span>
+   {emailConflictDetail?.type === 'RESERVATION'
+     ? `This email address is already reserved by ${emailConflictDetail.name || 'a customer'}.`
+     : `This email address is currently being used by ${emailConflictDetail?.name || 'another user'}.`}
+ </span>
  </div>
  )}
  </div>
@@ -1538,7 +1908,11 @@ setPersonsCount(preselectedTable.capacity);
  {/* STAGE 1 SUBMIT BUTTON (STRICTLY DISABLED UNTIL isStep1Valid IS TRUE) */}
  <div className="pt-4 flex flex-col sm:flex-row items-center sm:justify-between gap-4 border-t border-border-main">
  <div className="text-xs text-text-muted w-full sm:w-auto text-center sm:text-left">
- {!isStep1Valid ? (
+ {phoneValidationStatus === 'PENDING' || emailValidationStatus === 'PENDING' || isValidatingStage1 ? (
+ <span className="dark:text-amber-400 text-amber-700 flex items-center justify-center sm:justify-start gap-1 font-semibold">
+ <AlertTriangle size={14} className="animate-spin shrink-0" /> Validating guest details...
+ </span>
+ ) : !isStep1Valid ? (
  <span className="dark:text-amber-400 text-amber-700 flex items-center justify-center sm:justify-start gap-1">
  <AlertTriangle size={14} /> Complete all required fields above to proceed
  </span>
@@ -1551,9 +1925,9 @@ setPersonsCount(preselectedTable.capacity);
 
  <button
  type="submit"
- disabled={!isStep1Valid}
+ disabled={!isStep1Valid || phoneValidationStatus !== 'VALID' || emailValidationStatus !== 'VALID' || isValidatingStage1}
  title={!isStep1Valid ? "Fill required details" : undefined}
- className="px-8 py-3.5 rounded-xl primary-btn flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider transition-all w-full sm:w-auto"
+ className="px-8 py-3.5 rounded-xl primary-btn flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider transition-all w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
  >
  <span>Proceed to Seating Plan</span>
  <ChevronRight size={16} />
@@ -1668,11 +2042,11 @@ setPersonsCount(preselectedTable.capacity);
 
   <button
   type="button"
-  disabled={!selectedTableId || isSendingQr}
+  disabled={!selectedTableId || isSendingQr || isTableValidating}
   onClick={handleStage2Submit}
-  className="px-8 py-3.5 rounded-xl primary-btn flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+  className="px-8 py-3.5 rounded-xl primary-btn flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
   >
-  <span>{getStage2ButtonText()}</span>
+  <span>{isTableValidating ? 'Locking Table...' : getStage2ButtonText()}</span>
   <ChevronRight size={16} />
   </button>
   </div>
@@ -1809,11 +2183,7 @@ setPersonsCount(preselectedTable.capacity);
  type="button"
  onClick={() => {
  stopCamera();
- if (preselectedTable) {
- setStage(1); // Go back to stage 1 if preselected from table plan
- } else {
  setStage(2);
- }
  }}
  className="px-6 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all premium-btn-secondary w-full sm:w-auto"
  >
@@ -1936,10 +2306,37 @@ setPersonsCount(preselectedTable.capacity);
  </div>
 
  <div className="glass-panel p-6 rounded-2xl border border-border-main text-left space-y-3 font-mono text-xs max-w-md mx-auto">
- <div className="flex justify-between border-b border-border-main pb-2">
- <span className="text-text-muted">Token Number:</span>
- <span className="font-bold text-text-main">{createdToken.tokenNumber}</span>
- </div>
+  <div className="flex justify-between items-center border-b border-border-main pb-2">
+  <span className="text-text-muted">Token Number:</span>
+  <div className="flex items-center gap-2">
+  <span className="font-bold text-text-main font-mono">{createdToken.tokenNumber}</span>
+  <button
+    type="button"
+    onClick={() => {
+      if (createdToken.tokenNumber) {
+        navigator.clipboard.writeText(createdToken.tokenNumber);
+        setCopiedToken(true);
+        showToast('Token ID copied to clipboard!', 'success');
+        setTimeout(() => setCopiedToken(false), 2000);
+      }
+    }}
+    className="p-1 px-2 rounded-lg bg-bg-primary hover:bg-bg-card border border-border-main text-text-muted hover:text-text-main flex items-center gap-1 text-[10px] font-bold transition-all cursor-pointer"
+    title="Click to copy Token ID"
+  >
+    {copiedToken ? (
+      <>
+        <Check size={12} className="text-emerald-500 stroke-[3]" />
+        <span className="text-emerald-500 font-bold">Copied</span>
+      </>
+    ) : (
+      <>
+        <Copy size={12} />
+        <span>Copy ID</span>
+      </>
+    )}
+  </button>
+  </div>
+  </div>
  <div className="flex justify-between border-b border-border-main pb-2">
  <span className="text-text-muted">Customer Phone:</span>
  <span className="text-text-main">{createdToken.customer?.phoneNumber || (createdToken as any).phoneNumber}</span>

@@ -488,7 +488,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
   useEffect(() => {
     fetchActiveTokens(false);
     const handleGlobalRefresh = () => {
-      fetchActiveTokens(false);
+      fetchActiveTokens(true);
       refreshTokens();
       refreshTables();
     };

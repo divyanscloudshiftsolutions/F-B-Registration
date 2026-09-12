@@ -272,13 +272,18 @@ export const TableManagement: React.FC = () => {
           await api.patchTableStatus(tb.id, 'available');
         }
 
-        // Invalidate stale draft in localStorage if it references this table
+        // Invalidate stale table assignment in localStorage if it references this table
         try {
           const draft = localStorage.getItem('bar_incomplete_checkin');
           if (draft) {
             const parsed = JSON.parse(draft);
             if (parsed.selectedTableId === tb.id) {
-              localStorage.removeItem('bar_incomplete_checkin');
+              if (!parsed.customerName && !parsed.phoneNumber && !parsed.email && !parsed.activePendingToken) {
+                localStorage.removeItem('bar_incomplete_checkin');
+              } else {
+                parsed.selectedTableId = '';
+                localStorage.setItem('bar_incomplete_checkin', JSON.stringify(parsed));
+              }
             }
           }
           const target = localStorage.getItem('bar_checkin_assign_target');

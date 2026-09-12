@@ -31,9 +31,9 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
       const params = new URLSearchParams(window.location.search);
       const qToken = params.get('token');
       if (qToken) return qToken;
-      return localStorage.getItem('bar_active_token') || 'BAR-20260902-00008';
+      return localStorage.getItem('bar_active_token') || '';
     }
-    return 'BAR-20260902-00008';
+    return '';
   });
 
   const [accessState, setAccessState] = useState<'VERIFYING' | 'AUTHORIZED' | 'UNVERIFIED' | 'CLOSED' | 'ERROR'>('VERIFYING');

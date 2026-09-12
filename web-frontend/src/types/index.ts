@@ -51,8 +51,13 @@ export interface Table {
   lastAssignedAt?: string;
   isActive: boolean;
   lockedBy?: string | null;
+  lockedByName?: string | null;
+  lockedByUserId?: string | null;
   lockedByRole?: string | null;
   lockedAt?: number | string | null;
+  reservedBy?: string | null;
+  reservedByName?: string | null;
+  reservedByUserId?: string | null;
   isBillRequested?: boolean;
   activeSession?: any;
   bill?: any;

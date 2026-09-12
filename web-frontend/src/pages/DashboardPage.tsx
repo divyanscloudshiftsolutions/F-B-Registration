@@ -131,8 +131,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const [isReportLoading, setIsReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
 
-  const fetchReport = async () => {
-    setIsReportLoading(true);
+  const fetchReport = async (silent: boolean = false) => {
+    if (!silent) setIsReportLoading(true);
     setReportError(null);
     try {
       const res = await api.getDashboardReport('day');
@@ -144,7 +144,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     } catch (err: any) {
       setReportError(err.message || 'Failed to load report data.');
     } finally {
-      setIsReportLoading(false);
+      if (!silent) setIsReportLoading(false);
     }
   };
 
@@ -157,7 +157,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
     const handleGlobalRefresh = () => {
       if (isManagement) {
-        fetchReport();
+        fetchReport(true);
       }
     };
     window.addEventListener('app:global-refresh', handleGlobalRefresh);
@@ -428,10 +428,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       onAction?: () => void;
     }> = [];
 
+    const handleNavigateToTable = (tableIdentifier: string) => {
+      if (!tableIdentifier) return;
+      localStorage.setItem('bar_auto_inspect_table_id', tableIdentifier);
+      window.dispatchEvent(new CustomEvent('bar_auto_inspect', { detail: { tableId: tableIdentifier } }));
+      if (onNavigate) {
+        onNavigate('tables/occupied');
+      }
+    };
+
     // 1. Expiration alerts from data context
     sessionAlerts.forEach(a => {
       if (a.dismissed) return;
       const tk = tokens.find(t => t.id === a.id);
+      const targetTableId = a.tableId || tk?.tableId || tk?.table?.id || (tables.find(t => t.tableNumber === a.tableNumber)?.id) || a.tableNumber;
       
       list.push({
         id: a.id,
@@ -443,7 +453,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         type: 'expire',
         actionLabel: 'Extend',
         onAction: () => {
-          if (tk) setExtendingToken(tk);
+          handleNavigateToTable(targetTableId);
         }
       });
     });
@@ -452,6 +462,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     tokens.forEach(tk => {
       const isExpired = new Date(tk.endTime).getTime() <= Date.now();
       if (tk.status === 'PENDING_PAYMENT' || isExpired) {
+        const targetTableId = tk.tableId || tk.table?.id || (tables.find(t => t.tableNumber === tk.tableNumber)?.id) || tk.tableNumber || '';
         list.push({
           id: `checkout-${tk.id}`,
           title: 'Table awaiting checkout',
@@ -461,7 +472,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           remainingTimeStr: isExpired ? '00:00:00' : 'Awaiting Payment',
           type: 'checkout',
           actionLabel: 'Checkout',
-          onAction: () => setClosingToken(tk)
+          onAction: () => {
+            handleNavigateToTable(targetTableId);
+          }
         });
       }
     });
@@ -810,7 +823,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 }
 
                 return (
-                  <div key={notif.id} className="p-3 rounded-xl bg-bg-secondary-surface dark:bg-black/10 border border-border-main flex flex-col sm:flex-row items-start sm:items-center gap-3 justify-between animate-fadeIn text-left">
+                  <div 
+                    key={notif.id} 
+                    onClick={() => notif.onAction?.()}
+                    className={`p-3 rounded-xl bg-bg-secondary-surface dark:bg-black/10 border border-border-main flex flex-col sm:flex-row items-start sm:items-center gap-3 justify-between animate-fadeIn text-left ${
+                      notif.onAction ? 'cursor-pointer hover:border-primary/50 dark:hover:border-[#D4AF37]/50 hover:bg-neutral-50 dark:hover:bg-white/5 transition-all' : ''
+                    }`}
+                  >
                     <div className="flex items-start gap-2.5 min-w-0 w-full">
                       <div className={`mt-0.5 p-1.5 rounded-lg shrink-0 ${iconColorClass}`}>
                         <AlertCircle size={14} />
@@ -827,7 +846,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                     </div>
                     {notif.actionLabel && notif.onAction && (
                       <button
-                        onClick={notif.onAction}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          notif.onAction?.();
+                        }}
                         className="w-full sm:w-auto px-3 py-1.5 sm:py-1 rounded dark:bg-[#D4AF37]/10 dark:hover:bg-[#D4AF37]/25 dark:text-[#D4AF37] dark:border-[#D4AF37]/20 bg-primary/10 hover:bg-primary/20 text-primary border-primary/20 text-xs sm:text-[10px] font-bold transition-all cursor-pointer whitespace-nowrap flex items-center justify-center shrink-0 self-stretch sm:self-center"
                       >
                         {notif.actionLabel}
