@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import jsQR from 'jsqr';
 import type { Token } from '../types';
+import { extractTokenNumber } from '../utils/tokenExtractor';
 
 interface BartenderPageProps {
  activeTab: string;
@@ -543,8 +544,13 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
   const handleVerify = async (e?: React.FormEvent, customCode?: string) => {
     if (e) e.preventDefault();
-    const query = customCode || tokenInput.trim();
-    if (!query) return;
+    const rawQuery = customCode || tokenInput.trim();
+    if (!rawQuery) return;
+    const query = extractTokenNumber(rawQuery);
+    if (!query) {
+      showToast('Invalid QR code format. Please scan a valid pass or enter Token ID.', 'danger');
+      return;
+    }
 
     setIsVerifying(true);
     setScannedToken(null);

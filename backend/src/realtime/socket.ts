@@ -347,6 +347,7 @@ export function broadcastServiceRequestUpdated(payload: ServiceRequestUpdatedPay
 export function broadcastTableUpdated(payload: TableUpdatedPayload) {
   if (!io) return;
   io.to('tables:all').emit(SOCKET_EVENTS.TABLE_UPDATED, payload);
+  io.to('staff:all').emit(SOCKET_EVENTS.TABLE_UPDATED, payload);
   io.to(`table:${payload.tableId}`).emit(SOCKET_EVENTS.TABLE_UPDATED, payload);
 }
 
@@ -371,6 +372,11 @@ export function broadcastTableSessionActivated(payload: {
   customerName?: string;
   startTime: string | Date;
   endTime: string | Date;
+  occupiedBy?: string | null;
+  occupiedByName?: string | null;
+  occupiedByRole?: string | null;
+  occupiedByUserId?: string | null;
+  occupiedByDisplay?: string | null;
 }) {
   if (!io) return;
   io.to(`table:${payload.tableId}`).emit(SOCKET_EVENTS.TABLE_SESSION_ACTIVATED, payload);
@@ -384,6 +390,7 @@ export function broadcastTableSessionActivated(payload: {
     tableId: payload.tableId,
   });
   io.to('tables:all').emit(SOCKET_EVENTS.TABLE_SESSION_ACTIVATED, payload);
+  io.to('staff:all').emit(SOCKET_EVENTS.TABLE_SESSION_ACTIVATED, payload);
 }
 
 export function broadcastTableSessionClosed(payload: {
@@ -397,5 +404,25 @@ export function broadcastTableSessionClosed(payload: {
   io.to(`table:${payload.tableNumber}`).emit(SOCKET_EVENTS.TABLE_SESSION_CLOSED, payload);
   io.to(`customer:token:${payload.tokenNumber}`).emit(SOCKET_EVENTS.TABLE_SESSION_CLOSED, payload);
   io.to('tables:all').emit(SOCKET_EVENTS.TABLE_SESSION_CLOSED, payload);
+  io.to('staff:all').emit(SOCKET_EVENTS.TABLE_SESSION_CLOSED, payload);
 }
+
+export function broadcastReservationCreated(payload: any) {
+  if (!io) return;
+  io.to('tables:all').emit(SOCKET_EVENTS.RESERVATION_CREATED, payload);
+  io.to('staff:all').emit(SOCKET_EVENTS.RESERVATION_CREATED, payload);
+}
+
+export function broadcastReservationUpdated(payload: any) {
+  if (!io) return;
+  io.to('tables:all').emit(SOCKET_EVENTS.RESERVATION_UPDATED, payload);
+  io.to('staff:all').emit(SOCKET_EVENTS.RESERVATION_UPDATED, payload);
+}
+
+export function broadcastReservationCancelled(payload: any) {
+  if (!io) return;
+  io.to('tables:all').emit(SOCKET_EVENTS.RESERVATION_CANCELLED, payload);
+  io.to('staff:all').emit(SOCKET_EVENTS.RESERVATION_CANCELLED, payload);
+}
+
 

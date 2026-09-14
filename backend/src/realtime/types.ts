@@ -104,6 +104,11 @@ export interface TableUpdatedPayload {
   status: string;
   currentTokenId?: string | null;
   occupiedSince?: string | null;
+  occupiedBy?: string | null;
+  occupiedByName?: string | null;
+  occupiedByRole?: string | null;
+  occupiedByUserId?: string | null;
+  occupiedByDisplay?: string | null;
   lockedBy?: string | null;
   lockedByName?: string | null;
   lockedByUserId?: string | null;

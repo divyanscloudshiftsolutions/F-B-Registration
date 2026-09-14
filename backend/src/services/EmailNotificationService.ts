@@ -176,13 +176,13 @@ export class EmailNotificationService {
                     ${accessCode}
                   </td>
                   <td style="padding-left: 10px; vertical-align: middle;">
-                    <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 13px; font-weight: bold; padding: 10px 14px; border-radius: 8px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy access code">📋 Copy Code</span>
+                    <button type="button" onclick="navigator.clipboard.writeText('${accessCode}'); this.innerText='✓ Copied'; setTimeout(() => this.innerText='📋 Copy', 2000);" style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 13px; font-weight: bold; padding: 10px 14px; border-radius: 8px; border: none; cursor: pointer; font-family: sans-serif;" title="Copy access code">📋 Copy</button>
                   </td>
                 </tr>
               </table>
 
               <p style="color: #475569; font-size: 13px; line-height: 1.5; margin: 14px 0 0 0; padding-top: 12px; border-top: 1px dashed #cbd5e1;">
-                💡 <strong>Important:</strong> Please copy this 6-digit code before clicking the button below to resume placing orders from your table.
+                💡 <strong>Important:</strong> Please copy this 6-digit code before opening the table ordering portal below to resume placing orders.
               </p>
             </div>
 
@@ -207,7 +207,7 @@ export class EmailNotificationService {
                         ${accessCode}
                       </td>
                       <td style="padding-left: 6px;">
-                        <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy code">📋 Copy Code</span>
+                        <button type="button" onclick="navigator.clipboard.writeText('${accessCode}'); this.innerText='✓ Copied'; setTimeout(() => this.innerText='📋 Copy', 2000);" style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; border: none; cursor: pointer; font-family: sans-serif;" title="Copy code">📋 Copy</button>
                       </td>
                     </tr>
                   </table>
@@ -222,7 +222,7 @@ export class EmailNotificationService {
                         ${tokenNumber}
                       </td>
                       <td style="padding-left: 6px;">
-                        <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy / select ID">📋 Copy ID</span>
+                        <button type="button" onclick="navigator.clipboard.writeText('${tokenNumber}'); this.innerText='✓ Copied'; setTimeout(() => this.innerText='📋 Copy ID', 2000);" style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; border: none; cursor: pointer; font-family: sans-serif;" title="Copy ID">📋 Copy ID</button>
                       </td>
                     </tr>
                   </table>
@@ -273,7 +273,7 @@ export class EmailNotificationService {
                         ${tokenNumber}
                       </td>
                       <td style="padding-left: 6px;">
-                        <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy / select ID">📋 Copy ID</span>
+                        <button type="button" onclick="navigator.clipboard.writeText('${tokenNumber}'); this.innerText='✓ Copied'; setTimeout(() => this.innerText='📋 Copy ID', 2000);" style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; border: none; cursor: pointer; font-family: sans-serif;" title="Copy ID">📋 Copy ID</button>
                       </td>
                     </tr>
                   </table>
@@ -326,20 +326,20 @@ export class EmailNotificationService {
                     ${accessCode}
                   </td>
                   <td style="padding-left: 10px; vertical-align: middle;">
-                    <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 13px; font-weight: bold; padding: 10px 14px; border-radius: 8px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy access code">📋 Copy Code</span>
+                    <button type="button" onclick="navigator.clipboard.writeText('${accessCode}'); this.innerText='✓ Copied'; setTimeout(() => this.innerText='📋 Copy', 2000);" style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 13px; font-weight: bold; padding: 10px 14px; border-radius: 8px; border: none; cursor: pointer; font-family: sans-serif;" title="Copy access code">📋 Copy</button>
                   </td>
                 </tr>
               </table>
 
               <p style="color: #475569; font-size: 13px; line-height: 1.5; margin: 14px 0 0 0; padding-top: 12px; border-top: 1px dashed #cbd5e1;">
-                💡 <strong>Important:</strong> Please copy this 6-digit code before clicking the <strong>Start Ordering from Table</strong> button below to open your menu.
+                💡 <strong>Important:</strong> Please copy this 6-digit code before clicking the <strong>Customer Portal</strong> button below to open your menu.
               </p>
             </div>
 
-            <!-- Start Ordering Button -->
+            <!-- Start Ordering Button (Customer Portal) -->
             <div style="text-align: center; margin: 26px 0 20px 0;">
               <a href="${accessUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #8D6CE5 0%, #6366F1 100%); color: #ffffff; text-decoration: none; font-weight: 800; font-size: 16px; padding: 15px 32px; border-radius: 14px; box-shadow: 0 4px 16px rgba(141, 108, 229, 0.4);">
-                Start Ordering from Table
+                Customer Portal
               </a>
               <p style="color: #64748b; font-size: 12px; margin-top: 10px;">Opens instantly on your phone browser. No app download needed.</p>
             </div>
@@ -359,7 +359,7 @@ export class EmailNotificationService {
                         ${accessCode}
                       </td>
                       <td style="padding-left: 6px;">
-                        <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy code">📋 Copy Code</span>
+                        <button type="button" onclick="navigator.clipboard.writeText('${accessCode}'); this.innerText='✓ Copied'; setTimeout(() => this.innerText='📋 Copy', 2000);" style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; border: none; cursor: pointer; font-family: sans-serif;" title="Copy code">📋 Copy</button>
                       </td>
                     </tr>
                   </table>
@@ -374,7 +374,7 @@ export class EmailNotificationService {
                         ${tokenNumber}
                       </td>
                       <td style="padding-left: 6px;">
-                        <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy / select ID">📋 Copy ID</span>
+                        <button type="button" onclick="navigator.clipboard.writeText('${tokenNumber}'); this.innerText='✓ Copied'; setTimeout(() => this.innerText='📋 Copy ID', 2000);" style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; border: none; cursor: pointer; font-family: sans-serif;" title="Copy ID">📋 Copy ID</button>
                       </td>
                     </tr>
                   </table>
@@ -427,7 +427,7 @@ export class EmailNotificationService {
                         ${tokenNumber}
                       </td>
                       <td style="padding-left: 6px;">
-                        <span style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; cursor: pointer; text-decoration: none; user-select: all; -webkit-user-select: all;" title="Click to copy / select ID">📋 Copy ID</span>
+                        <button type="button" onclick="navigator.clipboard.writeText('${tokenNumber}'); this.innerText='✓ Copied'; setTimeout(() => this.innerText='📋 Copy ID', 2000);" style="display: inline-block; background-color: #8D6CE5; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; border: none; cursor: pointer; font-family: sans-serif;" title="Copy ID">📋 Copy ID</button>
                       </td>
                     </tr>
                   </table>
@@ -546,8 +546,6 @@ export class EmailNotificationService {
   private sanitizeHtml(html: string): string {
     return html
       .replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, '') // Strip script blocks
-      .replace(/on\w+="[^"]*"/g, '') // Strip inline event handlers
-      .replace(/on\w+='[^']*'/g, '')
       .replace(/javascript:[^\s"']*/gi, ''); // Strip javascript URIs
   }
 

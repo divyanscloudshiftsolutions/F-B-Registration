@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { VegBadge } from './VegBadge';
-import { Minus, Plus, X } from 'lucide-react';
+import { Minus, Plus, X, Check } from 'lucide-react';
 
 export interface CustomizerItem {
   id: string;
@@ -23,6 +23,8 @@ export interface CustomizerItem {
   modifierGroups?: Array<{
     id: string;
     name: string;
+    isRequired?: boolean;
+    isMulti?: boolean;
     options: Array<{
       id: string;
       name: string;
@@ -63,7 +65,7 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
   onAddToCart,
 }) => {
   const [variantId, setVariantId] = useState<string | null>(null);
-  const [mods, setMods] = useState<Record<string, string>>({});
+  const [mods, setMods] = useState<Record<string, string[]>>({});
   const [instructions, setInstructions] = useState('');
   const [qty, setQty] = useState(1);
 
@@ -80,39 +82,71 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
 
   const variants = item.variants || [];
   const modifierGroups = item.modifierGroups || [];
+  const isBarItem =
+    (item.station && item.station.toUpperCase() === 'BAR') ||
+    (item.sectionSlug && item.sectionSlug.toLowerCase() === 'bar') ||
+    item.foodType === 'BEVERAGE' ||
+    item.foodType === 'ALCOHOLIC' ||
+    item.foodType === 'NON_ALCOHOLIC';
 
   const selectedVariant = variants.find((v) => v.id === variantId);
+
+  const toggleModifier = (
+    group: { id: string; isRequired?: boolean; isMulti?: boolean },
+    optionId: string
+  ) => {
+    setMods((prev) => {
+      const current = prev[group.id] || [];
+      const isMulti = group.isMulti ?? true;
+
+      if (!isMulti) {
+        // Single select (radio behavior)
+        if (current.includes(optionId)) {
+          return group.isRequired ? prev : { ...prev, [group.id]: [] };
+        }
+        return { ...prev, [group.id]: [optionId] };
+      } else {
+        // Multi select (checkbox behavior)
+        if (current.includes(optionId)) {
+          return { ...prev, [group.id]: current.filter((id) => id !== optionId) };
+        } else {
+          return { ...prev, [group.id]: [...current, optionId] };
+        }
+      }
+    });
+  };
+
   const modAdditions = modifierGroups.reduce((sum, g) => {
-    const optId = mods[g.id];
-    const opt = g.options.find((o) => o.id === optId);
-    return sum + (opt ? opt.priceDelta : 0);
+    const selectedOptionIds = mods[g.id] || [];
+    const groupSum = selectedOptionIds.reduce((gSum, optId) => {
+      const opt = g.options.find((o) => o.id === optId);
+      return gSum + (opt ? Number(opt.priceDelta || 0) : 0);
+    }, 0);
+    return sum + groupSum;
   }, 0);
 
-  const effectiveBasePrice = Number(item.finalPrice ?? item.basePrice);
-  const unitPrice = effectiveBasePrice + (selectedVariant ? Number(selectedVariant.priceDelta) : 0) + modAdditions;
-  const grandTotal = unitPrice * qty;
+  const effectiveBasePrice = Number(item.finalPrice ?? item.basePrice) || 0;
+  const variantDelta = selectedVariant ? Number(selectedVariant.priceDelta || 0) : 0;
+  const unitPrice = Math.round((effectiveBasePrice + variantDelta + modAdditions) * 100) / 100;
+  const grandTotal = Math.round((unitPrice * qty) * 100) / 100;
 
   const handleAdd = () => {
-    const selectedMods = modifierGroups
-      .map((g) => {
-        const optId = mods[g.id];
-        const opt = g.options.find((o) => o.id === optId);
-        if (!opt) return null;
-        return {
-          groupId: g.id,
-          groupName: g.name,
-          optionId: opt.id,
-          optionName: opt.name,
-          priceDelta: opt.priceDelta,
-        };
-      })
-      .filter(Boolean) as Array<{
-      groupId: string;
-      groupName: string;
-      optionId: string;
-      optionName: string;
-      priceDelta: number;
-    }>;
+    const selectedMods = modifierGroups.flatMap((g) => {
+      const selectedOptionIds = mods[g.id] || [];
+      return selectedOptionIds
+        .map((optId) => {
+          const opt = g.options.find((o) => o.id === optId);
+          if (!opt) return null;
+          return {
+            groupId: g.id,
+            groupName: g.name,
+            optionId: opt.id,
+            optionName: opt.name,
+            priceDelta: Number(opt.priceDelta || 0),
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+    });
 
     onAddToCart({
       menuItemId: item.id,
@@ -137,7 +171,7 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
         {/* Header */}
         <div className="p-4 border-b border-border/80 dark:border-white/10 flex items-start justify-between">
           <div className="flex items-start gap-2.5">
-            <VegBadge type={item.foodType} className="mt-1" />
+            <VegBadge type={item.foodType} size="md" className="mt-1" />
             <div>
               <h3 className="font-bold text-lg text-text-primary dark:text-white leading-tight">{item.name}</h3>
               {item.description && (
@@ -175,7 +209,7 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
                   >
                     <span>{v.name}</span>
                     <span className="text-xs">
-                      {v.priceDelta === 0 ? `₹${item.basePrice}` : `+₹${v.priceDelta}`}
+                      {Number(v.priceDelta) === 0 ? `₹${Number(item.basePrice).toFixed(2)}` : `+₹${Number(v.priceDelta).toFixed(2)}`}
                     </span>
                   </button>
                 ))}
@@ -184,42 +218,75 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
           )}
 
           {/* Modifier Groups */}
-          {modifierGroups.map((g) => (
-            <div key={g.id}>
-              <label className="text-xs font-semibold text-text-muted uppercase tracking-wider block mb-2">
-                {g.name}
-              </label>
-              <div className="space-y-2">
-                {g.options.map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setMods((prev) => ({ ...prev, [g.id]: opt.id }))}
-                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-sm transition-all cursor-pointer ${
-                      mods[g.id] === opt.id
-                        ? 'border-primary bg-primary/10 font-semibold text-primary dark:border-[#D4AF37] dark:bg-[#D4AF37]/15 dark:text-[#D4AF37]'
-                        : 'border-border/80 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 text-text-primary dark:text-zinc-200'
-                    }`}
-                  >
-                    <span>{opt.name}</span>
-                    {opt.priceDelta > 0 && (
-                      <span className="text-xs text-text-muted">+₹{opt.priceDelta}</span>
-                    )}
-                  </button>
-                ))}
+          {modifierGroups.map((g) => {
+            const isMulti = g.isMulti ?? true;
+            const selectedIds = mods[g.id] || [];
+            return (
+              <div key={g.id} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-text-muted uppercase tracking-wider block">
+                    {g.name}
+                  </label>
+                  <span className="text-[11px] text-text-muted dark:text-zinc-400">
+                    {isMulti
+                      ? 'Choose multiple (optional)'
+                      : g.isRequired
+                      ? 'Select 1 (required)'
+                      : 'Select 1 (optional)'}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {g.options.map((opt) => {
+                    const isSelected = selectedIds.includes(opt.id);
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => toggleModifier(g, opt.id)}
+                        className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-sm transition-all cursor-pointer ${
+                          isSelected
+                            ? 'border-primary bg-primary/10 font-semibold text-primary dark:border-[#D4AF37] dark:bg-[#D4AF37]/15 dark:text-[#D4AF37]'
+                            : 'border-border/80 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 text-text-primary dark:text-zinc-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className={`w-4 h-4 rounded ${
+                              isMulti ? 'rounded-md' : 'rounded-full'
+                            } border flex items-center justify-center transition-colors ${
+                              isSelected
+                                ? 'bg-primary border-primary text-white dark:bg-[#D4AF37] dark:border-[#D4AF37] dark:text-black'
+                                : 'border-zinc-300 dark:border-zinc-600 bg-transparent'
+                            }`}
+                          >
+                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+                          <span className="truncate">{opt.name}</span>
+                        </div>
+                        <span className="text-xs shrink-0">
+                          {Number(opt.priceDelta) > 0 ? `+₹${Number(opt.priceDelta).toFixed(2)}` : 'Free'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
-          {/* Special Cooking Instructions */}
+          {/* Special Instructions */}
           <div>
             <label className="text-xs font-semibold text-text-muted uppercase tracking-wider block mb-1.5">
-              Special Cooking Instructions
+              {isBarItem ? 'Special Instructions' : 'Special Cooking Instructions'}
             </label>
             <textarea
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
-              placeholder="e.g., Less spicy, no onions, extra crispy..."
+              placeholder={
+                isBarItem
+                  ? 'e.g., less ice, no ice, extra chilled...'
+                  : 'e.g., Less spicy, no onions, extra crispy...'
+              }
               maxLength={200}
               rows={2}
               className="w-full text-xs p-3 rounded-xl border border-border/80 dark:border-white/10 bg-transparent text-text-primary dark:text-white placeholder:text-text-muted/60 focus:outline-none focus:border-primary dark:focus:border-[#D4AF37]"

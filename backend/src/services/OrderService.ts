@@ -481,23 +481,35 @@ export class OrderService {
       where: { orderId: item.orderId },
     });
 
-    const allReady = allOrderItems.every((i) => i.status === OrderStatus.READY || i.status === OrderStatus.SERVED);
-    const allServed = allOrderItems.every((i) => i.status === OrderStatus.SERVED);
+    const activeItems = allOrderItems.filter((i) => i.status !== OrderStatus.CANCELLED);
+    const allCancelled = allOrderItems.length > 0 && activeItems.length === 0;
+    const allServed = activeItems.length > 0 && activeItems.every((i) => i.status === OrderStatus.SERVED);
+    const allReady = activeItems.length > 0 && activeItems.every((i) => i.status === OrderStatus.READY || i.status === OrderStatus.SERVED);
 
     if (allServed) {
       await prisma.order.update({
         where: { id: item.orderId },
         data: { status: OrderStatus.SERVED },
       });
+    } else if (allCancelled) {
+      await prisma.order.update({
+        where: { id: item.orderId },
+        data: { status: OrderStatus.CANCELLED },
+      });
     } else if (allReady) {
       await prisma.order.update({
         where: { id: item.orderId },
         data: { status: OrderStatus.READY },
       });
-    } else if (status === OrderStatus.PREPARING) {
+    } else if (status === OrderStatus.PREPARING || activeItems.some((i) => i.status === OrderStatus.PREPARING)) {
       await prisma.order.update({
         where: { id: item.orderId },
         data: { status: OrderStatus.PREPARING },
+      });
+    } else if (status === OrderStatus.ACCEPTED || activeItems.some((i) => i.status === OrderStatus.ACCEPTED)) {
+      await prisma.order.update({
+        where: { id: item.orderId },
+        data: { status: OrderStatus.ACCEPTED },
       });
     }
 

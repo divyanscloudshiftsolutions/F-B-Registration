@@ -21,8 +21,33 @@ interface CustomerAccessPageProps {
   tokenProp?: string;
 }
 
+const copyToClipboard = async (text: string): Promise<boolean> => {
+  if (!text) return false;
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  try {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    textArea.style.left = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return successful;
+  } catch {
+    return false;
+  }
+};
+
 export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenProp }) => {
-  const { isDark, toggleTheme } = useAuth();
+  const { isDark, toggleTheme, showToast } = useAuth();
   const [tokenNumber] = useState<string>(() => {
     if (tokenProp) return tokenProp;
     if (typeof window !== 'undefined') {
@@ -40,6 +65,37 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
   const [sessionData, setSessionData] = useState<any | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isRechecking, setIsRechecking] = useState<boolean>(false);
+
+  // Auto-copy trigger when accessed via email copy action (?copy=id or ?copy=code)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const copyTarget = params.get('copy');
+    const codeParam = params.get('code');
+    const idParam = params.get('id') || tokenNumber;
+
+    if (copyTarget === 'id' && idParam) {
+      copyToClipboard(idParam).then((success) => {
+        if (success) {
+          showToast(`Token ID copied to clipboard: ${idParam}`, 'success');
+        }
+      });
+      params.delete('copy');
+      const newQuery = params.toString();
+      const newUrl = window.location.pathname + (newQuery ? `?${newQuery}` : '') + window.location.hash;
+      window.history.replaceState({}, '', newUrl);
+    } else if (copyTarget === 'code' && codeParam) {
+      copyToClipboard(codeParam).then((success) => {
+        if (success) {
+          showToast(`Access Code copied to clipboard: ${codeParam}`, 'success');
+        }
+      });
+      params.delete('copy');
+      const newQuery = params.toString();
+      const newUrl = window.location.pathname + (newQuery ? `?${newQuery}` : '') + window.location.hash;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, [tokenNumber, showToast]);
 
   // Smooth circular wave theme transition
   const toggleThemeWithWave = (e: React.MouseEvent<HTMLButtonElement>) => {

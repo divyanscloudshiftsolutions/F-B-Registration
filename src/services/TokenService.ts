@@ -893,7 +893,7 @@ export class TokenService {
     const tokenNumber = await this.generateTokenNumber();
     const start = new Date();
 
-    return await prisma.$transaction(async (tx) => {
+    const token = await prisma.$transaction(async (tx) => {
       // Check for existing active or pending sessions by phone or email
       const orConditions: any[] = [
         { customer: { phoneNumber: finalPhoneNumber } }
@@ -1044,6 +1044,16 @@ export class TokenService {
 
       return token;
     }, { timeout: 15000 });
+
+    if (token.deliveryMode === 'EMAIL_QR' && token.customer?.email) {
+      emailNotificationService.enqueueEmailJob(
+        token.customer.email.trim().toLowerCase(),
+        token.tokenNumber,
+        token.customer.name
+      );
+    }
+
+    return token;
   }
 
   async activatePendingSession(
@@ -1276,11 +1286,19 @@ export class TokenService {
 
       if (token.tableId) {
         const table = await tx.table.findUnique({ where: { id: token.tableId } });
-        if (table && table.currentTokenId === token.id) {
+        if (table && (table.currentTokenId === token.id || (table.status || '').toLowerCase() === 'in_checkin')) {
+          let revertedStatus = 'available';
+          const pendingRes = await tx.reservation.findFirst({
+            where: { tableId: token.tableId, status: 'PENDING' }
+          });
+          if (pendingRes) {
+            revertedStatus = 'reserved';
+          }
+
           await tx.table.update({
             where: { id: token.tableId },
             data: {
-              status: 'available',
+              status: revertedStatus,
               currentTokenId: null,
               occupiedSince: null,
               maintenanceStart: null,
@@ -1297,12 +1315,20 @@ export class TokenService {
             data: { vacatedAt: now }
           });
 
+          await redisService.del(`table:lock:${token.tableId}`);
           await redisService.del(`table:${token.tableId}:status`);
+          await redisService.del(`table:available:${table.placeTypeId}`);
+          await redisService.del('table:available:all');
+          await redisService.del('tables:all');
         }
       }
 
       // Invalidate cache
       await redisService.del(`token:${tokenNumber}`);
+      await redisService.del('tokens:active').catch(() => {});
+      if (token.customer?.phoneNumber) {
+        await redisService.del(`customer:active:${token.customer.phoneNumber}`).catch(() => {});
+      }
 
       return updatedToken;
     }, { timeout: 15000 });

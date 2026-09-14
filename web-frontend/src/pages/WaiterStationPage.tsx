@@ -31,6 +31,8 @@ import {
   ArrowLeft,
   AlertTriangle,
   History,
+  Utensils,
+  ChevronRight,
 } from 'lucide-react';
 import { VegBadge } from '../components/customer/VegBadge';
 
@@ -91,10 +93,19 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   const [billsSearchQuery, setBillsSearchQuery] = useState<string>('');
   const [settlementStep, setSettlementStep] = useState<'review' | 'payment'>('review');
 
+  // Table-Wise Waiter Service & Ready State
+  const [selectedServiceTable, setSelectedServiceTable] = useState<any | null>(null);
+  const [tableActiveOrders, setTableActiveOrders] = useState<any[]>([]);
+  const [isTableOrdersLoading, setIsTableOrdersLoading] = useState<boolean>(false);
+  const selectedServiceTableRef = React.useRef<any | null>(null);
+  const tablesRef = React.useRef<any[]>([]);
+
   const fetchTables = useCallback(async () => {
     try {
       const data: any = await api.getTables();
-      setTables(Array.isArray(data) ? data : data?.tables || []);
+      const list = Array.isArray(data) ? data : data?.tables || [];
+      tablesRef.current = list;
+      setTables(list);
     } catch (err) {
       console.warn('Failed to load tables:', err);
     }
@@ -136,8 +147,8 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     }
   }, []);
 
-  const fetchBillsData = useCallback(async () => {
-    setIsBillsLoading(true);
+  const fetchBillsData = useCallback(async (showLoading = true) => {
+    if (showLoading) setIsBillsLoading(true);
     try {
       const [active, settled] = await Promise.all([
         api.getActiveBills().catch(() => []),
@@ -151,13 +162,57 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     } catch (err) {
       console.warn('Failed to load bills data:', err);
     } finally {
-      setIsBillsLoading(false);
+      if (showLoading) setIsBillsLoading(false);
     }
   }, []);
 
+  const fetchTableServiceOrders = useCallback(async (tableInfo?: any) => {
+    const target = tableInfo || selectedServiceTableRef.current;
+    if (!target) return;
+    setIsTableOrdersLoading(true);
+    try {
+      const currentTables = tablesRef.current;
+      const matchedTable = currentTables.find((t: any) => t.id === target.tableId || t.tableNumber === target.tableNumber);
+      const tokenNumber = target.tokenNumber || matchedTable?.currentTokenId || matchedTable?.activeSession?.tokenNumber;
+      const tableId = target.tableId || matchedTable?.id;
+
+      const orders = await api.getActiveOrders(tokenNumber, tableId);
+      setTableActiveOrders(Array.isArray(orders) ? orders : []);
+    } catch (err) {
+      console.warn('Failed to load active orders for table service:', err);
+    } finally {
+      setIsTableOrdersLoading(false);
+    }
+  }, []);
+
+  const handleOpenTableService = (tableGroup: any) => {
+    setSelectedServiceTable(tableGroup);
+    selectedServiceTableRef.current = tableGroup;
+    fetchTableServiceOrders(tableGroup);
+  };
+
+  const handleCloseTableService = () => {
+    setSelectedServiceTable(null);
+    selectedServiceTableRef.current = null;
+    setTableActiveOrders([]);
+  };
+
+  const handleServeItemFromModal = async (orderItemId: string) => {
+    try {
+      await api.updateOrderItemStatus(orderItemId, 'SERVED', user?.id);
+      await fetchReadyItems();
+      fetchTables();
+      if (selectedServiceTableRef.current) {
+        fetchTableServiceOrders(selectedServiceTableRef.current);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to serve item.');
+    }
+  };
+
   useEffect(() => {
     setIsLoading(true);
-    Promise.all([fetchTables(), fetchRequests(), fetchReadyItems(), fetchMenu(), fetchReservations(), fetchBillsData()]).finally(() => {
+    Promise.all([fetchTables(), fetchRequests(), fetchReadyItems(), fetchMenu(), fetchReservations(), fetchBillsData(false)]).finally(() => {
       setIsLoading(false);
     });
 
@@ -167,37 +222,44 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     joinRoom('staff:ready');
     joinRoom('staff:billing');
 
-    const unsubTable = onSocketEvent('table.updated', () => {
+    const unsubTable = () => {
       fetchTables();
       fetchReservations();
-      fetchBillsData();
-    });
+      fetchBillsData(false);
+      if (selectedServiceTableRef.current) {
+        fetchTableServiceOrders(selectedServiceTableRef.current);
+      }
+    };
     const unsubReqCreated = onSocketEvent('service_request.created', () => {
       fetchRequests();
-      fetchBillsData();
     });
     const unsubReqUpdated = onSocketEvent('service_request.updated', () => {
       fetchRequests();
-      fetchBillsData();
     });
     const unsubItemUpdated = onSocketEvent('order.item.updated', () => {
       fetchReadyItems();
       fetchTables();
-      fetchBillsData();
+      if (selectedServiceTableRef.current) {
+        fetchTableServiceOrders(selectedServiceTableRef.current);
+      }
     });
     const unsubOrderCreated = onSocketEvent('order.created', () => {
       fetchReadyItems();
       fetchTables();
-      fetchBillsData();
+      if (selectedServiceTableRef.current) {
+        fetchTableServiceOrders(selectedServiceTableRef.current);
+      }
     });
     const unsubBillSettled = onSocketEvent('bill.settled', () => {
-      fetchBillsData();
+      fetchBillsData(false);
       fetchTables();
     });
     const unsubSessionClosed = onSocketEvent('table.session.closed', () => {
-      fetchBillsData();
+      fetchBillsData(false);
       fetchTables();
     });
+
+    const unsubTableEv = onSocketEvent('table.updated', unsubTable);
 
     const handleGlobalRefresh = () => {
       fetchTables();
@@ -205,7 +267,10 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       fetchReadyItems();
       fetchMenu();
       fetchReservations();
-      fetchBillsData();
+      fetchBillsData(false);
+      if (selectedServiceTableRef.current) {
+        fetchTableServiceOrders(selectedServiceTableRef.current);
+      }
     };
     window.addEventListener('app:global-refresh', handleGlobalRefresh);
 
@@ -214,7 +279,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       leaveRoom('staff:requests');
       leaveRoom('staff:ready');
       leaveRoom('staff:billing');
-      unsubTable();
+      unsubTableEv();
       unsubReqCreated();
       unsubReqUpdated();
       unsubItemUpdated();
@@ -223,7 +288,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       unsubSessionClosed();
       window.removeEventListener('app:global-refresh', handleGlobalRefresh);
     };
-  }, [fetchTables, fetchRequests, fetchReadyItems, fetchMenu, fetchReservations, fetchBillsData]);
+  }, [fetchTables, fetchRequests, fetchReadyItems, fetchMenu, fetchReservations, fetchBillsData, fetchTableServiceOrders]);
 
   // Periodic tick for reactive elapsed waiting time
   const [, setTick] = useState<number>(0);
@@ -615,6 +680,61 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
   const assistedCartTotal = assistedCart.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
 
+  // Group ready items by table for Table-Wise Ready Queue
+  const readyTables = React.useMemo(() => {
+    const tableMap = new Map<string, {
+      tableKey: string;
+      tableId?: string;
+      tableNumber: string;
+      placeType?: string;
+      tokenNumber?: string;
+      readyCount: number;
+      readyItems: any[];
+      earliestReadyAt?: string;
+      stations: Set<string>;
+    }>();
+
+    readyItems.forEach((item) => {
+      const tableNumber = String(item.tableNumber || item.order?.table?.tableNumber || item.table?.tableNumber || 'Unknown');
+      const tableId = item.tableId || item.order?.tableId || item.table?.id;
+      const key = tableId || tableNumber;
+
+      if (!tableMap.has(key)) {
+        tableMap.set(key, {
+          tableKey: key,
+          tableId,
+          tableNumber,
+          placeType: item.placeType || item.order?.table?.placeType?.name || item.table?.placeType?.name,
+          tokenNumber: item.tokenNumber || item.order?.tokenNumber || item.token?.tokenNumber,
+          readyCount: 0,
+          readyItems: [],
+          earliestReadyAt: undefined,
+          stations: new Set<string>(),
+        });
+      }
+
+      const entry = tableMap.get(key)!;
+      entry.readyCount += item.quantity || 1;
+      entry.readyItems.push(item);
+      if (item.station) {
+        entry.stations.add(item.station);
+      }
+      const itemReadyTime = item.readyAt || item.createdAt;
+      if (itemReadyTime) {
+        if (!entry.earliestReadyAt || new Date(itemReadyTime) < new Date(entry.earliestReadyAt)) {
+          entry.earliestReadyAt = itemReadyTime;
+        }
+      }
+    });
+
+    return Array.from(tableMap.values()).sort((a, b) => {
+      if (a.earliestReadyAt && b.earliestReadyAt) {
+        return new Date(a.earliestReadyAt).getTime() - new Date(b.earliestReadyAt).getTime();
+      }
+      return b.readyCount - a.readyCount;
+    });
+  }, [readyItems]);
+
   // Statistics
   const openRequests = requests.filter((r) => r.status !== 'COMPLETED');
   const activeTables = tables.filter((t) => {
@@ -741,7 +861,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
             }`}
           >
             <ChefHat className="w-4 h-4" />
-            <span>Ready ({readyItems.length})</span>
+            <span>Ready ({readyTables.length})</span>
           </button>
 
           <button
@@ -911,45 +1031,48 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   </div>
                 </div>
                 <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] border border-primary/20 dark:border-[#D4AF37]/30">
-                  {readyItems.length} Ready
+                  {readyTables.length} {readyTables.length === 1 ? 'Table' : 'Tables'} Ready
                 </span>
               </div>
 
-              {readyItems.length === 0 ? (
+              {readyTables.length === 0 ? (
                 <div className="flex-1 py-8 border border-dashed border-zinc-200 dark:border-white/10 rounded-xl bg-zinc-50/50 dark:bg-[#141416]/40 flex flex-col items-center justify-center text-center">
                   <ChefHat className="w-7 h-7 text-zinc-400 dark:text-zinc-500 mb-1.5" />
                   <p className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Ready Queue is Empty</p>
-                  <p className="text-[11px] text-zinc-500 dark:text-text-muted mt-0.5">Plated food and poured drinks will appear here for pickup.</p>
+                  <p className="text-[11px] text-zinc-500 dark:text-text-muted mt-0.5">Plated food and poured drinks will appear here grouped by table for pickup.</p>
                 </div>
               ) : (
                 <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
-                  {readyItems.map((item) => (
+                  {readyTables.map((tbl) => (
                     <div
-                      key={item.id}
-                      className="p-3 rounded-xl border border-emerald-500/30 dark:border-emerald-500/30 dark:bg-[#141416] bg-emerald-50/30 flex items-center justify-between gap-3 shadow-2xs"
+                      key={tbl.tableKey}
+                      onClick={() => handleOpenTableService(tbl)}
+                      className="p-3 rounded-xl border border-emerald-500/30 dark:border-emerald-500/30 dark:bg-[#141416] bg-emerald-50/30 flex items-center justify-between gap-3 shadow-2xs hover:border-emerald-500 cursor-pointer transition-all"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-black text-sm text-zinc-900 dark:text-white">
-                            Table {item.tableNumber || '-'}
+                            Table {tbl.tableNumber}
                           </span>
-                          <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800/50">
-                            {item.station}
+                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/50">
+                            Ready: {tbl.readyCount}
                           </span>
                         </div>
-                        <div className="font-bold text-xs text-zinc-900 dark:text-white mt-1 flex items-center gap-1.5 truncate">
-                          <VegBadge type={item.foodType} size="sm" />
-                          <span>{item.quantity} × {item.itemName || item.name}</span>
+                        <div className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 truncate">
+                          {tbl.readyItems.map((i: any) => `${i.quantity}× ${i.itemName || i.name}`).join(', ')}
                         </div>
                       </div>
 
                       <button
                         type="button"
-                        onClick={() => handleMarkItemServed(item.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenTableService(tbl);
+                        }}
                         className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
                       >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Deliver</span>
+                        <ChefHat className="w-3.5 h-3.5" />
+                        <span>Serve</span>
                       </button>
                     </div>
                   ))}
@@ -1479,7 +1602,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       )}
 
       {/* ==================================================================== */}
-      {/* 4. READY QUEUE TAB                                                   */}
+      {/* 4. READY QUEUE TAB (TABLE-WISE ARCHITECTURE)                         */}
       {/* ==================================================================== */}
       {activeTab === 'ready' && (
         <div className="flex-1 overflow-y-auto space-y-4 animate-fade-in">
@@ -1500,17 +1623,16 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                 </div>
               ))}
             </div>
-          ) : readyItems.length === 0 ? (
+          ) : readyTables.length === 0 ? (
             <div className="py-10 px-4 sm:py-16 text-center border border-dashed border-zinc-300 dark:border-white/15 rounded-2xl bg-zinc-50/70 dark:bg-[#141416]/50">
               <ChefHat className="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
               <h3 className="font-bold text-sm text-zinc-900 dark:text-white">Ready Queue is Empty</h3>
-              <p className="text-xs text-zinc-500 dark:text-text-muted mt-1">Dishes plated by the chef and cocktails poured by the bartender will appear here for pickup.</p>
+              <p className="text-xs text-zinc-500 dark:text-text-muted mt-1">Dishes plated by the kitchen and drinks prepared by the bar will appear here grouped by table for pickup.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
-              {readyItems.map((item) => {
-                const readyTimestamp = item.readyAt || item.createdAt;
-                const waitMins = readyTimestamp ? getWaitMinutes(readyTimestamp) : 0;
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {readyTables.map((tbl) => {
+                const waitMins = tbl.earliestReadyAt ? getWaitMinutes(tbl.earliestReadyAt) : 0;
                 const waitTimeColor =
                   waitMins >= 10
                     ? 'text-rose-700 dark:text-rose-400 font-bold'
@@ -1518,80 +1640,107 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                     ? 'text-amber-700 dark:text-amber-400 font-semibold'
                     : 'text-zinc-600 dark:text-zinc-400';
 
-                const isBar = item.station === 'BAR';
+                const stationList = Array.from(tbl.stations);
 
                 return (
                   <div
-                    key={item.id}
-                    className="p-4 rounded-2xl border border-zinc-200 dark:border-white/10 dark:bg-[#18181A] bg-white flex flex-col justify-between transition-all shadow-xs"
+                    key={tbl.tableKey}
+                    onClick={() => handleOpenTableService(tbl)}
+                    className="p-5 rounded-2xl border border-emerald-300/80 dark:border-emerald-500/30 bg-white dark:bg-[#18181A] hover:border-emerald-500 dark:hover:border-emerald-400/60 transition-all shadow-xs hover:shadow-md cursor-pointer flex flex-col justify-between group"
                   >
                     <div>
-                      {/* Top Header Row: Table Number + Station Badge */}
+                      {/* Top Header: Table Number + Ready Count Badge */}
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-black text-base text-zinc-900 dark:text-white tracking-tight">
-                          Table {item.tableNumber || '-'}
-                        </span>
-                        <span
-                          className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${
-                            isBar
-                              ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50'
-                              : 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-400 border-amber-200 dark:border-amber-800/50'
-                          }`}
-                        >
-                          {item.station}
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black text-base shrink-0 group-hover:scale-105 transition-transform">
+                            <Utensils className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-black text-lg text-zinc-900 dark:text-white tracking-tight">
+                              Table {tbl.tableNumber}
+                            </h3>
+                            {tbl.placeType && (
+                              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                                {tbl.placeType}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60 shadow-xs">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                          </span>
+                          Ready: {tbl.readyCount}
                         </span>
                       </div>
 
-                      {/* Item Name, Quantity & Variant */}
-                      <div className="font-bold text-sm text-zinc-900 dark:text-white mt-2 flex items-start gap-1.5">
-                        <div className="shrink-0 mt-0.5">
-                          <VegBadge type={item.foodType} size="sm" />
-                        </div>
-                        <span className="leading-snug">
-                          {item.quantity} × {item.itemName || item.name}
-                          {item.variantName && (
-                            <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 ml-1">
-                              ({item.variantName})
+                      {/* Station Badges */}
+                      {stationList.length > 0 && (
+                        <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
+                          {stationList.map((st) => (
+                            <span
+                              key={st}
+                              className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+                                st === 'BAR'
+                                  ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50'
+                                  : 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-400 border-amber-200 dark:border-amber-800/50'
+                              }`}
+                            >
+                              {st}
                             </span>
-                          )}
-                        </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Ready Items Preview Summary */}
+                      <div className="mt-3 space-y-1.5 border-t border-zinc-100 dark:border-white/5 pt-2.5">
+                        {tbl.readyItems.slice(0, 3).map((item) => (
+                          <div key={item.id} className="flex items-center gap-2 text-xs text-zinc-800 dark:text-zinc-200">
+                            <VegBadge type={item.foodType} size="sm" />
+                            <span className="font-bold truncate">
+                              {item.quantity} × {item.itemName || item.name}
+                            </span>
+                            {item.variantName && (
+                              <span className="text-[10px] text-zinc-500 dark:text-zinc-400 shrink-0">
+                                ({item.variantName})
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        {tbl.readyItems.length > 3 && (
+                          <div className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 pl-4">
+                            + {tbl.readyItems.length - 3} more ready {tbl.readyItems.length - 3 === 1 ? 'item' : 'items'}...
+                          </div>
+                        )}
                       </div>
 
-                      {/* Modifiers List (if present) */}
-                      {item.selectedModifiers && Array.isArray(item.selectedModifiers) && item.selectedModifiers.length > 0 && (
-                        <div className="text-[11px] text-zinc-600 dark:text-zinc-400 font-medium mt-1 pl-5">
-                          {item.selectedModifiers.map((m: any) => m.optionName || m.name || m).join(', ')}
-                        </div>
-                      )}
-
-                      {/* Special Instructions (if present) */}
-                      {item.specialInstructions && (
-                        <div className="text-[11px] font-semibold italic text-amber-700 dark:text-amber-400 mt-1.5 pl-5 bg-amber-50/50 dark:bg-amber-950/20 px-2 py-1 rounded-md border border-amber-200/60 dark:border-amber-900/30">
-                          &quot;{item.specialInstructions}&quot;
-                        </div>
-                      )}
-
-                      {/* Elapsed Ready Time with Progressive Escalation */}
-                      {readyTimestamp && (
-                        <div className={`text-xs mt-2.5 flex items-center gap-1.5 ${waitTimeColor}`}>
+                      {/* Elapsed Ready Time */}
+                      {tbl.earliestReadyAt && (
+                        <div className={`text-xs mt-3 pt-2.5 border-t border-zinc-100 dark:border-white/5 flex items-center gap-1.5 ${waitTimeColor}`}>
                           <Clock className="w-3.5 h-3.5 shrink-0" />
-                          <span className="font-bold tracking-tight">Ready {getRelativeWaitTime(readyTimestamp)}</span>
+                          <span className="font-bold tracking-tight">Ready {getRelativeWaitTime(tbl.earliestReadyAt)}</span>
                           <span className="text-zinc-400 dark:text-zinc-500 font-normal text-[11px]">
-                            ({new Date(readyTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                            ({new Date(tbl.earliestReadyAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
                           </span>
                         </div>
                       )}
                     </div>
 
-                    {/* Action Button Row: Full-width 44px (h-11) Touch Target */}
+                    {/* Action Button */}
                     <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-white/5">
                       <button
                         type="button"
-                        onClick={() => handleMarkItemServed(item.id)}
-                        className="w-full h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenTableService(tbl);
+                        }}
+                        className="w-full h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2"
                       >
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>Deliver & Serve</span>
+                        <ChefHat className="w-4 h-4" />
+                        <span>View Table Service ({tbl.readyCount})</span>
+                        <ChevronRight className="w-4 h-4 ml-auto" />
                       </button>
                     </div>
                   </div>
@@ -2748,8 +2897,310 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           </div>
         );
       })()}
+
+      {/* ==================================================================== */}
+      {/* 6. TABLE SERVICE DETAILS MODAL (TABLE-WISE FLOW)                     */}
+      {/* ==================================================================== */}
+      {selectedServiceTable && (() => {
+        // Collect and organize all items from active orders for this table
+        const allItems: any[] = [];
+        tableActiveOrders.forEach((order: any) => {
+          (order.items || []).forEach((item: any) => {
+            allItems.push({
+              ...item,
+              orderNumber: order.orderNumber,
+              orderCreatedAt: order.createdAt,
+            });
+          });
+        });
+
+        const readyList = allItems.filter((i) => i.status === 'READY');
+        const preparingList = allItems.filter((i) => i.status === 'PREPARING');
+        const acceptedList = allItems.filter((i) => i.status === 'ACCEPTED' || i.status === 'PLACED');
+        const servedList = allItems.filter((i) => i.status === 'SERVED');
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in">
+            <div className="w-full max-w-2xl max-h-[90vh] bg-white dark:bg-[#18181A] rounded-3xl border border-zinc-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col animate-scale-up">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-4 sm:p-5 border-b border-zinc-200 dark:border-white/10 bg-zinc-50/70 dark:bg-[#141416]/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black text-lg shrink-0">
+                    <Utensils className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-black text-lg sm:text-xl text-zinc-900 dark:text-white tracking-tight">
+                        Table {selectedServiceTable.tableNumber} Service
+                      </h3>
+                      {selectedServiceTable.placeType && (
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-white/10 text-zinc-600 dark:text-zinc-400">
+                          {selectedServiceTable.placeType}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      {selectedServiceTable.tokenNumber ? `Session: ${selectedServiceTable.tokenNumber}` : 'Active Orders & Ready Items'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCloseTableService}
+                  className="p-2 rounded-xl text-zinc-400 hover:text-zinc-900 dark:text-zinc-500 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/10 cursor-pointer transition-colors"
+                  title="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Status Summary Chips */}
+              <div className="px-4 sm:px-5 py-3 border-b border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-2 overflow-x-auto text-xs font-bold">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60 shrink-0">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  Ready: {readyList.reduce((acc, i) => acc + (i.quantity || 1), 0)}
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60 shrink-0">
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                  Preparing: {preparingList.reduce((acc, i) => acc + (i.quantity || 1), 0)}
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-300 dark:border-blue-700/60 shrink-0">
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  Queued: {acceptedList.reduce((acc, i) => acc + (i.quantity || 1), 0)}
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 text-zinc-700 dark:bg-white/10 dark:text-zinc-300 border border-zinc-200 dark:border-white/10 shrink-0">
+                  <span className="w-2 h-2 rounded-full bg-zinc-400"></span>
+                  Served: {servedList.reduce((acc, i) => acc + (i.quantity || 1), 0)}
+                </span>
+              </div>
+
+              {/* Items Body */}
+              <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+                {isTableOrdersLoading ? (
+                  <div className="py-12 flex flex-col items-center justify-center text-center space-y-2">
+                    <Loader2 className="w-8 h-8 text-primary dark:text-[#D4AF37] animate-spin" />
+                    <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Loading table orders...</p>
+                  </div>
+                ) : allItems.length === 0 ? (
+                  <div className="py-10 text-center border border-dashed border-zinc-200 dark:border-white/10 rounded-2xl bg-zinc-50/50 dark:bg-[#141416]/40">
+                    <Utensils className="w-10 h-10 mx-auto text-zinc-400 mb-2" />
+                    <p className="font-bold text-sm text-zinc-800 dark:text-zinc-200">No Active Order Items</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">There are currently no active orders recorded for this table.</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* SECTION: READY ITEMS (DELIVERABLE NOW) */}
+                    {readyList.length > 0 && (
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                            Ready to Deliver ({readyList.length})
+                          </span>
+                          <span className="text-[11px] text-zinc-500 dark:text-zinc-400">Action Required</span>
+                        </div>
+
+                        <div className="space-y-2.5">
+                          {readyList.map((item) => {
+                            const readyTime = item.readyAt || item.createdAt;
+                            const waitMins = readyTime ? getWaitMinutes(readyTime) : 0;
+                            const waitColor =
+                              waitMins >= 10
+                                ? 'text-rose-700 dark:text-rose-400 font-bold'
+                                : waitMins >= 5
+                                ? 'text-amber-700 dark:text-amber-400 font-semibold'
+                                : 'text-zinc-500 dark:text-zinc-400';
+
+                            return (
+                              <div
+                                key={item.id}
+                                className="p-3.5 rounded-2xl border border-emerald-400/80 dark:border-emerald-500/40 bg-emerald-50/30 dark:bg-[#141416] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <VegBadge type={item.foodType} size="sm" />
+                                    <span className="font-black text-sm text-zinc-900 dark:text-white">
+                                      {item.quantity} × {item.itemName || item.name}
+                                    </span>
+                                    {item.variantName && (
+                                      <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                                        ({item.variantName})
+                                      </span>
+                                    )}
+                                    {item.station && (
+                                      <span
+                                        className={`text-[9px] uppercase font-black px-2 py-0.5 rounded-full border ${
+                                          item.station === 'BAR'
+                                            ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50'
+                                            : 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-400 border-amber-200 dark:border-amber-800/50'
+                                        }`}
+                                      >
+                                        {item.station}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {item.selectedModifiers && Array.isArray(item.selectedModifiers) && item.selectedModifiers.length > 0 && (
+                                    <div className="text-[11px] text-zinc-600 dark:text-zinc-400 font-medium mt-1 pl-5">
+                                      {item.selectedModifiers.map((m: any) => m.optionName || m.name || m).join(', ')}
+                                    </div>
+                                  )}
+
+                                  {item.specialInstructions && (
+                                    <div className="text-[11px] font-semibold italic text-amber-700 dark:text-amber-400 mt-1 pl-5">
+                                      &quot;{item.specialInstructions}&quot;
+                                    </div>
+                                  )}
+
+                                  {readyTime && (
+                                    <div className={`text-[11px] mt-1.5 pl-5 flex items-center gap-1 ${waitColor}`}>
+                                      <Clock className="w-3 h-3" />
+                                      <span>Ready {getRelativeWaitTime(readyTime)}</span>
+                                      <span className="text-zinc-400 dark:text-zinc-500">
+                                        ({new Date(readyTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleServeItemFromModal(item.id)}
+                                  className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  <span>Deliver & Serve</span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SECTION: IN PREPARATION */}
+                    {preparingList.length > 0 && (
+                      <div className="space-y-2 pt-2">
+                        <span className="text-xs font-black uppercase tracking-wider text-amber-800 dark:text-amber-400 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                          In Preparation ({preparingList.length})
+                        </span>
+
+                        <div className="space-y-2">
+                          {preparingList.map((item) => (
+                            <div
+                              key={item.id}
+                              className="p-3 rounded-xl border border-amber-200/60 dark:border-amber-900/40 bg-amber-50/20 dark:bg-[#141416]/60 flex items-center justify-between gap-3 text-xs"
+                            >
+                              <div className="min-w-0 flex-1 flex items-center gap-2">
+                                <VegBadge type={item.foodType} size="sm" />
+                                <span className="font-bold text-zinc-900 dark:text-white">
+                                  {item.quantity} × {item.itemName || item.name}
+                                </span>
+                                {item.variantName && (
+                                  <span className="text-zinc-500 dark:text-zinc-400">({item.variantName})</span>
+                                )}
+                              </div>
+                              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800/50 shrink-0">
+                                {item.station || 'Preparing'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SECTION: ACCEPTED / QUEUED */}
+                    {acceptedList.length > 0 && (
+                      <div className="space-y-2 pt-2">
+                        <span className="text-xs font-black uppercase tracking-wider text-blue-800 dark:text-blue-400 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                          In Queue ({acceptedList.length})
+                        </span>
+
+                        <div className="space-y-2">
+                          {acceptedList.map((item) => (
+                            <div
+                              key={item.id}
+                              className="p-3 rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50/50 dark:bg-[#141416]/40 flex items-center justify-between gap-3 text-xs"
+                            >
+                              <div className="min-w-0 flex-1 flex items-center gap-2">
+                                <VegBadge type={item.foodType} size="sm" />
+                                <span className="font-bold text-zinc-900 dark:text-white">
+                                  {item.quantity} × {item.itemName || item.name}
+                                </span>
+                                {item.variantName && (
+                                  <span className="text-zinc-500 dark:text-zinc-400">({item.variantName})</span>
+                                )}
+                              </div>
+                              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-white/10 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-white/10 shrink-0">
+                                Queued
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SECTION: ALREADY SERVED */}
+                    {servedList.length > 0 && (
+                      <div className="space-y-2 pt-2">
+                        <span className="text-xs font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-zinc-400"></span>
+                          Served Items ({servedList.length})
+                        </span>
+
+                        <div className="space-y-1.5 opacity-75">
+                          {servedList.map((item) => (
+                            <div
+                              key={item.id}
+                              className="p-2.5 rounded-xl border border-zinc-200/60 dark:border-white/5 bg-zinc-50/30 dark:bg-[#141416]/20 flex items-center justify-between gap-3 text-xs"
+                            >
+                              <div className="min-w-0 flex-1 flex items-center gap-2">
+                                <VegBadge type={item.foodType} size="sm" />
+                                <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                                  {item.quantity} × {item.itemName || item.name}
+                                </span>
+                                {item.variantName && (
+                                  <span className="text-zinc-400">({item.variantName})</span>
+                                )}
+                              </div>
+                              <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 flex items-center gap-1 shrink-0">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                                Served
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 sm:p-5 border-t border-zinc-200 dark:border-white/10 bg-zinc-50/70 dark:bg-[#141416]/50 flex items-center justify-between">
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {readyList.length > 0
+                    ? `${readyList.length} ready item${readyList.length === 1 ? '' : 's'} remaining`
+                    : 'All ready items have been delivered'}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCloseTableService}
+                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-extrabold text-xs shadow-sm active:scale-95 transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
 
 export default WaiterStationPage;
+

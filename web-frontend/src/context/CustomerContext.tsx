@@ -373,6 +373,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const unsubItemUpdated = onSocketEvent('order.item.updated', (data: any) => {
       refreshOrders();
       refreshOrderHistory();
+      refreshBill();
     });
 
     const unsubReqCreated = onSocketEvent('service_request.created', (data: any) => {
@@ -479,8 +480,10 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.removeItem('bar_customer_cart');
   };
 
-  const cartTotal = cart.reduce((sum, item) => sum + Number(item.unitPrice || 0) * (item.quantity || 1), 0);
-  const cartCount = cart.reduce((sum, item) => sum + (item.quantity || 1), 0);
+  const cartTotal = Math.round(
+    cart.reduce((sum, item) => sum + Number(item.unitPrice || 0) * (Number(item.quantity) || 1), 0) * 100
+  ) / 100;
+  const cartCount = cart.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
 
   // Authoritative Order Placement
   const placeOrder = async () => {

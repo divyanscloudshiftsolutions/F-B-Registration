@@ -13,8 +13,14 @@ import { orderService } from './services/OrderService';
 import { kdsService } from './services/KdsService';
 import { serviceRequestService } from './services/ServiceRequestService';
 import { billingService } from './services/BillingService';
-import { inventoryService } from './services/InventoryService';
-import { broadcastTableUpdated, broadcastTableSessionActivated, broadcastTableSessionClosed } from './realtime';
+import {
+  broadcastTableUpdated,
+  broadcastTableSessionActivated,
+  broadcastTableSessionClosed,
+  broadcastReservationCreated,
+  broadcastReservationUpdated,
+  broadcastReservationCancelled,
+} from './realtime';
 
 const TokenStatus = {
   PENDING_PAYMENT: 'PENDING_PAYMENT' as const,
@@ -1267,7 +1273,10 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
           where: {
             status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] },
           },
-          include: { customer: true },
+          include: { 
+            customer: true,
+            creator: { include: { role: true } },
+          },
           orderBy: { issuedAt: 'desc' },
           take: 1,
         },
@@ -1285,6 +1294,11 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
       let reservedBy: string | null = null;
       let reservedByName: string | null = null;
       let reservedByUserId: string | null = null;
+      let occupiedBy: string | null = null;
+      let occupiedByName: string | null = null;
+      let occupiedByRole: string | null = null;
+      let occupiedByUserId: string | null = null;
+      let occupiedByDisplay: string | null = null;
 
       if (t.status === 'in_checkin' || t.status === 'maintenance') {
         const lockKey = `table:lock:${t.id}`;
@@ -1304,7 +1318,7 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
       if (t.status === 'reserved') {
         const activeRes = await prisma.reservation.findFirst({
           where: { tableId: t.id, status: 'PENDING' },
-          include: { user: true }
+          include: { user: { include: { role: true } } }
         }).catch(() => null);
         if (activeRes) {
           reservedBy = activeRes.user?.fullName || activeRes.user?.username || activeRes.customerName || 'Staff';
@@ -1317,6 +1331,68 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
       const tokenNumber = t.currentTokenId || (activeToken ? activeToken.tokenNumber : null);
       const isBillReq = (t.status || '').toUpperCase() === 'BILL_REQUESTED';
 
+      if (activeToken && activeToken.creator) {
+        const sName = activeToken.creator.fullName || activeToken.creator.username || 'Staff';
+        const sRole = activeToken.creator.role?.name || 'Staff';
+        const sRoleCap = sRole.charAt(0).toUpperCase() + sRole.slice(1).toLowerCase();
+        occupiedBy = sName;
+        occupiedByName = sName;
+        occupiedByRole = sRole;
+        occupiedByUserId = activeToken.creator.id;
+        occupiedByDisplay = `${sName} — ${sRoleCap}`;
+      } else if (!occupiedBy && (activeToken || t.currentTokenId)) {
+        const targetTokenId = activeToken?.id || t.currentTokenId;
+        const tok = activeToken || (targetTokenId ? await prisma.token.findUnique({
+          where: { id: targetTokenId },
+          include: { creator: { include: { role: true } } }
+        }).catch(() => null) : null);
+
+        if (tok) {
+          let u = tok.creator;
+          if (!u && tok.issuedBy) {
+            u = await prisma.user.findUnique({
+              where: { id: tok.issuedBy },
+              include: { role: true }
+            }).catch(() => null);
+          }
+          if (u) {
+            const sName = u.fullName || u.username || 'Staff';
+            const sRole = u.role?.name || 'Staff';
+            const sRoleCap = sRole.charAt(0).toUpperCase() + sRole.slice(1).toLowerCase();
+            occupiedBy = sName;
+            occupiedByName = sName;
+            occupiedByRole = sRole;
+            occupiedByUserId = u.id;
+            occupiedByDisplay = `${sName} — ${sRoleCap}`;
+          }
+        }
+      }
+
+      if (!occupiedBy && t.status === 'occupied') {
+        const latestLog = await prisma.tableOccupancyLog.findFirst({
+          where: { tableId: t.id, vacatedAt: null },
+          include: { token: { include: { creator: { include: { role: true } } } } },
+          orderBy: { occupiedAt: 'desc' },
+        }).catch(() => null);
+        let u = latestLog?.token?.creator;
+        if (!u && latestLog?.token?.issuedBy) {
+          u = await prisma.user.findUnique({
+            where: { id: latestLog.token.issuedBy },
+            include: { role: true }
+          }).catch(() => null);
+        }
+        if (u) {
+          const sName = u.fullName || u.username || 'Staff';
+          const sRole = u.role?.name || 'Staff';
+          const sRoleCap = sRole.charAt(0).toUpperCase() + sRole.slice(1).toLowerCase();
+          occupiedBy = sName;
+          occupiedByName = sName;
+          occupiedByRole = sRole;
+          occupiedByUserId = u.id;
+          occupiedByDisplay = `${sName} — ${sRoleCap}`;
+        }
+      }
+
       return {
         id: t.id,
         tableNumber: t.tableNumber,
@@ -1328,6 +1404,11 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
         isActive: t.isActive,
         currentTokenId: tokenNumber,
         occupiedSince: t.occupiedSince ? t.occupiedSince.toISOString() : null,
+        occupiedBy,
+        occupiedByName,
+        occupiedByRole,
+        occupiedByUserId,
+        occupiedByDisplay,
         activeSession: activeToken ? {
           tokenNumber: activeToken.tokenNumber,
           customerName: activeToken.customer?.name || null,
@@ -1336,6 +1417,11 @@ router.get('/tables', authenticate, async (req: Request, res: Response) => {
           startTime: activeToken.startTime.toISOString(),
           endTime: activeToken.endTime.toISOString(),
           status: activeToken.status,
+          occupiedBy,
+          occupiedByName,
+          occupiedByRole,
+          occupiedByUserId,
+          occupiedByDisplay,
         } : null,
         isBillRequested: isBillReq,
         lockedBy: lockedBy || (t.status === 'maintenance' ? 'Administrator' : t.status === 'in_checkin' ? 'Receptionist' : null),
@@ -1589,12 +1675,35 @@ router.post('/tables/assign', authenticate, authorize(['receptionist', 'admin'])
     await redisService.del('tokens:active').catch(() => {});
 
     try {
+      const staffName = req.user?.fullName || req.user?.username || 'Staff';
+      const staffRole = (req.user as any)?.role?.name || (typeof req.user?.role === 'string' ? req.user.role : 'receptionist');
+      const staffRoleCap = staffRole.charAt(0).toUpperCase() + staffRole.slice(1).toLowerCase();
+      const occupiedByDisplay = `${staffName} — ${staffRoleCap}`;
+
+      broadcastTableSessionActivated({
+        tableId: table.id,
+        tableNumber: table.tableNumber,
+        tokenNumber: token?.tokenNumber || '',
+        customerName: token?.customer?.name,
+        startTime: token?.startTime || new Date(),
+        endTime: token?.endTime || new Date(),
+        occupiedBy: staffName,
+        occupiedByName: staffName,
+        occupiedByRole: staffRole,
+        occupiedByUserId: req.user?.id || null,
+        occupiedByDisplay: occupiedByDisplay,
+      });
       broadcastTableUpdated({
         tableId: table.id,
         tableNumber: table.tableNumber,
         status: table.status,
         currentTokenId: token?.id || null,
         occupiedSince: table.occupiedSince ? table.occupiedSince.toISOString() : null,
+        occupiedBy: staffName,
+        occupiedByName: staffName,
+        occupiedByRole: staffRole,
+        occupiedByUserId: req.user?.id || null,
+        occupiedByDisplay: occupiedByDisplay,
         updatedAt: new Date().toISOString(),
       });
     } catch (e) {}
@@ -1726,6 +1835,35 @@ router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 
       await redisService.del(`customer:active:${tokenRecord.customer.phoneNumber}`).catch(() => {});
     }
     await redisService.del(`table:${tableId}:status`).catch(() => {});
+
+    try {
+      broadcastTableUpdated({
+        tableId: table.id,
+        tableNumber: table.tableNumber,
+        status: table.status,
+        currentTokenId: null,
+        occupiedSince: null,
+        occupiedBy: null,
+        occupiedByName: null,
+        occupiedByRole: null,
+        occupiedByUserId: null,
+        occupiedByDisplay: null,
+        lockedBy: null,
+        lockedByName: null,
+        lockedByUserId: null,
+        lockedByRole: null,
+        reservedBy: null,
+        reservedByName: null,
+        reservedByUserId: null,
+        updatedAt: new Date().toISOString(),
+      });
+      broadcastTableSessionClosed({
+        tableId: table.id,
+        tableNumber: table.tableNumber,
+        tokenNumber: tokenRecord?.tokenNumber || '',
+        closedAt: new Date().toISOString(),
+      });
+    } catch (bErr) {}
 
     return res.json({
       success: true,
@@ -2066,12 +2204,25 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
     await redisService.del('tables:all').catch(() => {});
 
     try {
+      const isNowAvailable = updated.status === 'available';
       broadcastTableUpdated({
         tableId: updated.id,
         tableNumber: updated.tableNumber,
         status: updated.status,
-        currentTokenId: updated.currentTokenId || null,
-        occupiedSince: updated.occupiedSince ? updated.occupiedSince.toISOString() : null,
+        currentTokenId: isNowAvailable ? null : (updated.currentTokenId || null),
+        occupiedSince: isNowAvailable ? null : (updated.occupiedSince ? updated.occupiedSince.toISOString() : null),
+        occupiedBy: isNowAvailable ? null : undefined,
+        occupiedByName: isNowAvailable ? null : undefined,
+        occupiedByRole: isNowAvailable ? null : undefined,
+        occupiedByUserId: isNowAvailable ? null : undefined,
+        occupiedByDisplay: isNowAvailable ? null : undefined,
+        lockedBy: isNowAvailable ? null : (targetStatus === 'maintenance' ? ((req as any).user?.fullName || (req as any).user?.username || 'Administrator') : undefined),
+        lockedByName: isNowAvailable ? null : (targetStatus === 'maintenance' ? ((req as any).user?.fullName || (req as any).user?.username || 'Administrator') : undefined),
+        lockedByUserId: isNowAvailable ? null : (targetStatus === 'maintenance' ? ((req as any).user?.id || 'admin') : undefined),
+        lockedByRole: isNowAvailable ? null : (targetStatus === 'maintenance' ? ((req as any).user?.role || 'admin') : undefined),
+        reservedBy: isNowAvailable ? null : undefined,
+        reservedByName: isNowAvailable ? null : undefined,
+        reservedByUserId: isNowAvailable ? null : undefined,
         updatedAt: new Date().toISOString(),
       });
     } catch (e) {}
@@ -2126,13 +2277,13 @@ router.post('/tables/:id/lock', authenticate, async (req: AuthenticatedRequest, 
           }
 
           if (!canReacquire) {
-            const customErr = new Error(`Table cannot be locked because it is already locked by another session.`) as any;
+            const customErr = new Error(`This table is selected by another user.`) as any;
             customErr.statusCode = 409;
             customErr.code = 'TABLE_STATUS_INVALID';
             throw customErr;
           }
         } else {
-          const customErr = new Error(`Table cannot be locked because its current status is '${table.status}'.`) as any;
+          const customErr = new Error(`This table is selected by another user.`) as any;
           customErr.statusCode = 409;
           customErr.code = 'TABLE_STATUS_INVALID';
           throw customErr;
@@ -2955,6 +3106,11 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
 
     if (token.tableId) {
       try {
+        const staffName = (req as any).user?.fullName || (req as any).user?.username || 'Staff';
+        const staffRole = (req as any).user?.role?.name || (typeof (req as any).user?.role === 'string' ? (req as any).user.role : 'receptionist');
+        const staffRoleCap = staffRole.charAt(0).toUpperCase() + staffRole.slice(1).toLowerCase();
+        const occupiedByDisplay = `${staffName} — ${staffRoleCap}`;
+
         broadcastTableSessionActivated({
           tableId: token.tableId,
           tableNumber: token.table?.tableNumber || '',
@@ -2962,6 +3118,19 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
           customerName: token.customer.name,
           startTime: token.startTime,
           endTime: token.endTime,
+        });
+        broadcastTableUpdated({
+          tableId: token.tableId,
+          tableNumber: token.table?.tableNumber || '',
+          status: 'occupied',
+          currentTokenId: token.id,
+          occupiedSince: token.issuedAt ? token.issuedAt.toISOString() : new Date().toISOString(),
+          occupiedBy: staffName,
+          occupiedByName: staffName,
+          occupiedByRole: staffRole,
+          occupiedByUserId: (req as any).user?.id || null,
+          occupiedByDisplay: occupiedByDisplay,
+          updatedAt: new Date().toISOString(),
         });
       } catch (e) {
         console.warn('Failed to broadcast table session activation:', e);
@@ -3434,6 +3603,11 @@ const activateSessionHandler = async (req: AuthenticatedRequest, res: Response) 
     }
 
     try {
+      const staffName = (req as any).user?.fullName || (req as any).user?.username || 'Staff';
+      const staffRole = (req as any).user?.role?.name || (typeof (req as any).user?.role === 'string' ? (req as any).user.role : 'receptionist');
+      const staffRoleCap = staffRole.charAt(0).toUpperCase() + staffRole.slice(1).toLowerCase();
+      const occupiedByDisplay = `${staffName} — ${staffRoleCap}`;
+
       broadcastTableSessionActivated({
         tableId: updatedToken.tableId,
         tableNumber: updatedToken.table?.tableNumber || '',
@@ -3447,6 +3621,12 @@ const activateSessionHandler = async (req: AuthenticatedRequest, res: Response) 
         tableNumber: updatedToken.table?.tableNumber || '',
         status: 'occupied',
         currentTokenId: updatedToken.id,
+        occupiedSince: updatedToken.issuedAt ? updatedToken.issuedAt.toISOString() : new Date().toISOString(),
+        occupiedBy: staffName,
+        occupiedByName: staffName,
+        occupiedByRole: staffRole,
+        occupiedByUserId: (req as any).user?.id || null,
+        occupiedByDisplay: occupiedByDisplay,
         updatedAt: new Date().toISOString(),
       });
     } catch (e) {
@@ -3877,6 +4057,7 @@ router.post('/reservations', authenticate, async (req: AuthenticatedRequest, res
         reservedByUserId: req.user?.id || null,
         updatedAt: new Date().toISOString(),
       });
+      broadcastReservationCreated(result.reservation);
     } catch (e) {}
 
     return res.status(201).json({ success: true, reservation: result.reservation });
@@ -3981,6 +4162,9 @@ router.post('/reservations/:id/cancel', authenticate, async (req: AuthenticatedR
         const e = normalizeEmail(resData.email);
         if (e) await redisService.del(`checkin:active:email:${e}`).catch(() => {});
       }
+      try {
+        broadcastReservationCancelled({ id, tableId: resData?.tableId });
+      } catch (e) {}
     }
     await redisService.del('tables:all').catch(() => {});
     return res.json({ success: true, message: 'Reservation cancelled successfully.' });
@@ -4235,6 +4419,9 @@ router.put('/reservations/:id', authenticate, async (req: AuthenticatedRequest, 
     });
 
     await redisService.del('tables:all').catch(() => {});
+    try {
+      broadcastReservationUpdated(updated);
+    } catch (e) {}
     return res.json({ success: true, reservation: updated });
   } catch (err: any) {
     const status = err.statusCode || 400;
@@ -4284,6 +4471,9 @@ router.post('/reservations/:id/assign', authenticate, async (req: AuthenticatedR
     });
 
     await redisService.del('tables:all').catch(() => {});
+    try {
+      broadcastReservationUpdated(updated);
+    } catch (e) {}
     return res.json({ success: true, message: 'Reservation assigned successfully.', reservation: updated });
   } catch (err: any) {
     const isTechnical = err.message.includes('Prisma') || err.message.includes('queryRaw') || err.message.includes('SQL') || err.message.includes('column') || err.message.includes('relation');
@@ -4512,7 +4702,12 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
         status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] },
         paymentVerified: true
       },
-      include: { customer: true, placeType: true, table: true },
+      include: {
+        customer: true,
+        placeType: true,
+        table: true,
+        creator: { include: { role: true } },
+      },
       orderBy: { startTime: 'desc' },
     });
     
@@ -4521,6 +4716,11 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
       const basePerPerson = t.placeType?.redemptionsPerPerson ?? 2;
       const currentCheckInEntitlement = Math.min(t.totalRedemptionsAllowed, (t.personsCount || 1) * basePerPerson);
       const carriedForwardBalance = Math.max(0, t.totalRedemptionsAllowed - currentCheckInEntitlement);
+
+      const sName = t.creator?.fullName || t.creator?.username || 'Staff';
+      const sRole = t.creator?.role?.name || 'Staff';
+      const sRoleCap = sRole.charAt(0).toUpperCase() + sRole.slice(1).toLowerCase();
+      const occupiedByDisplay = t.creator ? `${sName} — ${sRoleCap}` : 'Staff';
 
       return {
         id: t.id,
@@ -4539,6 +4739,17 @@ router.get('/tokens/active', authenticate, async (req: Request, res: Response) =
           phoneNumber: t.phoneNumber || '',
           email: t.email || ''
         },
+        creator: t.creator ? {
+          id: t.creator.id,
+          fullName: t.creator.fullName,
+          username: t.creator.username,
+          role: t.creator.role?.name || 'Staff',
+        } : null,
+        occupiedBy: sName,
+        occupiedByName: sName,
+        occupiedByRole: sRole,
+        occupiedByUserId: t.issuedBy || t.creator?.id || null,
+        occupiedByDisplay,
         persons: t.personsCount,
         personsCount: t.personsCount,
         placeType: t.placeType?.name || '',
@@ -6815,12 +7026,27 @@ router.post('/orders', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/orders/active (Query active orders for a token)
+// GET /api/orders/active (Query active orders for a token or table)
 router.get('/orders/active', async (req: Request, res: Response) => {
   try {
-    const tokenNumber = (req.query.tokenNumber as string) || (req.query.tokenId as string);
+    let tokenNumber = (req.query.tokenNumber as string) || (req.query.tokenId as string);
+    const tableId = req.query.tableId as string;
+
+    if (!tokenNumber && tableId) {
+      const activeToken = await prisma.token.findFirst({
+        where: {
+          tableId,
+          status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] },
+        },
+        orderBy: { issuedAt: 'desc' },
+      });
+      if (activeToken) {
+        tokenNumber = activeToken.tokenNumber;
+      }
+    }
+
     if (!tokenNumber) {
-      return res.status(400).json({ success: false, error: { message: 'tokenNumber or tokenId is required' } });
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber, tokenId, or tableId is required' } });
     }
     const orders = await orderService.getOrdersForToken(tokenNumber);
     return res.json({ success: true, orders });

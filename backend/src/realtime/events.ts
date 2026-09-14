@@ -19,6 +19,11 @@ export const SOCKET_EVENTS = {
   BILL_UPDATED: 'bill.updated',
   SESSION_UPDATED: 'session.updated',
 
+  // Reservation events
+  RESERVATION_CREATED: 'reservation.created',
+  RESERVATION_UPDATED: 'reservation.updated',
+  RESERVATION_CANCELLED: 'reservation.cancelled',
+
   // Menu catalog events
   MENU_UPDATED: 'menu.updated',
 

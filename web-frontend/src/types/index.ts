@@ -58,6 +58,11 @@ export interface Table {
   reservedBy?: string | null;
   reservedByName?: string | null;
   reservedByUserId?: string | null;
+  occupiedBy?: string | null;
+  occupiedByName?: string | null;
+  occupiedByRole?: string | null;
+  occupiedByUserId?: string | null;
+  occupiedByDisplay?: string | null;
   isBillRequested?: boolean;
   activeSession?: any;
   bill?: any;
@@ -68,6 +73,17 @@ export interface Token {
   tokenNumber: string;
   customerId: string;
   customer?: Customer;
+  creator?: {
+    id: string;
+    fullName: string;
+    username: string;
+    role?: { name: string } | string;
+  } | null;
+  occupiedBy?: string | null;
+  occupiedByName?: string | null;
+  occupiedByRole?: string | null;
+  occupiedByUserId?: string | null;
+  occupiedByDisplay?: string | null;
   personsCount: number;
   placeTypeId: string;
   placeType?: PlaceTypeConfig;

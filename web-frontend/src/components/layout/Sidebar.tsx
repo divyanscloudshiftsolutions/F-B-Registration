@@ -320,7 +320,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   {renderGroup(groups.find(g => g.id === 'bartender'))}
   
   {/* Kitchen & Bar Display System: KDS */}
-  {renderNavButton('kds', 'KDS', ChefHat, [UserRole.ADMIN, UserRole.MANAGER, UserRole.CHEF, UserRole.BARTENDER])}
+  {renderNavButton('kds', 'KDS', ChefHat, [UserRole.ADMIN, UserRole.MANAGER, UserRole.CHEF])}
   
   {/* Waiter / Server / Manager / Admin: Waiter Dashboard */}
   {renderNavButton('waiter', 'Waiter Dashboard', UtensilsCrossed, [UserRole.ADMIN, UserRole.MANAGER, UserRole.WAITER, UserRole.SERVER])}

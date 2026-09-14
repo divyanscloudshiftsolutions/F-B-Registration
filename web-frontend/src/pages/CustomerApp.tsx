@@ -196,6 +196,17 @@ const CustomerAppInner: React.FC = () => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  // Synchronize orders and bill data whenever switching to relevant tabs
+  useEffect(() => {
+    if (activeTab === 'orders') {
+      refreshOrders();
+      refreshOrderHistory();
+    } else if (activeTab === 'bill') {
+      refreshBill();
+      refreshOrders();
+    }
+  }, [activeTab, refreshOrders, refreshOrderHistory, refreshBill]);
+
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [dietaryFilter, setDietaryFilter] = useState<'ALL' | 'VEG' | 'NON_VEG' | 'EGG'>('ALL');
   const [customizingItem, setCustomizingItem] = useState<CustomizerItem | null>(null);
@@ -529,7 +540,7 @@ const CustomerAppInner: React.FC = () => {
                   { id: 'drink', label: 'Bar Menu' },
                   { id: 'merch', label: 'Merchandise' },
                   { id: 'repeat', label: 'Repeat' },
-                  { id: 'orders', label: 'My Orders', badge: activeOrders.length },
+                  { id: 'orders', label: 'My Orders', badge: pendingOrders.length },
                   { id: 'bill', label: 'Pay Bill' },
                 ].map((tab) => (
                   <button
@@ -714,7 +725,7 @@ const CustomerAppInner: React.FC = () => {
                   Welcome to Pegs N Bottles
                 </h2>
                 <p className="text-xs sm:text-sm text-text-muted dark:text-zinc-400 mt-1">
-                  {tableNumber ? `Table ${tableNumber} · ` : ''}You have {activeOrders.length} order{activeOrders.length === 1 ? '' : 's'} in this session.
+                  {tableNumber ? `Table ${tableNumber} · ` : ''}{pendingOrders.length > 0 ? `You have ${pendingOrders.length} pending order${pendingOrders.length === 1 ? '' : 's'}` : `You have ${activeOrders.length} placed order${activeOrders.length === 1 ? '' : 's'}`} in this session.
                 </p>
               </div>
             </div>
@@ -2229,6 +2240,11 @@ const CustomerAppInner: React.FC = () => {
                                       · {item.variantName}
                                     </span>
                                   )}
+                                  {item.selectedModifiers && Array.isArray(item.selectedModifiers) && item.selectedModifiers.length > 0 && (
+                                    <span className="text-text-muted dark:text-zinc-400 text-[11px]">
+                                      · {item.selectedModifiers.map((m: any) => m.optionName || m.name || m).join(', ')}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-[10px] text-text-muted dark:text-zinc-400 mt-0.5">
                                   Qty {item.quantity} · {item.station?.toLowerCase()}
@@ -2961,7 +2977,7 @@ const CustomerAppInner: React.FC = () => {
                               onClick={() => setActiveTab('orders')}
                               className="font-bold text-primary dark:text-[#D4AF37] hover:underline flex items-center gap-1 cursor-pointer"
                             >
-                              <span>{activeOrders.length} {activeOrders.length === 1 ? 'ticket' : 'tickets'}</span>
+                              <span>{pendingOrders.length} {pendingOrders.length === 1 ? 'ticket' : 'tickets'}</span>
                               <ArrowRight className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -3065,7 +3081,7 @@ const CustomerAppInner: React.FC = () => {
                                   My Orders
                                 </span>
                                 <span className="block text-[11px] text-text-muted dark:text-zinc-400">
-                                  {activeOrders.length} active
+                                  {pendingOrders.length} active
                                 </span>
                               </div>
                             </div>
@@ -3316,11 +3332,21 @@ const CustomerAppInner: React.FC = () => {
                                     </span>
                                     <div className="truncate">
                                       <span className="font-semibold text-text-primary dark:text-white">
-                                        {item.name || item.menuItem?.name || 'Item'}
+                                        {item.name || item.itemName || item.menuItem?.name || 'Item'}
                                       </span>
-                                      {item.notes && (
+                                      {item.variantName && (
+                                        <span className="text-text-muted dark:text-zinc-400 text-[11px] ml-1">
+                                          · {item.variantName}
+                                        </span>
+                                      )}
+                                      {item.selectedModifiers && Array.isArray(item.selectedModifiers) && item.selectedModifiers.length > 0 && (
+                                        <span className="text-text-muted dark:text-zinc-400 text-[10px] block truncate">
+                                          + {item.selectedModifiers.map((m: any) => m.optionName || m.name || m).join(', ')}
+                                        </span>
+                                      )}
+                                      {(item.notes || item.specialInstructions) && (
                                         <span className="block text-[10px] text-text-muted dark:text-zinc-400 italic truncate">
-                                          Note: {item.notes}
+                                          Note: {item.notes || item.specialInstructions}
                                         </span>
                                       )}
                                     </div>
@@ -3462,9 +3488,9 @@ const CustomerAppInner: React.FC = () => {
             }`}
           >
             <ClipboardList className="w-5 h-5" />
-            {activeOrders.length > 0 && (
+            {pendingOrders.length > 0 && (
               <span className="absolute top-1 right-3 w-3.5 h-3.5 rounded-full bg-primary dark:bg-[#D4AF37] text-white dark:text-black text-[8px] font-black flex items-center justify-center">
-                {activeOrders.length}
+                {pendingOrders.length}
               </span>
             )}
             <span>My Orders</span>

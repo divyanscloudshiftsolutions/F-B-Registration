@@ -303,26 +303,126 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Subscribe to real-time table updates
       joinRoom('tables:all');
-      const unsubscribeTableUpdated = onSocketEvent('table:updated', (payload: any) => {
-        if (!payload || !payload.tableId) return;
+      joinRoom('staff:all');
+      const unsubscribeTableUpdated = onSocketEvent('table.updated', (payload: any) => {
+        if (!payload || (!payload.tableId && !payload.tableNumber)) return;
         setTables(prevTables => prevTables.map(t => {
-          if (t.id === payload.tableId) {
+          if (t.id === payload.tableId || t.tableNumber === payload.tableNumber) {
+            const nextStatus = (payload.status || t.status).toUpperCase();
+            const isAvailable = nextStatus === 'AVAILABLE';
             return {
               ...t,
-              status: payload.status,
-              lockedBy: payload.lockedBy,
-              lockedByName: payload.lockedByName,
-              lockedByUserId: payload.lockedByUserId,
-              lockedByRole: payload.lockedByRole,
-              reservedBy: payload.reservedBy,
-              reservedByName: payload.reservedByName,
-              reservedByUserId: payload.reservedByUserId,
-              currentTokenId: payload.currentTokenId !== undefined ? payload.currentTokenId : t.currentTokenId,
-              activeSession: payload.activeSession !== undefined ? payload.activeSession : t.activeSession,
+              status: nextStatus,
+              lockedBy: isAvailable ? null : (payload.lockedBy !== undefined ? payload.lockedBy : t.lockedBy),
+              lockedByName: isAvailable ? null : (payload.lockedByName !== undefined ? payload.lockedByName : t.lockedByName),
+              lockedByUserId: isAvailable ? null : (payload.lockedByUserId !== undefined ? payload.lockedByUserId : t.lockedByUserId),
+              lockedByRole: isAvailable ? null : (payload.lockedByRole !== undefined ? payload.lockedByRole : t.lockedByRole),
+              reservedBy: isAvailable ? null : (payload.reservedBy !== undefined ? payload.reservedBy : t.reservedBy),
+              reservedByName: isAvailable ? null : (payload.reservedByName !== undefined ? payload.reservedByName : t.reservedByName),
+              reservedByUserId: isAvailable ? null : (payload.reservedByUserId !== undefined ? payload.reservedByUserId : t.reservedByUserId),
+              occupiedBy: isAvailable ? null : (payload.occupiedBy !== undefined ? payload.occupiedBy : t.occupiedBy),
+              occupiedByName: isAvailable ? null : (payload.occupiedByName !== undefined ? payload.occupiedByName : t.occupiedByName),
+              occupiedByRole: isAvailable ? null : (payload.occupiedByRole !== undefined ? payload.occupiedByRole : t.occupiedByRole),
+              occupiedByUserId: isAvailable ? null : (payload.occupiedByUserId !== undefined ? payload.occupiedByUserId : t.occupiedByUserId),
+              occupiedByDisplay: isAvailable ? null : (payload.occupiedByDisplay !== undefined ? payload.occupiedByDisplay : t.occupiedByDisplay),
+              currentTokenId: isAvailable ? null : (payload.currentTokenId !== undefined ? payload.currentTokenId : t.currentTokenId),
+              occupiedSince: isAvailable ? null : (payload.occupiedSince !== undefined ? payload.occupiedSince : t.occupiedSince),
+              activeSession: isAvailable ? null : (payload.activeSession !== undefined ? payload.activeSession : t.activeSession),
             };
           }
           return t;
         }));
+        refreshTokens();
+        refreshReservations();
+      });
+
+      const unsubscribeSessionActivated = onSocketEvent('table.session.activated', (payload: any) => {
+        if (!payload) return;
+        setTables(prevTables => prevTables.map(t => {
+          if (t.id === payload.tableId || t.tableNumber === payload.tableNumber) {
+            return {
+              ...t,
+              status: 'OCCUPIED',
+              currentTokenId: payload.tokenNumber || t.currentTokenId,
+              occupiedBy: payload.occupiedBy || t.occupiedBy,
+              occupiedByName: payload.occupiedByName || t.occupiedByName,
+              occupiedByRole: payload.occupiedByRole || t.occupiedByRole,
+              occupiedByUserId: payload.occupiedByUserId || t.occupiedByUserId,
+              occupiedByDisplay: payload.occupiedByDisplay || t.occupiedByDisplay,
+              lockedBy: null,
+              lockedByName: null,
+              lockedByUserId: null,
+              lockedByRole: null,
+              reservedBy: null,
+              reservedByName: null,
+              reservedByUserId: null,
+              activeSession: payload.tokenNumber ? {
+                tokenNumber: payload.tokenNumber,
+                customerName: payload.customerName,
+                startTime: payload.startTime,
+                endTime: payload.endTime,
+                occupiedBy: payload.occupiedBy,
+                occupiedByName: payload.occupiedByName,
+                occupiedByRole: payload.occupiedByRole,
+                occupiedByDisplay: payload.occupiedByDisplay,
+              } : t.activeSession,
+            };
+          }
+          return t;
+        }));
+        refreshTokens();
+        refreshReservations();
+        refreshTables();
+      });
+
+      const unsubscribeSessionClosed = onSocketEvent('table.session.closed', (payload: any) => {
+        if (!payload) return;
+        setTables(prevTables => prevTables.map(t => {
+          if (t.id === payload.tableId || t.tableNumber === payload.tableNumber) {
+            return {
+              ...t,
+              status: 'AVAILABLE',
+              currentTokenId: null,
+              occupiedSince: null,
+              occupiedBy: null,
+              occupiedByName: null,
+              occupiedByRole: null,
+              occupiedByUserId: null,
+              occupiedByDisplay: null,
+              lockedBy: null,
+              lockedByName: null,
+              lockedByUserId: null,
+              lockedByRole: null,
+              reservedBy: null,
+              reservedByName: null,
+              reservedByUserId: null,
+              activeSession: null,
+            };
+          }
+          return t;
+        }));
+        refreshTokens();
+        refreshAllSessions();
+        refreshTables();
+      });
+
+      const unsubscribeReservationCreated = onSocketEvent('reservation.created', (payload: any) => {
+        if (!payload || !payload.id) return;
+        setReservations(prev => [payload, ...prev.filter(r => r.id !== payload.id)]);
+      });
+
+      const unsubscribeReservationUpdated = onSocketEvent('reservation.updated', (payload: any) => {
+        if (!payload || !payload.id) return;
+        if (payload.status === 'PENDING') {
+          setReservations(prev => prev.map(r => r.id === payload.id ? { ...r, ...payload } : r));
+        } else {
+          setReservations(prev => prev.filter(r => r.id !== payload.id));
+        }
+      });
+
+      const unsubscribeReservationCancelled = onSocketEvent('reservation.cancelled', (payload: any) => {
+        if (!payload || !payload.id) return;
+        setReservations(prev => prev.filter(r => r.id !== payload.id));
       });
 
       // Background sync interval for background fetches (multi-user updates)
@@ -338,6 +438,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         clearInterval(countdownInterval);
         clearInterval(syncInterval);
         unsubscribeTableUpdated();
+        unsubscribeSessionActivated();
+        unsubscribeSessionClosed();
+        unsubscribeReservationCreated();
+        unsubscribeReservationUpdated();
+        unsubscribeReservationCancelled();
         leaveRoom('tables:all');
       };
     } else {

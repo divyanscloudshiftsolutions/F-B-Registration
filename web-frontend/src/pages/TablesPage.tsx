@@ -402,6 +402,42 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     return res.customerName || 'Staff';
   };
 
+  const getTableOccupantDisplay = (tb: Table, assignedToken?: Token | null) => {
+    if (tb.occupiedByDisplay) return tb.occupiedByDisplay;
+    if (tb.occupiedByName) {
+      const roleStr = tb.occupiedByRole ? ` — ${tb.occupiedByRole.charAt(0).toUpperCase() + tb.occupiedByRole.slice(1).toLowerCase()}` : '';
+      return `${tb.occupiedByName}${roleStr}`;
+    }
+    if (tb.occupiedBy) return tb.occupiedBy;
+
+    if (assignedToken) {
+      if ((assignedToken as any).occupiedByDisplay) return (assignedToken as any).occupiedByDisplay;
+      if ((assignedToken as any).creator?.fullName || (assignedToken as any).creator?.username) {
+        const name = (assignedToken as any).creator.fullName || (assignedToken as any).creator.username;
+        const role = (assignedToken as any).creator.role?.name || (assignedToken as any).creator.role || 'Staff';
+        const roleStr = role ? ` — ${role.charAt(0).toUpperCase() + role.slice(1).toLowerCase()}` : '';
+        return `${name}${roleStr}`;
+      }
+      if ((assignedToken as any).occupiedByName) {
+        const roleStr = (assignedToken as any).occupiedByRole ? ` — ${(assignedToken as any).occupiedByRole.charAt(0).toUpperCase() + (assignedToken as any).occupiedByRole.slice(1).toLowerCase()}` : '';
+        return `${(assignedToken as any).occupiedByName}${roleStr}`;
+      }
+      if ((assignedToken as any).occupiedBy) return (assignedToken as any).occupiedBy;
+    }
+
+    if (tb.activeSession?.occupiedByDisplay) return tb.activeSession.occupiedByDisplay;
+    if (tb.activeSession?.occupiedByName) {
+      const roleStr = tb.activeSession.occupiedByRole ? ` — ${tb.activeSession.occupiedByRole.charAt(0).toUpperCase() + tb.activeSession.occupiedByRole.slice(1).toLowerCase()}` : '';
+      return `${tb.activeSession.occupiedByName}${roleStr}`;
+    }
+    if (tb.activeSession?.occupiedBy) return tb.activeSession.occupiedBy;
+
+    if (tb.lockedByName || tb.lockedBy) return tb.lockedByName || tb.lockedBy;
+    if (tb.reservedByName || tb.reservedBy) return tb.reservedByName || tb.reservedBy;
+
+    return 'Staff';
+  };
+
   const availableReservationCapacities = useMemo(() => {
     const caps = new Set<number>();
     realReservations.forEach((r: any) => {
@@ -1422,19 +1458,27 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  </span>
  </div>
 
- {assignedToken ? (
+ {assignedToken || tb.status === 'occupied' ? (
   <div className="space-y-1 border-t border-border-main/40 pt-1 text-text-muted">
     <div className="flex items-center justify-between text-[11px]">
-      <span className="font-semibold truncate max-w-[120px]">👤 {assignedToken.customer?.name || 'Guest'}</span>
-      <span className="font-mono text-text-main font-bold">{assignedToken.tokenNumber}</span>
+      <span className="font-semibold truncate max-w-[120px]">👤 {assignedToken?.customer?.name || tb.activeSession?.customerName || 'Guest'}</span>
+      <span className="font-mono text-text-main font-bold">{assignedToken?.tokenNumber || tb.currentTokenId || tb.activeSession?.tokenNumber}</span>
     </div>
     {tb.status === 'occupied' && (
-      <div className="mt-2 px-3 py-2 rounded-2xl bg-bg-secondary-surface dark:bg-black/25 border border-border-main/60 flex items-center justify-between text-xs font-semibold shadow-sm animate-fadeIn">
-        <span className="text-[10px] text-text-muted uppercase tracking-wider font-extrabold">Time Remaining</span>
-        <div className="text-[13px] font-black tracking-wide">
-          <TableTimer endTime={assignedToken.endTime} />
+      <>
+        <div className="flex items-center justify-between text-[10px] text-text-muted/80">
+          <span>Occupied by:</span>
+          <span className="font-semibold text-text-main truncate max-w-[150px]" title={getTableOccupantDisplay(tb, assignedToken)}>
+            {getTableOccupantDisplay(tb, assignedToken)}
+          </span>
         </div>
-      </div>
+        <div className="mt-2 px-3 py-2 rounded-2xl bg-bg-secondary-surface dark:bg-black/25 border border-border-main/60 flex items-center justify-between text-xs font-semibold shadow-sm animate-fadeIn">
+          <span className="text-[10px] text-text-muted uppercase tracking-wider font-extrabold">Time Remaining</span>
+          <div className="text-[13px] font-black tracking-wide">
+            <TableTimer endTime={assignedToken?.endTime || tb.activeSession?.endTime || new Date(Date.now() + 3600000).toISOString()} />
+          </div>
+        </div>
+      </>
     )}
   </div>
  ) : (
@@ -1639,44 +1683,56 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               </div>
             </div>
 
-            {inspectingToken && (
+            {(inspectingToken || inspectingTable.status === 'occupied') && (
               <div className="p-4 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-2.5 text-xs">
+                {inspectingTable.status === 'occupied' && (
+                  <div className="flex justify-between items-center pb-2 border-b border-border-main/40">
+                    <span className="text-text-muted">Occupied By:</span>
+                    <span className="font-bold text-text-main text-right truncate max-w-[200px]" title={getTableOccupantDisplay(inspectingTable, inspectingToken)}>
+                      {getTableOccupantDisplay(inspectingTable, inspectingToken)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
                   <span className="text-text-muted">Customer Name:</span>
-                  <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={inspectingToken.customer?.name || 'Walk-in Guest'}>
-                    {inspectingToken.customer?.name || 'Walk-in Guest'}
+                  <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={inspectingToken?.customer?.name || inspectingTable.activeSession?.customerName || 'Walk-in Guest'}>
+                    {inspectingToken?.customer?.name || inspectingTable.activeSession?.customerName || 'Walk-in Guest'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-text-muted">Phone Number:</span>
                   <span className="font-mono font-semibold text-text-main text-right">
-                    {inspectingToken.customer?.phoneNumber || '—'}
+                    {inspectingToken?.customer?.phoneNumber || inspectingTable.activeSession?.phoneNumber || '—'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-text-muted">Email ID:</span>
-                  <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={inspectingToken.customer?.email || (inspectingToken as any).email || '—'}>
-                    {inspectingToken.customer?.email || (inspectingToken as any).email || '—'}
+                  <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={inspectingToken?.customer?.email || (inspectingToken as any)?.email || inspectingTable.activeSession?.email || '—'}>
+                    {inspectingToken?.customer?.email || (inspectingToken as any)?.email || inspectingTable.activeSession?.email || '—'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-text-muted">Token Pass:</span>
-                  <span className="font-mono text-text-main font-bold text-right">{inspectingToken.tokenNumber}</span>
+                  <span className="font-mono text-text-main font-bold text-right">{inspectingToken?.tokenNumber || inspectingTable.currentTokenId || inspectingTable.activeSession?.tokenNumber}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-text-muted">Guests Headcount:</span>
-                  <span className="font-bold text-text-main text-right">{inspectingToken.personsCount || 1} {inspectingToken.personsCount === 1 ? 'Guest' : 'Guests'}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-text-muted">Drinks Used / Total:</span>
-                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-right">
-                    {inspectingToken.redemptionsUsed} / {inspectingToken.totalRedemptionsAllowed} Used
+                  <span className="font-bold text-text-main text-right">
+                    {inspectingToken?.personsCount || inspectingTable.activeSession?.personsCount || 1} {(inspectingToken?.personsCount || inspectingTable.activeSession?.personsCount || 1) === 1 ? 'Guest' : 'Guests'}
                   </span>
                 </div>
+                {inspectingToken && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-text-muted">Drinks Used / Total:</span>
+                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-right">
+                      {inspectingToken.redemptionsUsed} / {inspectingToken.totalRedemptionsAllowed} Used
+                    </span>
+                  </div>
+                )}
                 {inspectingTable.status === 'occupied' && (
                   <div className="flex justify-between items-center pt-2 border-t border-border-main/50 dark:border-white/10">
                     <span className="text-text-muted font-medium">Time Remaining:</span>
-                    <TableTimer endTime={inspectingToken.endTime} />
+                    <TableTimer endTime={inspectingToken?.endTime || inspectingTable.activeSession?.endTime || new Date(Date.now() + 3600000).toISOString()} />
                   </div>
                 )}
               </div>

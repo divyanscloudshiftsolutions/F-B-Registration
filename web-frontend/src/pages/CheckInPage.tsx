@@ -24,6 +24,7 @@ import type { Token, Table } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import jsQR from 'jsqr';
+import { extractTokenNumber } from '../utils/tokenExtractor';
 
 export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ onNavigate }) => {
   const { showToast, preselectedTable, setPreselectedTable } = useAuth();
@@ -1291,9 +1292,14 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
  };
  }, []);
 
- const handleVerifyQR = async (code: string) => {
-    const cleanCode = code.trim();
-    if (!cleanCode) return;
+  const handleVerifyQR = async (code: string) => {
+    if (!code) return;
+    const cleanCode = extractTokenNumber(code);
+    if (!cleanCode) {
+      setQrVerificationError('Invalid QR code format. Please scan a valid pass or enter Token ID.');
+      showToast('Invalid QR code format.', 'danger');
+      return;
+    }
     setIsVerifyingQr(true);
     setQrVerificationError(null);
     setQrVerificationSuccess(false);
@@ -1478,14 +1484,16 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
   };
 
  // Filter available tables by place category & seating capacity compatibility matching React Native
-  const compatibleAvailableTables = tables.filter(t => {
-    const isAvailable = t.status === 'available' || t.id === selectedTableId;
-    const isCapacitySuitable = typeof personsCount === 'number' && t.capacity >= personsCount;
-    const matchesCategory = selectedPlaceTypeId === premiumId
-      ? (t.placeTypeId === 'PREMIUM_LOUNGE' || t.tableNumber.startsWith('L-'))
-      : (t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-'));
-    return isAvailable && isCapacitySuitable && matchesCategory;
-  });
+  const compatibleAvailableTables = tables
+    .filter(t => {
+      const isAvailable = t.status === 'available' || t.id === selectedTableId;
+      const isCapacitySuitable = typeof personsCount === 'number' && t.capacity >= personsCount;
+      const matchesCategory = selectedPlaceTypeId === premiumId
+        ? (t.placeTypeId === 'PREMIUM_LOUNGE' || t.tableNumber.startsWith('L-'))
+        : (t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-'));
+      return isAvailable && isCapacitySuitable && matchesCategory;
+    })
+    .sort((a, b) => a.capacity - b.capacity);
 
   // Keyboard listener for Incomplete Check-In Draft Prompt
   useEffect(() => {
@@ -2015,15 +2023,60 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
  <button
  key={tb.id}
  type="button"
+ disabled={isTableValidating}
  onClick={() => handleTableSelect(tb)}
- className={`p-3 rounded-xl border text-center transition-all cursor-pointer ${
+ className={`p-3.5 sm:p-4 rounded-2xl border text-left transition-all cursor-pointer relative flex flex-col justify-between gap-3 group ${
  isSel
- ? 'bg-emerald-500/20 border-emerald-400 dark:text-emerald-300 text-emerald-700 font-bold '
- : 'bg-bg-primary border-border-main text-text-muted hover:bg-bg-card'
- }`}
+ ? 'bg-emerald-500/15 border-emerald-500 shadow-sm shadow-emerald-500/10 ring-1 ring-emerald-500/30'
+ : 'bg-bg-surface hover:bg-bg-card border-border-main hover:border-primary/40 shadow-xs'
+ } ${isTableValidating ? 'opacity-60 cursor-wait' : ''}`}
  >
- <p className="font-mono text-sm font-black">{tb.tableNumber}</p>
- <p className="text-[10px] text-text-muted mt-0.5">{personsCountNum} / {tb.capacity} Seats</p>
+ {/* Header: Table Number & Status Pill */}
+ <div className="flex items-center justify-between gap-1 w-full">
+ <span className="font-mono text-base md:text-lg font-black text-text-main tracking-tight group-hover:text-primary transition-colors">
+ Table {tb.tableNumber}
+ </span>
+ {isSel ? (
+ <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 border border-emerald-500/40 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full">
+ <CheckCircle2 size={11} className="stroke-[3]" />
+ <span>Selected</span>
+ </span>
+ ) : (
+ <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/25 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full">
+ <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+ <span>Available</span>
+ </span>
+ )}
+ </div>
+
+ {/* Capacity & Member Assignment Information */}
+ <div className="space-y-1.5 pt-1.5 border-t border-border-main/50 w-full">
+ <div className="flex items-center justify-between text-xs">
+ <span className="text-text-muted font-medium flex items-center gap-1">
+ <Users size={12} className="text-text-muted shrink-0" />
+ <span>Capacity:</span>
+ </span>
+ <span className="font-extrabold text-text-main">
+ {tb.capacity} {tb.capacity === 1 ? 'Seat' : 'Seats'}
+ </span>
+ </div>
+
+ <div className="flex items-center justify-between text-xs">
+ <span className="text-text-muted font-medium">Assigning:</span>
+ <span className="font-bold text-primary dark:text-[#D4AF37]">
+ {personsCountNum} {personsCountNum === 1 ? 'Member' : 'Members'}
+ </span>
+ </div>
+
+ {tb.capacity > personsCountNum && (
+ <div className="flex items-center justify-between text-[11px] text-text-muted/80 pt-0.5">
+ <span>Spare space:</span>
+ <span className="font-semibold text-text-muted">
+ +{tb.capacity - personsCountNum} extra
+ </span>
+ </div>
+ )}
+ </div>
  </button>
  );
  })}

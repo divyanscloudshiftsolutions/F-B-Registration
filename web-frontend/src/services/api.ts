@@ -1022,8 +1022,11 @@ class ApiService {
     return data.order;
   }
 
-  async getActiveOrders(tokenNumber: string) {
-    const data = await this.request<{ success: boolean; orders: any[] }>(`/orders/active?tokenNumber=${encodeURIComponent(tokenNumber)}`);
+  async getActiveOrders(tokenNumber?: string, tableId?: string) {
+    const params = new URLSearchParams();
+    if (tokenNumber) params.append('tokenNumber', tokenNumber);
+    if (tableId) params.append('tableId', tableId);
+    const data = await this.request<{ success: boolean; orders: any[] }>(`/orders/active?${params.toString()}`);
     return data.orders || [];
   }
 
