@@ -119,24 +119,6 @@ export const BarKDSPage: React.FC = () => {
             <p className="text-xs text-zinc-500 dark:text-text-muted font-medium">Cocktails, pints, and spirit pours synchronized in real time</p>
           </div>
         </div>
-
-        {/* Station Navigation Pills & Controls */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 p-1 h-11 rounded-xl dark:bg-[#18181A] bg-white border border-zinc-300 dark:border-white/10 shadow-xs">
-            <a
-              href="/kds/kitchen"
-              className="h-9 px-4 rounded-lg text-zinc-600 dark:text-text-muted hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5 text-xs font-bold transition-all flex items-center justify-center"
-            >
-              Kitchen
-            </a>
-            <a
-              href="/kds/bar"
-              className="h-9 px-4 rounded-lg bg-primary text-white dark:bg-[#D4AF37] dark:text-black text-xs font-bold shadow-xs flex items-center justify-center transition-all"
-            >
-              Bar
-            </a>
-          </div>
-        </div>
       </div>
 
       {/* Responsive Kanban Board: 1 col on mobile, 2 cols on tablet, 4 cols on desktop */}

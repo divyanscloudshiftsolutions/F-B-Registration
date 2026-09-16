@@ -135,13 +135,17 @@ export class BillingService {
     const taxableAmount = discountedSubtotal.plus(serviceChargeTotal);
     const grossPayable = taxableAmount.plus(taxTotal);
 
-    // 3. Redemption Entitlement Offset (Entitlement from entry fee, applied against eligible drinks)
-    const entryFeePaid = new Decimal(token.amountPaid);
-    // Eligible redemption is the minimum of entry fee and drink subtotal
-    const redemptionDeduction = Decimal.min(entryFeePaid, drinkSubtotal).toDecimalPlaces(2);
+    // 3. Universal Prepaid / Reservation Credit Offset
+    // The amount collected during check-in is a PREPAID / RESERVATION CREDIT for the customer's active session.
+    // It applies to the COMPLETE final consumption bill (Food + Drinks + Merchandise + Service Charge + GST).
+    const confirmedCheckInAmount = new Decimal(token.amountPaid || 0);
+    // General Formula: prepaidCreditApplied = min(confirmedCheckInAmount, grossFinalBill)
+    const prepaidCreditApplied = Decimal.min(confirmedCheckInAmount, grossPayable).toDecimalPlaces(2);
 
     // 4. Final Balance & Cash Rounding
-    const netBeforeRounding = Decimal.max(new Decimal(0), grossPayable.minus(redemptionDeduction));
+    // remainingPayable = max(0, grossFinalBill - prepaidCreditApplied)
+    // There must be NO refund option, NO negative balance, and NO transferable/customer wallet balance.
+    const netBeforeRounding = Decimal.max(new Decimal(0), grossPayable.minus(prepaidCreditApplied));
     const roundedFinalPayable = roundingEnabled
       ? new Decimal(Math.round(netBeforeRounding.toNumber()))
       : netBeforeRounding.toDecimalPlaces(2);
@@ -163,9 +167,13 @@ export class BillingService {
       serviceChargeTotal,
       taxTotal,
       surchargeTotal: new Decimal(0),
+      grossFinalBill: grossPayable.toDecimalPlaces(2),
+      grossPayable: grossPayable.toDecimalPlaces(2),
       rounding,
-      entryFeePaid: entryFeePaid.toDecimalPlaces(2),
-      redemptionDeduction,
+      entryFeePaid: confirmedCheckInAmount.toDecimalPlaces(2),
+      confirmedCheckInAmount: confirmedCheckInAmount.toDecimalPlaces(2),
+      prepaidCreditApplied,
+      redemptionDeduction: prepaidCreditApplied,
       grandTotal: roundedFinalPayable.toDecimalPlaces(2),
       remainingPayable: roundedFinalPayable.toDecimalPlaces(2),
       status: token.status === 'CLOSED' ? 'PAID' : 'DRAFT',

@@ -32,7 +32,7 @@ const isValidAppPath = (pathname: string): boolean => {
 const getDefaultTabForRole = (role?: string): { tab: string; path: string } => {
   const r = (role || '').toLowerCase();
   if (r === 'receptionist') return { tab: 'checkin', path: '/checkin' };
-  if (r === 'bartender') return { tab: 'bartender/checkins', path: '/bartender' };
+  if (r === 'bartender') return { tab: 'bartender/kds', path: '/bartender/kds' };
   if (r === 'chef') return { tab: 'kds_kitchen', path: '/kds/kitchen' };
   if (r === 'waiter' || r === 'server') return { tab: 'waiter_tables', path: '/waiter' };
   return { tab: 'dashboard', path: '/dashboard' };
@@ -48,8 +48,10 @@ const getTabFromPathname = (pathname: string): string => {
   if (pathname === '/admin/tables' || pathname === '/admin' || pathname.startsWith('/admin')) return 'admin/tables';
   if (pathname === '/tables/reservations') return 'tables/reservations';
   if (pathname === '/tables/layout' || pathname === '/tables' || pathname.startsWith('/tables')) return 'tables/layout';
+  if (pathname === '/bartender/kds' || pathname === '/bartender' || pathname === '/kds/bar' || pathname === '/kds_bar') return 'bartender/kds';
+  if (pathname === '/bartender/checkins') return 'bartender/checkins';
   if (pathname === '/bartender/scan') return 'bartender/scan';
-  if (pathname === '/bartender/checkins' || pathname === '/bartender' || pathname.startsWith('/bartender')) return 'bartender/checkins';
+  if (pathname.startsWith('/bartender')) return 'bartender/kds';
   if (pathname === '/waiter/tables') return 'waiter_tables';
   if (pathname === '/waiter/requests') return 'waiter_requests';
   if (pathname === '/waiter/ready') return 'waiter_ready';
@@ -57,7 +59,6 @@ const getTabFromPathname = (pathname: string): string => {
   if (pathname === '/waiter' || pathname.startsWith('/waiter') || pathname.startsWith('/staff')) return 'waiter_tables';
   if (pathname === '/quick_attendance' || pathname === '/attendance') return 'quick_attendance';
   if (pathname === '/kds/kitchen' || pathname === '/kds_kitchen' || pathname === '/kds') return 'kds_kitchen';
-  if (pathname === '/kds/bar' || pathname === '/kds_bar') return 'kds_bar';
   if (pathname === '/dashboard' || pathname === '/') return 'dashboard';
   return '';
 };
@@ -84,7 +85,9 @@ const AppContent: React.FC = () => {
       const route = tab === 'dashboard' ? '/dashboard' 
         : tab === 'checkin' ? '/checkin'
         : tab === 'kds' || tab === 'kds_kitchen' ? '/kds/kitchen'
-        : tab === 'kds_bar' ? '/kds/bar'
+        : tab === 'kds_bar' || tab === 'bartender/kds' ? '/bartender/kds'
+        : tab === 'bartender/checkins' ? '/bartender/checkins'
+        : tab === 'bartender/scan' ? '/bartender/scan'
         : tab === 'quick_attendance' ? '/quick_attendance'
         : tab === 'waiter_tables' ? '/waiter/tables'
         : tab === 'waiter_requests' ? '/waiter/requests'
@@ -93,8 +96,7 @@ const AppContent: React.FC = () => {
         : tab.startsWith('waiter') ? '/waiter'
         : tab === 'tables/reservations' ? '/tables/reservations'
         : tab.startsWith('tables') ? '/tables/layout'
-        : tab === 'bartender/scan' ? '/bartender/scan'
-        : tab.startsWith('bartender') ? '/bartender/checkins'
+        : tab.startsWith('bartender') ? '/bartender/kds'
         : tab.startsWith('admin') ? `/${tab}`
         : `/${tab}`;
       if (window.location.pathname !== route && !window.location.pathname.startsWith('/t/') && !window.location.pathname.startsWith('/customer')) {
@@ -380,12 +382,14 @@ const AppContent: React.FC = () => {
 
   const getTabTitle = () => {
     if (activeTab === 'kds' || activeTab === 'kds_kitchen') return 'Kitchen KDS Food Preparation';
-    if (activeTab === 'kds_bar') return 'Bar KDS Beverage Station';
+    if (activeTab === 'bartender/kds' || activeTab === 'kds_bar') return 'Bar KDS Beverage Station';
+    if (activeTab === 'bartender/checkins') return 'Bartender Active Check-Ins';
+    if (activeTab === 'bartender/scan') return 'Bartender Pass Verification Terminal';
     if (activeTab.startsWith('waiter')) return 'Waiter Floor Service Station';
     if (activeTab === 'dashboard') return 'Executive Management Dashboard';
     if (activeTab === 'checkin') return 'Reception Check-In & Customer Registration';
     if (activeTab === 'quick_attendance') return 'Quick Facial Attendance Kiosk';
-    if (activeTab.startsWith('bartender')) return 'Bartender Drink Service Station';
+    if (activeTab.startsWith('bartender')) return 'Bartender Service Station';
     if (activeTab.startsWith('tables')) return 'Live Seating Floor Plan & Tables';
     if (activeTab.startsWith('admin')) return 'System Administration & Staff Portal';
     return 'TableFlow Operations';

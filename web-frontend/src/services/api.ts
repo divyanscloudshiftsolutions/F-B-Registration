@@ -546,6 +546,20 @@ class ApiService {
     });
   }
 
+  async lookupCustomer(phoneNumber: string): Promise<{ success: boolean; customer: { id: string; phoneNumber: string; name: string; email?: string | null } | null }> {
+    try {
+      const res = await this.request<any>(`/customers/${encodeURIComponent(phoneNumber)}`, {
+        method: 'GET'
+      });
+      if (res && res.success && res.data?.customer) {
+        return { success: true, customer: res.data.customer };
+      }
+      return { success: false, customer: null };
+    } catch {
+      return { success: false, customer: null };
+    }
+  }
+
 
   async getAllSessions(): Promise<any[]> {
     try {

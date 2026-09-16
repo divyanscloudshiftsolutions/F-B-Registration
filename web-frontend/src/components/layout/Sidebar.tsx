@@ -114,7 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
  if (group === 'tables') {
  setActiveTab('tables/layout');
  } else if (group === 'bartender') {
- setActiveTab('bartender/checkins');
+ setActiveTab('bartender/kds');
  } else if (group === 'administration') {
  setActiveTab('admin/tables');
  }
@@ -151,6 +151,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
      icon: Wine,
      roles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.BARTENDER],
      subItems: [
+       { label: 'Bar KDS', onClick: () => handleNavClick('bartender/kds'), active: activeTab === 'bartender/kds' },
        { label: 'Check-ins', onClick: () => handleNavClick('bartender/checkins'), active: activeTab === 'bartender/checkins' },
        { label: 'QR Scan', onClick: () => handleNavClick('bartender/scan'), active: activeTab === 'bartender/scan' }
      ]
@@ -319,8 +320,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   {/* Bartender / Manager / Admin: Bartender Check-ins */}
   {renderGroup(groups.find(g => g.id === 'bartender'))}
   
-  {/* Kitchen & Bar Display System: KDS */}
-  {renderNavButton('kds', 'KDS', ChefHat, [UserRole.ADMIN, UserRole.MANAGER, UserRole.CHEF])}
+  {/* Kitchen Display System: Kitchen KDS */}
+  {renderNavButton('kds', 'Kitchen KDS', ChefHat, [UserRole.ADMIN, UserRole.MANAGER, UserRole.CHEF])}
   
   {/* Waiter / Server / Manager / Admin: Waiter Dashboard */}
   {renderNavButton('waiter', 'Waiter Dashboard', UtensilsCrossed, [UserRole.ADMIN, UserRole.MANAGER, UserRole.WAITER, UserRole.SERVER])}

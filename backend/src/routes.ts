@@ -3293,14 +3293,12 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
         resolvedTableId = table.id;
       }
 
-      // Update customer details if they changed
-      await prisma.customer.update({
-        where: { id: existingToken.customerId },
-        data: {
-          name: customerName,
-          email: finalEmail
-        }
-      });
+      // Store pending customer details in Redis without prematurely altering Customer database record
+      await redisService.setex(
+        `pending-customer:${tokenNumber}`,
+        86400,
+        JSON.stringify({ name: customerName, email: finalEmail || null })
+      );
 
       const emailPending = resolvedTableId && !existingToken.emailSent && existingToken.emailDeliveryStatus !== 'PENDING';
 
@@ -5499,12 +5497,18 @@ router.get('/customers/:phoneNumber', authenticate, async (req: Request, res: Re
       where: { phoneNumber: searchPhone },
       include: {
         tokens: {
-          where: { status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.EXPIRED] } },
+          where: {
+            paymentVerified: true,
+            status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.EXPIRED, TokenStatus.CLOSED] }
+          },
+          orderBy: { createdAt: 'desc' },
           take: 1
         }
       }
     });
-    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    if (!customer || !customer.tokens || customer.tokens.length === 0) {
+      return res.status(404).json({ success: false, error: 'Customer not found or has no confirmed visits' });
+    }
     return res.json({
       success: true,
       data: {
@@ -7048,7 +7052,7 @@ router.get('/orders/active', async (req: Request, res: Response) => {
     if (!tokenNumber) {
       return res.status(400).json({ success: false, error: { message: 'tokenNumber, tokenId, or tableId is required' } });
     }
-    const orders = await orderService.getOrdersForToken(tokenNumber);
+    const orders = await orderService.getOrdersForToken(tokenNumber, tableId);
     return res.json({ success: true, orders });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: { message: err.message } });

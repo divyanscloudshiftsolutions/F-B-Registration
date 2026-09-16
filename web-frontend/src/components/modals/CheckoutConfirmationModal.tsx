@@ -145,7 +145,7 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
               </div>
               {Number(billData.redemptionDeduction) > 0 && (
                 <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
-                  <span>Drink Redemption Offset:</span>
+                  <span>Prepaid Check-in Credit:</span>
                   <span>-₹{billData.redemptionDeduction}</span>
                 </div>
               )}

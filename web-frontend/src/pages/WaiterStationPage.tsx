@@ -33,6 +33,7 @@ import {
   History,
   Utensils,
   ChevronRight,
+  Wine,
 } from 'lucide-react';
 import { VegBadge } from '../components/customer/VegBadge';
 
@@ -94,6 +95,8 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   const [settlementStep, setSettlementStep] = useState<'review' | 'payment'>('review');
 
   // Table-Wise Waiter Service & Ready State
+  const [readyStationFilter, setReadyStationFilter] = useState<'ALL' | 'KITCHEN' | 'BAR'>('ALL');
+  const [isServingBatch, setIsServingBatch] = useState<boolean>(false);
   const [selectedServiceTable, setSelectedServiceTable] = useState<any | null>(null);
   const [tableActiveOrders, setTableActiveOrders] = useState<any[]>([]);
   const [isTableOrdersLoading, setIsTableOrdersLoading] = useState<boolean>(false);
@@ -172,8 +175,14 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     setIsTableOrdersLoading(true);
     try {
       const currentTables = tablesRef.current;
-      const matchedTable = currentTables.find((t: any) => t.id === target.tableId || t.tableNumber === target.tableNumber);
-      const tokenNumber = target.tokenNumber || matchedTable?.currentTokenId || matchedTable?.activeSession?.tokenNumber;
+      const matchedTable = currentTables.find(
+        (t: any) => (target.tableId && t.id === target.tableId) || (target.tableNumber && t.tableNumber === target.tableNumber)
+      );
+      const tokenNumber =
+        target.tokenNumber ||
+        matchedTable?.tokenNumber ||
+        matchedTable?.activeSession?.tokenNumber ||
+        matchedTable?.currentTokenId;
       const tableId = target.tableId || matchedTable?.id;
 
       const orders = await api.getActiveOrders(tokenNumber, tableId);
@@ -207,6 +216,23 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       }
     } catch (err: any) {
       alert(err.message || 'Failed to serve item.');
+    }
+  };
+
+  const handleServeBatchItemsFromModal = async (orderItemIds: string[]) => {
+    if (!orderItemIds || orderItemIds.length === 0) return;
+    setIsServingBatch(true);
+    try {
+      await Promise.all(orderItemIds.map((id) => api.updateOrderItemStatus(id, 'SERVED', user?.id)));
+      await fetchReadyItems();
+      fetchTables();
+      if (selectedServiceTableRef.current) {
+        fetchTableServiceOrders(selectedServiceTableRef.current);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to serve some items.');
+    } finally {
+      setIsServingBatch(false);
     }
   };
 
@@ -680,8 +706,12 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
   const assistedCartTotal = assistedCart.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
 
-  // Group ready items by table for Table-Wise Ready Queue
-  const readyTables = React.useMemo(() => {
+  // Station Classification Helpers: KITCHEN + DESSERT -> Kitchen / Food, BAR -> Bar / Drinks
+  const isBarStation = (station?: string) => (station || '').toUpperCase() === 'BAR';
+  const isKitchenStation = (station?: string) => !isBarStation(station);
+
+  // Helper to group ready items table-wise with station breakdowns
+  const groupReadyItemsByTable = (items: any[]) => {
     const tableMap = new Map<string, {
       tableKey: string;
       tableId?: string;
@@ -689,14 +719,16 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       placeType?: string;
       tokenNumber?: string;
       readyCount: number;
+      kitchenCount: number;
+      barCount: number;
       readyItems: any[];
       earliestReadyAt?: string;
       stations: Set<string>;
     }>();
 
-    readyItems.forEach((item) => {
+    items.forEach((item) => {
       const tableNumber = String(item.tableNumber || item.order?.table?.tableNumber || item.table?.tableNumber || 'Unknown');
-      const tableId = item.tableId || item.order?.tableId || item.table?.id;
+      const tableId = item.tableId || item.order?.tableId || item.order?.table?.id || item.table?.id;
       const key = tableId || tableNumber;
 
       if (!tableMap.has(key)) {
@@ -705,8 +737,10 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           tableId,
           tableNumber,
           placeType: item.placeType || item.order?.table?.placeType?.name || item.table?.placeType?.name,
-          tokenNumber: item.tokenNumber || item.order?.tokenNumber || item.token?.tokenNumber,
+          tokenNumber: item.tokenNumber || item.order?.token?.tokenNumber || item.order?.tokenNumber || item.token?.tokenNumber,
           readyCount: 0,
+          kitchenCount: 0,
+          barCount: 0,
           readyItems: [],
           earliestReadyAt: undefined,
           stations: new Set<string>(),
@@ -714,7 +748,13 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       }
 
       const entry = tableMap.get(key)!;
-      entry.readyCount += item.quantity || 1;
+      const qty = item.quantity || 1;
+      entry.readyCount += qty;
+      if (isBarStation(item.station)) {
+        entry.barCount += qty;
+      } else {
+        entry.kitchenCount += qty;
+      }
       entry.readyItems.push(item);
       if (item.station) {
         entry.stations.add(item.station);
@@ -733,7 +773,27 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       }
       return b.readyCount - a.readyCount;
     });
+  };
+
+  // Station-specific ready items collections
+  const kitchenReadyItems = React.useMemo(() => {
+    return readyItems.filter((i) => isKitchenStation(i.station));
   }, [readyItems]);
+
+  const barReadyItems = React.useMemo(() => {
+    return readyItems.filter((i) => isBarStation(i.station));
+  }, [readyItems]);
+
+  // Derived ready queues
+  const readyTables = React.useMemo(() => groupReadyItemsByTable(readyItems), [readyItems]);
+  const kitchenReadyTables = React.useMemo(() => groupReadyItemsByTable(kitchenReadyItems), [kitchenReadyItems]);
+  const barReadyTables = React.useMemo(() => groupReadyItemsByTable(barReadyItems), [barReadyItems]);
+
+  const displayedReadyTables = React.useMemo(() => {
+    if (readyStationFilter === 'KITCHEN') return kitchenReadyTables;
+    if (readyStationFilter === 'BAR') return barReadyTables;
+    return readyTables;
+  }, [readyStationFilter, kitchenReadyTables, barReadyTables, readyTables]);
 
   // Statistics
   const openRequests = requests.filter((r) => r.status !== 'COMPLETED');
@@ -1016,9 +1076,9 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           {/* SECTION 2: READY TO SERVE + ACTIVE TABLES (Secondary Ops Row)     */}
           {/* ================================================================= */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Panel 2A: Ready to Serve */}
+            {/* Panel 2A: Ready to Serve (Kitchen Food & Bar Drinks) */}
             <section className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-4 sm:p-5 shadow-xs flex flex-col min-h-[300px]">
-              <div className="flex items-center justify-between pb-3 mb-3 border-b border-zinc-200/80 dark:border-white/10">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-3 border-b border-zinc-200/80 dark:border-white/10 gap-2">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 text-primary dark:bg-[#D4AF37]/15 dark:border-[#D4AF37]/20 dark:text-[#D4AF37] flex items-center justify-center shrink-0">
                     <ChefHat className="w-4 h-4" />
@@ -1030,16 +1090,23 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                     <p className="text-[11px] text-zinc-500 dark:text-text-muted">Prepared dishes &amp; drinks ready for pickup</p>
                   </div>
                 </div>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] border border-primary/20 dark:border-[#D4AF37]/30">
-                  {readyTables.length} {readyTables.length === 1 ? 'Table' : 'Tables'} Ready
-                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800/50 flex items-center gap-1">
+                    <Utensils className="w-3 h-3" />
+                    <span>{kitchenReadyItems.length} Food</span>
+                  </span>
+                  <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 flex items-center gap-1">
+                    <Wine className="w-3 h-3" />
+                    <span>{barReadyItems.length} Drinks</span>
+                  </span>
+                </div>
               </div>
 
               {readyTables.length === 0 ? (
                 <div className="flex-1 py-8 border border-dashed border-zinc-200 dark:border-white/10 rounded-xl bg-zinc-50/50 dark:bg-[#141416]/40 flex flex-col items-center justify-center text-center">
                   <ChefHat className="w-7 h-7 text-zinc-400 dark:text-zinc-500 mb-1.5" />
                   <p className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Ready Queue is Empty</p>
-                  <p className="text-[11px] text-zinc-500 dark:text-text-muted mt-0.5">Plated food and poured drinks will appear here grouped by table for pickup.</p>
+                  <p className="text-[11px] text-zinc-500 dark:text-text-muted mt-0.5">Plated food at Kitchen Pass and poured drinks at Bar Counter will appear here.</p>
                 </div>
               ) : (
                 <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
@@ -1050,13 +1117,22 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       className="p-3 rounded-xl border border-emerald-500/30 dark:border-emerald-500/30 dark:bg-[#141416] bg-emerald-50/30 flex items-center justify-between gap-3 shadow-2xs hover:border-emerald-500 cursor-pointer transition-all"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-black text-sm text-zinc-900 dark:text-white">
                             Table {tbl.tableNumber}
                           </span>
-                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/50">
-                            Ready: {tbl.readyCount}
-                          </span>
+                          {tbl.kitchenCount > 0 && (
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800/50 flex items-center gap-1">
+                              <Utensils className="w-2.5 h-2.5" />
+                              <span>Pass: {tbl.kitchenCount}</span>
+                            </span>
+                          )}
+                          {tbl.barCount > 0 && (
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-900 dark:text-blue-300 border border-blue-300 dark:border-blue-800/50 flex items-center gap-1">
+                              <Wine className="w-2.5 h-2.5" />
+                              <span>Bar: {tbl.barCount}</span>
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 truncate">
                           {tbl.readyItems.map((i: any) => `${i.quantity}× ${i.itemName || i.name}`).join(', ')}
@@ -1602,10 +1678,68 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       )}
 
       {/* ==================================================================== */}
-      {/* 4. READY QUEUE TAB (TABLE-WISE ARCHITECTURE)                         */}
+      {/* 4. READY QUEUE TAB (TABLE-WISE ARCHITECTURE - KITCHEN & BAR CHANNELS) */}
       {/* ==================================================================== */}
       {activeTab === 'ready' && (
         <div className="flex-1 overflow-y-auto space-y-4 animate-fade-in">
+          {/* Station Filter Switcher */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-[#18181A] border border-zinc-200 dark:border-white/10 shadow-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Filter Station:
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setReadyStationFilter('ALL')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                  readyStationFilter === 'ALL'
+                    ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                }`}
+              >
+                <span>All Ready</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-black/15 dark:bg-black/20">
+                  {readyItems.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReadyStationFilter('KITCHEN')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                  readyStationFilter === 'KITCHEN'
+                    ? 'bg-amber-500 text-zinc-950 font-black shadow-xs'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                }`}
+              >
+                <Utensils className="w-3.5 h-3.5" />
+                <span>Kitchen Food</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-black/15 dark:bg-black/20">
+                  {kitchenReadyItems.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReadyStationFilter('BAR')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                  readyStationFilter === 'BAR'
+                    ? 'bg-blue-600 text-white font-black shadow-xs'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                }`}
+              >
+                <Wine className="w-3.5 h-3.5" />
+                <span>Bar Drinks</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-black/15 dark:bg-black/20">
+                  {barReadyItems.length}
+                </span>
+              </button>
+            </div>
+          </div>
+
           {isLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
               {[1, 2, 3, 4, 5, 6].map((n) => (
@@ -1623,15 +1757,31 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                 </div>
               ))}
             </div>
-          ) : readyTables.length === 0 ? (
+          ) : displayedReadyTables.length === 0 ? (
             <div className="py-10 px-4 sm:py-16 text-center border border-dashed border-zinc-300 dark:border-white/15 rounded-2xl bg-zinc-50/70 dark:bg-[#141416]/50">
-              <ChefHat className="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
-              <h3 className="font-bold text-sm text-zinc-900 dark:text-white">Ready Queue is Empty</h3>
-              <p className="text-xs text-zinc-500 dark:text-text-muted mt-1">Dishes plated by the kitchen and drinks prepared by the bar will appear here grouped by table for pickup.</p>
+              {readyStationFilter === 'BAR' ? (
+                <Wine className="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
+              ) : (
+                <ChefHat className="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
+              )}
+              <h3 className="font-bold text-sm text-zinc-900 dark:text-white">
+                {readyStationFilter === 'KITCHEN'
+                  ? 'Kitchen Food Queue is Empty'
+                  : readyStationFilter === 'BAR'
+                  ? 'Bar Drinks Queue is Empty'
+                  : 'Ready Queue is Empty'}
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-text-muted mt-1 max-w-md mx-auto">
+                {readyStationFilter === 'KITCHEN'
+                  ? 'Dishes plated by the chef at the Kitchen Pass will appear here for pickup.'
+                  : readyStationFilter === 'BAR'
+                  ? 'Cocktails and beverages prepared by the bartender at the Bar Counter will appear here for pickup.'
+                  : 'Dishes plated by the kitchen and drinks prepared by the bar will appear here grouped by table for pickup.'}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              {readyTables.map((tbl) => {
+              {displayedReadyTables.map((tbl) => {
                 const waitMins = tbl.earliestReadyAt ? getWaitMinutes(tbl.earliestReadyAt) : 0;
                 const waitTimeColor =
                   waitMins >= 10
@@ -1640,7 +1790,9 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                     ? 'text-amber-700 dark:text-amber-400 font-semibold'
                     : 'text-zinc-600 dark:text-zinc-400';
 
-                const stationList = Array.from(tbl.stations);
+                const hasKitchen = tbl.kitchenCount > 0;
+                const hasBar = tbl.barCount > 0;
+                const isMixed = hasKitchen && hasBar;
 
                 return (
                   <div
@@ -1653,7 +1805,11 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2.5">
                           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black text-base shrink-0 group-hover:scale-105 transition-transform">
-                            <Utensils className="w-5 h-5" />
+                            {hasBar && !hasKitchen ? (
+                              <Wine className="w-5 h-5" />
+                            ) : (
+                              <Utensils className="w-5 h-5" />
+                            )}
                           </div>
                           <div>
                             <h3 className="font-black text-lg text-zinc-900 dark:text-white tracking-tight">
@@ -1676,23 +1832,28 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                         </span>
                       </div>
 
-                      {/* Station Badges */}
-                      {stationList.length > 0 && (
-                        <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
-                          {stationList.map((st) => (
-                            <span
-                              key={st}
-                              className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
-                                st === 'BAR'
-                                  ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50'
-                                  : 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-400 border-amber-200 dark:border-amber-800/50'
-                              }`}
-                            >
-                              {st}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {/* Station & Pickup Location Badges */}
+                      <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
+                        {hasKitchen && (
+                          <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-800/60 flex items-center gap-1.5">
+                            <Utensils className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                            <span>Kitchen Pass ({tbl.kitchenCount} Food)</span>
+                          </span>
+                        )}
+
+                        {hasBar && (
+                          <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border bg-blue-50 dark:bg-blue-950/60 text-blue-900 dark:text-blue-300 border-blue-300 dark:border-blue-800/60 flex items-center gap-1.5">
+                            <Wine className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                            <span>Bar Counter ({tbl.barCount} Drinks)</span>
+                          </span>
+                        )}
+
+                        {isMixed && (
+                          <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/50 text-primary dark:text-primary-light border border-purple-200 dark:border-purple-800/50">
+                            Mixed Order
+                          </span>
+                        )}
+                      </div>
 
                       {/* Ready Items Preview Summary */}
                       <div className="mt-3 space-y-1.5 border-t border-zinc-100 dark:border-white/5 pt-2.5">
@@ -1707,6 +1868,15 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                 ({item.variantName})
                               </span>
                             )}
+                            <span
+                              className={`text-[9px] uppercase font-black px-1.5 py-0.2 rounded shrink-0 ml-auto border ${
+                                isBarStation(item.station)
+                                  ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50'
+                                  : 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-400 border-amber-200 dark:border-amber-800/50'
+                              }`}
+                            >
+                              {isBarStation(item.station) ? 'Bar' : 'Kitchen'}
+                            </span>
                           </div>
                         ))}
                         {tbl.readyItems.length > 3 && (
@@ -2543,7 +2713,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
                       {Number(bill.redemptionDeduction || 0) > 0 && (
                         <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
-                          <span>Drink Entitlement Offset</span>
+                          <span>Prepaid Check-in Credit</span>
                           <span className="font-mono">-₹{Number(bill.redemptionDeduction).toFixed(2)}</span>
                         </div>
                       )}
@@ -2915,6 +3085,8 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
         });
 
         const readyList = allItems.filter((i) => i.status === 'READY');
+        const readyFoodItems = readyList.filter((i) => isKitchenStation(i.station));
+        const readyDrinkItems = readyList.filter((i) => isBarStation(i.station));
         const preparingList = allItems.filter((i) => i.status === 'PREPARING');
         const acceptedList = allItems.filter((i) => i.status === 'ACCEPTED' || i.status === 'PLACED');
         const servedList = allItems.filter((i) => i.status === 'SERVED');
@@ -2959,7 +3131,17 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
               <div className="px-4 sm:px-5 py-3 border-b border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-2 overflow-x-auto text-xs font-bold">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60 shrink-0">
                   <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                  Ready: {readyList.reduce((acc, i) => acc + (i.quantity || 1), 0)}
+                  <span>Ready: {readyList.reduce((acc, i) => acc + (i.quantity || 1), 0)}</span>
+                  {readyFoodItems.length > 0 && (
+                    <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded bg-amber-200/60 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200">
+                      {readyFoodItems.reduce((acc, i) => acc + (i.quantity || 1), 0)} Food
+                    </span>
+                  )}
+                  {readyDrinkItems.length > 0 && (
+                    <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded bg-blue-200/60 dark:bg-blue-900/60 text-blue-900 dark:text-blue-200">
+                      {readyDrinkItems.reduce((acc, i) => acc + (i.quantity || 1), 0)} Drinks
+                    </span>
+                  )}
                 </span>
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60 shrink-0">
                   <span className="w-2 h-2 rounded-full bg-amber-500"></span>
@@ -2976,7 +3158,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
               </div>
 
               {/* Items Body */}
-              <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+              <div className="p-4 sm:p-5 overflow-y-auto space-y-5 flex-1">
                 {isTableOrdersLoading ? (
                   <div className="py-12 flex flex-col items-center justify-center text-center space-y-2">
                     <Loader2 className="w-8 h-8 text-primary dark:text-[#D4AF37] animate-spin" />
@@ -2990,19 +3172,34 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   </div>
                 ) : (
                   <>
-                    {/* SECTION: READY ITEMS (DELIVERABLE NOW) */}
-                    {readyList.length > 0 && (
-                      <div className="space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-                            Ready to Deliver ({readyList.length})
-                          </span>
-                          <span className="text-[11px] text-zinc-500 dark:text-zinc-400">Action Required</span>
+                    {/* SECTION 1A: KITCHEN / FOOD READY (PICKUP: KITCHEN PASS) */}
+                    {readyFoodItems.length > 0 && (
+                      <div className="space-y-3 p-3.5 rounded-2xl border border-amber-300/80 dark:border-amber-700/50 bg-amber-50/30 dark:bg-amber-950/10">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping"></span>
+                            <span className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                              <Utensils className="w-3.5 h-3.5" />
+                              <span>Kitchen / Food Ready ({readyFoodItems.reduce((acc, i) => acc + (i.quantity || 1), 0)})</span>
+                            </span>
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50">
+                              Pickup: Kitchen Pass
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={isServingBatch}
+                            onClick={() => handleServeBatchItemsFromModal(readyFoodItems.map((i) => i.id))}
+                            className="h-8 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1 shrink-0 disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Deliver All Food ({readyFoodItems.reduce((acc, i) => acc + (i.quantity || 1), 0)})</span>
+                          </button>
                         </div>
 
                         <div className="space-y-2.5">
-                          {readyList.map((item) => {
+                          {readyFoodItems.map((item) => {
                             const readyTime = item.readyAt || item.createdAt;
                             const waitMins = readyTime ? getWaitMinutes(readyTime) : 0;
                             const waitColor =
@@ -3015,10 +3212,10 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                             return (
                               <div
                                 key={item.id}
-                                className="p-3.5 rounded-2xl border border-emerald-400/80 dark:border-emerald-500/40 bg-emerald-50/30 dark:bg-[#141416] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+                                className="p-3.5 rounded-xl border border-amber-200 dark:border-amber-800/40 bg-white dark:bg-[#141416] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
                               >
                                 <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <VegBadge type={item.foodType} size="sm" />
                                     <span className="font-black text-sm text-zinc-900 dark:text-white">
                                       {item.quantity} × {item.itemName || item.name}
@@ -3028,17 +3225,9 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                         ({item.variantName})
                                       </span>
                                     )}
-                                    {item.station && (
-                                      <span
-                                        className={`text-[9px] uppercase font-black px-2 py-0.5 rounded-full border ${
-                                          item.station === 'BAR'
-                                            ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50'
-                                            : 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-400 border-amber-200 dark:border-amber-800/50'
-                                        }`}
-                                      >
-                                        {item.station}
-                                      </span>
-                                    )}
+                                    <span className="text-[9px] uppercase font-black px-2 py-0.5 rounded-full border bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-400 border-amber-200 dark:border-amber-800/50">
+                                      {item.station || 'KITCHEN'}
+                                    </span>
                                   </div>
 
                                   {item.selectedModifiers && Array.isArray(item.selectedModifiers) && item.selectedModifiers.length > 0 && (
@@ -3067,10 +3256,106 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                 <button
                                   type="button"
                                   onClick={() => handleServeItemFromModal(item.id)}
-                                  className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                                  className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
                                 >
-                                  <CheckCircle2 className="w-4 h-4" />
-                                  <span>Deliver & Serve</span>
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Deliver &amp; Serve</span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SECTION 1B: BAR / DRINKS READY (PICKUP: BAR COUNTER) */}
+                    {readyDrinkItems.length > 0 && (
+                      <div className="space-y-3 p-3.5 rounded-2xl border border-blue-300/80 dark:border-blue-700/50 bg-blue-50/30 dark:bg-blue-950/10">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-ping"></span>
+                            <span className="text-xs font-black uppercase tracking-wider text-blue-900 dark:text-blue-300 flex items-center gap-1.5">
+                              <Wine className="w-3.5 h-3.5" />
+                              <span>Bar / Drinks Ready ({readyDrinkItems.reduce((acc, i) => acc + (i.quantity || 1), 0)})</span>
+                            </span>
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-700/50">
+                              Pickup: Bar Counter
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={isServingBatch}
+                            onClick={() => handleServeBatchItemsFromModal(readyDrinkItems.map((i) => i.id))}
+                            className="h-8 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1 shrink-0 disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Deliver All Drinks ({readyDrinkItems.reduce((acc, i) => acc + (i.quantity || 1), 0)})</span>
+                          </button>
+                        </div>
+
+                        <div className="space-y-2.5">
+                          {readyDrinkItems.map((item) => {
+                            const readyTime = item.readyAt || item.createdAt;
+                            const waitMins = readyTime ? getWaitMinutes(readyTime) : 0;
+                            const waitColor =
+                              waitMins >= 10
+                                ? 'text-rose-700 dark:text-rose-400 font-bold'
+                                : waitMins >= 5
+                                ? 'text-amber-700 dark:text-amber-400 font-semibold'
+                                : 'text-zinc-500 dark:text-zinc-400';
+
+                            return (
+                              <div
+                                key={item.id}
+                                className="p-3.5 rounded-xl border border-blue-200 dark:border-blue-800/40 bg-white dark:bg-[#141416] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <VegBadge type={item.foodType} size="sm" />
+                                    <span className="font-black text-sm text-zinc-900 dark:text-white">
+                                      {item.quantity} × {item.itemName || item.name}
+                                    </span>
+                                    {item.variantName && (
+                                      <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                                        ({item.variantName})
+                                      </span>
+                                    )}
+                                    <span className="text-[9px] uppercase font-black px-2 py-0.5 rounded-full border bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50">
+                                      BAR
+                                    </span>
+                                  </div>
+
+                                  {item.selectedModifiers && Array.isArray(item.selectedModifiers) && item.selectedModifiers.length > 0 && (
+                                    <div className="text-[11px] text-zinc-600 dark:text-zinc-400 font-medium mt-1 pl-5">
+                                      {item.selectedModifiers.map((m: any) => m.optionName || m.name || m).join(', ')}
+                                    </div>
+                                  )}
+
+                                  {item.specialInstructions && (
+                                    <div className="text-[11px] font-semibold italic text-amber-700 dark:text-amber-400 mt-1 pl-5">
+                                      &quot;{item.specialInstructions}&quot;
+                                    </div>
+                                  )}
+
+                                  {readyTime && (
+                                    <div className={`text-[11px] mt-1.5 pl-5 flex items-center gap-1 ${waitColor}`}>
+                                      <Clock className="w-3 h-3" />
+                                      <span>Ready {getRelativeWaitTime(readyTime)}</span>
+                                      <span className="text-zinc-400 dark:text-zinc-500">
+                                        ({new Date(readyTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleServeItemFromModal(item.id)}
+                                  className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Deliver &amp; Serve</span>
                                 </button>
                               </div>
                             );

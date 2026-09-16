@@ -960,12 +960,11 @@ export class TokenService {
         await redisService.del(`token:${staleToken.tokenNumber}`).catch(() => {});
       }
 
-      // Get or create customer
+      // Get or create customer baseline
       const existingCustomer = await tx.customer.findUnique({
         where: { phoneNumber: finalPhoneNumber }
       }) as any;
 
-      // Get or create customer
       let customer = existingCustomer;
       if (!customer) {
         customer = await tx.customer.create({
@@ -973,17 +972,7 @@ export class TokenService {
             phoneNumber: finalPhoneNumber,
             name: request.customerName,
             email: finalEmail || null,
-            totalVisits: 1
-          }
-        });
-      } else {
-        customer = await tx.customer.update({
-          where: { id: customer.id },
-          data: {
-            totalVisits: { increment: 1 },
-            lastVisit: new Date(),
-            name: request.customerName,
-            email: finalEmail || customer.email
+            totalVisits: 0
           }
         });
       }
@@ -1067,6 +1056,13 @@ export class TokenService {
 
       // Cache token
       await redisService.setex(`token:${tokenNumber}`, 86400, JSON.stringify(token));
+
+      // Cache pending customer details for payment confirmation commit
+      await redisService.setex(
+        `pending-customer:${tokenNumber}`,
+        86400,
+        JSON.stringify({ name: request.customerName, email: finalEmail || null })
+      );
 
       if (resolvedTableId) {
         await redisService.del(`table:available:${request.placeTypeId}`);
@@ -1214,6 +1210,33 @@ export class TokenService {
       }
 
       const endTime = new Date(now.getTime() + ptConfig.baseTimeMinutes * 60 * 1000);
+
+      // Commit pending customer profile updates and visit metrics upon payment verification
+      let finalCustomerName = customerRecord.name;
+      let finalCustomerEmail = customerRecord.email;
+      try {
+        const pendingDataStr = await redisService.get(`pending-customer:${tokenNumber}`);
+        if (pendingDataStr) {
+          const pendingData = JSON.parse(pendingDataStr);
+          if (pendingData.name && pendingData.name.trim()) {
+            finalCustomerName = pendingData.name.trim();
+          }
+          if (pendingData.email !== undefined) {
+            finalCustomerEmail = pendingData.email ? pendingData.email.trim().toLowerCase() : null;
+          }
+        }
+      } catch (e) {}
+
+      await tx.customer.update({
+        where: { id: customerRecord.id },
+        data: {
+          name: finalCustomerName,
+          email: finalCustomerEmail,
+          totalVisits: { increment: 1 },
+          lastVisit: now
+        }
+      });
+      await redisService.del(`pending-customer:${tokenNumber}`).catch(() => {});
 
       // 3. Update the token
       const updatedToken = await tx.token.update({

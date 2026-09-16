@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { ExtendSessionModal } from '../components/modals/ExtendSessionModal';
 import { CheckoutConfirmationModal } from '../components/modals/CheckoutConfirmationModal';
 import { QuickAttendanceWebPage } from './QuickAttendanceWebPage';
+import { BarKDSPage } from './BarKDSPage';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import jsQR from 'jsqr';
@@ -496,18 +497,20 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
     window.addEventListener('app:global-refresh', handleGlobalRefresh);
 
     const interval = setInterval(() => {
-      api.getActiveTokens().then(list => {
-        if (Array.isArray(list)) {
-          setActiveTokens(prev => silentMergeTokens(prev, list));
-        }
-      }).catch(() => {});
+      if (activeTab === 'bartender/checkins' || activeTab === 'bartender/scan') {
+        api.getActiveTokens().then(list => {
+          if (Array.isArray(list)) {
+            setActiveTokens(prev => silentMergeTokens(prev, list));
+          }
+        }).catch(() => {});
+      }
     }, 4000);
 
     return () => {
       window.removeEventListener('app:global-refresh', handleGlobalRefresh);
       clearInterval(interval);
     };
-  }, []);
+  }, [activeTab]);
 
   // Sync with global data context tokens
   useEffect(() => {
@@ -737,9 +740,13 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  return `${diffHours}h ${mins}m`;
  };
 
- if (activeTab === 'bartender/attendance') {
-   return <QuickAttendanceWebPage />;
- }
+  if (activeTab === 'bartender/attendance') {
+    return <QuickAttendanceWebPage />;
+  }
+
+  if (activeTab === 'bartender/kds' || activeTab === 'bartender' || activeTab === 'kds_bar') {
+    return <BarKDSPage />;
+  }
 
   const isScanTab = activeTab === 'bartender/scan';
 

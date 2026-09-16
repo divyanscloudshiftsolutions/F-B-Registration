@@ -71,6 +71,8 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
  const [isVerifyingQr, setIsVerifyingQr] = useState(false);
  const [qrVerificationSuccess, setQrVerificationSuccess] = useState(false);
  const [qrVerificationError, setQrVerificationError] = useState<string | null>(null);
+ const [showQrErrorModal, setShowQrErrorModal] = useState<boolean>(false);
+ const [qrErrorMessage, setQrErrorMessage] = useState<string>('');
 
  // Stage 4: Payment Details State
  const [paymentMode, setPaymentMode] = useState<'CASH' | 'UPI'>('CASH');
@@ -257,6 +259,37 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
     </div>
   );
 
+  const renderQrErrorModal = showQrErrorModal && (
+    <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+      <div className="bg-bg-surface border border-red-500/30 dark:border-red-500/30 rounded-3xl p-6 w-full max-w-sm space-y-5 text-center shadow-2xl animate-fadeIn text-text-main relative">
+        <div className="w-14 h-14 rounded-2xl bg-red-500/10 dark:bg-red-500/15 border border-red-500/20 text-red-500 dark:text-red-400 flex items-center justify-center mx-auto">
+          <AlertTriangle size={28} />
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-base font-black uppercase tracking-wider text-red-500 dark:text-red-400">
+            Invalid QR Code
+          </h3>
+          <p className="text-xs text-text-muted leading-relaxed font-medium">
+            {qrErrorMessage || 'Invalid QR code. The scanned QR code or Token ID is invalid or expired.'}
+          </p>
+        </div>
+        <div className="pt-2">
+          <button
+            autoFocus
+            type="button"
+            onClick={() => {
+              setShowQrErrorModal(false);
+              setQrErrorMessage('');
+            }}
+            className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-98 cursor-pointer"
+          >
+            Acknowledge &amp; Retry
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // Save incomplete check-in state to localStorage on change
   useEffect(() => {
     if (stage === 5 || createdToken || showContinuePrompt) {
@@ -303,10 +336,57 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
     return regex.test(trimmed);
   };
 
+  const autoFilledCustomerRef = useRef<{ phone: string; name: string; email: string }>({ phone: '', name: '', email: '' });
+  const lastLookedUpPhoneRef = useRef<string>('');
+
+  const lookupCustomerByPhone = async (phoneToLookup: string) => {
+    const cleanPhone = phoneToLookup.trim();
+    if (!isValidPhone(cleanPhone)) return;
+    if (lastLookedUpPhoneRef.current === cleanPhone) return;
+    lastLookedUpPhoneRef.current = cleanPhone;
+
+    try {
+      const res = await api.lookupCustomer(cleanPhone);
+      if (res && res.success && res.customer) {
+        if (res.customer.name) {
+          setCustomerName(prev => {
+            if (!prev || prev.trim() === '' || prev === autoFilledCustomerRef.current.name) {
+              autoFilledCustomerRef.current.name = res.customer!.name;
+              return res.customer!.name;
+            }
+            return prev;
+          });
+        }
+        if (res.customer.email) {
+          setEmail(prev => {
+            if (!prev || prev.trim() === '' || prev === autoFilledCustomerRef.current.email) {
+              autoFilledCustomerRef.current.email = res.customer!.email || '';
+              return res.customer!.email || '';
+            }
+            return prev;
+          });
+        }
+        autoFilledCustomerRef.current.phone = cleanPhone;
+      }
+    } catch (err) {
+      console.error('Customer lookup failed:', err);
+    }
+  };
+
+  const handlePhoneBlur = () => {
+    const p = phoneNumber.trim();
+    if (isValidPhone(p)) {
+      lookupCustomerByPhone(p);
+    }
+  };
+
   const handlePhoneChange = (val: string) => {
     setPhoneNumber(val);
     setPhoneConflictDetail(null);
     const trimmed = val.trim();
+    if (trimmed !== autoFilledCustomerRef.current.phone) {
+      lastLookedUpPhoneRef.current = '';
+    }
     if (!trimmed) {
       setPhoneValidationStatus('IDLE');
       setPhoneConflict(false);
@@ -318,6 +398,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
     } else {
       setPhoneValidationStatus('PENDING');
       setValidatedPhone('');
+      lookupCustomerByPhone(trimmed);
     }
   };
 
@@ -1295,46 +1376,59 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
   const handleVerifyQR = async (code: string) => {
     if (!code) return;
     const cleanCode = extractTokenNumber(code);
-    if (!cleanCode) {
-      setQrVerificationError('Invalid QR code format. Please scan a valid pass or enter Token ID.');
-      showToast('Invalid QR code format.', 'danger');
-      return;
-    }
     setIsVerifyingQr(true);
     setQrVerificationError(null);
     setQrVerificationSuccess(false);
 
     try {
-      const res = await api.verifyCheckInQR(cleanCode);
-      if (res.success && res.token) {
-        setQrVerificationSuccess(true);
-        setActivePendingToken(res.token); // Store scanned pending token
-        showToast(`Token #${res.token.tokenNumber} verified successfully!`, 'success');
-        
-        // Populate inputs if verified pre-registered session returned
-        const returnedName = res.token.customer?.name || (res.token as any).customerName;
-        const returnedPhone = res.token.customer?.phoneNumber || (res.token as any).phoneNumber;
-        const returnedEmail = res.token.customer?.email || (res.token as any).email;
-        const returnedPersons = res.token.personsCount || (res.token as any).persons;
-        const returnedTableId = res.token.tableId || (res.token.table as any)?.id;
-        const returnedPlaceTypeId = res.token.placeTypeId || (res.token.placeType as any)?.id;
-
-        if (returnedName) setCustomerName(returnedName);
-        if (returnedPhone) setPhoneNumber(returnedPhone);
-        if (returnedEmail) setEmail(returnedEmail);
-        if (returnedPersons) setPersonsCount(returnedPersons);
-        if (returnedTableId) setSelectedTableId(returnedTableId);
-        if (returnedPlaceTypeId) setSelectedPlaceTypeId(returnedPlaceTypeId);
-        
-        setStage(4); // Advance to payment
-        stopCamera();
-      } else {
-        setQrVerificationError('Token verification failed.');
-        showToast('Token QR verification failed.', 'danger');
+      if (!cleanCode) {
+        throw new Error('Invalid QR code format. The QR code or Token ID is invalid.');
       }
+
+      const res = await api.verifyCheckInQR(cleanCode);
+      if (!res || !res.success || !res.token) {
+        throw new Error('Invalid QR code. Token verification failed.');
+      }
+
+      // Check if this Token ID / session is expired
+      const tokenStatus = (res.token.status || '').toUpperCase();
+      const isTokenExpired = tokenStatus === 'EXPIRED' || (res.token.expiresAt && new Date(res.token.expiresAt).getTime() < Date.now());
+      if (isTokenExpired) {
+        throw new Error('This Token ID is expired. Please generate or scan an active pass.');
+      }
+
+      setQrVerificationSuccess(true);
+      setActivePendingToken(res.token); // Store scanned pending token
+      showToast(`Token #${res.token.tokenNumber} verified successfully!`, 'success');
+      
+      // Populate inputs if verified pre-registered session returned
+      const returnedName = res.token.customer?.name || (res.token as any).customerName;
+      const returnedPhone = res.token.customer?.phoneNumber || (res.token as any).phoneNumber;
+      const returnedEmail = res.token.customer?.email || (res.token as any).email;
+      const returnedPersons = res.token.personsCount || (res.token as any).persons;
+      const returnedTableId = res.token.tableId || (res.token.table as any)?.id;
+      const returnedPlaceTypeId = res.token.placeTypeId || (res.token.placeType as any)?.id;
+
+      if (returnedName) setCustomerName(returnedName);
+      if (returnedPhone) setPhoneNumber(returnedPhone);
+      if (returnedEmail) setEmail(returnedEmail);
+      if (returnedPersons) setPersonsCount(returnedPersons);
+      if (returnedTableId) setSelectedTableId(returnedTableId);
+      if (returnedPlaceTypeId) setSelectedPlaceTypeId(returnedPlaceTypeId);
+      
+      setStage(4); // Advance to payment
+      stopCamera();
     } catch (err: any) {
-      setQrVerificationError(err.message || 'Invalid or expired QR token.');
-      showToast(err.message || 'Token verification failed.', 'danger');
+      const rawMsg: string = err?.message || '';
+      const isExpired = rawMsg.toLowerCase().includes('expired') || rawMsg.toLowerCase().includes('expiry');
+      const finalMsg = isExpired
+        ? 'This Token ID is expired. Please generate or scan an active pass.'
+        : 'Invalid QR code. The scanned QR code or Token ID is invalid or expired.';
+      
+      setQrVerificationError(finalMsg);
+      setQrErrorMessage(finalMsg);
+      setShowQrErrorModal(true);
+      showToast(finalMsg, 'danger');
     } finally {
       setIsVerifyingQr(false);
     }
@@ -1549,9 +1643,25 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
     return () => window.removeEventListener('keydown', handlePaymentConfirmKeyDown);
   }, [showPaymentCollectedConfirm, activePendingToken, selectedTableId, phoneNumber, customerName, email, personsCount, selectedPlaceTypeId, deliveryMode, calculatedTotal, reservationId]);
 
+  // Keyboard listener for QR Error Pop-up Modal
+  useEffect(() => {
+    if (!showQrErrorModal) return;
+
+    const handleQrErrorKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        setShowQrErrorModal(false);
+        setQrErrorMessage('');
+      }
+    };
+
+    window.addEventListener('keydown', handleQrErrorKeyDown);
+    return () => window.removeEventListener('keydown', handleQrErrorKeyDown);
+  }, [showQrErrorModal]);
+
   // Keyboard listener for Wizard Stage Progression
   useEffect(() => {
-    if (showStopCheckInConfirmModal || showContinuePrompt || showCapacityWarning || showPaymentCollectedConfirm) {
+    if (showStopCheckInConfirmModal || showContinuePrompt || showCapacityWarning || showPaymentCollectedConfirm || showQrErrorModal) {
       return;
     }
 
@@ -1639,6 +1749,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
         </div>
         {renderStopCheckInConfirmModal}
         {renderCapacityWarningModal}
+        {renderQrErrorModal}
       </>
     );
   }
@@ -1756,6 +1867,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
  type="tel"
  value={phoneNumber}
  onChange={e => handlePhoneChange(e.target.value)}
+ onBlur={handlePhoneBlur}
  placeholder="e.g. 9999999999"
  className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-base md:text-sm text-text-main focus:outline-none transition-all ${
  phoneNumber.trim().length > 0 && (!isValidPhone(phoneNumber) || phoneConflict || isPhoneActive || phoneValidationStatus === 'CONFLICT')
@@ -2648,6 +2760,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
 
       {renderStopCheckInConfirmModal}
       {renderCapacityWarningModal}
+      {renderQrErrorModal}
       {showPaymentCollectedConfirm && (
         <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
           <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">

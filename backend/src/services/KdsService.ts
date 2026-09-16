@@ -66,7 +66,11 @@ export class KdsService {
       include: {
         order: {
           include: {
-            table: true,
+            table: {
+              include: {
+                placeType: true,
+              },
+            },
             token: true,
           },
         },

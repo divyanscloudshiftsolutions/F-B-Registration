@@ -332,11 +332,19 @@ export class OrderService {
   /**
    * Get all active orders for a token session
    */
-  async getOrdersForToken(tokenIdOrNumber: string) {
+  async getOrdersForToken(tokenIdOrNumber: string, tableId?: string) {
     let tokenId = tokenIdOrNumber;
-    if (tokenIdOrNumber.startsWith('BAR-')) {
-      const t = await prisma.token.findUnique({ where: { tokenNumber: tokenIdOrNumber } });
-      if (!t) return [];
+    const t = await prisma.token.findFirst({
+      where: {
+        OR: [
+          { id: tokenIdOrNumber },
+          { tokenNumber: tokenIdOrNumber },
+          ...(tableId ? [{ tableId, status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] } }] : []),
+        ],
+      },
+      orderBy: { issuedAt: 'desc' },
+    });
+    if (t) {
       tokenId = t.id;
     }
 

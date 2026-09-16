@@ -82,6 +82,7 @@ const CustomerAppInner: React.FC = () => {
     isLoading,
     isOrdering,
     placeOrder,
+    refreshOrders,
     refreshBill,
     requestBill,
     isCallWaiterOpen,
@@ -2547,7 +2548,7 @@ const CustomerAppInner: React.FC = () => {
                       )}
                       {redemptionDeduction > 0 && (
                         <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
-                          <span>Entry Fee / Drink Offset</span>
+                          <span>Prepaid Check-in Credit</span>
                           <span>-₹{redemptionDeduction.toFixed(2)}</span>
                         </div>
                       )}
@@ -2567,7 +2568,7 @@ const CustomerAppInner: React.FC = () => {
 
                       <button
                         onClick={handleRequestBill}
-                        disabled={isRequestingBill || billRequested || grandTotal <= 0}
+                        disabled={isRequestingBill || billRequested || billableItems.length === 0}
                         className="w-full mt-3 py-3.5 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black text-white font-black text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isRequestingBill ? (
