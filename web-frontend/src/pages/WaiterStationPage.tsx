@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { api } from '../services/api';
 import { joinRoom, leaveRoom, onSocketEvent } from '../services/socket';
 import { useAuth } from '../context/AuthContext';
@@ -54,10 +54,6 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     }
   }, [initialTab]);
 
-  const setActiveTab = (tab: WaiterTab) => {
-    setActiveTabState(tab);
-    onTabChange?.(tab);
-  };
   const [tables, setTables] = useState<any[]>([]);
   const [reservations, setReservations] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
@@ -82,6 +78,10 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   const [isInitiatingSettlement, setIsInitiatingSettlement] = useState<boolean>(false);
   const [settlementError, setSettlementError] = useState<string | null>(null);
 
+  // In-Flight Action Tracking
+  const [updatingItemIds, setUpdatingItemIds] = useState<Set<string>>(new Set());
+  const [updatingRequestIds, setUpdatingRequestIds] = useState<Set<string>>(new Set());
+
   // Bills Workspace State
   const [activeBills, setActiveBills] = useState<any[]>([]);
   const [settledBills, setSettledBills] = useState<any[]>([]);
@@ -100,10 +100,51 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   const [selectedServiceTable, setSelectedServiceTable] = useState<any | null>(null);
   const [tableActiveOrders, setTableActiveOrders] = useState<any[]>([]);
   const [isTableOrdersLoading, setIsTableOrdersLoading] = useState<boolean>(false);
-  const selectedServiceTableRef = React.useRef<any | null>(null);
-  const tablesRef = React.useRef<any[]>([]);
 
-  const fetchTables = useCallback(async () => {
+  // Active Live Ticker (15s update for elapsed time display without network fetches)
+  const [now, setNow] = useState<number>(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        setNow(Date.now());
+      }
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // In-Flight Request Deduplication Refs
+  const isFetchingTablesRef = useRef<boolean>(false);
+  const pendingFetchTablesRef = useRef<boolean>(false);
+
+  const isFetchingReservationsRef = useRef<boolean>(false);
+  const pendingFetchReservationsRef = useRef<boolean>(false);
+
+  const isFetchingRequestsRef = useRef<boolean>(false);
+  const pendingFetchRequestsRef = useRef<boolean>(false);
+
+  const isFetchingReadyRef = useRef<boolean>(false);
+  const pendingFetchReadyRef = useRef<boolean>(false);
+
+  const isFetchingMenuRef = useRef<boolean>(false);
+  const pendingFetchMenuRef = useRef<boolean>(false);
+
+  const isFetchingActiveBillsRef = useRef<boolean>(false);
+  const pendingFetchActiveBillsRef = useRef<boolean>(false);
+
+  const isFetchingSettledBillsRef = useRef<boolean>(false);
+  const pendingFetchSettledBillsRef = useRef<boolean>(false);
+
+  const selectedServiceTableRef = useRef<any | null>(null);
+  const tablesRef = useRef<any[]>([]);
+  const billsSubTabRef = useRef<'active' | 'history'>('active');
+
+  // Deduplicated Fetchers
+  const fetchTables = useCallback(async (silent: boolean = false) => {
+    if (isFetchingTablesRef.current) {
+      pendingFetchTablesRef.current = true;
+      return;
+    }
+    isFetchingTablesRef.current = true;
     try {
       const data: any = await api.getTables();
       const list = Array.isArray(data) ? data : data?.tables || [];
@@ -111,63 +152,145 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       setTables(list);
     } catch (err) {
       console.warn('Failed to load tables:', err);
+    } finally {
+      isFetchingTablesRef.current = false;
+      if (pendingFetchTablesRef.current) {
+        pendingFetchTablesRef.current = false;
+        fetchTables(true);
+      }
     }
   }, []);
 
-  const fetchReservations = useCallback(async () => {
+  const fetchReservations = useCallback(async (silent: boolean = false) => {
+    if (isFetchingReservationsRef.current) {
+      pendingFetchReservationsRef.current = true;
+      return;
+    }
+    isFetchingReservationsRef.current = true;
     try {
       const data: any = await api.getReservations();
       setReservations(Array.isArray(data) ? data : data?.reservations || []);
     } catch (err) {
       console.warn('Failed to load reservations:', err);
+    } finally {
+      isFetchingReservationsRef.current = false;
+      if (pendingFetchReservationsRef.current) {
+        pendingFetchReservationsRef.current = false;
+        fetchReservations(true);
+      }
     }
   }, []);
 
-  const fetchRequests = useCallback(async () => {
+  const fetchRequests = useCallback(async (silent: boolean = false) => {
+    if (isFetchingRequestsRef.current) {
+      pendingFetchRequestsRef.current = true;
+      return;
+    }
+    isFetchingRequestsRef.current = true;
     try {
       const data = await api.getActiveServiceRequests();
       setRequests(data);
     } catch (err) {
       console.warn('Failed to load service requests:', err);
+    } finally {
+      isFetchingRequestsRef.current = false;
+      if (pendingFetchRequestsRef.current) {
+        pendingFetchRequestsRef.current = false;
+        fetchRequests(true);
+      }
     }
   }, []);
 
-  const fetchReadyItems = useCallback(async () => {
+  const fetchReadyItems = useCallback(async (silent: boolean = false) => {
+    if (isFetchingReadyRef.current) {
+      pendingFetchReadyRef.current = true;
+      return;
+    }
+    isFetchingReadyRef.current = true;
     try {
       const data = await api.getReadyItems();
       setReadyItems(data);
     } catch (err) {
       console.warn('Failed to load ready items:', err);
+    } finally {
+      isFetchingReadyRef.current = false;
+      if (pendingFetchReadyRef.current) {
+        pendingFetchReadyRef.current = false;
+        fetchReadyItems(true);
+      }
     }
   }, []);
 
-  const fetchMenu = useCallback(async () => {
+  const fetchMenu = useCallback(async (silent: boolean = false) => {
+    if (isFetchingMenuRef.current) {
+      pendingFetchMenuRef.current = true;
+      return;
+    }
+    isFetchingMenuRef.current = true;
     try {
       const data = await api.getMenu(false);
       setMenu(data);
     } catch (err) {
       console.warn('Failed to load menu:', err);
+    } finally {
+      isFetchingMenuRef.current = false;
+      if (pendingFetchMenuRef.current) {
+        pendingFetchMenuRef.current = false;
+        fetchMenu(true);
+      }
     }
   }, []);
 
-  const fetchBillsData = useCallback(async (showLoading = true) => {
+  const fetchActiveBills = useCallback(async (showLoading = true) => {
+    if (isFetchingActiveBillsRef.current) {
+      pendingFetchActiveBillsRef.current = true;
+      return;
+    }
+    isFetchingActiveBillsRef.current = true;
     if (showLoading) setIsBillsLoading(true);
     try {
-      const [active, settled] = await Promise.all([
-        api.getActiveBills().catch(() => []),
-        api.getSettledBills(50).catch(() => ({ bills: [], summary: { completedTodayCount: 0, completedTodayRevenue: 0 } })),
-      ]);
+      const active = await api.getActiveBills().catch(() => []);
       setActiveBills(Array.isArray(active) ? active : []);
+    } catch (err) {
+      console.warn('Failed to load active bills:', err);
+    } finally {
+      if (showLoading) setIsBillsLoading(false);
+      isFetchingActiveBillsRef.current = false;
+      if (pendingFetchActiveBillsRef.current) {
+        pendingFetchActiveBillsRef.current = false;
+        fetchActiveBills(false);
+      }
+    }
+  }, []);
+
+  const fetchSettledBills = useCallback(async (showLoading = true) => {
+    if (isFetchingSettledBillsRef.current) {
+      pendingFetchSettledBillsRef.current = true;
+      return;
+    }
+    isFetchingSettledBillsRef.current = true;
+    if (showLoading) setIsBillsLoading(true);
+    try {
+      const settled: any = await api.getSettledBills(50).catch(() => ({ bills: [], summary: { completedTodayCount: 0, completedTodayRevenue: 0 } }));
       setSettledBills(Array.isArray(settled?.bills) ? settled.bills : []);
       if (settled?.summary) {
         setSettledSummary(settled.summary);
       }
     } catch (err) {
-      console.warn('Failed to load bills data:', err);
+      console.warn('Failed to load settled bills:', err);
     } finally {
       if (showLoading) setIsBillsLoading(false);
+      isFetchingSettledBillsRef.current = false;
+      if (pendingFetchSettledBillsRef.current) {
+        pendingFetchSettledBillsRef.current = false;
+        fetchSettledBills(false);
+      }
     }
   }, []);
+
+  const fetchBillsData = useCallback(async (showLoading = true) => {
+    await Promise.all([fetchActiveBills(showLoading), fetchSettledBills(showLoading)]);
+  }, [fetchActiveBills, fetchSettledBills]);
 
   const fetchTableServiceOrders = useCallback(async (tableInfo?: any) => {
     const target = tableInfo || selectedServiceTableRef.current;
@@ -194,6 +317,33 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     }
   }, []);
 
+  // Tab change handler with on-demand data fetching
+  const setActiveTab = (tab: WaiterTab) => {
+    setActiveTabState(tab);
+    onTabChange?.(tab);
+
+    if (tab === 'tables' && reservations.length === 0) {
+      fetchReservations(true);
+    } else if (tab === 'bills') {
+      fetchActiveBills(true);
+      if (billsSubTabRef.current === 'history' && settledBills.length === 0) {
+        fetchSettledBills(true);
+      }
+    } else if (tab === 'requests') {
+      fetchRequests(true);
+    } else if (tab === 'ready') {
+      fetchReadyItems(true);
+    }
+  };
+
+  const handleSetBillsSubTab = (subTab: 'active' | 'history') => {
+    setBillsSubTab(subTab);
+    billsSubTabRef.current = subTab;
+    if (subTab === 'history' && settledBills.length === 0) {
+      fetchSettledBills(true);
+    }
+  };
+
   const handleOpenTableService = (tableGroup: any) => {
     setSelectedServiceTable(tableGroup);
     selectedServiceTableRef.current = tableGroup;
@@ -207,25 +357,31 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   };
 
   const handleServeItemFromModal = async (orderItemId: string) => {
+    if (updatingItemIds.has(orderItemId)) return;
+    setUpdatingItemIds((prev) => new Set(prev).add(orderItemId));
     try {
       await api.updateOrderItemStatus(orderItemId, 'SERVED', user?.id);
-      await fetchReadyItems();
-      fetchTables();
+      await Promise.all([fetchReadyItems(true), fetchTables(true)]);
       if (selectedServiceTableRef.current) {
         fetchTableServiceOrders(selectedServiceTableRef.current);
       }
     } catch (err: any) {
       alert(err.message || 'Failed to serve item.');
+    } finally {
+      setUpdatingItemIds((prev) => {
+        const next = new Set(prev);
+        next.delete(orderItemId);
+        return next;
+      });
     }
   };
 
   const handleServeBatchItemsFromModal = async (orderItemIds: string[]) => {
-    if (!orderItemIds || orderItemIds.length === 0) return;
+    if (!orderItemIds || orderItemIds.length === 0 || isServingBatch) return;
     setIsServingBatch(true);
     try {
       await Promise.all(orderItemIds.map((id) => api.updateOrderItemStatus(id, 'SERVED', user?.id)));
-      await fetchReadyItems();
-      fetchTables();
+      await Promise.all([fetchReadyItems(true), fetchTables(true)]);
       if (selectedServiceTableRef.current) {
         fetchTableServiceOrders(selectedServiceTableRef.current);
       }
@@ -238,7 +394,14 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
   useEffect(() => {
     setIsLoading(true);
-    Promise.all([fetchTables(), fetchRequests(), fetchReadyItems(), fetchMenu(), fetchReservations(), fetchBillsData(false)]).finally(() => {
+    // Initial mount: load critical operational data
+    Promise.all([
+      fetchTables(true),
+      fetchRequests(true),
+      fetchReadyItems(true),
+      fetchActiveBills(false),
+      fetchReservations(true),
+    ]).finally(() => {
       setIsLoading(false);
     });
 
@@ -248,57 +411,76 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     joinRoom('staff:ready');
     joinRoom('staff:billing');
 
-    const unsubTable = () => {
-      fetchTables();
-      fetchReservations();
-      fetchBillsData(false);
-      if (selectedServiceTableRef.current) {
-        fetchTableServiceOrders(selectedServiceTableRef.current);
-      }
-    };
     const unsubReqCreated = onSocketEvent('service_request.created', () => {
-      fetchRequests();
+      fetchRequests(true);
     });
     const unsubReqUpdated = onSocketEvent('service_request.updated', () => {
-      fetchRequests();
+      fetchRequests(true);
     });
     const unsubItemUpdated = onSocketEvent('order.item.updated', () => {
-      fetchReadyItems();
-      fetchTables();
+      fetchReadyItems(true);
+      fetchTables(true);
       if (selectedServiceTableRef.current) {
         fetchTableServiceOrders(selectedServiceTableRef.current);
       }
     });
     const unsubOrderCreated = onSocketEvent('order.created', () => {
-      fetchReadyItems();
-      fetchTables();
+      fetchReadyItems(true);
+      fetchTables(true);
       if (selectedServiceTableRef.current) {
         fetchTableServiceOrders(selectedServiceTableRef.current);
       }
     });
     const unsubBillSettled = onSocketEvent('bill.settled', () => {
-      fetchBillsData(false);
-      fetchTables();
+      fetchActiveBills(false);
+      fetchTables(true);
+      if (billsSubTabRef.current === 'history') {
+        fetchSettledBills(false);
+      }
     });
     const unsubSessionClosed = onSocketEvent('table.session.closed', () => {
-      fetchBillsData(false);
-      fetchTables();
+      fetchActiveBills(false);
+      fetchTables(true);
+    });
+    const unsubTableEv = onSocketEvent('table.updated', () => {
+      fetchTables(true);
     });
 
-    const unsubTableEv = onSocketEvent('table.updated', unsubTable);
-
     const handleGlobalRefresh = () => {
-      fetchTables();
-      fetchRequests();
-      fetchReadyItems();
-      fetchMenu();
-      fetchReservations();
-      fetchBillsData(false);
+      fetchTables(true);
+      fetchRequests(true);
+      fetchReadyItems(true);
+      fetchReservations(true);
+      fetchActiveBills(false);
+      if (billsSubTabRef.current === 'history') {
+        fetchSettledBills(false);
+      }
       if (selectedServiceTableRef.current) {
         fetchTableServiceOrders(selectedServiceTableRef.current);
       }
     };
     window.addEventListener('app:global-refresh', handleGlobalRefresh);
+
+    // Tab visibility listener: refresh active data when returning to tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchTables(true);
+        fetchRequests(true);
+        fetchReadyItems(true);
+        fetchActiveBills(false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Fallback polling (only runs when tab is visible)
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchTables(true);
+        fetchRequests(true);
+        fetchReadyItems(true);
+        fetchActiveBills(false);
+      }
+    }, 10000);
 
     return () => {
       leaveRoom('tables:all');
@@ -313,15 +495,10 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       unsubBillSettled();
       unsubSessionClosed();
       window.removeEventListener('app:global-refresh', handleGlobalRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(interval);
     };
-  }, [fetchTables, fetchRequests, fetchReadyItems, fetchMenu, fetchReservations, fetchBillsData, fetchTableServiceOrders]);
-
-  // Periodic tick for reactive elapsed waiting time
-  const [, setTick] = useState<number>(0);
-  useEffect(() => {
-    const timer = setInterval(() => setTick((t) => t + 1), 15000);
-    return () => clearInterval(timer);
-  }, []);
+  }, [fetchTables, fetchRequests, fetchReadyItems, fetchReservations, fetchActiveBills, fetchSettledBills, fetchTableServiceOrders]);
 
   const formatRequestType = (type?: string) => {
     if (!type) return 'Request';
@@ -332,7 +509,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   };
 
   const getWaitMinutes = (createdAt: string) => {
-    return Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000));
+    return Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 60000));
   };
 
   const getRelativeWaitTime = (createdAt: string) => {
@@ -387,26 +564,49 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
   // Actions: Service Request Lifecycle
   const handleUpdateReqStatus = async (requestId: string, status: 'ACKNOWLEDGED' | 'COMPLETED') => {
+    if (updatingRequestIds.has(requestId)) return;
+    setUpdatingRequestIds((prev) => new Set(prev).add(requestId));
     try {
       await api.updateServiceRequestStatus(requestId, status, user?.id);
-      fetchRequests();
+      await fetchRequests(true);
     } catch (err: any) {
       alert(err.message || 'Failed to update request.');
+    } finally {
+      setUpdatingRequestIds((prev) => {
+        const next = new Set(prev);
+        next.delete(requestId);
+        return next;
+      });
     }
   };
 
   // Actions: Ready Item Lifecycle
   const handleMarkItemServed = async (orderItemId: string) => {
+    if (updatingItemIds.has(orderItemId)) return;
+    setUpdatingItemIds((prev) => new Set(prev).add(orderItemId));
     try {
       await api.updateOrderItemStatus(orderItemId, 'SERVED', user?.id);
-      fetchReadyItems();
-      fetchTables();
+      await Promise.all([fetchReadyItems(true), fetchTables(true)]);
     } catch (err: any) {
       alert(err.message || 'Failed to serve item.');
+    } finally {
+      setUpdatingItemIds((prev) => {
+        const next = new Set(prev);
+        next.delete(orderItemId);
+        return next;
+      });
     }
   };
 
-  // Assisted Ordering Handlers
+  // Assisted Ordering Handlers (Lazy loads menu on first open)
+  const handleOpenAssistedOrdering = (table: any) => {
+    setSelectedTable(table);
+    setIsAssistedOrderingOpen(true);
+    if (menu.length === 0) {
+      fetchMenu(false);
+    }
+  };
+
   const handleAddAssistedItem = (menuItem: any) => {
     setAssistedCart((prev) => {
       const existing = prev.find((i) => i.menuItemId === menuItem.id);
@@ -472,7 +672,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       setAssistedCart([]);
       setIsAssistedOrderingOpen(false);
       setTimeout(() => setFeedbackMsg(null), 4000);
-      fetchTables();
+      fetchTables(true);
     } catch (err: any) {
       setFeedbackMsg(`Order submission failed: ${err.message}`);
     } finally {
@@ -616,6 +816,8 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   };
 
   const handleServeItemInline = async (orderItemId: string) => {
+    if (updatingItemIds.has(orderItemId)) return;
+    setUpdatingItemIds((prev) => new Set(prev).add(orderItemId));
     try {
       await api.updateOrderItemStatus(orderItemId, 'SERVED', user?.id);
       const tokenToSettle =
@@ -629,11 +831,17 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           setActiveTableBill(res.bill);
         }
       }
-      fetchReadyItems();
-      fetchTables();
-      fetchBillsData();
+      fetchReadyItems(true);
+      fetchTables(true);
+      fetchActiveBills(false);
     } catch (err: any) {
       alert(err.message || 'Failed to serve item.');
+    } finally {
+      setUpdatingItemIds((prev) => {
+        const next = new Set(prev);
+        next.delete(orderItemId);
+        return next;
+      });
     }
   };
 
@@ -678,7 +886,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       setActiveTableBill(null);
       setSettlementStep('review');
 
-      await Promise.all([fetchTables(), fetchRequests(), fetchBillsData()]);
+      await Promise.all([fetchTables(true), fetchRequests(true), fetchActiveBills(true), fetchSettledBills(false)]);
       setTimeout(() => setFeedbackMsg(null), 5000);
     } catch (err: any) {
       console.error('Settlement error:', err);
@@ -688,30 +896,35 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     }
   };
 
-  // Flattened Menu Items for Assisted Order Modal
-  const allMenuItems: any[] = [];
-  menu.forEach((section: any) => {
-    (section.categories || []).forEach((cat: any) => {
-      (cat.items || []).forEach((item: any) => {
-        allMenuItems.push({ ...item, categoryName: cat.name });
+  // Flattened Menu Items for Assisted Order Modal (Memoized)
+  const allMenuItems = useMemo(() => {
+    const list: any[] = [];
+    menu.forEach((section: any) => {
+      (section.categories || []).forEach((cat: any) => {
+        (cat.items || []).forEach((item: any) => {
+          list.push({ ...item, categoryName: cat.name });
+        });
       });
     });
-  });
+    return list;
+  }, [menu]);
 
-  const filteredMenuItems = allMenuItems.filter((i) => {
-    if (!searchQuery.trim()) return true;
+  const filteredMenuItems = useMemo(() => {
+    if (!searchQuery.trim()) return allMenuItems;
     const q = searchQuery.toLowerCase();
-    return i.name.toLowerCase().includes(q) || (i.description || '').toLowerCase().includes(q);
-  });
+    return allMenuItems.filter((i) => i.name.toLowerCase().includes(q) || (i.description || '').toLowerCase().includes(q));
+  }, [allMenuItems, searchQuery]);
 
-  const assistedCartTotal = assistedCart.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+  const assistedCartTotal = useMemo(() => {
+    return assistedCart.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+  }, [assistedCart]);
 
   // Station Classification Helpers: KITCHEN + DESSERT -> Kitchen / Food, BAR -> Bar / Drinks
   const isBarStation = (station?: string) => (station || '').toUpperCase() === 'BAR';
   const isKitchenStation = (station?: string) => !isBarStation(station);
 
   // Helper to group ready items table-wise with station breakdowns
-  const groupReadyItemsByTable = (items: any[]) => {
+  const groupReadyItemsByTable = useCallback((items: any[]) => {
     const tableMap = new Map<string, {
       tableKey: string;
       tableId?: string;
@@ -773,40 +986,46 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       }
       return b.readyCount - a.readyCount;
     });
-  };
+  }, []);
 
-  // Station-specific ready items collections
-  const kitchenReadyItems = React.useMemo(() => {
+  // Station-specific ready items collections (Memoized)
+  const kitchenReadyItems = useMemo(() => {
     return readyItems.filter((i) => isKitchenStation(i.station));
   }, [readyItems]);
 
-  const barReadyItems = React.useMemo(() => {
+  const barReadyItems = useMemo(() => {
     return readyItems.filter((i) => isBarStation(i.station));
   }, [readyItems]);
 
-  // Derived ready queues
-  const readyTables = React.useMemo(() => groupReadyItemsByTable(readyItems), [readyItems]);
-  const kitchenReadyTables = React.useMemo(() => groupReadyItemsByTable(kitchenReadyItems), [kitchenReadyItems]);
-  const barReadyTables = React.useMemo(() => groupReadyItemsByTable(barReadyItems), [barReadyItems]);
+  // Derived ready queues (Memoized)
+  const readyTables = useMemo(() => groupReadyItemsByTable(readyItems), [groupReadyItemsByTable, readyItems]);
+  const kitchenReadyTables = useMemo(() => groupReadyItemsByTable(kitchenReadyItems), [groupReadyItemsByTable, kitchenReadyItems]);
+  const barReadyTables = useMemo(() => groupReadyItemsByTable(barReadyItems), [groupReadyItemsByTable, barReadyItems]);
 
-  const displayedReadyTables = React.useMemo(() => {
+  const displayedReadyTables = useMemo(() => {
     if (readyStationFilter === 'KITCHEN') return kitchenReadyTables;
     if (readyStationFilter === 'BAR') return barReadyTables;
     return readyTables;
   }, [readyStationFilter, kitchenReadyTables, barReadyTables, readyTables]);
 
-  // Statistics
-  const openRequests = requests.filter((r) => r.status !== 'COMPLETED');
-  const activeTables = tables.filter((t) => {
-    const s = (t.status || '').toUpperCase();
-    return s === 'OCCUPIED' || s === 'BILL_REQUESTED' || t.isBillRequested;
-  });
-  const realBillRequestedTables = tables.filter((t) => {
-    const s = (t.status || '').toUpperCase();
-    return s === 'BILL_REQUESTED' || t.isBillRequested;
-  });
+  // Statistics (Memoized)
+  const openRequests = useMemo(() => {
+    return requests.filter((r) => r.status !== 'COMPLETED');
+  }, [requests]);
 
-  const billRequestedTables = realBillRequestedTables;
+  const activeTables = useMemo(() => {
+    return tables.filter((t) => {
+      const s = (t.status || '').toUpperCase();
+      return s === 'OCCUPIED' || s === 'IN_CHECKIN' || s === 'BILL_REQUESTED' || t.isBillRequested;
+    });
+  }, [tables]);
+
+  const billRequestedTables = useMemo(() => {
+    return tables.filter((t) => {
+      const s = (t.status || '').toUpperCase();
+      return s === 'BILL_REQUESTED' || t.isBillRequested;
+    });
+  }, [tables]);
 
   const getBillForTable = (table: any) => {
     if (activeTableBill) return activeTableBill;
@@ -822,15 +1041,15 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   };
 
   // Helper to match table with active reservation
-  const getReservationForTable = (tableId: string) => {
+  const getReservationForTable = useCallback((tableId: string) => {
     return reservations.find(
       (r) =>
         (r.tableId === tableId || r.table?.id === tableId) &&
         (r.status === 'PENDING' || r.status === 'CONFIRMED' || r.status === 'RESERVED')
     );
-  };
+  }, [reservations]);
 
-  const isTableReserved = (t: any) => {
+  const isTableReserved = useCallback((t: any) => {
     const s = (t.status || '').toUpperCase();
     if (s === 'RESERVED') return true;
     return reservations.some(
@@ -838,34 +1057,42 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
         (r.tableId === t.id || r.table?.id === t.id) &&
         (r.status === 'PENDING' || r.status === 'CONFIRMED')
     );
-  };
+  }, [reservations]);
 
-  // 1. Reserved tables (Part 1 of /waiter/tables)
-  const reservedTables = tables.filter((t) => {
-    const s = (t.status || '').toUpperCase();
-    if (s === 'AVAILABLE' && !reservations.some((r) => (r.tableId === t.id || r.table?.id === t.id) && (r.status === 'PENDING' || r.status === 'CONFIRMED'))) {
-      return false;
-    }
-    return isTableReserved(t);
-  });
+  // 1. Reserved tables (Part 1 of /waiter/tables) (Memoized)
+  const reservedTables = useMemo(() => {
+    return tables.filter((t) => {
+      const s = (t.status || '').toUpperCase();
+      if (s === 'AVAILABLE' && !reservations.some((r) => (r.tableId === t.id || r.table?.id === t.id) && (r.status === 'PENDING' || r.status === 'CONFIRMED'))) {
+        return false;
+      }
+      return isTableReserved(t);
+    });
+  }, [tables, reservations, isTableReserved]);
 
-  // 2. Billing & active occupied tables (Part 2 of /waiter/tables - excluding available & reserved)
-  const billingTables = tables.filter((t) => {
-    const s = (t.status || '').toUpperCase();
-    if (s === 'AVAILABLE' || s === '') return false;
-    if (isTableReserved(t)) return false;
-    return true;
-  });
+  // 2. Billing & active occupied tables (Part 2 of /waiter/tables - excluding available & reserved) (Memoized)
+  const billingTables = useMemo(() => {
+    return tables.filter((t) => {
+      const s = (t.status || '').toUpperCase();
+      if (s === 'AVAILABLE' || s === '') return false;
+      if (isTableReserved(t)) return false;
+      return true;
+    });
+  }, [tables, isTableReserved]);
 
-  // Sort billing tables so BILL_REQUESTED tables appear first
-  const sortedBillingTables = [...billingTables].sort((a, b) => {
-    const aBillReq = a.status === 'BILL_REQUESTED' || a.isBillRequested ? 1 : 0;
-    const bBillReq = b.status === 'BILL_REQUESTED' || b.isBillRequested ? 1 : 0;
-    return bBillReq - aBillReq;
-  });
+  // Sort billing tables so BILL_REQUESTED tables appear first (Memoized)
+  const sortedBillingTables = useMemo(() => {
+    return [...billingTables].sort((a, b) => {
+      const aBillReq = a.status === 'BILL_REQUESTED' || a.isBillRequested ? 1 : 0;
+      const bBillReq = b.status === 'BILL_REQUESTED' || b.isBillRequested ? 1 : 0;
+      return bBillReq - aBillReq;
+    });
+  }, [billingTables]);
 
-  // Total non-available tables (reservations + bills)
-  const nonAvailableTables = [...reservedTables, ...sortedBillingTables];
+  // Total non-available tables (reservations + bills) (Memoized)
+  const nonAvailableTables = useMemo(() => {
+    return [...reservedTables, ...sortedBillingTables];
+  }, [reservedTables, sortedBillingTables]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden dark:bg-[#111114] bg-[#F5F3FA] p-4 lg:p-6 space-y-4">
@@ -1051,18 +1278,22 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       {req.status === 'NEW' ? (
                         <button
                           type="button"
+                          disabled={updatingRequestIds.has(req.id)}
                           onClick={() => handleUpdateReqStatus(req.id, 'ACKNOWLEDGED')}
-                          className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer"
+                          className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                         >
-                          Acknowledge
+                          {updatingRequestIds.has(req.id) ? <Loader2 size={13} className="animate-spin" /> : null}
+                          <span>{updatingRequestIds.has(req.id) ? 'Updating...' : 'Acknowledge'}</span>
                         </button>
                       ) : (
                         <button
                           type="button"
+                          disabled={updatingRequestIds.has(req.id)}
                           onClick={() => handleUpdateReqStatus(req.id, 'COMPLETED')}
-                          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer"
+                          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                         >
-                          Mark Done
+                          {updatingRequestIds.has(req.id) ? <Loader2 size={13} className="animate-spin" /> : null}
+                          <span>{updatingRequestIds.has(req.id) ? 'Updating...' : 'Mark Done'}</span>
                         </button>
                       )}
                     </div>
@@ -1220,8 +1451,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedTable(table);
-                            setIsAssistedOrderingOpen(true);
+                            handleOpenAssistedOrdering(table);
                           }}
                           className="w-8 h-8 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] text-white dark:text-black flex items-center justify-center cursor-pointer shadow-xs active:scale-95 transition-all shrink-0"
                           title="Take Table Order"
@@ -1654,18 +1884,22 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       {req.status === 'NEW' ? (
                         <button
                           type="button"
+                          disabled={updatingRequestIds.has(req.id)}
                           onClick={() => handleUpdateReqStatus(req.id, 'ACKNOWLEDGED')}
-                          className="w-full h-11 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                          className="w-full h-11 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                         >
-                          Acknowledge
+                          {updatingRequestIds.has(req.id) ? <Loader2 size={14} className="animate-spin" /> : null}
+                          <span>{updatingRequestIds.has(req.id) ? 'Updating...' : 'Acknowledge'}</span>
                         </button>
                       ) : (
                         <button
                           type="button"
+                          disabled={updatingRequestIds.has(req.id)}
                           onClick={() => handleUpdateReqStatus(req.id, 'COMPLETED')}
-                          className="w-full h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                          className="w-full h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                         >
-                          Mark Done
+                          {updatingRequestIds.has(req.id) ? <Loader2 size={14} className="animate-spin" /> : null}
+                          <span>{updatingRequestIds.has(req.id) ? 'Updating...' : 'Mark Done'}</span>
                         </button>
                       )}
                     </div>
@@ -1975,7 +2209,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                 <div className="flex items-center gap-1 p-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10">
                   <button
                     type="button"
-                    onClick={() => setBillsSubTab('active')}
+                    onClick={() => handleSetBillsSubTab('active')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                       billsSubTab === 'active'
                         ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-black'
@@ -1997,7 +2231,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
                   <button
                     type="button"
-                    onClick={() => setBillsSubTab('history')}
+                    onClick={() => handleSetBillsSubTab('history')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                       billsSubTab === 'history'
                         ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-black'
@@ -3255,11 +3489,16 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
                                 <button
                                   type="button"
+                                  disabled={updatingItemIds.has(item.id) || isServingBatch}
                                   onClick={() => handleServeItemFromModal(item.id)}
-                                  className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                                  className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
                                 >
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Deliver &amp; Serve</span>
+                                  {updatingItemIds.has(item.id) ? (
+                                    <Loader2 size={14} className="animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>{updatingItemIds.has(item.id) ? 'Delivering...' : 'Deliver & Serve'}</span>
                                 </button>
                               </div>
                             );
@@ -3351,11 +3590,16 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
                                 <button
                                   type="button"
+                                  disabled={updatingItemIds.has(item.id) || isServingBatch}
                                   onClick={() => handleServeItemFromModal(item.id)}
-                                  className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                                  className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
                                 >
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Deliver &amp; Serve</span>
+                                  {updatingItemIds.has(item.id) ? (
+                                    <Loader2 size={14} className="animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>{updatingItemIds.has(item.id) ? 'Delivering...' : 'Deliver & Serve'}</span>
                                 </button>
                               </div>
                             );

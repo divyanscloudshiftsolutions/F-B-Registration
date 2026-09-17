@@ -7110,7 +7110,8 @@ router.put('/orders/items/:id/status', authenticate, authorize(['admin', 'manage
     if (!status) {
       return res.status(400).json({ success: false, error: { message: 'status is required' } });
     }
-    const updated = await orderService.updateOrderItemStatus(req.params.id, status as OrderStatus, staffUserId);
+    const effectiveStaffId = (req as any).user?.id || staffUserId;
+    const updated = await orderService.updateOrderItemStatus(req.params.id, status as OrderStatus, effectiveStaffId);
     return res.json({ success: true, item: updated });
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { message: err.message } });

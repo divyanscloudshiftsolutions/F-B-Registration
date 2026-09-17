@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Wine, Clock, AlertTriangle, CheckCircle2, ChefHat } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Wine, Clock, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { joinRoom, leaveRoom, onSocketEvent } from '../services/socket';
@@ -14,7 +14,7 @@ interface KdsItem {
   specialInstructions?: string | null;
   quantity: number;
   station: string;
-  status: 'PLACED' | 'ACCEPTED' | 'PREPARING' | 'READY' | 'SERVED';
+  status: 'PLACED' | 'ACCEPTED' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED';
   foodType?: string;
   createdAt: string;
 }
@@ -33,11 +33,31 @@ export const BarKDSPage: React.FC = () => {
   const { user, showToast } = useAuth();
   const userRoleLower = user?.role ? user.role.toLowerCase() : '';
   const canBump = ['bartender', 'admin', 'manager'].includes(userRoleLower);
+
   const [tickets, setTickets] = useState<KdsTicket[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
+  const [now, setNow] = useState<number>(Date.now());
 
-  const fetchTickets = async () => {
+  const isFetchingRef = useRef<boolean>(false);
+  const pendingFetchRef = useRef<boolean>(false);
+
+  // 1-second live ticker for accurate elapsed displays without polling the server
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const fetchTickets = async (silent: boolean = false) => {
+    if (isFetchingRef.current) {
+      pendingFetchRef.current = true;
+      return;
+    }
+    isFetchingRef.current = true;
+    if (!silent) setLoading(true);
+
     try {
       const res = await api.getKdsOrders('BAR');
       const ticketsList = Array.isArray(res) ? res : ((res as any)?.tickets || []);
@@ -45,8 +65,12 @@ export const BarKDSPage: React.FC = () => {
     } catch (err: any) {
       console.warn('Failed to load Bar KDS tickets:', err.message);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!silent) setLoading(false);
+      isFetchingRef.current = false;
+      if (pendingFetchRef.current) {
+        pendingFetchRef.current = false;
+        fetchTickets(true);
+      }
     }
   };
 
@@ -54,48 +78,86 @@ export const BarKDSPage: React.FC = () => {
     fetchTickets();
     joinRoom('kds:bar');
 
-    const unsubItemUpdated = onSocketEvent('order.item.updated', () => fetchTickets());
-    const unsubOrderCreated = onSocketEvent('order.created', () => fetchTickets());
-    const handleGlobalRefresh = () => fetchTickets();
+    const unsubItemUpdated = onSocketEvent('order.item.updated', (payload) => {
+      // Re-fetch tickets silently if event affects bar station or general orders
+      if (!payload?.station || payload.station === 'BAR') {
+        fetchTickets(true);
+      }
+    });
+
+    const unsubOrderCreated = onSocketEvent('order.created', (payload) => {
+      const hasBar = payload?.items?.some((i: any) => i.station === 'BAR');
+      if (!payload?.items || hasBar) {
+        fetchTickets(true);
+      }
+    });
+
+    const handleGlobalRefresh = () => fetchTickets(true);
     window.addEventListener('app:global-refresh', handleGlobalRefresh);
 
-    const interval = setInterval(fetchTickets, 5000);
+    // Visibility change handler: pause polling when backgrounded
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchTickets(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Fallback polling every 5 seconds (only when tab is visible)
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchTickets(true);
+      }
+    }, 5000);
+
     return () => {
       leaveRoom('kds:bar');
       unsubItemUpdated();
       unsubOrderCreated();
       window.removeEventListener('app:global-refresh', handleGlobalRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(interval);
     };
   }, []);
 
   const handleAdvanceStatus = async (orderItemId: string, nextStatus: string) => {
+    if (updatingIds.has(orderItemId)) return; // Prevent double-clicks
+
+    setUpdatingIds((prev) => new Set(prev).add(orderItemId));
     try {
       await api.updateOrderItemStatus(orderItemId, nextStatus, user?.id);
       showToast(`Drink status updated to ${nextStatus}`, 'success');
-      fetchTickets();
+      await fetchTickets(true);
     } catch (err: any) {
       showToast(err.message || 'Failed to update drink status', 'danger');
+    } finally {
+      setUpdatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(orderItemId);
+        return next;
+      });
     }
   };
 
   const getElapsedMin = (placedAt: string) => {
-    return Math.max(0, Math.floor((Date.now() - new Date(placedAt).getTime()) / 60000));
+    return Math.max(0, Math.floor((now - new Date(placedAt).getTime()) / 60000));
   };
 
   const formatElapsedMMSS = (placedAt: string) => {
-    const totalSecs = Math.max(0, Math.floor((Date.now() - new Date(placedAt).getTime()) / 1000));
+    const totalSecs = Math.max(0, Math.floor((now - new Date(placedAt).getTime()) / 1000));
     const mins = Math.floor(totalSecs / 60);
     const secs = totalSecs % 60;
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  // Flatten active BAR items for board columns
-  const activeItems = tickets.flatMap((t) =>
-    t.items
-      .filter((i) => i.station === 'BAR' && i.status !== 'SERVED')
-      .map((i) => ({ ticket: t, item: i }))
-  );
+  // Flatten active BAR items for board columns (excluding terminal SERVED and CANCELLED)
+  const activeItems = useMemo(() => {
+    return tickets.flatMap((t) =>
+      t.items
+        .filter((i) => i.station === 'BAR' && i.status !== 'SERVED' && (i.status as string) !== 'CANCELLED')
+        .map((i) => ({ ticket: t, item: i }))
+    );
+  }, [tickets]);
 
   const columns: { key: KdsItem['status']; label: string; actionLabel: string; nextStatus: string }[] = [
     { key: 'PLACED', label: 'New', actionLabel: 'Accept', nextStatus: 'ACCEPTED' },
@@ -142,6 +204,7 @@ export const BarKDSPage: React.FC = () => {
                 {list.map(({ ticket, item }) => {
                   const mins = getElapsedMin(ticket.placedAt);
                   const priority = mins >= 20 ? 'urgent' : mins >= 10 ? 'warn' : 'ok';
+                  const isUpdating = updatingIds.has(item.id);
 
                   return (
                     <div
@@ -195,11 +258,16 @@ export const BarKDSPage: React.FC = () => {
                         {canBump ? (
                           <button
                             type="button"
+                            disabled={isUpdating}
                             onClick={() => handleAdvanceStatus(item.id, col.nextStatus)}
-                            className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-extrabold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                            className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-extrabold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <CheckCircle2 size={14} />
-                            <span>{col.actionLabel}</span>
+                            {isUpdating ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <CheckCircle2 size={14} />
+                            )}
+                            <span>{isUpdating ? 'Updating...' : col.actionLabel}</span>
                           </button>
                         ) : (
                           <span className="text-[10px] text-zinc-600 dark:text-zinc-400 italic px-2.5 py-1 rounded-lg bg-zinc-100 border border-zinc-200 dark:bg-white/5 dark:border-white/10">

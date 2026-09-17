@@ -469,6 +469,30 @@ export class OrderService {
       throw new Error(`Invalid status transition from ${item.status} to ${status}`);
     }
 
+    if (staffUserId) {
+      const staffUser = await prisma.user.findUnique({
+        where: { id: staffUserId },
+        include: { role: true },
+      });
+
+      if (staffUser) {
+        const roleName = (staffUser.role?.name || '').toLowerCase();
+        if (roleName === 'chef') {
+          if (item.station !== Station.KITCHEN && item.station !== Station.DESSERT) {
+            throw new Error('Chef is only authorized to manage Kitchen and Dessert items');
+          }
+        } else if (roleName === 'bartender') {
+          if (item.station !== Station.BAR) {
+            throw new Error('Bartender is only authorized to manage Bar items');
+          }
+        } else if (['waiter', 'server'].includes(roleName)) {
+          if (status !== OrderStatus.SERVED || item.status !== OrderStatus.READY) {
+            throw new Error('Waiters and Servers are only authorized to mark Ready items as Served');
+          }
+        }
+      }
+    }
+
     const timestampData: any = { status };
     const now = new Date();
     if (status === OrderStatus.PREPARING && !item.preparedAt) {
@@ -494,32 +518,25 @@ export class OrderService {
     const allServed = activeItems.length > 0 && activeItems.every((i) => i.status === OrderStatus.SERVED);
     const allReady = activeItems.length > 0 && activeItems.every((i) => i.status === OrderStatus.READY || i.status === OrderStatus.SERVED);
 
-    if (allServed) {
-      await prisma.order.update({
-        where: { id: item.orderId },
-        data: { status: OrderStatus.SERVED },
-      });
-    } else if (allCancelled) {
-      await prisma.order.update({
-        where: { id: item.orderId },
-        data: { status: OrderStatus.CANCELLED },
-      });
+    let newOrderStatus = OrderStatus.PLACED;
+    if (allCancelled) {
+      newOrderStatus = OrderStatus.CANCELLED;
+    } else if (allServed) {
+      newOrderStatus = OrderStatus.SERVED;
     } else if (allReady) {
-      await prisma.order.update({
-        where: { id: item.orderId },
-        data: { status: OrderStatus.READY },
-      });
-    } else if (status === OrderStatus.PREPARING || activeItems.some((i) => i.status === OrderStatus.PREPARING)) {
-      await prisma.order.update({
-        where: { id: item.orderId },
-        data: { status: OrderStatus.PREPARING },
-      });
-    } else if (status === OrderStatus.ACCEPTED || activeItems.some((i) => i.status === OrderStatus.ACCEPTED)) {
-      await prisma.order.update({
-        where: { id: item.orderId },
-        data: { status: OrderStatus.ACCEPTED },
-      });
+      newOrderStatus = OrderStatus.READY;
+    } else if (activeItems.some((i) => i.status === OrderStatus.PREPARING || i.status === OrderStatus.READY || i.status === OrderStatus.SERVED)) {
+      newOrderStatus = OrderStatus.PREPARING;
+    } else if (activeItems.some((i) => i.status === OrderStatus.ACCEPTED)) {
+      newOrderStatus = OrderStatus.ACCEPTED;
+    } else {
+      newOrderStatus = OrderStatus.PLACED;
     }
+
+    await prisma.order.update({
+      where: { id: item.orderId },
+      data: { status: newOrderStatus },
+    });
 
     // Broadcast order.item.updated after successful DB commit
     try {

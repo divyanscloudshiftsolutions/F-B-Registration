@@ -7,9 +7,14 @@ export class KdsService {
    * Get active order tickets filtered for a specific station (KITCHEN or BAR)
    */
   async getStationOrders(station: Station) {
+    const isKitchen = station === Station.KITCHEN;
+    const stationFilter = isKitchen 
+      ? { in: [Station.KITCHEN, Station.DESSERT] } 
+      : Station.BAR;
+
     const activeItems = await prisma.orderItem.findMany({
       where: {
-        station: station === Station.KITCHEN ? { in: [Station.KITCHEN, Station.DESSERT] } : station,
+        station: stationFilter,
         status: {
           in: [OrderStatus.PLACED, OrderStatus.ACCEPTED, OrderStatus.PREPARING, OrderStatus.READY],
         },
@@ -30,25 +35,59 @@ export class KdsService {
       orderId: string;
       orderNumber: number;
       tableNumber: string;
-      placedAt: Date;
+      placedAt: string;
       notes: string | null;
       status: OrderStatus;
-      items: typeof activeItems;
+      items: Array<{
+        id: string;
+        orderId: string;
+        menuItemId: string;
+        itemName: string;
+        variantName: string | null;
+        selectedModifiers: any;
+        specialInstructions: string | null;
+        quantity: number;
+        station: Station;
+        status: OrderStatus;
+        foodType: any;
+        createdAt: string;
+        preparedAt: string | null;
+        readyAt: string | null;
+        servedAt: string | null;
+      }>;
     }>();
 
     for (const item of activeItems) {
       if (!ticketMap.has(item.orderId)) {
+        const placedDate = item.order.placedAt || item.order.createdAt;
         ticketMap.set(item.orderId, {
           orderId: item.orderId,
           orderNumber: item.order.orderNumber,
-          tableNumber: item.order.table?.tableNumber || 'Unknown',
-          placedAt: item.order.placedAt,
+          tableNumber: item.order.table?.tableNumber || 'Bar',
+          placedAt: placedDate ? placedDate.toISOString() : new Date().toISOString(),
           notes: item.order.notes,
           status: item.order.status,
           items: [],
         });
       }
-      ticketMap.get(item.orderId)!.items.push(item);
+
+      ticketMap.get(item.orderId)!.items.push({
+        id: item.id,
+        orderId: item.orderId,
+        menuItemId: item.menuItemId,
+        itemName: item.itemName,
+        variantName: item.variantName,
+        selectedModifiers: item.selectedModifiers,
+        specialInstructions: item.specialInstructions,
+        quantity: item.quantity,
+        station: item.station,
+        status: item.status,
+        foodType: item.foodType,
+        createdAt: item.createdAt.toISOString(),
+        preparedAt: item.preparedAt ? item.preparedAt.toISOString() : null,
+        readyAt: item.readyAt ? item.readyAt.toISOString() : null,
+        servedAt: item.servedAt ? item.servedAt.toISOString() : null,
+      });
     }
 
     return Array.from(ticketMap.values());
@@ -80,3 +119,4 @@ export class KdsService {
 }
 
 export const kdsService = new KdsService();
+
