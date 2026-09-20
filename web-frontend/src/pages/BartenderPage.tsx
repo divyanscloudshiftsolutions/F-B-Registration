@@ -5,6 +5,7 @@ import { ExtendSessionModal } from '../components/modals/ExtendSessionModal';
 import { CheckoutConfirmationModal } from '../components/modals/CheckoutConfirmationModal';
 import { QuickAttendanceWebPage } from './QuickAttendanceWebPage';
 import { BarKDSPage } from './BarKDSPage';
+import { BarStockTab } from '../components/bartender/BarStockTab';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import jsQR from 'jsqr';
@@ -742,6 +743,10 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
 
   if (activeTab === 'bartender/attendance') {
     return <QuickAttendanceWebPage />;
+  }
+
+  if (activeTab === 'bartender/stock' || activeTab === 'bar_stock') {
+    return <BarKDSPage initialSubTab="stock" />;
   }
 
   if (activeTab === 'bartender/kds' || activeTab === 'bartender' || activeTab === 'kds_bar') {

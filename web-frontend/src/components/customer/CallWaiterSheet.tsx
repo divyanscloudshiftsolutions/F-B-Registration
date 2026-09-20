@@ -151,7 +151,7 @@ export const CallWaiterSheet: React.FC<CallWaiterSheetProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md md:max-w-lg rounded-t-2xl sm:rounded-2xl bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col"
+        className="w-full max-w-md md:max-w-lg rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#18181B] border border-primary/20 dark:border-white/10 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col"
       >
         {/* Header */}
         <div className="p-4 border-b border-border/80 dark:border-white/10 flex items-center justify-between">

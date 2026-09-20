@@ -132,26 +132,47 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
             </div>
             <div className="space-y-1 text-[11px] text-text-muted border-t border-border-main pt-1.5">
               <div className="flex justify-between">
-                <span>Gross Subtotal:</span>
-                <span className="font-semibold text-text-main">₹{billData.grossSubtotal}</span>
+                <span>Subtotal:</span>
+                <span className="font-semibold text-text-main">₹{Number(billData.grossSubtotal || billData.subtotal || 0).toFixed(2)}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Service Charge (5%):</span>
-                <span>₹{billData.serviceChargeTotal}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>GST (5%):</span>
-                <span>₹{billData.taxTotal}</span>
-              </div>
-              {Number(billData.redemptionDeduction) > 0 && (
-                <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
-                  <span>Prepaid Check-in Credit:</span>
-                  <span>-₹{billData.redemptionDeduction}</span>
+              {(() => {
+                const subtotal = Number(billData.grossSubtotal || billData.subtotal || 0);
+                const checkInAmountPaid = Number(billData.amountPaid || billData.confirmedCheckInAmount || billData.entryFeePaid || 0);
+                const checkInPayment = Number(billData.redemptionDeduction || billData.prepaidCreditApplied || (checkInAmountPaid > 0 ? Math.min(checkInAmountPaid, subtotal) : 0));
+                const balanceBeforeCharges = Math.max(0, subtotal - checkInPayment);
+
+                return checkInAmountPaid > 0 ? (
+                  <>
+                    <div className="flex justify-between">
+                      <span>Check-in Amount Paid:</span>
+                      <span className="font-semibold text-text-main">₹{checkInAmountPaid.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
+                      <span>Less Check-in Payment:</span>
+                      <span>-₹{checkInPayment.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-text-main font-semibold">
+                      <span>Balance Before Charges:</span>
+                      <span>₹{balanceBeforeCharges.toFixed(2)}</span>
+                    </div>
+                  </>
+                ) : null;
+              })()}
+              {Number(billData.serviceChargeTotal || 0) > 0 && (
+                <div className="flex justify-between">
+                  <span>Service Charge (5%):</span>
+                  <span>₹{Number(billData.serviceChargeTotal).toFixed(2)}</span>
+                </div>
+              )}
+              {Number(billData.taxTotal || 0) > 0 && (
+                <div className="flex justify-between">
+                  <span>GST (5%):</span>
+                  <span>₹{Number(billData.taxTotal).toFixed(2)}</span>
                 </div>
               )}
               <div className="flex justify-between text-sm font-bold text-text-main border-t border-border-main pt-1.5 text-purple-600 dark:text-purple-400">
-                <span>Amount to Collect:</span>
-                <span>₹{billData.remainingPayable}</span>
+                <span>Final Amount Payable:</span>
+                <span>₹{Number(billData.remainingPayable ?? billData.grandTotal ?? 0).toFixed(2)}</span>
               </div>
             </div>
 

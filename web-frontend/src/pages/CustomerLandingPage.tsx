@@ -34,8 +34,9 @@ export const CustomerLandingPage: React.FC = () => {
       return;
     }
 
-    const x = e.clientX;
-    const y = e.clientY;
+    const rect = (e.currentTarget as HTMLElement)?.getBoundingClientRect?.();
+    const x = e.clientX && e.clientX > 0 ? e.clientX : (rect ? rect.left + rect.width / 2 : window.innerWidth / 2);
+    const y = e.clientY && e.clientY > 0 ? e.clientY : (rect ? rect.top + rect.height / 2 : window.innerHeight / 2);
 
     const right = window.innerWidth - x;
     const bottom = window.innerHeight - y;
@@ -54,8 +55,8 @@ export const CustomerLandingPage: React.FC = () => {
           ],
         },
         {
-          duration: 500,
-          easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+          duration: 450,
+          easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
           pseudoElement: '::view-transition-new(root)',
         }
       );

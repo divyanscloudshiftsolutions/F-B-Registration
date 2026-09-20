@@ -35,42 +35,43 @@ export const LoginPage: React.FC = () => {
     }
   };
 
- const toggleThemeWithWave = (e: React.MouseEvent<HTMLButtonElement>) => {
- if (
- !(document as any).startViewTransition ||
- window.matchMedia('(prefers-reduced-motion: reduce)').matches
- ) {
- toggleTheme();
- return;
- }
+  const toggleThemeWithWave = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (
+      !(document as any).startViewTransition ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      toggleTheme();
+      return;
+    }
 
- const x = e.clientX;
- const y = e.clientY;
+    const rect = (e.currentTarget as HTMLElement)?.getBoundingClientRect?.();
+    const x = e.clientX && e.clientX > 0 ? e.clientX : (rect ? rect.left + rect.width / 2 : window.innerWidth / 2);
+    const y = e.clientY && e.clientY > 0 ? e.clientY : (rect ? rect.top + rect.height / 2 : window.innerHeight / 2);
 
- const right = window.innerWidth - x;
- const bottom = window.innerHeight - y;
- const maxRadius = Math.hypot(Math.max(x, right), Math.max(y, bottom));
+    const right = window.innerWidth - x;
+    const bottom = window.innerHeight - y;
+    const maxRadius = Math.hypot(Math.max(x, right), Math.max(y, bottom));
 
- const transition = (document as any).startViewTransition(() => {
- toggleTheme();
- });
+    const transition = (document as any).startViewTransition(() => {
+      toggleTheme();
+    });
 
- transition.ready.then(() => {
- document.documentElement.animate(
- {
- clipPath: [
- `circle(0px at ${x}px ${y}px)`,
- `circle(${maxRadius}px at ${x}px ${y}px)`
- ]
- },
- {
- duration: 800,
- easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
- pseudoElement: '::view-transition-new(root)'
- }
- );
- });
- };
+    transition.ready.then(() => {
+      document.documentElement.animate(
+        {
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${maxRadius}px at ${x}px ${y}px)`,
+          ],
+        },
+        {
+          duration: 450,
+          easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+          pseudoElement: '::view-transition-new(root)',
+        }
+      );
+    });
+  };
 
  const handleSubmit = async (e: React.FormEvent) => {
  e.preventDefault();

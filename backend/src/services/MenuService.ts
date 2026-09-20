@@ -866,7 +866,7 @@ export class MenuService {
     this.notifyMenuUpdated({
       action: 'item_availability',
       itemId,
-      details: { isAvailable },
+      details: { isAvailable, station: item.station, name: item.name },
     });
 
     return updated;

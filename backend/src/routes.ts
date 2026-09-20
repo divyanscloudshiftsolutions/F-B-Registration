@@ -175,7 +175,9 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
 
 export const authorize = (allowedRoles: string[]) => {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    if (!req.user || !allowedRoles.includes(req.user.role)) {
+    const userRole = (req.user?.role || '').toLowerCase();
+    const normalizedAllowed = allowedRoles.map(r => r.toLowerCase());
+    if (!req.user || !normalizedAllowed.includes(userRole)) {
       return res.status(403).json({ success: false, error: { code: 'AUTH_004', message: 'Access denied: insufficient permissions' } });
     }
     next();
@@ -1662,15 +1664,6 @@ router.post('/tables/assign', authenticate, authorize(['receptionist', 'admin'])
       where: { id: tokenId },
       include: { customer: true }
     });
-    if (token && token.paymentVerified && token.status === TokenStatus.ACTIVE && token.deliveryMode === 'EMAIL_QR' && !token.emailSent && token.emailDeliveryStatus !== 'PENDING') {
-      await prisma.token.update({
-        where: { id: tokenId },
-        data: {
-          emailDeliveryStatus: 'PENDING'
-        }
-      });
-      emailNotificationService.enqueueEmailJob(token.customer.email!, token.tokenNumber, token.customer.name);
-    }
     await redisService.del('tables:all').catch(() => {});
     await redisService.del('tokens:active').catch(() => {});
 
@@ -3316,18 +3309,6 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
       // Sync Redis cache
       await redisService.setex(`token:${tokenNumber}`, 86400, JSON.stringify(updatedToken));
 
-      if (updatedToken.deliveryMode === 'EMAIL_QR' && updatedToken.customer?.email) {
-        await prisma.token.update({
-          where: { id: updatedToken.id },
-          data: { emailDeliveryStatus: 'PENDING' }
-        }).catch(() => {});
-        emailNotificationService.enqueueEmailJob(
-          updatedToken.customer.email.trim().toLowerCase(),
-          updatedToken.tokenNumber,
-          updatedToken.customer.name
-        );
-      }
-
       const responseData = {
         id: updatedToken.id,
         tokenNumber: updatedToken.tokenNumber,
@@ -3584,21 +3565,6 @@ const activateSessionHandler = async (req: AuthenticatedRequest, res: Response) 
       cardUid: null,
       createdAt: updatedToken.issuedAt.toISOString(),
     };
-
-    if (updatedToken.deliveryMode === 'EMAIL_QR' && updatedToken.customer.email && !updatedToken.emailSent && updatedToken.emailDeliveryStatus !== 'PENDING') {
-      await prisma.token.update({
-        where: { id: updatedToken.id },
-        data: {
-          emailDeliveryStatus: 'PENDING'
-        }
-      }).catch(() => {});
-
-      emailNotificationService.enqueueEmailJob(
-        updatedToken.customer.email.trim().toLowerCase(),
-        updatedToken.tokenNumber,
-        updatedToken.customer.name
-      );
-    }
 
     try {
       const staffName = (req as any).user?.fullName || (req as any).user?.username || 'Staff';
@@ -4847,7 +4813,7 @@ router.get('/admin/sessions', authenticate, authorize(['admin', 'manager']), asy
           in: ['TOKEN_EXTENSION', 'TOKEN_CLOSE']
         }
       }
-    });
+    }).catch(() => []);
 
     // Build maps indexed by tokenId for easy O(1) lookup to avoid N+1 queries
     const extensionsByTokenId: Record<string, any[]> = {};
@@ -4875,58 +4841,72 @@ router.get('/admin/sessions', authenticate, authorize(['admin', 'manager']), asy
       const tokenExtensions = extensionsByTokenId[t.id] || [];
       const tokenClosure = closuresByTokenId[t.id] || null;
 
+      const customerPhone = t.customer?.phoneNumber || (t as any).phoneNumber || '';
+      const customerName = t.customer?.name || (t as any).customerName || 'Walk-in Guest';
+      const customerEmail = t.customer?.email || (t as any).email || '';
+      const placeTypeName = t.placeType?.name || (t as any).placeType || 'Standing Bar';
+
       return {
         id: t.id,
         tokenNumber: t.tokenNumber,
-        phoneNumber: t.customer.phoneNumber,
-        customerName: t.customer.name,
-        email: t.customer.email,
-        persons: t.personsCount,
-        placeType: t.placeType.name,
-        placeTypeId: t.placeTypeId,
-        tableId: t.tableId,
-        tableNumber: t.table?.tableNumber || null,
-        amountPaid: parseFloat(t.amountPaid.toString()),
-        paymentVerified: t.paymentVerified,
-        startTime: t.startTime.toISOString(),
-        endTime: t.endTime.toISOString(),
-        redemptionLimit: t.totalRedemptionsAllowed,
-        redemptionCount: t.redemptionsUsed,
-        status: t.status.toLowerCase(),
+        phoneNumber: customerPhone,
+        customerName: customerName,
+        email: customerEmail,
+        persons: t.personsCount || 1,
+        personsCount: t.personsCount || 1,
+        placeType: placeTypeName,
+        placeTypeId: t.placeTypeId || '',
+        tableId: t.tableId || null,
+        tableNumber: t.table?.tableNumber || (t as any).tableNumber || null,
+        amountPaid: t.amountPaid !== undefined && t.amountPaid !== null ? parseFloat(t.amountPaid.toString()) : 0,
+        paymentVerified: Boolean(t.paymentVerified),
+        startTime: t.startTime ? t.startTime.toISOString() : (t.issuedAt ? t.issuedAt.toISOString() : new Date().toISOString()),
+        endTime: t.endTime ? t.endTime.toISOString() : new Date().toISOString(),
+        redemptionLimit: t.totalRedemptionsAllowed || 0,
+        redemptionCount: t.redemptionsUsed || 0,
+        status: (t.status || 'ACTIVE').toLowerCase(),
         cardUid: null,
-        createdAt: t.issuedAt.toISOString(),
-        deliveryMode: t.deliveryMode,
+        createdAt: t.issuedAt ? t.issuedAt.toISOString() : (t.createdAt ? t.createdAt.toISOString() : new Date().toISOString()),
+        deliveryMode: t.deliveryMode || 'EMAIL_QR',
+        customer: {
+          id: t.customerId || '',
+          name: customerName,
+          phoneNumber: customerPhone,
+          email: customerEmail,
+          totalVisits: t.customer?.totalVisits || 1,
+          lastVisit: t.customer?.lastVisit ? t.customer.lastVisit.toISOString() : null
+        },
         table: t.table ? {
           id: t.table.id,
           number: t.table.tableNumber,
-          placeType: t.placeType.name,
-          status: t.table.status.toUpperCase(),
+          placeType: placeTypeName,
+          status: (t.table.status || 'AVAILABLE').toUpperCase(),
         } : null,
         // Enhanced audit trail & history parameters
-        createdBy: t.creator?.fullName || t.issuedBy,
-        closedBy: t.closer?.fullName || t.closedBy || null,
+        createdBy: t.creator?.fullName || t.creator?.username || t.issuedBy || 'Staff',
+        closedBy: t.closer?.fullName || t.closer?.username || t.closedBy || null,
         closedAt: t.closedAt ? t.closedAt.toISOString() : null,
         closeReason: t.closeReason || null,
         cancelledAt: t.cancelledAt ? t.cancelledAt.toISOString() : null,
         cancelledBy: t.cancelledBy || null,
         cancelReason: t.cancelReason || null,
-        customerId: t.customerId,
-        customerVisits: t.customer.totalVisits,
-        lastVisit: t.customer.lastVisit ? t.customer.lastVisit.toISOString() : null,
-        extensions: tokenExtensions.length > 0 ? tokenExtensions : t.extensions.map((ext: any) => ({
+        customerId: t.customerId || '',
+        customerVisits: t.customer?.totalVisits || 1,
+        lastVisit: t.customer?.lastVisit ? t.customer.lastVisit.toISOString() : null,
+        extensions: tokenExtensions.length > 0 ? tokenExtensions : (t.extensions || []).map((ext: any) => ({
           id: ext.id,
-          extraMinutes: ext.extraMinutes,
-          additionalAmount: parseFloat(ext.additionalAmount.toString()),
-          approvedBy: ext.approver?.fullName || ext.approvedBy,
-          extendedAt: ext.extendedAt.toISOString(),
-          newEndTime: ext.newEndTime.toISOString(),
+          extraMinutes: ext.extraMinutes || 0,
+          additionalAmount: ext.additionalAmount !== undefined && ext.additionalAmount !== null ? parseFloat(ext.additionalAmount.toString()) : 0,
+          approvedBy: ext.approver?.fullName || ext.approver?.username || ext.approvedBy || 'Staff',
+          extendedAt: ext.extendedAt ? ext.extendedAt.toISOString() : new Date().toISOString(),
+          newEndTime: ext.newEndTime ? ext.newEndTime.toISOString() : new Date().toISOString(),
           paymentMethod: 'CASH'
         })),
-        redemptions: t.redemptions.map((red: any) => ({
+        redemptions: (t.redemptions || []).map((red: any) => ({
           id: red.id,
-          redemptionSequence: red.redemptionSequence,
-          redeemedAt: red.redeemedAt.toISOString(),
-          bartenderName: red.bartender?.fullName || red.bartenderId,
+          redemptionSequence: red.redemptionSequence || 1,
+          redeemedAt: red.redeemedAt ? red.redeemedAt.toISOString() : new Date().toISOString(),
+          bartenderName: red.bartender?.fullName || red.bartender?.username || red.bartenderId || 'Bartender',
           notes: red.notes || null
         })),
         closure: tokenClosure
@@ -4935,7 +4915,67 @@ router.get('/admin/sessions', authenticate, authorize(['admin', 'manager']), asy
 
     return res.json(mapped);
   } catch (err: any) {
+    console.error('Error fetching admin sessions:', err);
     return res.status(500).json({ success: false, error: { code: 'SERVER_ERR', message: err.message } });
+  }
+});
+
+// GET /api/admin/customers (Admin/Manager Customer Directory)
+router.get('/admin/customers', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
+  try {
+    const customers = await prisma.customer.findMany({
+      where: {
+        email: {
+          endsWith: '@gmail.com',
+          mode: 'insensitive'
+        }
+      },
+      include: {
+        tokens: {
+          include: {
+            table: true,
+            placeType: true
+          },
+          orderBy: { issuedAt: 'desc' }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const mapped = customers.map(c => {
+      const activeToken = c.tokens.find(t => t.status === 'ACTIVE' || t.status === 'EXTENDED');
+      const latestToken = c.tokens[0] || null;
+      return {
+        id: c.id,
+        name: c.name,
+        phoneNumber: c.phoneNumber,
+        email: c.email || '',
+        totalVisits: c.totalVisits || c.tokens.filter(t => t.paymentVerified).length || 1,
+        lastVisit: c.lastVisit ? c.lastVisit.toISOString() : (latestToken ? latestToken.issuedAt.toISOString() : c.createdAt.toISOString()),
+        createdAt: c.createdAt.toISOString(),
+        activeToken: activeToken ? {
+          id: activeToken.id,
+          tokenNumber: activeToken.tokenNumber,
+          tableNumber: activeToken.table?.tableNumber || null,
+          status: activeToken.status,
+          personsCount: activeToken.personsCount
+        } : null,
+        totalSessions: c.tokens.length,
+        tokens: c.tokens.map(t => ({
+          id: t.id,
+          tokenNumber: t.tokenNumber,
+          tableNumber: t.table?.tableNumber || null,
+          status: t.status,
+          amountPaid: parseFloat(t.amountPaid.toString()),
+          issuedAt: t.issuedAt.toISOString()
+        }))
+      };
+    });
+
+    return res.json({ success: true, customers: mapped, data: mapped });
+  } catch (err: any) {
+    console.error('Error fetching admin customers:', err);
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -5489,12 +5529,86 @@ router.post('/customers', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/customers/suggestions (Prefix live suggestion for confirmed customers)
+router.get('/customers/suggestions', authenticate, async (req: Request, res: Response) => {
+  const query = (req.query.query || req.query.q || '').toString().trim();
+  const digitsOnly = query.replace(/[^\d]/g, '');
+
+  if (!digitsOnly || digitsOnly.length < 2) {
+    return res.json({ success: true, customers: [] });
+  }
+
+  let cleanPrefix = digitsOnly;
+  if (cleanPrefix.startsWith('91') && cleanPrefix.length > 2) {
+    cleanPrefix = cleanPrefix.substring(2);
+  }
+
+  const prefixVariants = [
+    `+91${cleanPrefix}`,
+    cleanPrefix
+  ];
+
+  try {
+    const customers = await prisma.customer.findMany({
+      where: {
+        OR: prefixVariants.map(p => ({
+          phoneNumber: { startsWith: p }
+        })),
+        email: {
+          endsWith: '@gmail.com',
+          mode: 'insensitive'
+        },
+        tokens: {
+          some: {
+            paymentVerified: true,
+            status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED, TokenStatus.EXPIRED, TokenStatus.CLOSED] }
+          }
+        }
+      },
+      select: {
+        id: true,
+        phoneNumber: true,
+        name: true,
+        email: true
+      },
+      orderBy: {
+        phoneNumber: 'asc'
+      },
+      take: 3
+    });
+
+    const formatted = customers.map(c => {
+      const raw = c.phoneNumber.startsWith('+91') ? c.phoneNumber.substring(3) : c.phoneNumber;
+      return {
+        id: c.id,
+        phoneNumber: raw,
+        displayPhone: c.phoneNumber,
+        name: c.name,
+        email: c.email || ''
+      };
+    });
+
+    return res.json({ success: true, customers: formatted });
+  } catch (err: any) {
+    console.error('Error fetching customer suggestions:', err);
+    return res.status(500).json({ success: false, error: err.message, customers: [] });
+  }
+});
+
 router.get('/customers/:phoneNumber', authenticate, async (req: Request, res: Response) => {
   const { phoneNumber } = req.params;
-  const searchPhone = phoneNumber.startsWith('+91') ? phoneNumber : `+91${phoneNumber}`;
+  const normalizedPhone = normalizePhone(phoneNumber);
+  const rawPhone = normalizedPhone.startsWith('+91') ? normalizedPhone.substring(3) : normalizedPhone;
+  const phoneVariants = [normalizedPhone, rawPhone, `+91${rawPhone}`].filter(Boolean);
   try {
-    const customer = await prisma.customer.findUnique({
-      where: { phoneNumber: searchPhone },
+    const customer = await prisma.customer.findFirst({
+      where: {
+        phoneNumber: { in: phoneVariants },
+        email: {
+          endsWith: '@gmail.com',
+          mode: 'insensitive'
+        }
+      },
       include: {
         tokens: {
           where: {
@@ -5604,13 +5718,14 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
         tokenNumber: token.tokenNumber,
         customerName: token.customer.name,
         tableNumber: token.table?.tableNumber || null,
-        placeType: token.placeType.name,
+        amountPaid: Number(token.amountPaid || 0),
         bill: bill ? {
           billNumber: bill.billNumber,
           foodSubtotal: Number(bill.foodSubtotal),
           drinkSubtotal: Number(bill.drinkSubtotal),
           merchandiseSubtotal: Number(bill.merchandiseSubtotal),
           subtotal: Number(bill.subtotal),
+          grossSubtotal: Number(bill.subtotal),
           discountTotal: Number(bill.discountTotal),
           serviceChargeTotal: Number(bill.serviceChargeTotal),
           taxTotal: Number(bill.taxTotal),
@@ -5619,6 +5734,11 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
           paymentMethod: bill.paymentMethod,
           paidAt: bill.paidAt,
           status: bill.status,
+          amountPaid: Number(token.amountPaid || 0),
+          entryFeePaid: Number(token.amountPaid || 0),
+          confirmedCheckInAmount: Number(token.amountPaid || 0),
+          prepaidCreditApplied: Number(token.amountPaid || 0),
+          redemptionDeduction: Number(token.amountPaid || 0),
           orders: bill.orders.map(o => ({
             orderNumber: o.orderNumber,
             items: o.items.map(it => ({
@@ -6893,13 +7013,32 @@ router.delete('/menu/items/:id', authenticate, authorize(['admin', 'manager']), 
   }
 });
 
-// PUT /api/menu/items/:id/availability (86 operational toggle)
-router.put('/menu/items/:id/availability', authenticate, authorize(['admin', 'manager', 'bartender']), async (req: AuthenticatedRequest, res: Response) => {
+// PUT /api/menu/items/:id/availability (86 operational toggle / stock in & out)
+router.put('/menu/items/:id/availability', authenticate, authorize(['admin', 'manager', 'bartender', 'chef']), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { isAvailable } = req.body;
     if (typeof isAvailable !== 'boolean') {
       return res.status(400).json({ success: false, error: { message: 'isAvailable must be a boolean' } });
     }
+
+    const item = await prisma.menuItem.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, name: true, station: true, isArchived: true }
+    });
+
+    if (!item || item.isArchived) {
+      return res.status(404).json({ success: false, error: { message: 'Menu item not found or has been archived' } });
+    }
+
+    const userRole = (req.user?.role || '').toLowerCase();
+    if (userRole === 'bartender' && item.station !== Station.BAR) {
+      return res.status(403).json({ success: false, error: { message: 'Bartenders can only control availability for Bar station items' } });
+    }
+
+    if (userRole === 'chef' && item.station !== Station.KITCHEN && item.station !== Station.DESSERT) {
+      return res.status(403).json({ success: false, error: { message: 'Kitchen Chefs can only control availability for Kitchen and Dessert station items' } });
+    }
+
     const updated = await menuService.setItemAvailability(req.params.id, isAvailable);
     return res.json({ success: true, item: updated });
   } catch (err: any) {
@@ -7035,11 +7174,13 @@ router.get('/orders/active', async (req: Request, res: Response) => {
   try {
     let tokenNumber = (req.query.tokenNumber as string) || (req.query.tokenId as string);
     const tableId = req.query.tableId as string;
+    const tableNumber = req.query.tableNumber as string;
 
-    if (!tokenNumber && tableId) {
+    if (!tokenNumber && (tableId || tableNumber)) {
       const activeToken = await prisma.token.findFirst({
         where: {
-          tableId,
+          ...(tableId ? { tableId } : {}),
+          ...(tableNumber ? { table: { tableNumber } } : {}),
           status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] },
         },
         orderBy: { issuedAt: 'desc' },
@@ -7049,10 +7190,10 @@ router.get('/orders/active', async (req: Request, res: Response) => {
       }
     }
 
-    if (!tokenNumber) {
-      return res.status(400).json({ success: false, error: { message: 'tokenNumber, tokenId, or tableId is required' } });
+    if (!tokenNumber && !tableId && !tableNumber) {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber, tokenId, tableId, or tableNumber is required' } });
     }
-    const orders = await orderService.getOrdersForToken(tokenNumber, tableId);
+    const orders = await orderService.getOrdersForToken(tokenNumber, tableId, tableNumber);
     return res.json({ success: true, orders });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: { message: err.message } });

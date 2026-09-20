@@ -161,19 +161,22 @@ export class TokenService {
             phoneNumber: finalPhoneNumber,
             name: request.customerName,
             email: finalEmail || null,
-            totalVisits: 1
+            totalVisits: request.paymentVerified ? 1 : 0,
+            lastVisit: request.paymentVerified ? new Date() : null
           }
         });
       } else {
-        customer = await tx.customer.update({
-          where: { id: customer.id },
-          data: {
-            totalVisits: { increment: 1 },
-            lastVisit: new Date(),
-            name: request.customerName,
-            email: finalEmail || customer.email
-          }
-        });
+        if (request.paymentVerified) {
+          customer = await tx.customer.update({
+            where: { id: customer.id },
+            data: {
+              totalVisits: { increment: 1 },
+              lastVisit: new Date(),
+              name: request.customerName,
+              email: finalEmail || customer.email
+            }
+          });
+        }
       }
 
       // Get place type

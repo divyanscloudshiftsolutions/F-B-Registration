@@ -323,13 +323,12 @@ export function broadcastOrderItemUpdated(payload: OrderItemUpdatedPayload) {
     io.to('kds:bar').emit(SOCKET_EVENTS.ORDER_ITEM_UPDATED, payload);
   }
 
-  // 3. If item reached READY or SERVED, notify Waiter Ready Queue
-  if (payload.status === 'READY' || payload.status === 'SERVED') {
-    io.to('staff:ready').emit(SOCKET_EVENTS.ORDER_ITEM_UPDATED, payload);
-  }
+  // 3. Notify Waiter Ready Queue on any item status update (ready, served, preparing, placed, etc.)
+  io.to('staff:ready').emit(SOCKET_EVENTS.ORDER_ITEM_UPDATED, payload);
 
-  // 4. Emit to general staff orders
+  // 4. Emit to general staff orders and all staff
   io.to('staff:orders').emit(SOCKET_EVENTS.ORDER_ITEM_UPDATED, payload);
+  io.to('staff:all').emit(SOCKET_EVENTS.ORDER_ITEM_UPDATED, payload);
 }
 
 export function broadcastServiceRequestCreated(payload: ServiceRequestCreatedPayload) {

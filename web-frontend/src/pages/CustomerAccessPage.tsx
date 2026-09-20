@@ -107,8 +107,9 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
       return;
     }
 
-    const x = e.clientX;
-    const y = e.clientY;
+    const rect = (e.currentTarget as HTMLElement)?.getBoundingClientRect?.();
+    const x = e.clientX && e.clientX > 0 ? e.clientX : (rect ? rect.left + rect.width / 2 : window.innerWidth / 2);
+    const y = e.clientY && e.clientY > 0 ? e.clientY : (rect ? rect.top + rect.height / 2 : window.innerHeight / 2);
 
     const right = window.innerWidth - x;
     const bottom = window.innerHeight - y;
@@ -127,8 +128,8 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
           ],
         },
         {
-          duration: 500,
-          easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+          duration: 450,
+          easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
           pseudoElement: '::view-transition-new(root)',
         }
       );
@@ -642,36 +643,75 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
               )}
 
               {/* Financial Totals */}
-              <div className="space-y-1.5 text-xs text-text-muted pt-1">
-                {bill?.subtotal !== undefined && (
-                  <div className="flex justify-between">
-                    <span>Subtotal:</span>
-                    <span className="font-mono text-text-main dark:text-white">₹{bill.subtotal.toFixed(2)}</span>
+              {(() => {
+                const subtotal = Number(bill?.grossSubtotal ?? bill?.subtotal ?? 0);
+                const checkInAmountPaid = Number(
+                  bill?.amountPaid ??
+                  bill?.confirmedCheckInAmount ??
+                  bill?.entryFeePaid ??
+                  sessionData?.amountPaid ??
+                  sessionData?.session?.amountPaid ??
+                  0
+                );
+                const checkInPayment = Number(
+                  bill?.prepaidCreditApplied ??
+                  bill?.redemptionDeduction ??
+                  (checkInAmountPaid > 0 ? Math.min(checkInAmountPaid, subtotal) : 0)
+                );
+                const balanceBeforeCharges = Math.max(0, subtotal - checkInPayment);
+                const serviceCharge = Number(bill?.serviceChargeTotal ?? bill?.serviceCharge ?? 0);
+                const taxTotal = Number(bill?.taxTotal ?? bill?.gst ?? 0);
+                const grandTotal = Number(bill?.grandTotal ?? 0);
+
+                return (
+                  <div className="space-y-1.5 text-xs text-text-muted pt-1">
+                    {bill?.subtotal !== undefined && (
+                      <div className="flex justify-between">
+                        <span>Subtotal:</span>
+                        <span className="font-mono text-text-main dark:text-white">₹{subtotal.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {checkInAmountPaid > 0 && (
+                      <>
+                        <div className="flex justify-between">
+                          <span>Check-in Amount Paid:</span>
+                          <span className="font-mono text-text-main dark:text-white">₹{checkInAmountPaid.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                          <span>Less Check-in Payment:</span>
+                          <span className="font-mono">-₹{checkInPayment.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-text-main dark:text-white font-semibold">
+                          <span>Balance Before Charges:</span>
+                          <span className="font-mono">₹{balanceBeforeCharges.toFixed(2)}</span>
+                        </div>
+                      </>
+                    )}
+                    {serviceCharge > 0 && (
+                      <div className="flex justify-between">
+                        <span>Service Charge (5%):</span>
+                        <span className="font-mono text-text-main dark:text-white">₹{serviceCharge.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {taxTotal > 0 && (
+                      <div className="flex justify-between">
+                        <span>GST (5%):</span>
+                        <span className="font-mono text-text-main dark:text-white">₹{taxTotal.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="border-t border-border-main dark:border-white/10 pt-2 flex justify-between text-sm font-black text-text-main dark:text-white">
+                      <span>Final Amount Payable:</span>
+                      <span className="font-mono text-emerald-600 dark:text-emerald-400">
+                        ₹{grandTotal.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-emerald-600 dark:text-emerald-400 font-bold pt-1">
+                      <span>Payment Status:</span>
+                      <span>PAID {bill?.paymentMethod ? `via ${bill.paymentMethod}` : ''}</span>
+                    </div>
                   </div>
-                )}
-                {bill?.serviceChargeTotal !== undefined && (
-                  <div className="flex justify-between">
-                    <span>Service Charge (5%):</span>
-                    <span className="font-mono text-text-main dark:text-white">₹{bill.serviceChargeTotal.toFixed(2)}</span>
-                  </div>
-                )}
-                {bill?.taxTotal !== undefined && (
-                  <div className="flex justify-between">
-                    <span>GST (5%):</span>
-                    <span className="font-mono text-text-main dark:text-white">₹{bill.taxTotal.toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="border-t border-border-main dark:border-white/10 pt-2 flex justify-between text-sm font-black text-text-main dark:text-white">
-                  <span>Final Grand Total:</span>
-                  <span className="font-mono text-emerald-600 dark:text-emerald-400">
-                    ₹{bill?.grandTotal !== undefined ? bill.grandTotal.toFixed(2) : '0.00'}
-                  </span>
-                </div>
-                <div className="flex justify-between text-[11px] text-emerald-600 dark:text-emerald-400 font-bold pt-1">
-                  <span>Status:</span>
-                  <span>PAID {bill?.paymentMethod ? `via ${bill.paymentMethod}` : ''}</span>
-                </div>
-              </div>
+                );
+              })()}
             </div>
 
             <div className="text-center text-[11px] text-text-muted mb-4 font-medium">
@@ -745,44 +785,83 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
                   </div>
                 </div>
 
-                <div className="col-span-5 space-y-2 text-xs text-text-muted flex flex-col justify-between">
-                  <div>
-                    <div className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2.5">
-                      Payment Breakdown
-                    </div>
-                    {bill?.subtotal !== undefined && (
-                      <div className="flex justify-between py-0.5">
-                        <span>Subtotal:</span>
-                        <span className="font-mono text-text-main dark:text-white">₹{bill.subtotal.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {bill?.serviceChargeTotal !== undefined && (
-                      <div className="flex justify-between py-0.5">
-                        <span>Service Charge (5%):</span>
-                        <span className="font-mono text-text-main dark:text-white">₹{bill.serviceChargeTotal.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {bill?.taxTotal !== undefined && (
-                      <div className="flex justify-between py-0.5">
-                        <span>GST (5%):</span>
-                        <span className="font-mono text-text-main dark:text-white">₹{bill.taxTotal.toFixed(2)}</span>
-                      </div>
-                    )}
-                  </div>
+                {(() => {
+                  const subtotal = Number(bill?.grossSubtotal ?? bill?.subtotal ?? 0);
+                  const checkInAmountPaid = Number(
+                    bill?.amountPaid ??
+                    bill?.confirmedCheckInAmount ??
+                    bill?.entryFeePaid ??
+                    sessionData?.amountPaid ??
+                    sessionData?.session?.amountPaid ??
+                    0
+                  );
+                  const checkInPayment = Number(
+                    bill?.prepaidCreditApplied ??
+                    bill?.redemptionDeduction ??
+                    (checkInAmountPaid > 0 ? Math.min(checkInAmountPaid, subtotal) : 0)
+                  );
+                  const balanceBeforeCharges = Math.max(0, subtotal - checkInPayment);
+                  const serviceCharge = Number(bill?.serviceChargeTotal ?? bill?.serviceCharge ?? 0);
+                  const taxTotal = Number(bill?.taxTotal ?? bill?.gst ?? 0);
+                  const grandTotal = Number(bill?.grandTotal ?? 0);
 
-                  <div className="border-t border-border-main dark:border-white/10 pt-3">
-                    <div className="flex justify-between text-sm font-black text-text-main dark:text-white">
-                      <span>Grand Total:</span>
-                      <span className="font-mono text-emerald-600 dark:text-emerald-400">
-                        ₹{bill?.grandTotal !== undefined ? bill.grandTotal.toFixed(2) : '0.00'}
-                      </span>
+                  return (
+                    <div className="col-span-5 space-y-2 text-xs text-text-muted flex flex-col justify-between">
+                      <div>
+                        <div className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2.5">
+                          Financial Summary
+                        </div>
+                        {bill?.subtotal !== undefined && (
+                          <div className="flex justify-between py-0.5">
+                            <span>Subtotal:</span>
+                            <span className="font-mono text-text-main dark:text-white">₹{subtotal.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {checkInAmountPaid > 0 && (
+                          <>
+                            <div className="flex justify-between py-0.5">
+                              <span>Check-in Amount Paid:</span>
+                              <span className="font-mono text-text-main dark:text-white">₹{checkInAmountPaid.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between py-0.5 text-emerald-600 dark:text-emerald-400 font-medium">
+                              <span>Less Check-in Payment:</span>
+                              <span className="font-mono">-₹{checkInPayment.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between py-0.5 text-text-main dark:text-white font-semibold">
+                              <span>Balance Before Charges:</span>
+                              <span className="font-mono">₹{balanceBeforeCharges.toFixed(2)}</span>
+                            </div>
+                          </>
+                        )}
+                        {serviceCharge > 0 && (
+                          <div className="flex justify-between py-0.5">
+                            <span>Service Charge (5%):</span>
+                            <span className="font-mono text-text-main dark:text-white">₹{serviceCharge.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {taxTotal > 0 && (
+                          <div className="flex justify-between py-0.5">
+                            <span>GST (5%):</span>
+                            <span className="font-mono text-text-main dark:text-white">₹{taxTotal.toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="border-t border-border-main dark:border-white/10 pt-3">
+                        <div className="flex justify-between text-sm font-black text-text-main dark:text-white">
+                          <span>Final Amount Payable:</span>
+                          <span className="font-mono text-emerald-600 dark:text-emerald-400">
+                            ₹{grandTotal.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-[11px] text-emerald-600 dark:text-emerald-400 font-bold pt-1">
+                          <span>Payment Status:</span>
+                          <span>PAID {bill?.paymentMethod ? `via ${bill.paymentMethod}` : ''}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex justify-between text-[11px] text-emerald-600 dark:text-emerald-400 font-bold pt-1">
-                      <span>Status:</span>
-                      <span>PAID {bill?.paymentMethod ? `via ${bill.paymentMethod}` : ''}</span>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -875,44 +954,83 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
                     </div>
                   </div>
 
-                  <div className="col-span-5 space-y-2 text-xs xl:text-sm text-text-muted flex flex-col justify-between">
-                    <div>
-                      <div className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">
-                        Financial Summary
-                      </div>
-                      {bill?.subtotal !== undefined && (
-                        <div className="flex justify-between py-1">
-                          <span>Subtotal:</span>
-                          <span className="font-mono text-text-main dark:text-white">₹{bill.subtotal.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {bill?.serviceChargeTotal !== undefined && (
-                        <div className="flex justify-between py-1">
-                          <span>Service Charge (5%):</span>
-                          <span className="font-mono text-text-main dark:text-white">₹{bill.serviceChargeTotal.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {bill?.taxTotal !== undefined && (
-                        <div className="flex justify-between py-1">
-                          <span>GST (5%):</span>
-                          <span className="font-mono text-text-main dark:text-white">₹{bill.taxTotal.toFixed(2)}</span>
-                        </div>
-                      )}
-                    </div>
+                  {(() => {
+                    const subtotal = Number(bill?.grossSubtotal ?? bill?.subtotal ?? 0);
+                    const checkInAmountPaid = Number(
+                      bill?.amountPaid ??
+                      bill?.confirmedCheckInAmount ??
+                      bill?.entryFeePaid ??
+                      sessionData?.amountPaid ??
+                      sessionData?.session?.amountPaid ??
+                      0
+                    );
+                    const checkInPayment = Number(
+                      bill?.prepaidCreditApplied ??
+                      bill?.redemptionDeduction ??
+                      (checkInAmountPaid > 0 ? Math.min(checkInAmountPaid, subtotal) : 0)
+                    );
+                    const balanceBeforeCharges = Math.max(0, subtotal - checkInPayment);
+                    const serviceCharge = Number(bill?.serviceChargeTotal ?? bill?.serviceCharge ?? 0);
+                    const taxTotal = Number(bill?.taxTotal ?? bill?.gst ?? 0);
+                    const grandTotal = Number(bill?.grandTotal ?? 0);
 
-                    <div className="border-t border-border-main dark:border-white/10 pt-3">
-                      <div className="flex justify-between text-base xl:text-lg font-black text-text-main dark:text-white">
-                        <span>Grand Total:</span>
-                        <span className="font-mono text-emerald-600 dark:text-emerald-400">
-                          ₹{bill?.grandTotal !== undefined ? bill.grandTotal.toFixed(2) : '0.00'}
-                        </span>
+                    return (
+                      <div className="col-span-5 space-y-2 text-xs xl:text-sm text-text-muted flex flex-col justify-between">
+                        <div>
+                          <div className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">
+                            Financial Summary
+                          </div>
+                          {bill?.subtotal !== undefined && (
+                            <div className="flex justify-between py-1">
+                              <span>Subtotal:</span>
+                              <span className="font-mono text-text-main dark:text-white">₹{subtotal.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {checkInAmountPaid > 0 && (
+                            <>
+                              <div className="flex justify-between py-1">
+                                <span>Check-in Amount Paid:</span>
+                                <span className="font-mono text-text-main dark:text-white">₹{checkInAmountPaid.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between py-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                                <span>Less Check-in Payment:</span>
+                                <span className="font-mono">-₹{checkInPayment.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between py-1 text-text-main dark:text-white font-semibold">
+                                <span>Balance Before Charges:</span>
+                                <span className="font-mono">₹{balanceBeforeCharges.toFixed(2)}</span>
+                              </div>
+                            </>
+                          )}
+                          {serviceCharge > 0 && (
+                            <div className="flex justify-between py-1">
+                              <span>Service Charge (5%):</span>
+                              <span className="font-mono text-text-main dark:text-white">₹{serviceCharge.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {taxTotal > 0 && (
+                            <div className="flex justify-between py-1">
+                              <span>GST (5%):</span>
+                              <span className="font-mono text-text-main dark:text-white">₹{taxTotal.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="border-t border-border-main dark:border-white/10 pt-3">
+                          <div className="flex justify-between text-base xl:text-lg font-black text-text-main dark:text-white">
+                            <span>Final Amount Payable:</span>
+                            <span className="font-mono text-emerald-600 dark:text-emerald-400">
+                              ₹{grandTotal.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-xs text-emerald-600 dark:text-emerald-400 font-bold pt-1.5">
+                            <span>Payment Status:</span>
+                            <span>PAID {bill?.paymentMethod ? `via ${bill.paymentMethod}` : ''}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex justify-between text-xs text-emerald-600 dark:text-emerald-400 font-bold pt-1.5">
-                        <span>Payment Status:</span>
-                        <span>PAID {bill?.paymentMethod ? `via ${bill.paymentMethod}` : ''}</span>
-                      </div>
-                    </div>
-                  </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

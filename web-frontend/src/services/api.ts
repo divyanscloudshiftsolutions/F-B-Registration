@@ -560,23 +560,49 @@ class ApiService {
     }
   }
 
+  async getCustomerSuggestions(query: string): Promise<{ success: boolean; customers: Array<{ id: string; phoneNumber: string; displayPhone: string; name: string; email: string }> }> {
+    try {
+      const res = await this.request<any>(`/customers/suggestions?query=${encodeURIComponent(query)}`, {
+        method: 'GET'
+      });
+      if (res && res.success && Array.isArray(res.customers)) {
+        return { success: true, customers: res.customers };
+      }
+      return { success: false, customers: [] };
+    } catch {
+      return { success: false, customers: [] };
+    }
+  }
+
 
   async getAllSessions(): Promise<any[]> {
     try {
       const res = await this.request<any>('/admin/sessions');
-      const rawList = Array.isArray(res) ? res : [];
+      const rawList = Array.isArray(res) ? res : (res?.data || res?.sessions || []);
       return rawList.map((t: any) => ({
         ...t,
-        personsCount: t.persons || t.personsCount || 1,
-        redemptionsUsed: t.redemptionCount || t.redemptionsUsed || 0,
-        totalRedemptionsAllowed: t.redemptionLimit || t.totalRedemptionsAllowed || 2,
+        personsCount: t.personsCount || t.persons || 1,
+        redemptionsUsed: t.redemptionsUsed || t.redemptionCount || 0,
+        totalRedemptionsAllowed: t.totalRedemptionsAllowed || t.redemptionLimit || 2,
         customer: {
-          id: t.customerId || '',
+          id: t.customerId || t.customer?.id || '',
           name: t.customerName || t.customer?.name || 'Walk-in Guest',
-          phoneNumber: t.phoneNumber || t.customer?.phoneNumber || t.customerPhone || 'N/A',
+          phoneNumber: t.phoneNumber || t.customer?.phoneNumber || t.customerPhone || '—',
           email: t.email || t.customer?.email || '',
+          totalVisits: t.customerVisits || t.customer?.totalVisits || 1,
+          lastVisit: t.lastVisit || t.customer?.lastVisit || null
         }
       }));
+    } catch {
+      return [];
+    }
+  }
+
+  async getCustomers(): Promise<any[]> {
+    try {
+      const res = await this.request<any>('/admin/customers');
+      const rawList = Array.isArray(res) ? res : (res?.data || res?.customers || []);
+      return rawList;
     } catch {
       return [];
     }
@@ -1036,10 +1062,11 @@ class ApiService {
     return data.order;
   }
 
-  async getActiveOrders(tokenNumber?: string, tableId?: string) {
+  async getActiveOrders(tokenNumber?: string, tableId?: string, tableNumber?: string) {
     const params = new URLSearchParams();
     if (tokenNumber) params.append('tokenNumber', tokenNumber);
     if (tableId) params.append('tableId', tableId);
+    if (tableNumber) params.append('tableNumber', tableNumber);
     const data = await this.request<{ success: boolean; orders: any[] }>(`/orders/active?${params.toString()}`);
     return data.orders || [];
   }

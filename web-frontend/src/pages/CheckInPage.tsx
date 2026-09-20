@@ -17,7 +17,8 @@ import {
  Minus,
  Plus,
  Copy,
- Check
+ Check,
+ Loader2
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Token, Table } from '../types';
@@ -338,6 +339,127 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
 
   const autoFilledCustomerRef = useRef<{ phone: string; name: string; email: string }>({ phone: '', name: '', email: '' });
   const lastLookedUpPhoneRef = useRef<string>('');
+  const isNameManuallyEditedRef = useRef<boolean>(false);
+  const isEmailManuallyEditedRef = useRef<boolean>(false);
+  const [isLookingUpCustomer, setIsLookingUpCustomer] = useState(false);
+  const lookupRequestIdRef = useRef<number>(0);
+
+  // Phone live prefix suggestions state
+  interface CustomerSuggestion {
+    id: string;
+    phoneNumber: string;
+    displayPhone: string;
+    name: string;
+    email: string;
+  }
+  const [phoneSuggestions, setPhoneSuggestions] = useState<CustomerSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(-1);
+  const suggestionRequestIdRef = useRef<number>(0);
+  const suggestionDebounceTimerRef = useRef<any>(null);
+  const phoneContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Click outside to dismiss suggestions dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (phoneContainerRef.current && !phoneContainerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+        setSelectedSuggestionIndex(-1);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const fetchSuggestions = (query: string) => {
+    if (suggestionDebounceTimerRef.current) {
+      clearTimeout(suggestionDebounceTimerRef.current);
+    }
+
+    const clean = query.replace(/[^\d]/g, '');
+    if (!clean || clean.length < 2) {
+      setPhoneSuggestions([]);
+      setShowSuggestions(false);
+      setSelectedSuggestionIndex(-1);
+      return;
+    }
+
+    const currentRequestId = ++suggestionRequestIdRef.current;
+    suggestionDebounceTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await api.getCustomerSuggestions(clean);
+        if (currentRequestId === suggestionRequestIdRef.current) {
+          if (res && res.success && res.customers && res.customers.length > 0) {
+            setPhoneSuggestions(res.customers.slice(0, 3));
+            setShowSuggestions(true);
+            setSelectedSuggestionIndex(-1);
+          } else {
+            setPhoneSuggestions([]);
+            setShowSuggestions(false);
+            setSelectedSuggestionIndex(-1);
+          }
+        }
+      } catch {
+        if (currentRequestId === suggestionRequestIdRef.current) {
+          setPhoneSuggestions([]);
+          setShowSuggestions(false);
+          setSelectedSuggestionIndex(-1);
+        }
+      }
+    }, 180);
+  };
+
+  const handleSelectSuggestion = (cust: CustomerSuggestion) => {
+    setShowSuggestions(false);
+    setPhoneSuggestions([]);
+    setSelectedSuggestionIndex(-1);
+    
+    // Set selected phone number
+    setPhoneNumber(cust.phoneNumber);
+    setPhoneConflictDetail(null);
+    lastLookedUpPhoneRef.current = cust.phoneNumber;
+
+    // Prefill the confirmed customer name and email
+    if (cust.name) {
+      isNameManuallyEditedRef.current = false;
+      setCustomerName(cust.name);
+      autoFilledCustomerRef.current.name = cust.name;
+    }
+    if (cust.email) {
+      isEmailManuallyEditedRef.current = false;
+      setEmail(cust.email);
+      autoFilledCustomerRef.current.email = cust.email;
+    }
+    autoFilledCustomerRef.current.phone = cust.phoneNumber;
+
+    if (isValidPhone(cust.phoneNumber)) {
+      setPhoneValidationStatus('PENDING');
+      setValidatedPhone('');
+    }
+  };
+
+  const handlePhoneKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showSuggestions || phoneSuggestions.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedSuggestionIndex(prev => (prev < 0 ? 0 : (prev + 1) % phoneSuggestions.length));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedSuggestionIndex(prev => (prev <= 0 ? phoneSuggestions.length - 1 : prev - 1));
+    } else if (e.key === 'Enter') {
+      if (selectedSuggestionIndex >= 0 && selectedSuggestionIndex < phoneSuggestions.length) {
+        e.preventDefault();
+        handleSelectSuggestion(phoneSuggestions[selectedSuggestionIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setShowSuggestions(false);
+      setSelectedSuggestionIndex(-1);
+    }
+  };
 
   const lookupCustomerByPhone = async (phoneToLookup: string) => {
     const cleanPhone = phoneToLookup.trim();
@@ -345,37 +467,57 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
     if (lastLookedUpPhoneRef.current === cleanPhone) return;
     lastLookedUpPhoneRef.current = cleanPhone;
 
+    const currentRequestId = ++lookupRequestIdRef.current;
+    setIsLookingUpCustomer(true);
+
     try {
       const res = await api.lookupCustomer(cleanPhone);
+      // Drop stale / out-of-order responses
+      if (currentRequestId !== lookupRequestIdRef.current) return;
+
       if (res && res.success && res.customer) {
-        if (res.customer.name) {
-          setCustomerName(prev => {
-            if (!prev || prev.trim() === '' || prev === autoFilledCustomerRef.current.name) {
-              autoFilledCustomerRef.current.name = res.customer!.name;
-              return res.customer!.name;
-            }
-            return prev;
-          });
+        const cust = res.customer;
+        if (cust.name && !isNameManuallyEditedRef.current) {
+          setCustomerName(cust.name);
+          autoFilledCustomerRef.current.name = cust.name;
         }
-        if (res.customer.email) {
-          setEmail(prev => {
-            if (!prev || prev.trim() === '' || prev === autoFilledCustomerRef.current.email) {
-              autoFilledCustomerRef.current.email = res.customer!.email || '';
-              return res.customer!.email || '';
-            }
-            return prev;
-          });
+        if (cust.email && !isEmailManuallyEditedRef.current) {
+          setEmail(cust.email);
+          autoFilledCustomerRef.current.email = cust.email;
         }
         autoFilledCustomerRef.current.phone = cleanPhone;
+      } else {
+        // Customer not found or has no confirmed visits
+        if (autoFilledCustomerRef.current.name && !isNameManuallyEditedRef.current) {
+          setCustomerName(prev => (prev === autoFilledCustomerRef.current.name ? '' : prev));
+          autoFilledCustomerRef.current.name = '';
+        }
+        if (autoFilledCustomerRef.current.email && !isEmailManuallyEditedRef.current) {
+          setEmail(prev => (prev === autoFilledCustomerRef.current.email ? '' : prev));
+          autoFilledCustomerRef.current.email = '';
+        }
+        autoFilledCustomerRef.current.phone = '';
       }
     } catch (err) {
       console.error('Customer lookup failed:', err);
+    } finally {
+      if (currentRequestId === lookupRequestIdRef.current) {
+        setIsLookingUpCustomer(false);
+      }
     }
   };
 
   const handlePhoneBlur = () => {
     const p = phoneNumber.trim();
     if (isValidPhone(p)) {
+      lookupCustomerByPhone(p);
+    }
+  };
+
+  const handleCustomerFieldFocus = () => {
+    setShowSuggestions(false);
+    const p = phoneNumber.trim();
+    if (isValidPhone(p) && lastLookedUpPhoneRef.current !== p) {
       lookupCustomerByPhone(p);
     }
   };
@@ -391,18 +533,36 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
       setPhoneValidationStatus('IDLE');
       setPhoneConflict(false);
       setValidatedPhone('');
+      setPhoneSuggestions([]);
+      setShowSuggestions(false);
+      if (autoFilledCustomerRef.current.name && !isNameManuallyEditedRef.current) {
+        setCustomerName(prev => (prev === autoFilledCustomerRef.current.name ? '' : prev));
+        autoFilledCustomerRef.current.name = '';
+      }
+      if (autoFilledCustomerRef.current.email && !isEmailManuallyEditedRef.current) {
+        setEmail(prev => (prev === autoFilledCustomerRef.current.email ? '' : prev));
+        autoFilledCustomerRef.current.email = '';
+      }
+      autoFilledCustomerRef.current.phone = '';
     } else if (!isValidPhone(trimmed)) {
       setPhoneValidationStatus('INVALID');
       setPhoneConflict(false);
       setValidatedPhone('');
+      fetchSuggestions(trimmed);
     } else {
       setPhoneValidationStatus('PENDING');
       setValidatedPhone('');
-      lookupCustomerByPhone(trimmed);
+      fetchSuggestions(trimmed);
     }
   };
 
+  const handleNameChange = (val: string) => {
+    isNameManuallyEditedRef.current = true;
+    setCustomerName(val);
+  };
+
   const handleEmailChange = (val: string) => {
+    isEmailManuallyEditedRef.current = true;
     setEmail(val);
     setEmailConflictDetail(null);
     const trimmed = val.trim();
@@ -700,6 +860,13 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
       setEmailConflict(false);
       setShowContinuePrompt(false);
       setPreselectedTable(null);
+      setPhoneSuggestions([]);
+      setShowSuggestions(false);
+      autoFilledCustomerRef.current = { phone: '', name: '', email: '' };
+      lastLookedUpPhoneRef.current = '';
+      isNameManuallyEditedRef.current = false;
+      isEmailManuallyEditedRef.current = false;
+      setIsLookingUpCustomer(false);
 
       localStorage.removeItem('bar_checkin_assign_target');
       localStorage.removeItem('bar_checkin_original_status');
@@ -1573,6 +1740,13 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
     setPhoneConflict(false);
     setEmailConflict(false);
     setShowContinuePrompt(false);
+    setPhoneSuggestions([]);
+    setShowSuggestions(false);
+    autoFilledCustomerRef.current = { phone: '', name: '', email: '' };
+    lastLookedUpPhoneRef.current = '';
+    isNameManuallyEditedRef.current = false;
+    isEmailManuallyEditedRef.current = false;
+    setIsLookingUpCustomer(false);
     refreshTables();
     refreshTokens();
   };
@@ -1857,112 +2031,178 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
  
 
 
- {/* 2. CUSTOMER INPUT FIELDS WITH INLINE REAL-TIME VALIDATION */}
- <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
- <div>
- <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
- <Phone size={14} className="text-text-main" /> Phone Number <span className="dark:text-red-400 text-red-700">*</span>
- </label>
- <input
- type="tel"
- value={phoneNumber}
- onChange={e => handlePhoneChange(e.target.value)}
- onBlur={handlePhoneBlur}
- placeholder="e.g. 9999999999"
- className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-base md:text-sm text-text-main focus:outline-none transition-all ${
- phoneNumber.trim().length > 0 && (!isValidPhone(phoneNumber) || phoneConflict || isPhoneActive || phoneValidationStatus === 'CONFLICT')
- ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
- : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
- }`}
- required
- />
- {phoneNumber.trim().length > 0 && !isValidPhone(phoneNumber) && (
- <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
- <AlertTriangle size={14} className="shrink-0" />
- <span>Please enter a valid 10-digit Indian mobile number (starts with 6-9).</span>
- </div>
- )}
- {(phoneConflict || phoneValidationStatus === 'CONFLICT') && (
- <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
- <AlertTriangle size={14} className="shrink-0" />
- <span>
-   {phoneConflictDetail?.type === 'RESERVATION'
-     ? `This phone number is already reserved by ${phoneConflictDetail.name || 'a customer'}.`
-     : `This phone number is currently being used by ${phoneConflictDetail?.name || 'another user'}.`}
- </span>
- </div>
- )}
- </div>
+  {/* 2. CUSTOMER INPUT FIELDS WITH INLINE REAL-TIME VALIDATION */}
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+  <div ref={phoneContainerRef} className="relative">
+  <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
+  <Phone size={14} className="text-text-main" /> Phone Number <span className="dark:text-red-400 text-red-700">*</span>
+  </label>
+  <div className="relative">
+    <input
+      type="tel"
+      value={phoneNumber}
+      onChange={e => handlePhoneChange(e.target.value)}
+      onKeyDown={handlePhoneKeyDown}
+      onBlur={handlePhoneBlur}
+      onFocus={() => {
+        if (phoneSuggestions.length > 0 && phoneNumber.trim().length >= 2) {
+          setShowSuggestions(true);
+        }
+      }}
+      placeholder="e.g. 9999999999"
+      className={`w-full bg-bg-primary border rounded-xl px-4 py-3 pr-10 text-base md:text-sm text-text-main focus:outline-none transition-all ${
+        phoneNumber.trim().length > 0 && (!isValidPhone(phoneNumber) || phoneConflict || isPhoneActive || phoneValidationStatus === 'CONFLICT')
+          ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+          : 'border-border-main dark:focus:border-primary focus:border-primary focus:ring-2 dark:focus:ring-primary/20 focus:ring-primary/20'
+      }`}
+      required
+    />
+    {isLookingUpCustomer && (
+      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-primary animate-spin pointer-events-none">
+        <Loader2 size={16} />
+      </div>
+    )}
+  </div>
 
- <div>
- <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
- <User size={14} className="text-text-main" /> Customer Full Name <span className="dark:text-red-400 text-red-700">*</span>
- </label>
- <input
- type="text"
- value={customerName}
- onChange={e => setCustomerName(e.target.value)}
- placeholder="e.g. First Last"
- className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-base md:text-sm text-text-main focus:outline-none transition-all ${
- customerName.trim().length > 0 && !isNameOk
- ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
- : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
- }`}
- required
- />
- {customerName.trim().length > 0 && !isNameOk && (
- <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
- <AlertTriangle size={14} className="shrink-0" />
- <span>Full name must be 2-100 characters (letters, spaces, dots, apostrophes only).</span>
- </div>
- )}
- </div>
- </div>
-
- <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
- <div>
- <div className="flex items-center justify-between mb-1.5">
- <label className="text-xs font-semibold text-text-muted flex items-center gap-1.5">
- <Mail size={14} className="text-text-main" /> Email Address
- </label>
- <span className="text-[10px] font-extrabold uppercase tracking-wider dark:text-red-400 text-red-700">
- REQUIRED
- </span>
- </div>
- <input
- type="email"
- value={email}
- onChange={e => handleEmailChange(e.target.value)}
- placeholder="e.g. name@gmail.com"
- className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-base md:text-sm text-text-main focus:outline-none transition-all ${
-    email.trim().length === 0 || !isValidEmail(email) || emailConflict || isEmailActive || emailValidationStatus === 'CONFLICT'
-    ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-    : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
-  }`}
-  />
-  {email.trim().length === 0 && (
-    <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
-      <AlertTriangle size={14} className="shrink-0" />
-      <span>Email address is strictly required for Digital Email QR Pass delivery.</span>
+  {/* Live Suggestions Dropdown (Top 3 Ascending Prefix Matches) */}
+  {showSuggestions && phoneSuggestions.length > 0 && (
+    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-bg-surface border border-border-main rounded-2xl shadow-2xl overflow-hidden animate-fadeIn">
+      <div className="px-3.5 py-2 border-b border-border-main bg-bg-primary/50 flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+          Matching Registered Guests ({phoneSuggestions.length})
+        </span>
+        <span className="text-[9px] text-text-muted font-medium">Prefix Match</span>
+      </div>
+      <div className="divide-y divide-border-main/50">
+        {phoneSuggestions.map((cust, idx) => {
+          const isSelected = idx === selectedSuggestionIndex;
+          return (
+            <button
+              key={cust.id}
+              type="button"
+              onMouseEnter={() => setSelectedSuggestionIndex(idx)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleSelectSuggestion(cust);
+              }}
+              className={`w-full px-4 py-2.5 text-left transition-colors flex items-center justify-between group cursor-pointer ${
+                isSelected ? 'bg-primary/15 dark:bg-primary/20 border-l-2 border-primary' : 'hover:bg-primary/10'
+              }`}
+            >
+              <div className="flex flex-col min-w-0 pr-2">
+                <span className={`text-xs font-mono font-bold flex items-center gap-1.5 transition-colors ${
+                  isSelected ? 'text-primary' : 'text-text-main group-hover:text-primary'
+                }`}>
+                  <Phone size={11} className={`shrink-0 ${
+                    isSelected ? 'text-primary' : 'text-text-muted group-hover:text-primary'
+                  }`} />
+                  {cust.phoneNumber}
+                </span>
+                <span className={`text-[11px] truncate ${isSelected ? 'text-text-main dark:text-gray-200 font-medium' : 'text-text-muted'}`}>
+                  {cust.name} {cust.email ? `• ${cust.email}` : ''}
+                </span>
+              </div>
+              <span className={`text-[10px] font-bold uppercase tracking-wider text-primary transition-opacity shrink-0 ${
+                isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              }`}>
+                Select ↵
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   )}
- {email.trim().length > 0 && !isValidEmail(email) && (
- <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
- <AlertTriangle size={14} className="shrink-0" />
- <span>Please enter a valid email address (e.g. name@domain.com).</span>
- </div>
- )}
- {(emailConflict || emailValidationStatus === 'CONFLICT') && (
- <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
- <AlertTriangle size={14} className="shrink-0" />
- <span>
-   {emailConflictDetail?.type === 'RESERVATION'
-     ? `This email address is already reserved by ${emailConflictDetail.name || 'a customer'}.`
-     : `This email address is currently being used by ${emailConflictDetail?.name || 'another user'}.`}
- </span>
- </div>
- )}
- </div>
+
+  {phoneNumber.trim().length > 0 && !isValidPhone(phoneNumber) && !showSuggestions && (
+  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+  <AlertTriangle size={14} className="shrink-0" />
+  <span>Please enter a valid 10-digit Indian mobile number (starts with 6-9).</span>
+  </div>
+  )}
+  {(phoneConflict || phoneValidationStatus === 'CONFLICT') && !showSuggestions && (
+  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+  <AlertTriangle size={14} className="shrink-0" />
+  <span>
+    {phoneConflictDetail?.type === 'RESERVATION'
+      ? `This phone number is already reserved by ${phoneConflictDetail.name || 'a customer'}.`
+      : `This phone number is currently being used by ${phoneConflictDetail?.name || 'another user'}.`}
+  </span>
+  </div>
+  )}
+  </div>
+
+  <div>
+  <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
+  <User size={14} className="text-text-main" /> Customer Full Name <span className="dark:text-red-400 text-red-700">*</span>
+  </label>
+  <input
+  type="text"
+  value={customerName}
+  onChange={e => handleNameChange(e.target.value)}
+  onFocus={handleCustomerFieldFocus}
+  placeholder="e.g. First Last"
+  className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-base md:text-sm text-text-main focus:outline-none transition-all ${
+  customerName.trim().length > 0 && !isNameOk
+  ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+  : 'border-border-main dark:focus:border-primary focus:border-primary focus:ring-2 dark:focus:ring-primary/20 focus:ring-primary/20'
+  }`}
+  required
+  />
+  {customerName.trim().length > 0 && !isNameOk && (
+  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+  <AlertTriangle size={14} className="shrink-0" />
+  <span>Full name must be 2-100 characters (letters, spaces, dots, apostrophes only).</span>
+  </div>
+  )}
+  </div>
+  </div>
+
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  <div>
+  <div className="flex items-center justify-between mb-1.5">
+  <label className="text-xs font-semibold text-text-muted flex items-center gap-1.5">
+  <Mail size={14} className="text-text-main" /> Email Address
+  </label>
+  <span className="text-[10px] font-extrabold uppercase tracking-wider dark:text-red-400 text-red-700">
+  REQUIRED
+  </span>
+  </div>
+  <input
+  type="email"
+  value={email}
+  onChange={e => handleEmailChange(e.target.value)}
+  onFocus={handleCustomerFieldFocus}
+  placeholder="e.g. name@gmail.com"
+  className={`w-full bg-bg-primary border rounded-xl px-4 py-3 text-base md:text-sm text-text-main focus:outline-none transition-all ${
+     email.trim().length === 0 || !isValidEmail(email) || emailConflict || isEmailActive || emailValidationStatus === 'CONFLICT'
+     ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+     : 'border-border-main dark:focus:border-primary focus:border-primary focus:ring-2 dark:focus:ring-primary/20 focus:ring-primary/20'
+   }`}
+   />
+   {email.trim().length === 0 && (
+     <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+       <AlertTriangle size={14} className="shrink-0" />
+       <span>Email address is strictly required for Digital Email QR Pass delivery.</span>
+     </div>
+   )}
+  {email.trim().length > 0 && !isValidEmail(email) && (
+  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+  <AlertTriangle size={14} className="shrink-0" />
+  <span>Please enter a valid email address (e.g. name@domain.com).</span>
+  </div>
+  )}
+  {(emailConflict || emailValidationStatus === 'CONFLICT') && (
+  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+  <AlertTriangle size={14} className="shrink-0" />
+  <span>
+    {emailConflictDetail?.type === 'RESERVATION'
+      ? `This email address is already reserved by ${emailConflictDetail.name || 'a customer'}.`
+      : `This email address is currently being used by ${emailConflictDetail?.name || 'another user'}.`}
+  </span>
+  </div>
+  )}
+  </div>
 
  <div>
  <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">

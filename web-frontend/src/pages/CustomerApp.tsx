@@ -47,10 +47,82 @@ import {
   RefreshCw,
   Square,
   CheckSquare,
+  Timer,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 type CustomerNavTab = 'home' | 'eat' | 'drink' | 'merch' | 'search' | 'cart' | 'orders' | 'bill' | 'repeat' | 'account' | 'history';
+
+// Live countdown timer component for customer dining session
+const CustomerSessionTimer: React.FC<{ endTime?: string | null; startTime?: string | null }> = ({ endTime, startTime }) => {
+  const [timeLeft, setTimeLeft] = useState<string>('--:--:--');
+  const [isWarning, setIsWarning] = useState<boolean>(false);
+  const [isExpired, setIsExpired] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Resolve timestamp: Use real authoritative endTime from database Token
+    let endTimestamp: number | null = null;
+    if (endTime) {
+      const parsed = new Date(endTime).getTime();
+      if (!isNaN(parsed)) endTimestamp = parsed;
+    }
+    // Fallback: If only startTime is available, default dining session duration is 2 hours
+    if (!endTimestamp && startTime) {
+      const parsedStart = new Date(startTime).getTime();
+      if (!isNaN(parsedStart)) endTimestamp = parsedStart + 2 * 60 * 60 * 1000;
+    }
+
+    if (!endTimestamp) {
+      setTimeLeft('--:--:--');
+      return;
+    }
+
+    const calculate = () => {
+      const diffMs = endTimestamp! - Date.now();
+      if (diffMs <= 0) {
+        setTimeLeft('00:00:00');
+        setIsWarning(false);
+        setIsExpired(true);
+        return;
+      }
+      setIsExpired(false);
+      const totalSecs = Math.floor(diffMs / 1000);
+      const hours = Math.floor(totalSecs / 3600);
+      const mins = Math.floor((totalSecs % 3600) / 60);
+      const secs = totalSecs % 60;
+
+      setIsWarning(totalSecs <= 15 * 60); // warning when <= 15 minutes remain
+      setTimeLeft(
+        `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+      );
+    };
+
+    calculate();
+    const interval = setInterval(calculate, 1000);
+    return () => clearInterval(interval);
+  }, [endTime, startTime]);
+
+  if (isExpired) {
+    return (
+      <span className="text-[11px] sm:text-xs font-mono font-bold text-rose-600 dark:text-rose-400 select-none">
+        Session Ended
+      </span>
+    );
+  }
+
+  return (
+    <span
+      title="Remaining Dining Session Time"
+      className={`text-[11px] sm:text-xs font-mono font-bold tabular-nums tracking-tight select-none ${
+        isWarning
+          ? 'text-amber-600 dark:text-amber-400 animate-pulse'
+          : 'text-primary dark:text-[#D4AF37]'
+      }`}
+    >
+      {timeLeft}
+    </span>
+  );
+};
 
 const CustomerAppInner: React.FC = () => {
   const { isDark, toggleTheme } = useAuth();
@@ -105,8 +177,10 @@ const CustomerAppInner: React.FC = () => {
       return;
     }
 
-    const x = e.clientX;
-    const y = e.clientY;
+    const rect = (e.currentTarget as HTMLElement)?.getBoundingClientRect?.();
+    const x = e.clientX && e.clientX > 0 ? e.clientX : (rect ? rect.left + rect.width / 2 : window.innerWidth / 2);
+    const y = e.clientY && e.clientY > 0 ? e.clientY : (rect ? rect.top + rect.height / 2 : window.innerHeight / 2);
+
     const right = window.innerWidth - x;
     const bottom = window.innerHeight - y;
     const maxRadius = Math.hypot(Math.max(x, right), Math.max(y, bottom));
@@ -124,8 +198,8 @@ const CustomerAppInner: React.FC = () => {
           ],
         },
         {
-          duration: 400,
-          easing: 'ease-in-out',
+          duration: 450,
+          easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
           pseudoElement: '::view-transition-new(root)',
         }
       );
@@ -216,6 +290,7 @@ const CustomerAppInner: React.FC = () => {
   const [orderSuccessToast, setOrderSuccessToast] = useState<string | null>(null);
   const [activeOrdersSubTab, setActiveOrdersSubTab] = useState<'pending' | 'done'>('pending');
   const [copiedToken, setCopiedToken] = useState<boolean>(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState<boolean>(false);
 
   const handleCopyToken = (tokenToCopy: string) => {
     if (!tokenToCopy) return;
@@ -228,7 +303,7 @@ const CustomerAppInner: React.FC = () => {
 
   // Isolate background scroll when modal or bottom sheet is open
   useEffect(() => {
-    const isModalOpen = isCallWaiterOpen || !!customizingItem || !!selectedImageModal || !!selectedDetailItem;
+    const isModalOpen = isCallWaiterOpen || isLogoutModalOpen || !!customizingItem || !!selectedImageModal || !!selectedDetailItem;
     if (isModalOpen) {
       const prevOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
@@ -236,7 +311,28 @@ const CustomerAppInner: React.FC = () => {
         document.body.style.overflow = prevOverflow;
       };
     }
-  }, [isCallWaiterOpen, customizingItem, selectedImageModal, selectedDetailItem]);
+  }, [isCallWaiterOpen, isLogoutModalOpen, customizingItem, selectedImageModal, selectedDetailItem]);
+
+  // Global Escape key listener for active modal overlays
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isLogoutModalOpen) {
+          setIsLogoutModalOpen(false);
+        } else if (selectedImageModal) {
+          setSelectedImageModal(null);
+        } else if (selectedDetailItem) {
+          setSelectedDetailItem(null);
+        } else if (customizingItem) {
+          setCustomizingItem(null);
+        } else if (isCallWaiterOpen) {
+          setIsCallWaiterOpen(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLogoutModalOpen, selectedImageModal, selectedDetailItem, customizingItem, isCallWaiterOpen]);
 
   // Flatten all menu items
   const allItems: any[] = useMemo(() => {
@@ -511,27 +607,31 @@ const CustomerAppInner: React.FC = () => {
         <header className="sticky top-0 z-30 border-b border-border/80 dark:border-white/10 bg-white/95 dark:bg-[#18181B]/95 backdrop-blur-md transition-colors shadow-2xs">
           <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between gap-4 py-3">
-              {/* Brand & Table PIN */}
-              <button
-                onClick={() => setActiveTab('home')}
-                className="flex items-center gap-3 text-left group cursor-pointer"
-              >
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-primary to-primary-hover dark:from-[#D4AF37] dark:to-amber-500 text-white dark:text-black font-black flex items-center justify-center text-sm sm:text-base shadow-sm group-hover:scale-105 transition-transform shrink-0">
-                  P
-                </div>
-                <div>
-                  <div className="font-extrabold text-sm sm:text-base text-text-primary dark:text-white leading-tight">
-                    Pegs N Bottles
+              {/* Brand & Inline Table / Session Timer Info */}
+              <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('home')}
+                  className="flex items-center gap-2.5 sm:gap-3 text-left group cursor-pointer"
+                >
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-primary to-primary-hover dark:from-[#D4AF37] dark:to-amber-500 text-white dark:text-black font-black flex items-center justify-center text-sm sm:text-base shadow-sm group-hover:scale-105 transition-transform shrink-0">
+                    P
                   </div>
-                  <div className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 font-medium">
-                    {tableNumber ? (
-                      <>Table <span className="font-bold text-primary dark:text-[#D4AF37]">{tableNumber}</span></>
-                    ) : (
-                      <span>Dining Session</span>
-                    )}
+                  <div>
+                    <div className="font-extrabold text-sm sm:text-base text-text-primary dark:text-white leading-tight">
+                      Pegs N Bottles
+                    </div>
+                    <div className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 font-medium flex items-center gap-1.5 whitespace-nowrap mt-0.5">
+                      <span>{tableNumber ? `Table ${tableNumber}` : 'Dining Session'}</span>
+                      <span className="text-border dark:text-white/20 font-normal">|</span>
+                      <CustomerSessionTimer
+                        endTime={sessionData?.endTime || (sessionData?.session?.endTime ?? null)}
+                        startTime={sessionData?.startTime || (sessionData?.session?.startTime ?? null)}
+                      />
+                    </div>
                   </div>
-                </div>
-              </button>
+                </button>
+              </div>
 
               {/* Desktop Navigation Tabs (Hidden on mobile/tablet, shown on lg+) */}
               <nav className="hidden lg:flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-2xl border border-border/60 dark:border-white/10">
@@ -581,8 +681,8 @@ const CustomerAppInner: React.FC = () => {
                   <span>Call Waiter</span>
                   {activeRequests.length > 0 && (
                     <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 dark:bg-[#7C3AED] opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-600 dark:bg-[#7C3AED]" />
                     </span>
                   )}
                 </button>
@@ -618,7 +718,7 @@ const CustomerAppInner: React.FC = () => {
                   title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                   aria-label="Toggle Theme"
                 >
-                  {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-zinc-700" />}
+                  {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-primary" />}
                 </button>
 
                 {/* Account Button */}
@@ -636,12 +736,9 @@ const CustomerAppInner: React.FC = () => {
 
                 {/* Exit Customer View */}
                 <button
-                  onClick={() => {
-                    if (window.confirm('Exit customer ordering view? Your active dining session and table remain open.')) {
-                      logout();
-                    }
-                  }}
-                  className="p-2.5 rounded-xl border border-border/80 dark:border-white/10 hover:bg-rose-500/10 hover:border-rose-500/30 text-text-muted hover:text-rose-500 transition-colors cursor-pointer"
+                  type="button"
+                  onClick={() => setIsLogoutModalOpen(true)}
+                  className="p-2.5 rounded-xl border border-border/80 dark:border-white/10 bg-white dark:bg-white/5 text-text-muted hover:text-rose-600 dark:text-zinc-400 dark:hover:text-rose-400 hover:bg-rose-500/10 dark:hover:bg-rose-500/15 hover:border-rose-500/30 dark:hover:border-rose-500/30 transition-all cursor-pointer"
                   title="Exit Customer View"
                   aria-label="Logout"
                 >
@@ -651,32 +748,34 @@ const CustomerAppInner: React.FC = () => {
             </div>
 
             {/* Mobile & Tablet Sub-nav Tabs (Hidden on Desktop lg+) */}
-            <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-2.5 pt-1 text-xs scrollbar-none border-t border-border/40 dark:border-white/5">
-              {[
-                { id: 'home', label: 'For You' },
-                { id: 'eat', label: 'Food' },
-                { id: 'drink', label: 'Drink' },
-                { id: 'merch', label: 'Merchandise' },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as CustomerNavTab)}
-                  className={`shrink-0 rounded-full px-3.5 py-1.5 font-bold transition-all cursor-pointer ${
-                    activeTab === tab.id
-                      ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs'
-                      : 'text-text-muted hover:text-text-primary dark:text-zinc-400 dark:hover:text-white bg-black/5 dark:bg-white/5'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
+            <div className="lg:hidden flex items-center justify-between gap-2 overflow-x-auto py-1 text-xs scrollbar-none border-t border-border/40 dark:border-white/5">
+              <div className="flex items-center gap-1.5 shrink-0">
+                {[
+                  { id: 'home', label: 'For You' },
+                  { id: 'eat', label: 'Food' },
+                  { id: 'drink', label: 'Drink' },
+                  { id: 'merch', label: 'Merchandise' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as CustomerNavTab)}
+                    className={`shrink-0 rounded-xl px-3 py-1 text-xs font-bold transition-all cursor-pointer select-none ${
+                      activeTab === tab.id
+                        ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-black'
+                        : 'text-text-muted hover:text-text-primary dark:text-zinc-400 dark:hover:text-white bg-black/5 dark:bg-white/5 border border-border/40 dark:border-white/5 hover:bg-black/10 dark:hover:bg-white/10'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
 
-              <div className="ml-auto flex shrink-0 items-center gap-1.5 text-[10px] font-semibold text-text-muted dark:text-zinc-400">
-                <span className="px-2 py-0.5 rounded-full border border-border/60 dark:border-white/10 bg-black/5 dark:bg-white/5">
-                  Food ends 23:00
+              <div className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-text-muted dark:text-zinc-400">
+                <span className="px-2 py-0.5 rounded-lg border border-border/50 dark:border-white/5 bg-black/5 dark:bg-white/5 whitespace-nowrap">
+                  Food ~23:00
                 </span>
-                <span className="px-2 py-0.5 rounded-full border border-border/60 dark:border-white/10 bg-black/5 dark:bg-white/5">
-                  Drinks end 23:30
+                <span className="px-2 py-0.5 rounded-lg border border-border/50 dark:border-white/5 bg-black/5 dark:bg-white/5 whitespace-nowrap">
+                  Drinks ~23:30
                 </span>
               </div>
             </div>
@@ -704,23 +803,23 @@ const CustomerAppInner: React.FC = () => {
         )}
 
         {/* Main Content Area */}
-        <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 flex-1 space-y-8">
+        <main className="w-full max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 pt-3.5 sm:pt-5 pb-6 flex-1 space-y-5 sm:space-y-6">
         {/* ==================================================================== */}
         {/* VIEW: HOME ("For You")                                              */}
         {/* ==================================================================== */}
         {activeTab === 'home' && (
-          <div className="space-y-8 animate-fade-in">
+          <div className="space-y-7 sm:space-y-8 animate-fade-in pb-4">
             {/* Search link */}
             <button
               onClick={() => setActiveTab('search')}
-              className="w-full flex items-center gap-3 rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] px-5 py-3.5 text-xs text-text-muted dark:text-zinc-400 hover:border-primary/50 dark:hover:border-[#D4AF37]/50 transition-all shadow-xs cursor-pointer"
+              className="w-full flex items-center gap-3 rounded-2xl border border-primary/30 hover:border-primary/60 dark:border-[#D4AF37]/50 dark:hover:border-[#E5C158] bg-white dark:bg-[#18181B] px-5 py-3.5 text-xs text-text-muted dark:text-zinc-400 hover:shadow-md transition-all shadow-xs dark:shadow-[0_2px_12px_rgba(0,0,0,0.35)] cursor-pointer"
             >
               <Search className="w-4 h-4 text-primary dark:text-[#D4AF37]" />
               <span>Search for a dish, drink or category…</span>
             </button>
 
             {/* Welcome banner */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-border/60 dark:border-white/10 pb-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-primary/20 dark:border-white/10 pb-4">
               <div>
                 <h2 className="font-black text-2xl sm:text-3xl text-text-primary dark:text-white tracking-tight">
                   Welcome to Pegs N Bottles
@@ -731,36 +830,78 @@ const CustomerAppInner: React.FC = () => {
               </div>
             </div>
 
-            {/* Promo Carousel Cards (1-col mobile, 2-col tablet, 3-col desktop) */}
-            {promotions.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-                {promotions.map((p: any) => (
-                  <div
-                    key={p.id}
-                    onClick={() => setActiveTab(p.ctaTarget === 'drink' ? 'drink' : 'eat')}
-                    className="cursor-pointer rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-5 hover:border-primary/50 dark:hover:border-[#D4AF37]/50 transition-all group flex flex-col justify-between shadow-xs hover:shadow-md"
-                  >
-                    <div>
-                      <h4 className="font-extrabold text-sm sm:text-base text-text-primary dark:text-white leading-tight">
-                        {p.title}
-                      </h4>
-                      <p className="text-xs text-text-muted dark:text-zinc-400 mt-1.5 leading-relaxed">
-                        {p.subtitle || p.description}
-                      </p>
-                    </div>
-                    <div className="mt-4 text-xs font-bold text-primary dark:text-[#D4AF37] flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                      <span>{p.ctaLabel || 'Explore'} →</span>
-                    </div>
+            {/* Unified Explore Category Cards Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-5">
+              {/* Explore Food Card */}
+              <div
+                onClick={() => setActiveTab('eat')}
+                className="group relative h-40 sm:h-44 md:h-48 rounded-2xl overflow-hidden border border-primary/30 hover:border-primary/70 dark:border-[#D4AF37]/50 dark:hover:border-[#E5C158] shadow-xs hover:shadow-md dark:shadow-[0_2px_12px_rgba(0,0,0,0.35)] transition-all duration-300 cursor-pointer bg-zinc-950 flex flex-col justify-end p-4 sm:p-5"
+              >
+                {/* Background Image with natural gradient blend */}
+                <img
+                  src="https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80"
+                  alt="Explore Food"
+                  className="absolute inset-0 w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500 opacity-75 dark:opacity-65"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-transparent to-transparent pointer-events-none" />
+
+                {/* Content Overlay */}
+                <div className="relative z-10 space-y-1">
+                  <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-primary/80 text-white border border-white/20 dark:bg-[#D4AF37]/25 dark:text-[#E5C158] dark:border-[#D4AF37]/40 backdrop-blur-md">
+                    Kitchen
+                  </span>
+                  <h3 className="font-black text-base sm:text-lg md:text-xl text-white leading-tight drop-shadow-md">
+                    Explore Food
+                  </h3>
+                  <p className="text-xs text-zinc-200 font-medium line-clamp-1">
+                    Starters, gourmet mains &amp; artisanal desserts
+                  </p>
+                  <div className="pt-0.5 flex items-center gap-1 text-xs font-bold text-purple-300 hover:text-white dark:text-[#E5C158] dark:hover:text-amber-300 group-hover:translate-x-1 transition-transform">
+                    <span>Browse Menu</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </div>
-                ))}
+                </div>
               </div>
-            )}
+
+              {/* Explore Bar Card */}
+              <div
+                onClick={() => setActiveTab('drink')}
+                className="group relative h-40 sm:h-44 md:h-48 rounded-2xl overflow-hidden border border-primary/30 hover:border-primary/70 dark:border-[#D4AF37]/50 dark:hover:border-[#E5C158] shadow-xs hover:shadow-md dark:shadow-[0_2px_12px_rgba(0,0,0,0.35)] transition-all duration-300 cursor-pointer bg-zinc-950 flex flex-col justify-end p-4 sm:p-5"
+              >
+                {/* Background Image with natural gradient blend */}
+                <img
+                  src="https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&w=600&q=80"
+                  alt="Explore Bar"
+                  className="absolute inset-0 w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500 opacity-75 dark:opacity-65"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-transparent to-transparent pointer-events-none" />
+
+                {/* Content Overlay */}
+                <div className="relative z-10 space-y-1">
+                  <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-primary/80 text-white border border-white/20 dark:bg-[#D4AF37]/25 dark:text-[#E5C158] dark:border-[#D4AF37]/40 backdrop-blur-md">
+                    Bar &amp; Spirits
+                  </span>
+                  <h3 className="font-black text-base sm:text-lg md:text-xl text-white leading-tight drop-shadow-md">
+                    Explore Bar
+                  </h3>
+                  <p className="text-xs text-zinc-200 font-medium line-clamp-1">
+                    Craft cocktails, single malts, beers &amp; wines
+                  </p>
+                  <div className="pt-0.5 flex items-center gap-1 text-xs font-bold text-purple-300 hover:text-white dark:text-[#E5C158] dark:hover:text-amber-300 group-hover:translate-x-1 transition-transform">
+                    <span>View Bar</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Cart Recovery Card */}
             {cart.length > 0 && (
               <div
                 onClick={() => setActiveTab('cart')}
-                className="flex items-center justify-between rounded-2xl border border-primary/30 dark:border-[#D4AF37]/30 bg-primary/5 dark:bg-[#D4AF37]/10 px-5 py-4 cursor-pointer shadow-xs hover:bg-primary/10 transition-all"
+                className="flex items-center justify-between rounded-2xl border border-primary/40 dark:border-[#D4AF37]/50 bg-primary/5 dark:bg-[#D4AF37]/10 px-5 py-4 cursor-pointer shadow-xs hover:bg-primary/10 dark:hover:bg-[#D4AF37]/15 transition-all"
               >
                 <div>
                   <div className="font-bold text-sm text-text-primary dark:text-white">Continue your order</div>
@@ -772,84 +913,137 @@ const CustomerAppInner: React.FC = () => {
               </div>
             )}
 
-            {/* Curated Sections (1-col mobile, 2-col tablet, 3-col desktop) */}
+            {/* Curated Sections: Horizontal Scrolling on Mobile, Grid on Tablet/Desktop */}
             {featuredItems.length > 0 && (
-              <section className="space-y-4">
-                <h3 className="font-black text-lg sm:text-xl text-text-primary dark:text-white flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-amber-500" /> Tonight's Specials
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
+              <section className="space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-black text-lg sm:text-xl text-text-primary dark:text-white flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-amber-500" /> Tonight's Specials
+                  </h3>
+                  <button
+                    onClick={() => setActiveTab('eat')}
+                    className="text-xs font-bold text-primary dark:text-[#D4AF37] hover:underline cursor-pointer"
+                  >
+                    View All →
+                  </button>
+                </div>
+                <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-5 overflow-x-auto md:overflow-visible no-scrollbar -mx-4 sm:-mx-6 px-4 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
                   {featuredItems.map((i) => (
-                    <MenuItemCard
-                      key={i.id}
-                      item={i}
-                      onOpenCustomizer={setCustomizingItem}
-                      onDirectAdd={handleDirectAdd}
-                      onOpenDetails={setSelectedDetailItem}
-                      onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
-                    />
+                    <div key={i.id} className="w-[285px] sm:w-[320px] shrink-0 md:w-auto snap-start h-full">
+                      <MenuItemCard
+                        item={i}
+                        variant="home"
+                        cartQuantity={cartItemQuantityMap[i.id] || 0}
+                        onOpenCustomizer={setCustomizingItem}
+                        onDirectAdd={handleDirectAdd}
+                        onIncrement={handleCardIncrement}
+                        onDecrement={handleCardDecrement}
+                        onOpenDetails={setSelectedDetailItem}
+                        onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
+                      />
+                    </div>
                   ))}
                 </div>
               </section>
             )}
 
             {popularItems.length > 0 && (
-              <section className="space-y-4">
-                <h3 className="font-black text-lg sm:text-xl text-text-primary dark:text-white flex items-center gap-2">
-                  <Flame className="w-5 h-5 text-primary dark:text-[#D4AF37]" /> Popular at Pegs N Bottles
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
+              <section className="space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-black text-lg sm:text-xl text-text-primary dark:text-white flex items-center gap-2">
+                    <Flame className="w-5 h-5 text-primary dark:text-[#D4AF37]" /> Popular at Pegs N Bottles
+                  </h3>
+                  <button
+                    onClick={() => setActiveTab('eat')}
+                    className="text-xs font-bold text-primary dark:text-[#D4AF37] hover:underline cursor-pointer"
+                  >
+                    View All →
+                  </button>
+                </div>
+                <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-5 overflow-x-auto md:overflow-visible no-scrollbar -mx-4 sm:-mx-6 px-4 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
                   {popularItems.map((i) => (
-                    <MenuItemCard
-                      key={i.id}
-                      item={i}
-                      onOpenCustomizer={setCustomizingItem}
-                      onDirectAdd={handleDirectAdd}
-                      onOpenDetails={setSelectedDetailItem}
-                      onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
-                    />
+                    <div key={i.id} className="w-[285px] sm:w-[320px] shrink-0 md:w-auto snap-start h-full">
+                      <MenuItemCard
+                        item={i}
+                        variant="home"
+                        cartQuantity={cartItemQuantityMap[i.id] || 0}
+                        onOpenCustomizer={setCustomizingItem}
+                        onDirectAdd={handleDirectAdd}
+                        onIncrement={handleCardIncrement}
+                        onDecrement={handleCardDecrement}
+                        onOpenDetails={setSelectedDetailItem}
+                        onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
+                      />
+                    </div>
                   ))}
                 </div>
               </section>
             )}
 
             {drinkHighlights.length > 0 && (
-              <section className="space-y-4">
-                <h3 className="font-black text-lg sm:text-xl text-text-primary dark:text-white flex items-center gap-2">
-                  <Wine className="w-5 h-5 text-primary dark:text-[#D4AF37]" /> Recommended Drinks
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
+              <section className="space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-black text-lg sm:text-xl text-text-primary dark:text-white flex items-center gap-2">
+                    <Wine className="w-5 h-5 text-primary dark:text-[#D4AF37]" /> Recommended Drinks
+                  </h3>
+                  <button
+                    onClick={() => setActiveTab('drink')}
+                    className="text-xs font-bold text-primary dark:text-[#D4AF37] hover:underline cursor-pointer"
+                  >
+                    View Bar →
+                  </button>
+                </div>
+                <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-5 overflow-x-auto md:overflow-visible no-scrollbar -mx-4 sm:-mx-6 px-4 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
                   {drinkHighlights.map((i) => (
-                    <MenuItemCard
-                      key={i.id}
-                      item={i}
-                      onOpenCustomizer={setCustomizingItem}
-                      onDirectAdd={handleDirectAdd}
-                      onOpenDetails={setSelectedDetailItem}
-                      onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
-                    />
+                    <div key={i.id} className="w-[285px] sm:w-[320px] shrink-0 md:w-auto snap-start h-full">
+                      <MenuItemCard
+                        item={i}
+                        variant="home"
+                        cartQuantity={cartItemQuantityMap[i.id] || 0}
+                        onOpenCustomizer={setCustomizingItem}
+                        onDirectAdd={handleDirectAdd}
+                        onIncrement={handleCardIncrement}
+                        onDecrement={handleCardDecrement}
+                        onOpenDetails={setSelectedDetailItem}
+                        onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
+                      />
+                    </div>
                   ))}
                 </div>
               </section>
             )}
 
             {dessertItems.length > 0 && (
-              <section className="space-y-4">
-                <h3 className="font-black text-lg sm:text-xl text-text-primary dark:text-white">Chef's Desserts</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
+              <section className="space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-black text-lg sm:text-xl text-text-primary dark:text-white">Chef's Desserts</h3>
+                  <button
+                    onClick={() => setActiveTab('eat')}
+                    className="text-xs font-bold text-primary dark:text-[#D4AF37] hover:underline cursor-pointer"
+                  >
+                    View All →
+                  </button>
+                </div>
+                <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-5 overflow-x-auto md:overflow-visible no-scrollbar -mx-4 sm:-mx-6 px-4 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
                   {dessertItems.map((i) => (
-                    <MenuItemCard
-                      key={i.id}
-                      item={i}
-                      onOpenCustomizer={setCustomizingItem}
-                      onDirectAdd={handleDirectAdd}
-                      onOpenDetails={setSelectedDetailItem}
-                      onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
-                    />
+                    <div key={i.id} className="w-[285px] sm:w-[320px] shrink-0 md:w-auto snap-start h-full">
+                      <MenuItemCard
+                        item={i}
+                        variant="home"
+                        cartQuantity={cartItemQuantityMap[i.id] || 0}
+                        onOpenCustomizer={setCustomizingItem}
+                        onDirectAdd={handleDirectAdd}
+                        onIncrement={handleCardIncrement}
+                        onDecrement={handleCardDecrement}
+                        onOpenDetails={setSelectedDetailItem}
+                        onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
+                      />
+                    </div>
                   ))}
                 </div>
               </section>
             )}
+
           </div>
         )}
 
@@ -857,38 +1051,43 @@ const CustomerAppInner: React.FC = () => {
         {/* VIEW: EAT (Food Menu)                                                */}
         {/* ==================================================================== */}
         {activeTab === 'eat' && (
-          <div className="space-y-6 animate-fade-in">
+          <div className="space-y-4 sm:space-y-5 animate-fade-in">
             {/* 1. Header & Live Search Bar */}
-            <div className="space-y-3 pb-2 border-b border-border/60 dark:border-white/10">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-2.5 pb-2 border-b border-border/60 dark:border-white/10">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
                 <div>
-                  <h2 className="font-black text-xl sm:text-2xl text-text-primary dark:text-white">
+                  <h2 className="font-black text-lg sm:text-xl text-text-primary dark:text-white leading-tight">
                     Food Menu
                   </h2>
-                  <p className="text-xs text-text-muted dark:text-zinc-400">
+                  <p className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 mt-0.5">
                     Freshly prepared in our chef's kitchen. Tap any dish to customize or order.
                   </p>
                 </div>
 
                 {/* Dietary Toggle Filter (All, Veg, Egg, Non-Veg) */}
-                <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl w-fit border border-border/40 dark:border-white/10 shrink-0">
+                <div className="flex items-center gap-0.5 sm:gap-1 bg-black/5 dark:bg-white/5 p-0.5 sm:p-1 rounded-xl w-fit border border-border/40 dark:border-white/10 shrink-0">
                   {(['ALL', 'VEG', 'EGG', 'NON_VEG'] as const).map((df) => (
                     <button
                       key={df}
                       onClick={() => setDietaryFilter(df)}
-                      className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                      className={`text-xs font-bold px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
                         dietaryFilter === df
                           ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-extrabold'
-                          : 'text-text-muted hover:text-text-primary dark:text-zinc-400 dark:hover:text-white'
+                          : 'text-text-muted hover:text-text-primary hover:bg-black/5 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5'
                       }`}
                     >
-                      {df === 'ALL'
-                        ? 'All'
-                        : df === 'VEG'
-                        ? 'Veg'
-                        : df === 'EGG'
-                        ? 'Egg'
-                        : 'Non-Veg'}
+                      {df === 'VEG' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
+                      {df === 'EGG' && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />}
+                      {df === 'NON_VEG' && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />}
+                      <span>
+                        {df === 'ALL'
+                          ? 'All'
+                          : df === 'VEG'
+                          ? 'Veg'
+                          : df === 'EGG'
+                          ? 'Egg'
+                          : 'Non-Veg'}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -902,7 +1101,7 @@ const CustomerAppInner: React.FC = () => {
                   value={eatSearchQuery}
                   onChange={(e) => setEatSearchQuery(e.target.value)}
                   placeholder="Search dishes by name, spice level, or category..."
-                  className="w-full text-xs pl-10 pr-10 py-2.5 rounded-xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] text-text-primary dark:text-white placeholder:text-text-muted/60 dark:placeholder:text-zinc-500 focus:outline-none focus:border-primary dark:focus:border-[#D4AF37] transition-colors"
+                  className="w-full text-xs pl-10 pr-10 py-2 rounded-xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] text-text-primary dark:text-white placeholder:text-text-muted/60 dark:placeholder:text-zinc-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 dark:focus:border-[#D4AF37] dark:focus:ring-[#D4AF37]/20 transition-all shadow-2xs"
                 />
                 {eatSearchQuery && (
                   <button
@@ -917,13 +1116,13 @@ const CustomerAppInner: React.FC = () => {
             </div>
 
             {/* 2. Sticky Category Filter Chips (Mobile & Tablet) */}
-            <div className="lg:hidden sticky top-[57px] z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 bg-[#F5F3FA]/95 dark:bg-[#111114]/95 backdrop-blur-md border-b border-border/40 dark:border-white/5 overflow-x-auto no-scrollbar flex items-center gap-2">
+            <div className="lg:hidden sticky top-[86px] sm:top-[90px] z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-1.5 bg-[#F5F3FA]/95 dark:bg-[#111114]/95 backdrop-blur-md border-b border-border/40 dark:border-white/5 overflow-x-auto no-scrollbar flex items-center gap-1.5">
               <button
                 onClick={() => handleSelectEatCategory('ALL')}
-                className={`text-xs font-bold px-3.5 py-1.5 rounded-full shrink-0 transition-all cursor-pointer ${
+                className={`text-xs font-bold px-3 py-1 rounded-full shrink-0 transition-all cursor-pointer ${
                   selectedEatCategory === 'ALL'
                     ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-extrabold'
-                    : 'bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 text-text-muted dark:text-zinc-300 hover:text-text-primary'
+                    : 'bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 text-text-muted dark:text-zinc-300 hover:text-text-primary hover:border-primary/40 dark:hover:border-[#D4AF37]/40'
                 }`}
               >
                 All Dishes
@@ -935,10 +1134,10 @@ const CustomerAppInner: React.FC = () => {
                   <button
                     key={cat.id}
                     onClick={() => handleSelectEatCategory(cat.id)}
-                    className={`text-xs font-bold px-3.5 py-1.5 rounded-full shrink-0 transition-all cursor-pointer ${
+                    className={`text-xs font-bold px-3 py-1 rounded-full shrink-0 transition-all cursor-pointer ${
                       selectedEatCategory === cat.id
                         ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-extrabold'
-                        : 'bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 text-text-muted dark:text-zinc-300 hover:text-text-primary'
+                        : 'bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 text-text-muted dark:text-zinc-300 hover:text-text-primary hover:border-primary/40 dark:hover:border-[#D4AF37]/40'
                     }`}
                   >
                     {getFoodCategoryDisplayName(cat)}
@@ -947,19 +1146,19 @@ const CustomerAppInner: React.FC = () => {
             </div>
 
             {/* 3. Main Content Layout: Responsive Desktop Split Rail + Cards Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5 items-start">
               {/* Desktop Sticky Category Navigation Rail (lg:col-span-3) */}
-              <aside className="hidden lg:block lg:col-span-3 sticky top-20 space-y-2">
-                <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-3 shadow-xs space-y-1">
-                  <div className="px-3 py-2 text-[11px] font-black uppercase tracking-wider text-text-muted dark:text-zinc-500">
+              <aside className="hidden lg:block lg:col-span-3 sticky top-16 space-y-1.5">
+                <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-2.5 shadow-xs space-y-0.5 max-h-[calc(100vh-5.5rem)] overflow-y-auto no-scrollbar">
+                  <div className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-text-muted dark:text-zinc-500">
                     Categories
                   </div>
                   <button
                     onClick={() => handleSelectEatCategory('ALL')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
+                    className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
                       selectedEatCategory === 'ALL'
-                        ? 'bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] font-extrabold'
-                        : 'text-text-muted dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary dark:hover:text-white'
+                        ? 'bg-primary/10 text-primary border border-primary/20 dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:border-[#D4AF37]/30 font-extrabold shadow-2xs'
+                        : 'text-text-muted dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary dark:hover:text-white border border-transparent'
                     }`}
                   >
                     <span>All Dishes</span>
@@ -978,8 +1177,8 @@ const CustomerAppInner: React.FC = () => {
                           onClick={() => handleSelectEatCategory(cat.id)}
                           className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
                             selectedEatCategory === cat.id
-                              ? 'bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] font-extrabold'
-                              : 'text-text-muted dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary dark:hover:text-white'
+                              ? 'bg-primary/10 text-primary border border-primary/20 dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:border-[#D4AF37]/30 font-extrabold shadow-2xs'
+                              : 'text-text-muted dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary dark:hover:text-white border border-transparent'
                           }`}
                         >
                           <span>{getFoodCategoryDisplayName(cat)}</span>
@@ -1060,7 +1259,7 @@ const CustomerAppInner: React.FC = () => {
                     }
 
                     return (
-                      <div className="space-y-4">
+                      <div className="space-y-2.5 sm:space-y-3">
                         {activeCategories.map((cat) => {
                           const catItems = getSectionItems('eat').filter((i) => i.categoryId === cat.id);
                           if (catItems.length === 0) return null;
@@ -1108,20 +1307,20 @@ const CustomerAppInner: React.FC = () => {
                               <button
                                 onClick={() => toggleCategory(cat.id)}
                                 aria-expanded={isExpanded}
-                                className="w-full flex items-center justify-between px-5 py-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                                className="w-full flex items-center justify-between px-3.5 sm:px-4 py-2.5 sm:py-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
                               >
-                                <div className="flex items-center gap-2.5">
-                                  <span className="font-black text-base sm:text-lg text-text-primary dark:text-white">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-black text-sm sm:text-base text-text-primary dark:text-white">
                                     {getFoodCategoryDisplayName(cat)}
                                   </span>
-                                  <span className="text-xs text-text-muted dark:text-zinc-400 font-bold">
+                                  <span className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 font-bold">
                                     ({catItems.length})
                                   </span>
                                 </div>
                                 {isExpanded ? (
-                                  <ChevronUp className="w-5 h-5 text-text-muted" />
+                                  <ChevronUp className="w-4 h-4 text-text-muted group-hover:text-text-primary dark:group-hover:text-white transition-colors" />
                                 ) : (
-                                  <ChevronDown className="w-5 h-5 text-text-muted" />
+                                  <ChevronDown className="w-4 h-4 text-text-muted group-hover:text-text-primary dark:group-hover:text-white transition-colors" />
                                 )}
                               </button>
 
@@ -1129,8 +1328,8 @@ const CustomerAppInner: React.FC = () => {
                                 <div>
                                   {/* Subcategory Multi-Filter Chips Bar */}
                                   {availableSubcategories.length > 0 && (
-                                    <div className="px-4 sm:px-5 py-2.5 bg-black/[0.02] dark:bg-white/[0.02] border-t border-b border-border/40 dark:border-white/5 flex items-center justify-between gap-3">
-                                      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 flex-1">
+                                    <div className="px-3 sm:px-4 py-1.5 sm:py-2 bg-black/[0.02] dark:bg-white/[0.02] border-t border-b border-border/40 dark:border-white/5 flex items-center justify-between gap-2.5">
+                                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1">
                                         {availableSubcategories.map((sub) => {
                                           const isSelected = activeSubcatIds.includes(sub.id);
                                           const subCount = catItems.filter((i) => i.subcategoryId === sub.id).length;
@@ -1139,20 +1338,20 @@ const CustomerAppInner: React.FC = () => {
                                               key={sub.id}
                                               type="button"
                                               onClick={() => handleToggleSubcategory(cat.id, sub.id)}
-                                              className={`text-xs font-bold px-3 py-1.5 rounded-xl shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+                                              className={`text-xs font-bold px-2.5 py-1 rounded-lg shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
                                                 isSelected
-                                                  ? 'bg-[#D4AF37]/20 border border-[#D4AF37] text-[#D4AF37] shadow-xs font-extrabold'
-                                                  : 'bg-white dark:bg-white/5 border border-border/70 dark:border-white/10 text-text-muted dark:text-zinc-300 hover:border-[#D4AF37]/50 hover:text-text-primary dark:hover:text-white'
+                                                  ? 'bg-primary/10 border border-primary text-primary dark:bg-[#D4AF37]/15 dark:border-[#D4AF37] dark:text-[#D4AF37] shadow-xs font-extrabold'
+                                                  : 'bg-white dark:bg-white/5 border border-border/70 dark:border-white/10 text-text-muted dark:text-zinc-300 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 hover:text-text-primary dark:hover:text-white'
                                               }`}
                                               aria-pressed={isSelected}
                                             >
                                               {isSelected ? (
-                                                <CheckSquare className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                                                <CheckSquare className="w-3 h-3 text-primary dark:text-[#D4AF37] shrink-0" />
                                               ) : (
-                                                <Square className="w-3.5 h-3.5 text-text-muted/60 dark:text-zinc-500 shrink-0" />
+                                                <Square className="w-3 h-3 text-text-muted/60 dark:text-zinc-500 shrink-0" />
                                               )}
                                               <span>{sub.name}</span>
-                                              <span className={`text-[10px] ${isSelected ? 'text-[#D4AF37]/80' : 'opacity-60'}`}>
+                                              <span className={`text-[10px] ${isSelected ? 'text-primary/80 dark:text-[#D4AF37]/80' : 'opacity-60'}`}>
                                                 ({subCount})
                                               </span>
                                             </button>
@@ -1163,7 +1362,7 @@ const CustomerAppInner: React.FC = () => {
                                         <button
                                           type="button"
                                           onClick={() => handleClearSubcategories(cat.id)}
-                                          className="text-[11px] font-bold text-text-muted hover:text-rose-500 dark:text-zinc-400 dark:hover:text-rose-400 shrink-0 flex items-center gap-1 transition-colors cursor-pointer px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
+                                          className="text-[11px] font-bold text-text-muted hover:text-rose-500 dark:text-zinc-400 dark:hover:text-rose-400 shrink-0 flex items-center gap-1 transition-colors cursor-pointer px-1.5 py-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5"
                                           title="Clear subcategory filters"
                                         >
                                           <X className="w-3 h-3" />
@@ -1175,18 +1374,18 @@ const CustomerAppInner: React.FC = () => {
 
                                   {/* Products Grid */}
                                   {displayedItems.length === 0 ? (
-                                    <div className="p-8 text-center text-xs text-text-muted dark:text-zinc-400 space-y-2">
+                                    <div className="p-6 text-center text-xs text-text-muted dark:text-zinc-400 space-y-2">
                                       <p>No dishes match the selected subcategories.</p>
                                       <button
                                         type="button"
                                         onClick={() => handleClearSubcategories(cat.id)}
-                                        className="px-3 py-1.5 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] font-bold text-xs hover:bg-[#D4AF37]/25 transition-colors cursor-pointer"
+                                        className="px-3.5 py-1.5 rounded-xl bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-bold text-xs hover:opacity-90 transition-opacity cursor-pointer inline-flex items-center gap-1.5 shadow-xs"
                                       >
                                         Show All in {getFoodCategoryDisplayName(cat)}
                                       </button>
                                     </div>
                                   ) : (
-                                    <div className={`p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 ${
+                                    <div className={`p-2.5 sm:p-3.5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-3.5 ${
                                       availableSubcategories.length === 0 ? 'border-t border-border/40 dark:border-white/5' : ''
                                     }`}>
                                       {displayedItems.map((item) => (
@@ -1220,25 +1419,25 @@ const CustomerAppInner: React.FC = () => {
                               <button
                                 onClick={() => toggleCategory('unassigned-eat')}
                                 aria-expanded={isExpanded}
-                                className="w-full flex items-center justify-between px-5 py-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                                className="w-full flex items-center justify-between px-3.5 sm:px-4 py-2.5 sm:py-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
                               >
-                                <div className="flex items-center gap-2.5">
-                                  <span className="font-black text-base sm:text-lg text-text-primary dark:text-white">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-black text-sm sm:text-base text-text-primary dark:text-white">
                                     Other Dishes
                                   </span>
-                                  <span className="text-xs text-text-muted dark:text-zinc-400 font-bold">
+                                  <span className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 font-bold">
                                     ({unassignedEatItems.length})
                                   </span>
                                 </div>
                                 {isExpanded ? (
-                                  <ChevronUp className="w-5 h-5 text-text-muted" />
+                                  <ChevronUp className="w-4 h-4 text-text-muted group-hover:text-text-primary dark:group-hover:text-white transition-colors" />
                                 ) : (
-                                  <ChevronDown className="w-5 h-5 text-text-muted" />
+                                  <ChevronDown className="w-4 h-4 text-text-muted group-hover:text-text-primary dark:group-hover:text-white transition-colors" />
                                 )}
                               </button>
 
                               {isExpanded && (
-                                <div className="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 border-t border-border/40 dark:border-white/5">
+                                <div className="p-2.5 sm:p-3.5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-3.5 border-t border-border/40 dark:border-white/5">
                                   {unassignedEatItems.map((item) => (
                                     <MenuItemCard
                                       key={item.id}
@@ -1270,15 +1469,15 @@ const CustomerAppInner: React.FC = () => {
         {/* VIEW: DRINK (Bar Menu, Cocktails & Spirits)                         */}
         {/* ==================================================================== */}
         {activeTab === 'drink' && (
-          <div className="space-y-6 animate-fade-in">
+          <div className="space-y-4 sm:space-y-5 animate-fade-in">
             {/* 1. Header & Live Search Bar */}
-            <div className="space-y-3 pb-2 border-b border-border/60 dark:border-white/10">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-2.5 pb-2 border-b border-border/60 dark:border-white/10">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
                 <div>
-                  <h2 className="font-black text-xl sm:text-2xl text-text-primary dark:text-white">
+                  <h2 className="font-black text-lg sm:text-xl text-text-primary dark:text-white leading-tight">
                     Bar Menu
                   </h2>
-                  <p className="text-xs text-text-muted dark:text-zinc-400">
+                  <p className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 mt-0.5">
                     Handcrafted cocktails, single malts, craft beers, and fine wines from our master bartender.
                   </p>
                 </div>
@@ -1292,7 +1491,7 @@ const CustomerAppInner: React.FC = () => {
                   value={drinkSearchQuery}
                   onChange={(e) => setDrinkSearchQuery(e.target.value)}
                   placeholder="Search beers, whiskies, cocktails, wines..."
-                  className="w-full text-xs pl-10 pr-10 py-2.5 rounded-xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] text-text-primary dark:text-white placeholder:text-text-muted/60 dark:placeholder:text-zinc-500 focus:outline-none focus:border-primary dark:focus:border-[#D4AF37] transition-colors"
+                  className="w-full text-xs pl-10 pr-10 py-2 rounded-xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] text-text-primary dark:text-white placeholder:text-text-muted/60 dark:placeholder:text-zinc-500 focus:outline-none focus:border-primary dark:focus:border-[#D4AF37] transition-colors shadow-2xs"
                 />
                 {drinkSearchQuery && (
                   <button
@@ -1307,10 +1506,10 @@ const CustomerAppInner: React.FC = () => {
             </div>
 
             {/* 2. Sticky Category Filter Chips (Mobile & Tablet) */}
-            <div className="lg:hidden sticky top-[57px] z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 bg-[#F5F3FA]/95 dark:bg-[#111114]/95 backdrop-blur-md border-b border-border/40 dark:border-white/5 overflow-x-auto no-scrollbar flex items-center gap-2">
+            <div className="lg:hidden sticky top-[86px] sm:top-[90px] z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-1.5 bg-[#F5F3FA]/95 dark:bg-[#111114]/95 backdrop-blur-md border-b border-border/40 dark:border-white/5 overflow-x-auto no-scrollbar flex items-center gap-1.5">
               <button
                 onClick={() => handleSelectDrinkCategory('ALL')}
-                className={`text-xs font-bold px-3.5 py-1.5 rounded-full shrink-0 transition-all cursor-pointer ${
+                className={`text-xs font-bold px-3 py-1 rounded-full shrink-0 transition-all cursor-pointer ${
                   selectedDrinkCategory === 'ALL'
                     ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-extrabold'
                     : 'bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 text-text-muted dark:text-zinc-300 hover:text-text-primary'
@@ -1325,7 +1524,7 @@ const CustomerAppInner: React.FC = () => {
                   <button
                     key={cat.id}
                     onClick={() => handleSelectDrinkCategory(cat.id)}
-                    className={`text-xs font-bold px-3.5 py-1.5 rounded-full shrink-0 transition-all cursor-pointer ${
+                    className={`text-xs font-bold px-3 py-1 rounded-full shrink-0 transition-all cursor-pointer ${
                       selectedDrinkCategory === cat.id
                         ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-extrabold'
                         : 'bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 text-text-muted dark:text-zinc-300 hover:text-text-primary'
@@ -1337,16 +1536,16 @@ const CustomerAppInner: React.FC = () => {
             </div>
 
             {/* 3. Main Content Layout: Responsive Desktop Split Rail + Cards Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5 items-start">
               {/* Desktop Sticky Category Navigation Rail (lg:col-span-3) */}
-              <aside className="hidden lg:block lg:col-span-3 sticky top-20 space-y-2">
-                <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-3 shadow-xs space-y-1">
-                  <div className="px-3 py-2 text-[11px] font-black uppercase tracking-wider text-text-muted dark:text-zinc-500">
+              <aside className="hidden lg:block lg:col-span-3 sticky top-16 space-y-1.5">
+                <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-2.5 shadow-xs space-y-0.5 max-h-[calc(100vh-5.5rem)] overflow-y-auto no-scrollbar">
+                  <div className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-text-muted dark:text-zinc-500">
                     Bar Categories
                   </div>
                   <button
                     onClick={() => handleSelectDrinkCategory('ALL')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
+                    className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
                       selectedDrinkCategory === 'ALL'
                         ? 'bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] font-extrabold'
                         : 'text-text-muted dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary dark:hover:text-white'
@@ -1366,7 +1565,7 @@ const CustomerAppInner: React.FC = () => {
                         <button
                           key={cat.id}
                           onClick={() => handleSelectDrinkCategory(cat.id)}
-                          className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${
                             selectedDrinkCategory === cat.id
                               ? 'bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] font-extrabold'
                               : 'text-text-muted dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary dark:hover:text-white'
@@ -1383,23 +1582,23 @@ const CustomerAppInner: React.FC = () => {
               </aside>
 
               {/* Items Display Area (lg:col-span-9 or full on mobile/tablet) */}
-              <div className="lg:col-span-9 space-y-6">
+              <div className="lg:col-span-9 space-y-4 sm:space-y-5">
                 {/* Skeleton Loading State */}
                 {isLoading ? (
-                  <div className="space-y-4">
-                    <div className="h-6 w-48 rounded-lg bg-zinc-200 dark:bg-white/10 animate-pulse" />
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                  <div className="space-y-3">
+                    <div className="h-5 w-40 rounded-lg bg-zinc-200 dark:bg-white/10 animate-pulse" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-3.5">
                       {Array.from({ length: 6 }).map((_, idx) => (
                         <div
                           key={`drink-skel-${idx}`}
-                          className="h-36 rounded-2xl bg-white dark:bg-[#18181B] border border-border/60 dark:border-white/10 p-4 animate-pulse flex justify-between"
+                          className="h-28 rounded-2xl bg-white dark:bg-[#18181B] border border-border/60 dark:border-white/10 p-3 animate-pulse flex justify-between"
                         >
                           <div className="space-y-2 flex-1">
-                            <div className="h-4 w-28 rounded bg-zinc-200 dark:bg-white/10" />
-                            <div className="h-3 w-40 rounded bg-zinc-200 dark:bg-white/10" />
-                            <div className="h-4 w-16 rounded bg-zinc-200 dark:bg-white/10 mt-6" />
+                            <div className="h-3.5 w-24 rounded bg-zinc-200 dark:bg-white/10" />
+                            <div className="h-2.5 w-36 rounded bg-zinc-200 dark:bg-white/10" />
+                            <div className="h-3.5 w-14 rounded bg-zinc-200 dark:bg-white/10 mt-4" />
                           </div>
-                          <div className="w-20 h-16 rounded-xl bg-zinc-200 dark:bg-white/10 shrink-0" />
+                          <div className="w-16 h-16 rounded-xl bg-zinc-200 dark:bg-white/10 shrink-0" />
                         </div>
                       ))}
                     </div>
@@ -1421,11 +1620,11 @@ const CustomerAppInner: React.FC = () => {
 
                     if (totalMatchingItems === 0) {
                       return (
-                        <div className="rounded-3xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-12 text-center space-y-3">
-                          <div className="w-14 h-14 rounded-2xl bg-primary/10 dark:bg-[#D4AF37]/15 text-primary dark:text-[#D4AF37] flex items-center justify-center mx-auto text-2xl">
-                            <Wine className="w-7 h-7" />
+                        <div className="rounded-3xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-8 sm:p-10 text-center space-y-3">
+                          <div className="w-12 h-12 rounded-2xl bg-primary/10 dark:bg-[#D4AF37]/15 text-primary dark:text-[#D4AF37] flex items-center justify-center mx-auto text-xl">
+                            <Wine className="w-6 h-6" />
                           </div>
-                          <h3 className="text-base sm:text-lg font-bold text-text-primary dark:text-white">
+                          <h3 className="text-sm sm:text-base font-bold text-text-primary dark:text-white">
                             No bar items found
                           </h3>
                           <p className="text-xs text-text-muted dark:text-zinc-400 max-w-sm mx-auto">
@@ -1439,7 +1638,7 @@ const CustomerAppInner: React.FC = () => {
                                 setDrinkSearchQuery('');
                                 handleSelectDrinkCategory('ALL');
                               }}
-                              className="px-4 py-2 rounded-xl bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-bold text-xs hover:opacity-90 transition-opacity cursor-pointer inline-flex items-center gap-1.5"
+                              className="px-3.5 py-1.5 rounded-xl bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-bold text-xs hover:opacity-90 transition-opacity cursor-pointer inline-flex items-center gap-1.5 shadow-xs"
                             >
                               Reset Filters
                             </button>
@@ -1449,7 +1648,7 @@ const CustomerAppInner: React.FC = () => {
                     }
 
                     return (
-                      <div className="space-y-4">
+                      <div className="space-y-2.5 sm:space-y-3">
                         {activeCategories.map((cat) => {
                           const catItems = getSectionItems('drink').filter((i) => i.categoryId === cat.id);
                           if (catItems.length === 0) return null;
@@ -1497,20 +1696,20 @@ const CustomerAppInner: React.FC = () => {
                                 <button
                                   onClick={() => toggleCategory(cat.id)}
                                   aria-expanded={isExpanded}
-                                  className="w-full flex items-center justify-between px-5 py-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                                  className="w-full flex items-center justify-between px-3.5 sm:px-4 py-2.5 sm:py-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
                                 >
-                                  <div className="flex items-center gap-2.5">
-                                    <span className="font-black text-base sm:text-lg text-text-primary dark:text-white">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-black text-sm sm:text-base text-text-primary dark:text-white">
                                       {cat.name}
                                     </span>
-                                    <span className="text-xs text-text-muted dark:text-zinc-400 font-bold">
+                                    <span className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 font-bold">
                                       ({catItems.length})
                                     </span>
                                   </div>
                                   {isExpanded ? (
-                                    <ChevronUp className="w-5 h-5 text-text-muted" />
+                                    <ChevronUp className="w-4 h-4 text-text-muted" />
                                   ) : (
-                                    <ChevronDown className="w-5 h-5 text-text-muted" />
+                                    <ChevronDown className="w-4 h-4 text-text-muted" />
                                   )}
                                 </button>
 
@@ -1518,8 +1717,8 @@ const CustomerAppInner: React.FC = () => {
                                   <div>
                                     {/* Subcategory Multi-Filter Chips Bar */}
                                     {availableSubcategories.length > 0 && (
-                                      <div className="px-4 sm:px-5 py-2.5 bg-black/[0.02] dark:bg-white/[0.02] border-t border-b border-border/40 dark:border-white/5 flex items-center justify-between gap-3">
-                                        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 flex-1">
+                                      <div className="px-3 sm:px-4 py-1.5 sm:py-2 bg-black/[0.02] dark:bg-white/[0.02] border-t border-b border-border/40 dark:border-white/5 flex items-center justify-between gap-2.5">
+                                        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1">
                                           {availableSubcategories.map((sub) => {
                                             const isSelected = activeSubcatIds.includes(sub.id);
                                             const subCount = catItems.filter((i) => i.subcategoryId === sub.id).length;
@@ -1528,20 +1727,20 @@ const CustomerAppInner: React.FC = () => {
                                                 key={sub.id}
                                                 type="button"
                                                 onClick={() => handleToggleSubcategory(cat.id, sub.id)}
-                                                className={`text-xs font-bold px-3 py-1.5 rounded-xl shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+                                                className={`text-xs font-bold px-2.5 py-1 rounded-lg shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
                                                   isSelected
-                                                    ? 'bg-[#D4AF37]/20 border border-[#D4AF37] text-[#D4AF37] shadow-xs font-extrabold'
-                                                    : 'bg-white dark:bg-white/5 border border-border/70 dark:border-white/10 text-text-muted dark:text-zinc-300 hover:border-[#D4AF37]/50 hover:text-text-primary dark:hover:text-white'
+                                                    ? 'bg-primary/10 border border-primary text-primary dark:bg-[#D4AF37]/15 dark:border-[#D4AF37] dark:text-[#D4AF37] shadow-xs font-extrabold'
+                                                    : 'bg-white dark:bg-white/5 border border-border/70 dark:border-white/10 text-text-muted dark:text-zinc-300 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 hover:text-text-primary dark:hover:text-white'
                                                 }`}
                                                 aria-pressed={isSelected}
                                               >
                                                 {isSelected ? (
-                                                  <CheckSquare className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                                                  <CheckSquare className="w-3 h-3 text-primary dark:text-[#D4AF37] shrink-0" />
                                                 ) : (
-                                                  <Square className="w-3.5 h-3.5 text-text-muted/60 dark:text-zinc-500 shrink-0" />
+                                                  <Square className="w-3 h-3 text-text-muted/60 dark:text-zinc-500 shrink-0" />
                                                 )}
                                                 <span>{sub.name}</span>
-                                                <span className={`text-[10px] ${isSelected ? 'text-[#D4AF37]/80' : 'opacity-60'}`}>
+                                                <span className={`text-[10px] ${isSelected ? 'text-primary/80 dark:text-[#D4AF37]/80' : 'opacity-60'}`}>
                                                   ({subCount})
                                                 </span>
                                               </button>
@@ -1552,7 +1751,7 @@ const CustomerAppInner: React.FC = () => {
                                           <button
                                             type="button"
                                             onClick={() => handleClearSubcategories(cat.id)}
-                                            className="text-[11px] font-bold text-text-muted hover:text-rose-500 dark:text-zinc-400 dark:hover:text-rose-400 shrink-0 flex items-center gap-1 transition-colors cursor-pointer px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
+                                            className="text-[11px] font-bold text-text-muted hover:text-rose-500 dark:text-zinc-400 dark:hover:text-rose-400 shrink-0 flex items-center gap-1 transition-colors cursor-pointer px-1.5 py-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5"
                                             title="Clear subcategory filters"
                                           >
                                             <X className="w-3 h-3" />
@@ -1564,18 +1763,18 @@ const CustomerAppInner: React.FC = () => {
 
                                     {/* Products Grid */}
                                     {displayedItems.length === 0 ? (
-                                      <div className="p-8 text-center text-xs text-text-muted dark:text-zinc-400 space-y-2">
-                                        <p>No beverages match the selected subcategories.</p>
+                                      <div className="p-6 text-center text-xs text-text-muted dark:text-zinc-400 space-y-2">
+                                        <p>No dishes match the selected subcategories.</p>
                                         <button
                                           type="button"
                                           onClick={() => handleClearSubcategories(cat.id)}
-                                          className="px-3 py-1.5 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] font-bold text-xs hover:bg-[#D4AF37]/25 transition-colors cursor-pointer"
+                                          className="px-3.5 py-1.5 rounded-xl bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-bold text-xs hover:opacity-90 transition-opacity cursor-pointer inline-flex items-center gap-1.5 shadow-xs"
                                         >
                                           Show All in {cat.name}
                                         </button>
                                       </div>
                                     ) : (
-                                      <div className={`p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 ${
+                                      <div className={`p-2.5 sm:p-3.5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-3.5 ${
                                         availableSubcategories.length === 0 ? 'border-t border-border/40 dark:border-white/5' : ''
                                       }`}>
                                         {displayedItems.map((item) => (
@@ -1609,25 +1808,25 @@ const CustomerAppInner: React.FC = () => {
                                 <button
                                   onClick={() => toggleCategory('unassigned-drink')}
                                   aria-expanded={isExpanded}
-                                  className="w-full flex items-center justify-between px-5 py-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                                  className="w-full flex items-center justify-between px-3.5 sm:px-4 py-2.5 sm:py-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
                                 >
-                                  <div className="flex items-center gap-2.5">
-                                    <span className="font-black text-base sm:text-lg text-text-primary dark:text-white">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-black text-sm sm:text-base text-text-primary dark:text-white">
                                       Other Beverages
                                     </span>
-                                    <span className="text-xs text-text-muted dark:text-zinc-400 font-bold">
+                                    <span className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 font-bold">
                                       ({unassignedDrinkItems.length})
                                     </span>
                                   </div>
                                   {isExpanded ? (
-                                    <ChevronUp className="w-5 h-5 text-text-muted" />
+                                    <ChevronUp className="w-4 h-4 text-text-muted" />
                                   ) : (
-                                    <ChevronDown className="w-5 h-5 text-text-muted" />
+                                    <ChevronDown className="w-4 h-4 text-text-muted" />
                                   )}
                                 </button>
 
                                 {isExpanded && (
-                                  <div className="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 border-t border-border/40 dark:border-white/5">
+                                  <div className="p-2.5 sm:p-3.5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-3.5 border-t border-border/40 dark:border-white/5">
                                     {unassignedDrinkItems.map((item) => (
                                       <MenuItemCard
                                         key={item.id}
@@ -1726,7 +1925,7 @@ const CustomerAppInner: React.FC = () => {
               }
 
               return (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-4.5">
                   {merchItems.map((item) => (
                     <MenuItemCard
                       key={item.id}
@@ -1771,7 +1970,7 @@ const CustomerAppInner: React.FC = () => {
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-4.5">
               {allItems
                 .filter((i) => {
                   if (!searchQuery.trim()) return true;
@@ -2318,10 +2517,24 @@ const CustomerAppInner: React.FC = () => {
           const foodSub = Number(activeBill?.foodSubtotal || 0);
           const drinkSub = Number(activeBill?.drinkSubtotal || 0);
           const merchSub = Number(activeBill?.merchandiseSubtotal || 0);
+          const grossSubtotal = Number(activeBill?.grossSubtotal ?? activeBill?.subtotal ?? (foodSub + drinkSub + merchSub));
+          const checkInAmountPaid = Number(
+            activeBill?.amountPaid ??
+            activeBill?.confirmedCheckInAmount ??
+            activeBill?.entryFeePaid ??
+            sessionData?.amountPaid ??
+            sessionData?.session?.amountPaid ??
+            0
+          );
+          const checkInPayment = Number(
+            activeBill?.prepaidCreditApplied ??
+            activeBill?.redemptionDeduction ??
+            (checkInAmountPaid > 0 ? Math.min(checkInAmountPaid, grossSubtotal) : 0)
+          );
+          const discountTotal = Number(activeBill?.discountTotal || 0);
+          const balanceBeforeCharges = Math.max(0, grossSubtotal - discountTotal - checkInPayment);
           const serviceCharge = Number(activeBill?.serviceChargeTotal ?? activeBill?.serviceCharge ?? 0);
           const taxTotal = Number(activeBill?.taxTotal ?? activeBill?.gst ?? 0);
-          const discountTotal = Number(activeBill?.discountTotal || 0);
-          const redemptionDeduction = Number(activeBill?.redemptionDeduction || 0);
           const rounding = Number(activeBill?.rounding || 0);
           const grandTotal = Number(activeBill?.grandTotal || 0);
 
@@ -2500,30 +2713,65 @@ const CustomerAppInner: React.FC = () => {
 
                     {/* Financial Breakdown */}
                     <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-5 text-xs space-y-2.5 shadow-xs">
-                      {foodSub > 0 && (
-                        <div className="flex justify-between text-text-muted dark:text-zinc-400">
-                          <span>Food Subtotal</span>
-                          <span className="font-semibold text-text-primary dark:text-white">
-                            ₹{foodSub.toFixed(2)}
-                          </span>
+                      {/* 1. Subtotal */}
+                      <div className="flex justify-between text-text-muted dark:text-zinc-400">
+                        <span>Subtotal</span>
+                        <span className="font-semibold text-text-primary dark:text-white">
+                          ₹{grossSubtotal.toFixed(2)}
+                        </span>
+                      </div>
+
+                      {/* Optional Category Breakdown */}
+                      {(foodSub > 0 || drinkSub > 0 || merchSub > 0) && ((foodSub > 0 && drinkSub > 0) || (foodSub > 0 && merchSub > 0) || (drinkSub > 0 && merchSub > 0)) && (
+                        <div className="pl-3 space-y-1 text-[11px] text-text-muted/80 dark:text-zinc-500 border-l-2 border-border/50 dark:border-white/5">
+                          {foodSub > 0 && (
+                            <div className="flex justify-between">
+                              <span>Food</span>
+                              <span>₹{foodSub.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {drinkSub > 0 && (
+                            <div className="flex justify-between">
+                              <span>Drink</span>
+                              <span>₹{drinkSub.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {merchSub > 0 && (
+                            <div className="flex justify-between">
+                              <span>Merchandise</span>
+                              <span>₹{merchSub.toFixed(2)}</span>
+                            </div>
+                          )}
                         </div>
                       )}
-                      {drinkSub > 0 && (
-                        <div className="flex justify-between text-text-muted dark:text-zinc-400">
-                          <span>Drink Subtotal</span>
-                          <span className="font-semibold text-text-primary dark:text-white">
-                            ₹{drinkSub.toFixed(2)}
-                          </span>
+
+                      {discountTotal > 0 && (
+                        <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                          <span>Discount Applied</span>
+                          <span>-₹{discountTotal.toFixed(2)}</span>
                         </div>
                       )}
-                      {merchSub > 0 && (
-                        <div className="flex justify-between text-text-muted dark:text-zinc-400">
-                          <span>Merchandise Subtotal</span>
-                          <span className="font-semibold text-text-primary dark:text-white">
-                            ₹{merchSub.toFixed(2)}
-                          </span>
-                        </div>
+
+                      {/* 2. Check-in Amount Paid & Deduction */}
+                      {checkInAmountPaid > 0 && (
+                        <>
+                          <div className="flex justify-between text-text-muted dark:text-zinc-400">
+                            <span>Check-in Amount Paid:</span>
+                            <span className="font-mono text-text-primary dark:text-white">₹{checkInAmountPaid.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                            <span>Less Check-in Payment:</span>
+                            <span className="font-mono">-₹{checkInPayment.toFixed(2)}</span>
+                          </div>
+                          {/* 3. Balance Before Charges */}
+                          <div className="flex justify-between text-text-primary dark:text-white font-semibold pt-0.5">
+                            <span>Balance Before Charges:</span>
+                            <span className="font-mono">₹{balanceBeforeCharges.toFixed(2)}</span>
+                          </div>
+                        </>
                       )}
+
+                      {/* 4. Service Charge */}
                       {serviceCharge > 0 && (
                         <div className="flex justify-between text-text-muted dark:text-zinc-400">
                           <span>Service Charge (5%)</span>
@@ -2532,6 +2780,8 @@ const CustomerAppInner: React.FC = () => {
                           </span>
                         </div>
                       )}
+
+                      {/* 5. GST */}
                       {taxTotal > 0 && (
                         <div className="flex justify-between text-text-muted dark:text-zinc-400">
                           <span>GST / Taxes (5%)</span>
@@ -2540,18 +2790,7 @@ const CustomerAppInner: React.FC = () => {
                           </span>
                         </div>
                       )}
-                      {discountTotal > 0 && (
-                        <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
-                          <span>Discount Applied</span>
-                          <span>-₹{discountTotal.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {redemptionDeduction > 0 && (
-                        <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
-                          <span>Prepaid Check-in Credit</span>
-                          <span>-₹{redemptionDeduction.toFixed(2)}</span>
-                        </div>
-                      )}
+
                       {rounding !== 0 && (
                         <div className="flex justify-between text-text-muted dark:text-zinc-400 text-[11px]">
                           <span>Rounding Adjustment</span>
@@ -2559,8 +2798,9 @@ const CustomerAppInner: React.FC = () => {
                         </div>
                       )}
 
+                      {/* 6. Final Amount Payable */}
                       <div className="pt-2 border-t border-border/60 dark:border-white/10 flex justify-between items-baseline">
-                        <span className="font-bold text-sm text-text-primary dark:text-white">Total Payable</span>
+                        <span className="font-bold text-sm text-text-primary dark:text-white">Final Amount Payable</span>
                         <span className="font-black text-base text-primary dark:text-[#D4AF37]">
                           ₹{grandTotal.toFixed(2)}
                         </span>
@@ -3145,7 +3385,7 @@ const CustomerAppInner: React.FC = () => {
                         </div>
                         <button
                           type="button"
-                          onClick={logout}
+                          onClick={() => setIsLogoutModalOpen(true)}
                           className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800/40 transition-colors cursor-pointer shrink-0"
                         >
                           <LogOut className="w-4 h-4" />
@@ -3402,7 +3642,14 @@ const CustomerAppInner: React.FC = () => {
             )}
           </div>
         )}
-      </main>
+        </main>
+
+        {/* Minimal Footer */}
+        <footer className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2 text-center select-none">
+          <p className="text-[11px] font-medium text-text-muted/70 dark:text-zinc-500 tracking-wide">
+            © 2026 Pegs N Bottles · Premium Dining Experience
+          </p>
+        </footer>
 
       {/* Live Feedback Toast */}
       {cartToast && (
@@ -3441,70 +3688,92 @@ const CustomerAppInner: React.FC = () => {
         </div>
       )}
 
-      {/* 2. Bottom Navigation Bar (Shown on mobile & tablet, hidden on desktop lg+) */}
-      <nav className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border/80 dark:border-white/10 bg-white/95 dark:bg-[#18181B]/95 backdrop-blur-md">
-        <div className="max-w-md md:max-w-xl mx-auto grid grid-cols-5 gap-1 px-2 pt-1.5 pb-2 text-[11px]">
+      {/* 2. Premium Mobile Bottom Navigation Bar (Shown on mobile & tablet, hidden on desktop lg+) */}
+      <nav className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border/80 dark:border-white/10 bg-white/95 dark:bg-[#18181B]/95 backdrop-blur-xl shadow-[0_-8px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_-8px_24px_rgba(0,0,0,0.4)]">
+        <div className="max-w-md md:max-w-xl mx-auto grid grid-cols-5 gap-1 px-2 pt-1.5 pb-2.5 items-end text-center">
+          {/* 1. Home */}
           <button
+            type="button"
             onClick={() => setActiveTab('home')}
-            className={`flex flex-col items-center gap-1 py-1.5 rounded-xl transition-colors cursor-pointer ${
+            className={`flex flex-col items-center justify-center gap-1 py-1 rounded-xl transition-all cursor-pointer ${
               activeTab === 'home' || activeTab === 'eat' || activeTab === 'drink' || activeTab === 'merch'
-                ? 'text-primary dark:text-[#D4AF37] font-black'
-                : 'text-text-muted dark:text-zinc-400 hover:text-text-primary'
+                ? 'text-primary dark:text-[#D4AF37] font-black scale-105'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-text-primary'
             }`}
           >
-            <HomeIcon className="w-5 h-5" />
-            <span>Home</span>
+            <HomeIcon className="w-4.5 h-4.5" />
+            <span className="text-[10px] sm:text-[11px] font-bold">Home</span>
           </button>
 
+          {/* 2. Repeat */}
           <button
-            onClick={() => setIsCallWaiterOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={isCallWaiterOpen}
-            aria-label="Call waiter"
-            className="flex flex-col items-center gap-1 py-1.5 rounded-xl text-text-muted dark:text-zinc-400 hover:text-text-primary transition-colors relative cursor-pointer"
-          >
-            <PhoneCall className="w-5 h-5" />
-            {activeRequests.length > 0 && (
-              <span className="absolute top-1 right-3 w-3.5 h-3.5 rounded-full bg-amber-500 text-white text-[8px] font-black flex items-center justify-center animate-pulse">
-                {activeRequests.length}
-              </span>
-            )}
-            <span>Call Waiter</span>
-          </button>
-
-          <button
+            type="button"
             onClick={() => setActiveTab('repeat')}
-            className={`flex flex-col items-center gap-1 py-1.5 rounded-xl transition-colors cursor-pointer ${
-              activeTab === 'repeat' ? 'text-primary dark:text-[#D4AF37] font-black' : 'text-text-muted dark:text-zinc-400 hover:text-text-primary'
+            className={`flex flex-col items-center justify-center gap-1 py-1 rounded-xl transition-all cursor-pointer ${
+              activeTab === 'repeat'
+                ? 'text-primary dark:text-[#D4AF37] font-black scale-105'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-text-primary'
             }`}
           >
-            <RotateCcw className="w-5 h-5" />
-            <span>Repeat</span>
+            <RotateCcw className="w-4.5 h-4.5" />
+            <span className="text-[10px] sm:text-[11px] font-bold">Repeat</span>
           </button>
 
+          {/* 3. Call Waiter (Center Primary Floating Action ~1.5-2x size) */}
+          <div className="flex flex-col items-center justify-center -mt-7 sm:-mt-8 relative z-10">
+            <button
+              type="button"
+              onClick={() => setIsCallWaiterOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={isCallWaiterOpen}
+              aria-label="Call waiter"
+              className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-primary via-purple-600 to-indigo-600 dark:from-[#D4AF37] dark:via-amber-500 dark:to-yellow-400 text-white dark:text-black shadow-lg shadow-primary/30 dark:shadow-black/50 flex items-center justify-center border-4 border-white dark:border-[#18181B] ring-2 ring-primary/20 dark:ring-[#D4AF37]/30 transition-transform hover:scale-105 active:scale-95 cursor-pointer relative group"
+            >
+              <PhoneCall className="w-6.5 h-6.5 sm:w-7 sm:h-7 stroke-[2.2] group-hover:rotate-12 transition-transform duration-200" />
+              {activeRequests.length > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-[#D4AF37] text-zinc-950 dark:bg-purple-600 dark:text-white text-[10px] font-black border-2 border-white dark:border-[#18181B] flex items-center justify-center shadow-md select-none">
+                  {activeRequests.length}
+                </span>
+              )}
+            </button>
+            <span className="text-[10px] sm:text-[11px] font-extrabold text-primary dark:text-[#D4AF37] mt-1.5 leading-none tracking-tight select-none">
+              Call Waiter
+            </span>
+          </div>
+
+          {/* 4. My Orders */}
           <button
+            type="button"
             onClick={() => setActiveTab('orders')}
-            className={`flex flex-col items-center gap-1 py-1.5 rounded-xl transition-colors relative cursor-pointer ${
-              activeTab === 'orders' ? 'text-primary dark:text-[#D4AF37] font-black' : 'text-text-muted dark:text-zinc-400 hover:text-text-primary'
+            className={`flex flex-col items-center justify-center gap-1 py-1 rounded-xl transition-all relative cursor-pointer ${
+              activeTab === 'orders'
+                ? 'text-primary dark:text-[#D4AF37] font-black scale-105'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-text-primary'
             }`}
           >
-            <ClipboardList className="w-5 h-5" />
-            {pendingOrders.length > 0 && (
-              <span className="absolute top-1 right-3 w-3.5 h-3.5 rounded-full bg-primary dark:bg-[#D4AF37] text-white dark:text-black text-[8px] font-black flex items-center justify-center">
-                {pendingOrders.length}
-              </span>
-            )}
-            <span>My Orders</span>
+            <div className="relative">
+              <ClipboardList className="w-4.5 h-4.5" />
+              {pendingOrders.length > 0 && (
+                <span className="absolute -top-1.5 -right-2.5 w-4 h-4 rounded-full bg-primary dark:bg-[#D4AF37] text-white dark:text-black text-[8px] font-black flex items-center justify-center shadow-xs">
+                  {pendingOrders.length}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] sm:text-[11px] font-bold">My Orders</span>
           </button>
 
+          {/* 5. Pay Bill */}
           <button
+            type="button"
             onClick={() => setActiveTab('bill')}
-            className={`flex flex-col items-center gap-1 py-1.5 rounded-xl transition-colors cursor-pointer ${
-              activeTab === 'bill' ? 'text-primary dark:text-[#D4AF37] font-black' : 'text-text-muted dark:text-zinc-400 hover:text-text-primary'
+            className={`flex flex-col items-center justify-center gap-1 py-1 rounded-xl transition-all cursor-pointer ${
+              activeTab === 'bill'
+                ? 'text-primary dark:text-[#D4AF37] font-black scale-105'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-text-primary'
             }`}
           >
-            <Receipt className="w-5 h-5" />
-            <span>Pay Bill</span>
+            <Receipt className="w-4.5 h-4.5" />
+            <span className="text-[10px] sm:text-[11px] font-bold">Pay Bill</span>
           </button>
         </div>
       </nav>
@@ -3529,75 +3798,26 @@ const CustomerAppInner: React.FC = () => {
         }
       />
 
-      {/* 1. Customer Portal Maximized Image Preview (View-Only, Click-Outside-To-Close) */}
-      {selectedImageModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Image preview for ${selectedImageModal.name}`}
-          onClick={() => setSelectedImageModal(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in cursor-pointer"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-md sm:max-w-lg aspect-square bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center cursor-default"
-          >
-            {/* Blurred background filling the square container */}
-            <img
-              src={formatImageUrl(selectedImageModal.url)}
-              alt=""
-              aria-hidden="true"
-              className="absolute inset-0 w-full h-full object-cover blur-lg scale-110 opacity-40 pointer-events-none"
-            />
-            <div className="absolute inset-0 bg-black/25 pointer-events-none" />
-
-            {/* Sharp foreground image contained */}
-            <img
-              src={formatImageUrl(selectedImageModal.url)}
-              alt={selectedImageModal.name}
-              className="relative z-10 w-full h-full object-contain p-4 drop-shadow-2xl"
-            />
-
-            {/* Top Close Button */}
-            <button
-              type="button"
-              onClick={() => setSelectedImageModal(null)}
-              aria-label="Close image preview"
-              className="absolute top-3.5 right-3.5 z-20 p-2 rounded-full bg-black/70 hover:bg-black text-white/80 hover:text-white border border-white/20 transition-all cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            {/* Bottom Caption Pill */}
-            <div className="absolute bottom-3.5 inset-x-3.5 z-20 flex justify-center pointer-events-none">
-              <span className="px-3.5 py-1.5 rounded-full bg-black/70 backdrop-blur-md text-white text-xs font-bold border border-white/15 max-w-[90%] truncate">
-                {selectedImageModal.name}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. Customer Portal Read-Only Product Details View */}
+      {/* 1. Customer Portal Read-Only Product Details View */}
       {selectedDetailItem && (
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="product-detail-title"
           onClick={() => setSelectedDetailItem(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in cursor-pointer"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/25 dark:bg-black/80 backdrop-blur-sm animate-fade-in cursor-pointer"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-xl max-h-[90vh] bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col cursor-default text-zinc-100"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col cursor-default text-text-primary dark:text-zinc-100"
           >
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between shrink-0 bg-zinc-900/60">
+            <div className="px-6 py-4 border-b border-border/80 dark:border-white/10 flex items-center justify-between shrink-0 bg-[#F5F3FA] dark:bg-white/5">
               <div className="flex items-center gap-2.5 min-w-0">
                 {selectedDetailItem.foodType && (
                   <VegBadge type={selectedDetailItem.foodType} size="sm" />
                 )}
-                <h3 id="product-detail-title" className="text-base sm:text-lg font-black text-white truncate">
+                <h3 id="product-detail-title" className="text-base sm:text-lg font-black text-text-primary dark:text-white truncate">
                   {selectedDetailItem.name}
                 </h3>
               </div>
@@ -3605,7 +3825,7 @@ const CustomerAppInner: React.FC = () => {
                 type="button"
                 onClick={() => setSelectedDetailItem(null)}
                 aria-label="Close product details"
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg text-text-muted hover:text-text-primary dark:text-zinc-400 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -3621,14 +3841,14 @@ const CustomerAppInner: React.FC = () => {
                     setSelectedImageModal({ url: imgUrl, name: selectedDetailItem.name });
                   }}
                   title="Click to view full image"
-                  className="relative w-full aspect-square max-h-72 sm:max-h-80 rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 flex items-center justify-center cursor-pointer group shadow-inner"
+                  className="relative w-full aspect-square max-h-72 sm:max-h-80 rounded-2xl overflow-hidden bg-zinc-100 dark:bg-white/5 border border-border/80 dark:border-white/10 flex items-center justify-center cursor-pointer group shadow-inner"
                 >
                   {/* Subtle blurred background fill */}
                   <img
                     src={formatImageUrl(selectedDetailItem.image || selectedDetailItem.imageUrl)}
                     alt=""
                     aria-hidden="true"
-                    className="absolute inset-0 w-full h-full object-cover blur-xl scale-125 opacity-40 pointer-events-none"
+                    className="absolute inset-0 w-full h-full object-cover blur-xl scale-125 opacity-25 dark:opacity-40 pointer-events-none"
                   />
                   {/* Sharp contained foreground image */}
                   <img
@@ -3636,30 +3856,30 @@ const CustomerAppInner: React.FC = () => {
                     alt={selectedDetailItem.name}
                     className="relative z-10 max-h-full max-w-full object-contain p-3 drop-shadow-md group-hover:scale-105 transition-transform duration-200"
                   />
-                  <span className="absolute bottom-2.5 right-2.5 z-20 px-2.5 py-1 rounded-lg bg-black/70 text-[10px] text-zinc-300 font-semibold backdrop-blur-md border border-white/10 shadow-sm">
+                  <span className="absolute bottom-2.5 right-2.5 z-20 px-2.5 py-1 rounded-lg bg-white/90 dark:bg-black/70 text-[10px] text-text-primary dark:text-zinc-100 font-semibold backdrop-blur-md border border-border/80 dark:border-white/10 shadow-sm">
                     Click to Enlarge
                   </span>
                 </div>
               ) : (
-                <div className="w-full h-44 rounded-2xl bg-zinc-900/60 border border-dashed border-zinc-800 flex flex-col items-center justify-center text-zinc-500 gap-1.5">
+                <div className="w-full h-44 rounded-2xl bg-[#F5F3FA] dark:bg-white/5 border border-dashed border-border/80 dark:border-white/10 flex flex-col items-center justify-center text-text-muted dark:text-zinc-500 gap-1.5">
                   <span className="text-3xl select-none" role="img" aria-label="No image">🍽️</span>
-                  <span className="text-xs font-semibold text-zinc-300">Image: N/A</span>
-                  <span className="text-[10px] text-zinc-500">No product image assigned</span>
+                  <span className="text-xs font-semibold text-text-primary dark:text-zinc-300">Image: N/A</span>
+                  <span className="text-[10px] text-text-muted dark:text-zinc-500">No product image assigned</span>
                 </div>
               )}
 
               {/* Price & Badges */}
-              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800/80">
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#F5F3FA] dark:bg-white/5 border border-border/80 dark:border-white/10">
                 <div>
-                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold block">
+                  <span className="text-[10px] text-text-muted dark:text-zinc-400 uppercase tracking-wider font-bold block">
                     Price
                   </span>
                   <div className="flex items-baseline gap-2 mt-0.5">
-                    <span className="text-lg sm:text-xl font-black text-[#D4AF37]">
+                    <span className="text-lg sm:text-xl font-black text-primary dark:text-[#D4AF37]">
                       ₹{Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice ?? 0).toFixed(2)}
                     </span>
                     {Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice) < Number(selectedDetailItem.basePrice ?? 0) && (
-                      <span className="text-xs text-zinc-500 line-through">
+                      <span className="text-xs text-text-muted dark:text-zinc-500 line-through">
                         ₹{Number(selectedDetailItem.basePrice).toFixed(2)}
                       </span>
                     )}
@@ -3668,28 +3888,28 @@ const CustomerAppInner: React.FC = () => {
 
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {selectedDetailItem.isAvailable === false ? (
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-950/60 text-rose-400 border border-rose-800/60">
-                      Sold Out
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-500/20 dark:border-rose-800/60">
+                      Out of Stock
                     </span>
                   ) : (
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-500/20 dark:border-emerald-800/60">
                       In Stock
                     </span>
                   )}
                   {Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice) < Number(selectedDetailItem.basePrice ?? 0) && (
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-500/20 dark:border-emerald-800/60">
                       {selectedDetailItem.discountMode === 'PERCENTAGE'
                         ? `${selectedDetailItem.discountValue}% OFF`
                         : `₹${selectedDetailItem.discountValue} OFF`}
                     </span>
                   )}
                   {selectedDetailItem.featured && (
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-950/60 text-amber-400 border border-amber-800/60">
-                      Featured
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 dark:bg-[#D4AF37]/15 dark:text-[#E5C158] dark:border-[#D4AF37]/30">
+                      Signature
                     </span>
                   )}
                   {selectedDetailItem.popular && (
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30">
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 dark:bg-[#D4AF37]/15 dark:text-[#E5C158] dark:border-[#D4AF37]/30">
                       Popular
                     </span>
                   )}
@@ -3698,10 +3918,10 @@ const CustomerAppInner: React.FC = () => {
 
               {/* Description */}
               <div>
-                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+                <span className="text-[11px] font-bold text-text-muted dark:text-zinc-400 uppercase tracking-wider block mb-1">
                   Description
                 </span>
-                <p className="text-xs text-zinc-300 leading-relaxed p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
+                <p className="text-xs text-text-primary dark:text-zinc-300 leading-relaxed p-3 rounded-xl bg-[#F5F3FA] dark:bg-white/5 border border-border/80 dark:border-white/10">
                   {selectedDetailItem.description?.trim() || 'N/A'}
                 </p>
               </div>
@@ -3709,11 +3929,11 @@ const CustomerAppInner: React.FC = () => {
               {/* Customer Specification Grid (Strict N/A & Not applicable Fallbacks) */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {/* Section */}
-                <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                <div className="p-3 rounded-xl bg-[#F5F3FA] dark:bg-white/5 border border-border/80 dark:border-white/10">
+                  <span className="text-[10px] font-bold text-text-muted dark:text-zinc-500 uppercase tracking-wider block">
                     Section
                   </span>
-                  <span className="text-xs font-semibold text-zinc-200 mt-0.5 block">
+                  <span className="text-xs font-semibold text-text-primary dark:text-zinc-200 mt-0.5 block">
                     {selectedDetailItem.sectionSlug === 'eat'
                       ? 'Food'
                       : selectedDetailItem.sectionName || (selectedDetailItem.sectionSlug ? selectedDetailItem.sectionSlug.toUpperCase() : 'N/A')}
@@ -3721,21 +3941,21 @@ const CustomerAppInner: React.FC = () => {
                 </div>
 
                 {/* Category */}
-                <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                <div className="p-3 rounded-xl bg-[#F5F3FA] dark:bg-white/5 border border-border/80 dark:border-white/10">
+                  <span className="text-[10px] font-bold text-text-muted dark:text-zinc-500 uppercase tracking-wider block">
                     Category
                   </span>
-                  <span className="text-xs font-semibold text-zinc-200 mt-0.5 block">
+                  <span className="text-xs font-semibold text-text-primary dark:text-zinc-200 mt-0.5 block">
                     {selectedDetailItem.categoryName || selectedDetailItem.category?.name || 'N/A'}
                   </span>
                 </div>
 
                 {/* Subcategory */}
-                <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                <div className="p-3 rounded-xl bg-[#F5F3FA] dark:bg-white/5 border border-border/80 dark:border-white/10">
+                  <span className="text-[10px] font-bold text-text-muted dark:text-zinc-500 uppercase tracking-wider block">
                     Subcategory
                   </span>
-                  <span className="text-xs font-semibold text-zinc-200 mt-0.5 block">
+                  <span className="text-xs font-semibold text-text-primary dark:text-zinc-200 mt-0.5 block">
                     {selectedDetailItem.subcategory?.name || selectedDetailItem.subcategoryName
                       ? (selectedDetailItem.subcategory?.name || selectedDetailItem.subcategoryName)
                       : selectedDetailItem.subcategoryId
@@ -3745,11 +3965,11 @@ const CustomerAppInner: React.FC = () => {
                 </div>
 
                 {/* Dietary Classification */}
-                <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                <div className="p-3 rounded-xl bg-[#F5F3FA] dark:bg-white/5 border border-border/80 dark:border-white/10">
+                  <span className="text-[10px] font-bold text-text-muted dark:text-zinc-500 uppercase tracking-wider block">
                     Dietary Classification
                   </span>
-                  <span className="text-xs font-semibold text-zinc-200 mt-0.5 block">
+                  <span className="text-xs font-semibold text-text-primary dark:text-zinc-200 mt-0.5 block">
                     {selectedDetailItem.foodType
                       ? selectedDetailItem.foodType === 'VEG'
                         ? 'Vegetarian (Veg)'
@@ -3767,11 +3987,11 @@ const CustomerAppInner: React.FC = () => {
                 </div>
 
                 {/* Prep Time */}
-                <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                <div className="p-3 rounded-xl bg-[#F5F3FA] dark:bg-white/5 border border-border/80 dark:border-white/10">
+                  <span className="text-[10px] font-bold text-text-muted dark:text-zinc-500 uppercase tracking-wider block">
                     Prep Time
                   </span>
-                  <span className="text-xs font-semibold text-zinc-200 mt-0.5 block">
+                  <span className="text-xs font-semibold text-text-primary dark:text-zinc-200 mt-0.5 block">
                     {selectedDetailItem.sectionSlug === 'merch'
                       ? 'Not applicable'
                       : selectedDetailItem.preparationTime !== undefined && selectedDetailItem.preparationTime !== null
@@ -3781,11 +4001,11 @@ const CustomerAppInner: React.FC = () => {
                 </div>
 
                 {/* Pricing / Offers */}
-                <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                <div className="p-3 rounded-xl bg-[#F5F3FA] dark:bg-white/5 border border-border/80 dark:border-white/10">
+                  <span className="text-[10px] font-bold text-text-muted dark:text-zinc-500 uppercase tracking-wider block">
                     Offers / Discounts
                   </span>
-                  <span className="text-xs font-semibold text-zinc-200 mt-0.5 block">
+                  <span className="text-xs font-semibold text-text-primary dark:text-zinc-200 mt-0.5 block">
                     {Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice) < Number(selectedDetailItem.basePrice ?? 0)
                       ? selectedDetailItem.discountMode === 'PERCENTAGE'
                         ? `${selectedDetailItem.discountValue}% OFF`
@@ -3797,8 +4017,8 @@ const CustomerAppInner: React.FC = () => {
               </div>
 
               {/* Variants (if present) */}
-              <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/60 space-y-1.5">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+              <div className="p-3 rounded-xl bg-[#F5F3FA] dark:bg-white/5 border border-border/80 dark:border-white/10 space-y-1.5">
+                <span className="text-[10px] font-bold text-text-muted dark:text-zinc-500 uppercase tracking-wider block">
                   Available Variants
                 </span>
                 {selectedDetailItem.variants && selectedDetailItem.variants.length > 0 ? (
@@ -3806,26 +4026,127 @@ const CustomerAppInner: React.FC = () => {
                     {selectedDetailItem.variants.map((v: any) => (
                       <span
                         key={v.id || v.name}
-                        className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-200 text-xs font-semibold border border-zinc-700"
+                        className="px-2.5 py-1 rounded-lg bg-white dark:bg-white/10 text-text-primary dark:text-zinc-200 text-xs font-semibold border border-border/60 dark:border-white/10 shadow-2xs"
                       >
                         {v.name} ({Number(v.priceDelta) >= 0 ? `+₹${v.priceDelta}` : `-₹${Math.abs(Number(v.priceDelta))}`})
                       </span>
                     ))}
                   </div>
                 ) : (
-                  <span className="text-xs text-zinc-400">Not applicable</span>
+                  <span className="text-xs text-text-muted dark:text-zinc-400">Not applicable</span>
                 )}
               </div>
             </div>
 
             {/* Modal Footer (Strictly View-Only Close Action) */}
-            <div className="p-4 px-6 border-t border-zinc-800 bg-zinc-900/60 flex items-center justify-end shrink-0">
+            <div className="p-4 px-6 border-t border-border/80 dark:border-white/10 bg-[#F5F3FA] dark:bg-white/5 flex items-center justify-end shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedDetailItem(null)}
-                className="px-5 py-2 rounded-xl text-xs font-bold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 transition-colors cursor-pointer"
+                className="px-5 py-2 rounded-xl text-xs font-bold text-text-primary dark:text-zinc-300 hover:text-text-primary dark:hover:text-white bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Customer Portal Maximized Image Preview (z-[100] Layering to Appear Above All Modals & Sheets) */}
+      {selectedImageModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Image preview for ${selectedImageModal.name}`}
+          onClick={() => setSelectedImageModal(null)}
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6 bg-black/25 dark:bg-black/90 backdrop-blur-md animate-fade-in cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-sm sm:max-w-md md:max-w-lg aspect-square max-h-[85vh] bg-white dark:bg-zinc-950 border border-border/80 dark:border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center cursor-default"
+          >
+            {/* Blurred background filling the square container */}
+            <img
+              src={formatImageUrl(selectedImageModal.url)}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover blur-xl scale-110 opacity-20 dark:opacity-40 pointer-events-none"
+            />
+            <div className="absolute inset-0 bg-white/40 dark:bg-black/25 pointer-events-none" />
+
+            {/* Sharp foreground image contained */}
+            <img
+              src={formatImageUrl(selectedImageModal.url)}
+              alt={selectedImageModal.name}
+              className="relative z-10 max-h-full max-w-full w-auto h-auto object-contain p-4 drop-shadow-md dark:drop-shadow-2xl"
+            />
+
+            {/* Top Close Button */}
+            <button
+              type="button"
+              onClick={() => setSelectedImageModal(null)}
+              aria-label="Close image preview"
+              className="absolute top-3.5 right-3.5 z-20 p-2.5 rounded-full bg-white/90 hover:bg-white text-text-primary border border-border/80 dark:bg-black/75 dark:hover:bg-black dark:text-white dark:border-white/20 transition-all cursor-pointer shadow-lg"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Bottom Caption Pill */}
+            <div className="absolute bottom-3.5 inset-x-3.5 z-20 flex justify-center pointer-events-none">
+              <span className="px-3.5 py-1.5 rounded-full bg-white/90 dark:bg-black/75 backdrop-blur-md text-text-primary dark:text-white text-xs font-bold border border-border/80 dark:border-white/20 max-w-[90%] truncate shadow-md">
+                {selectedImageModal.name}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Premium Logout Confirmation Dialog */}
+      {isLogoutModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="logout-dialog-title"
+          onClick={() => setIsLogoutModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/25 dark:bg-black/80 backdrop-blur-sm animate-fade-in cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-sm sm:max-w-md rounded-3xl bg-white dark:bg-[#18181B] border border-primary/30 dark:border-[#D4AF37]/50 shadow-2xl p-6 sm:p-7 space-y-5 text-center cursor-default animate-in fade-in zoom-in-95 duration-200"
+          >
+            {/* Modal Icon Pill */}
+            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20 flex items-center justify-center mx-auto shadow-xs">
+              <LogOut className="w-6 h-6" />
+            </div>
+
+            {/* Title & Description */}
+            <div className="space-y-2">
+              <h3 id="logout-dialog-title" className="text-lg sm:text-xl font-black text-text-primary dark:text-white tracking-tight">
+                Leave Dining Session?
+              </h3>
+              <p className="text-xs sm:text-sm text-text-muted dark:text-zinc-400 leading-relaxed max-w-xs mx-auto">
+                Your active dining session and table will remain open. You can re-scan your table pass at any time to resume ordering.
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsLogoutModalOpen(false)}
+                className="flex-1 py-3 px-4 rounded-xl text-xs font-bold text-text-primary dark:text-zinc-200 bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 border border-border/80 dark:border-white/10 transition-all cursor-pointer"
+              >
+                Stay / Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLogoutModalOpen(false);
+                  logout();
+                }}
+                className="flex-1 py-3 px-4 rounded-xl text-xs font-extrabold text-white bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-600/25 transition-all active:scale-95 cursor-pointer"
+              >
+                Leave / Logout
               </button>
             </div>
           </div>

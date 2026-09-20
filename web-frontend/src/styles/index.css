@@ -203,7 +203,37 @@ body {
 .dark body {
   background-color: var(--bg-primary) !important;
   color: var(--text-primary) !important;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+  font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+/* Smooth Balanced Theme Transitions across surfaces, text, borders, and backgrounds */
+html,
+body,
+#root,
+header,
+nav,
+aside,
+main,
+section,
+footer,
+article,
+table,
+tr,
+th,
+td,
+input,
+select,
+textarea,
+button,
+.glass-panel,
+.premium-menu-item,
+.glass-sub-menu-btn,
+.premium-btn-secondary,
+.premium-tab-primary,
+.premium-tab-secondary {
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+  transition-duration: 0.25s;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 ::selection {
@@ -1225,3 +1255,13 @@ html:not(.dark) .premium-btn-primary .nav-icon-badge {
   background: rgba(255, 255, 255, 0.18) !important;
   border: 1px solid rgba(255, 255, 255, 0.3) !important;
 }
+
+/* Touch & Mobile Horizontal Scrollbar Utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+

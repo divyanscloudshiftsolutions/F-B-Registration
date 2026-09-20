@@ -133,7 +133,7 @@ export const MenuCatalogManager: React.FC = () => {
           })),
         }))
       );
-      setFeedback(`Item marked ${newStatus ? 'IN STOCK' : '86 / SOLD OUT'}!`);
+      setFeedback(`Item marked ${newStatus ? 'IN STOCK' : 'OUT OF STOCK'}!`);
       setTimeout(() => setFeedback(null), 3000);
     } catch (err: any) {
       setFeedback(`Failed to update item: ${err.message}`);
@@ -746,14 +746,14 @@ export const MenuCatalogManager: React.FC = () => {
                           disabled={isToggling || !canManage}
                           onClick={() => handleToggleAvailability(item.id, isAvail)}
                           aria-pressed={isAvail}
-                          aria-label={`Toggle availability for ${item.name}. Currently ${isAvail ? 'In Stock' : '86 Sold Out'}`}
+                          aria-label={`Toggle availability for ${item.name}. Currently ${isAvail ? 'In Stock' : 'Out of Stock'}`}
                           className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
                             isAvail
                               ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
                               : 'bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-700 dark:text-rose-400'
                           } disabled:opacity-50`}
                         >
-                          {isToggling ? 'Updating...' : isAvail ? 'In Stock' : '86 Sold Out'}
+                          {isToggling ? 'Updating...' : isAvail ? 'In Stock' : 'Out of Stock'}
                         </button>
                       </td>
 
@@ -1154,7 +1154,7 @@ export const MenuCatalogManager: React.FC = () => {
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {selectedDetailItem.isAvailable === false ? (
                     <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60">
-                      Sold Out
+                      Out of Stock
                     </span>
                   ) : (
                     <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">

@@ -248,6 +248,7 @@ const AppContent: React.FC = () => {
     // Dedicated Chef View
     if (userRole === 'chef') {
       if (activeTab === 'quick_attendance') return <QuickAttendanceWebPage />;
+      if (activeTab === 'kds_stock' || activeTab === 'kitchen/stock') return <KitchenKDSPage initialSubTab="stock" />;
       return <KitchenKDSPage />;
     }
 
@@ -272,9 +273,9 @@ const AppContent: React.FC = () => {
       return <WaiterStationPage initialTab={waiterTab} onTabChange={(tab) => setActiveTab(`waiter_${tab}`)} />;
     }
 
-    if (activeTab === 'kds' || activeTab === 'kds_kitchen') {
+    if (activeTab === 'kds' || activeTab === 'kds_kitchen' || activeTab === 'kds_stock' || activeTab === 'kitchen/stock') {
       if (userRole === 'admin' || userRole === 'manager' || userRole === 'chef') {
-        return <KitchenKDSPage />;
+        return <KitchenKDSPage initialSubTab={activeTab === 'kds_stock' || activeTab === 'kitchen/stock' ? 'stock' : 'tickets'} />;
       }
       return (
         <div className="p-8 text-center text-text-muted">
@@ -381,7 +382,9 @@ const AppContent: React.FC = () => {
   };
 
   const getTabTitle = () => {
+    if (activeTab === 'kds_stock' || activeTab === 'kitchen/stock') return 'Kitchen Station Stock & Inventory';
     if (activeTab === 'kds' || activeTab === 'kds_kitchen') return 'Kitchen KDS Food Preparation';
+    if (activeTab === 'bartender/stock' || activeTab === 'bar_stock') return 'Bar Station Beverage Stock Availability';
     if (activeTab === 'bartender/kds' || activeTab === 'kds_bar') return 'Bar KDS Beverage Station';
     if (activeTab === 'bartender/checkins') return 'Bartender Active Check-Ins';
     if (activeTab === 'bartender/scan') return 'Bartender Pass Verification Terminal';

@@ -27,6 +27,7 @@ import {
   QrCode,
   CreditCard,
   RotateCw,
+  RotateCcw,
   ArrowRight,
   ArrowLeft,
   AlertTriangle,
@@ -36,6 +37,7 @@ import {
   Wine,
 } from 'lucide-react';
 import { VegBadge } from '../components/customer/VegBadge';
+import { useServedUndo } from '../services/servedUndoManager';
 
 export type WaiterTab = 'overview' | 'tables' | 'requests' | 'ready' | 'bills';
 
@@ -93,6 +95,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   const [billsSubTab, setBillsSubTab] = useState<'active' | 'history'>('active');
   const [billsSearchQuery, setBillsSearchQuery] = useState<string>('');
   const [settlementStep, setSettlementStep] = useState<'review' | 'payment'>('review');
+  const [showPaymentConfirmationAlert, setShowPaymentConfirmationAlert] = useState<boolean>(false);
 
   // Table-Wise Waiter Service & Ready State
   const [readyStationFilter, setReadyStationFilter] = useState<'ALL' | 'KITCHEN' | 'BAR'>('ALL');
@@ -100,6 +103,14 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   const [selectedServiceTable, setSelectedServiceTable] = useState<any | null>(null);
   const [tableActiveOrders, setTableActiveOrders] = useState<any[]>([]);
   const [isTableOrdersLoading, setIsTableOrdersLoading] = useState<boolean>(false);
+
+  // 5-Second Tab-Resilient Inline Undo Hook
+  const {
+    isPending: isServedUndoPending,
+    getRemainingSeconds: getServedUndoSeconds,
+    startUndo: startServedUndo,
+    cancelUndo: cancelServedUndo,
+  } = useServedUndo();
 
   // Active Live Ticker (15s update for elapsed time display without network fetches)
   const [now, setNow] = useState<number>(Date.now());
@@ -299,7 +310,9 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     try {
       const currentTables = tablesRef.current;
       const matchedTable = currentTables.find(
-        (t: any) => (target.tableId && t.id === target.tableId) || (target.tableNumber && t.tableNumber === target.tableNumber)
+        (t: any) =>
+          (target.tableId && t.id === target.tableId) ||
+          (target.tableNumber && String(t.tableNumber).trim().toUpperCase() === String(target.tableNumber).trim().toUpperCase())
       );
       const tokenNumber =
         target.tokenNumber ||
@@ -307,8 +320,9 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
         matchedTable?.activeSession?.tokenNumber ||
         matchedTable?.currentTokenId;
       const tableId = target.tableId || matchedTable?.id;
+      const tableNumber = target.tableNumber || matchedTable?.tableNumber;
 
-      const orders = await api.getActiveOrders(tokenNumber, tableId);
+      const orders = await api.getActiveOrders(tokenNumber, tableId, tableNumber);
       setTableActiveOrders(Array.isArray(orders) ? orders : []);
     } catch (err) {
       console.warn('Failed to load active orders for table service:', err);
@@ -350,46 +364,40 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     fetchTableServiceOrders(tableGroup);
   };
 
+  const handleServeFromOverview = (tableGroup: any) => {
+    setActiveTab('ready');
+    handleOpenTableService(tableGroup);
+  };
+
   const handleCloseTableService = () => {
     setSelectedServiceTable(null);
     selectedServiceTableRef.current = null;
     setTableActiveOrders([]);
   };
 
-  const handleServeItemFromModal = async (orderItemId: string) => {
-    if (updatingItemIds.has(orderItemId)) return;
-    setUpdatingItemIds((prev) => new Set(prev).add(orderItemId));
-    try {
-      await api.updateOrderItemStatus(orderItemId, 'SERVED', user?.id);
-      await Promise.all([fetchReadyItems(true), fetchTables(true)]);
+  const handleServeItemFromModal = (orderItemId: string) => {
+    startServedUndo(orderItemId, user?.id, async () => {
+      setReadyItems((prev) => prev.filter((i: any) => i.id !== orderItemId));
+      setTableActiveOrders((prev) =>
+        prev.map((order) => ({
+          ...order,
+          items: (order.items || []).map((it: any) =>
+            it.id === orderItemId ? { ...it, status: 'SERVED', servedAt: new Date().toISOString() } : it
+          ),
+        }))
+      );
+      await Promise.all([fetchReadyItems(true), fetchTables(true), fetchActiveBills(false)]);
       if (selectedServiceTableRef.current) {
-        fetchTableServiceOrders(selectedServiceTableRef.current);
+        await fetchTableServiceOrders(selectedServiceTableRef.current);
       }
-    } catch (err: any) {
-      alert(err.message || 'Failed to serve item.');
-    } finally {
-      setUpdatingItemIds((prev) => {
-        const next = new Set(prev);
-        next.delete(orderItemId);
-        return next;
-      });
-    }
+    });
   };
 
-  const handleServeBatchItemsFromModal = async (orderItemIds: string[]) => {
-    if (!orderItemIds || orderItemIds.length === 0 || isServingBatch) return;
-    setIsServingBatch(true);
-    try {
-      await Promise.all(orderItemIds.map((id) => api.updateOrderItemStatus(id, 'SERVED', user?.id)));
-      await Promise.all([fetchReadyItems(true), fetchTables(true)]);
-      if (selectedServiceTableRef.current) {
-        fetchTableServiceOrders(selectedServiceTableRef.current);
-      }
-    } catch (err: any) {
-      alert(err.message || 'Failed to serve some items.');
-    } finally {
-      setIsServingBatch(false);
-    }
+  const handleServeBatchItemsFromModal = (orderItemIds: string[]) => {
+    if (!orderItemIds || orderItemIds.length === 0) return;
+    orderItemIds.forEach((id) => {
+      handleServeItemFromModal(id);
+    });
   };
 
   useEffect(() => {
@@ -410,6 +418,8 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     joinRoom('staff:requests');
     joinRoom('staff:ready');
     joinRoom('staff:billing');
+    joinRoom('staff:orders');
+    joinRoom('staff:all');
 
     const unsubReqCreated = onSocketEvent('service_request.created', () => {
       fetchRequests(true);
@@ -487,6 +497,8 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       leaveRoom('staff:requests');
       leaveRoom('staff:ready');
       leaveRoom('staff:billing');
+      leaveRoom('staff:orders');
+      leaveRoom('staff:all');
       unsubTableEv();
       unsubReqCreated();
       unsubReqUpdated();
@@ -584,11 +596,32 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   const handleMarkItemServed = async (orderItemId: string) => {
     if (updatingItemIds.has(orderItemId)) return;
     setUpdatingItemIds((prev) => new Set(prev).add(orderItemId));
+
+    const item = readyItems.find((i: any) => i.id === orderItemId);
+    const itemName = item?.itemName || 'Item';
+    const tableNum = item?.order?.tableNumber || item?.tableNumber;
+
     try {
+      // 1. Immediately call the existing backend status-update API
       await api.updateOrderItemStatus(orderItemId, 'SERVED', user?.id);
-      await Promise.all([fetchReadyItems(true), fetchTables(true)]);
+
+      // 2. Immediately remove from readyItems
+      setReadyItems((prev) => prev.filter((i: any) => i.id !== orderItemId));
+
+      // 3. Add to Undo items list (5 seconds window)
+      const entry: UndoItemEntry = {
+        id: orderItemId,
+        name: itemName,
+        tableNumber: tableNum,
+        expiresAt: Date.now() + 5000,
+      };
+      setUndoItems((prev) => [entry, ...prev.filter((u) => u.id !== orderItemId)]);
+
+      // 4. Silent refresh
+      await Promise.all([fetchReadyItems(true), fetchTables(true), fetchActiveBills(false)]);
     } catch (err: any) {
       alert(err.message || 'Failed to serve item.');
+      await fetchReadyItems(true);
     } finally {
       setUpdatingItemIds((prev) => {
         const next = new Set(prev);
@@ -689,6 +722,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     setSelectedPaymentMethod('CASH');
     setSettlementError(null);
     setSettlementStep('review');
+    setShowPaymentConfirmationAlert(false);
 
     const lookupToken =
       tableOrBill.tokenNumber ||
@@ -795,6 +829,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     }
     setSettlementStep('review');
     setSettlementError(null);
+    setShowPaymentConfirmationAlert(false);
   };
 
   const handleCloseBillModal = async () => {
@@ -813,6 +848,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     setSelectedBillTable(null);
     setSettlementError(null);
     setSettlementStep('review');
+    setShowPaymentConfirmationAlert(false);
   };
 
   const handleServeItemInline = async (orderItemId: string) => {
@@ -846,6 +882,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   };
 
   const handleConfirmPayment = async () => {
+    setShowPaymentConfirmationAlert(false);
     if (!selectedBillTable || isSettlingBill) return;
     const tokenToSettle =
       activeTableBill?.tokenNumber ||
@@ -1344,7 +1381,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   {readyTables.map((tbl) => (
                     <div
                       key={tbl.tableKey}
-                      onClick={() => handleOpenTableService(tbl)}
+                      onClick={() => handleServeFromOverview(tbl)}
                       className="p-3 rounded-xl border border-emerald-500/30 dark:border-emerald-500/30 dark:bg-[#141416] bg-emerald-50/30 flex items-center justify-between gap-3 shadow-2xs hover:border-emerald-500 cursor-pointer transition-all"
                     >
                       <div className="min-w-0 flex-1">
@@ -1374,7 +1411,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleOpenTableService(tbl);
+                          handleServeFromOverview(tbl);
                         }}
                         className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
                       >
@@ -2919,57 +2956,96 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                     </div>
 
                     {/* Financial Summary */}
-                    <div className="pt-3 border-t border-zinc-200 dark:border-white/10 space-y-1.5 text-xs">
-                      <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
-                        <span>Subtotal</span>
-                        <span className="font-mono font-semibold">
-                          ₹{Number(bill.grossSubtotal || bill.subtotal || 0).toFixed(2)}
-                        </span>
-                      </div>
+                    {(() => {
+                      const subtotal = Number(bill.grossSubtotal || bill.subtotal || 0);
+                      const checkInAmountPaid = Number(
+                        bill.amountPaid ??
+                        bill.confirmedCheckInAmount ??
+                        bill.entryFeePaid ??
+                        selectedBillModalTable?.amountPaid ??
+                        selectedBillModalTable?.session?.amountPaid ??
+                        0
+                      );
+                      const checkInPayment = Number(
+                        bill.prepaidCreditApplied ??
+                        bill.redemptionDeduction ??
+                        (checkInAmountPaid > 0 ? Math.min(checkInAmountPaid, subtotal) : 0)
+                      );
+                      const balanceBeforeCharges = Math.max(0, subtotal - checkInPayment);
+                      const serviceCharge = Number(bill.serviceChargeTotal || bill.serviceCharge || 0);
+                      const taxTotal = Number(bill.taxTotal || (Number(bill.cgst || 0) + Number(bill.sgst || 0)) || 0);
+                      const rounding = Number(bill.rounding || 0);
+                      const grandTotal = Number(bill.grandTotal || bill.total || 0);
 
-                      {Number(bill.serviceChargeTotal || bill.serviceCharge || 0) > 0 && (
-                        <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
-                          <span>Service Charge (5%)</span>
-                          <span className="font-mono">
-                            ₹{Number(bill.serviceChargeTotal || bill.serviceCharge || 0).toFixed(2)}
-                          </span>
+                      return (
+                        <div className="pt-3 border-t border-zinc-200 dark:border-white/10 space-y-1.5 text-xs">
+                          {/* 1. Subtotal */}
+                          <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+                            <span>Subtotal</span>
+                            <span className="font-mono font-semibold">
+                              ₹{subtotal.toFixed(2)}
+                            </span>
+                          </div>
+
+                          {/* 2. Check-in Amount Paid & Deduction */}
+                          {checkInAmountPaid > 0 && (
+                            <>
+                              <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
+                                <span>Check-in Amount Paid</span>
+                                <span className="font-mono font-semibold">₹{checkInAmountPaid.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                                <span>Less Check-in Payment</span>
+                                <span className="font-mono">-₹{checkInPayment.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between text-zinc-700 dark:text-zinc-300 font-semibold">
+                                <span>Balance Before Charges</span>
+                                <span className="font-mono">₹{balanceBeforeCharges.toFixed(2)}</span>
+                              </div>
+                            </>
+                          )}
+
+                          {/* 4. Service Charge */}
+                          {serviceCharge > 0 && (
+                            <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
+                              <span>Service Charge (5%)</span>
+                              <span className="font-mono">
+                                ₹{serviceCharge.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* 5. GST */}
+                          {taxTotal > 0 && (
+                            <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
+                              <span>GST / Taxes (5%)</span>
+                              <span className="font-mono">
+                                ₹{taxTotal.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+
+                          {rounding !== 0 && (
+                            <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
+                              <span>Rounding Adjustment</span>
+                              <span className="font-mono">
+                                {rounding > 0
+                                  ? `+₹${rounding.toFixed(2)}`
+                                  : `-₹${Math.abs(rounding).toFixed(2)}`}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* 6. Final Amount Payable */}
+                          <div className="flex justify-between items-center text-base font-black pt-2 border-t border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white">
+                            <span>Final Amount Payable</span>
+                            <span className="text-primary dark:text-[#D4AF37] font-mono text-xl font-black">
+                              ₹{grandTotal.toFixed(2)}
+                            </span>
+                          </div>
                         </div>
-                      )}
-
-                      {Number(bill.taxTotal || bill.cgst || bill.sgst || 0) > 0 && (
-                        <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
-                          <span>GST / Taxes (5%)</span>
-                          <span className="font-mono">
-                            ₹{Number(bill.taxTotal || Number(bill.cgst || 0) + Number(bill.sgst || 0)).toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-
-                      {Number(bill.redemptionDeduction || 0) > 0 && (
-                        <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
-                          <span>Prepaid Check-in Credit</span>
-                          <span className="font-mono">-₹{Number(bill.redemptionDeduction).toFixed(2)}</span>
-                        </div>
-                      )}
-
-                      {Number(bill.rounding || 0) !== 0 && (
-                        <div className="flex justify-between text-zinc-500 dark:text-zinc-400">
-                          <span>Rounding Adjustment</span>
-                          <span className="font-mono">
-                            {Number(bill.rounding) > 0
-                              ? `+₹${Number(bill.rounding).toFixed(2)}`
-                              : `-₹${Math.abs(Number(bill.rounding)).toFixed(2)}`}
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="flex justify-between items-center text-base font-black pt-2 border-t border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white">
-                        <span>Final Amount Payable</span>
-                        <span className="text-primary dark:text-[#D4AF37] font-mono text-xl font-black">
-                          ₹{Number(bill.grandTotal || bill.total || 0).toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
+                      );
+                    })()}
                   </>
                 ) : (
                   /* ========================================================= */
@@ -3148,7 +3224,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                 })() : (
                   <button
                     type="button"
-                    onClick={handleConfirmPayment}
+                    onClick={() => setShowPaymentConfirmationAlert(true)}
                     disabled={isSettlingBill || isBillLoading || !bill || Number(bill.grandTotal || bill.total || 0) < 0}
                     className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-black text-xs shadow-sm active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -3166,6 +3242,77 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   </button>
                 )}
               </div>
+
+              {/* Payment Receipt Confirmation Alert Modal */}
+              {showPaymentConfirmationAlert && (
+                <div className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+                  <div className="w-full max-w-md bg-white dark:bg-[#18181A] rounded-3xl border border-zinc-200 dark:border-white/10 shadow-2xl p-5 sm:p-6 space-y-4 animate-scale-up text-zinc-900 dark:text-white">
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                        <AlertCircle className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1 flex-1">
+                        <h3 className="font-black text-base text-zinc-900 dark:text-white">
+                          Confirm Payment
+                        </h3>
+                        <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed font-semibold">
+                          Are you sure the payment has been received?
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-[#141416] border border-zinc-200/80 dark:border-white/5 space-y-2 text-xs">
+                      <div className="flex justify-between items-center">
+                        <span className="text-zinc-500 dark:text-zinc-400">Table:</span>
+                        <span className="font-bold text-zinc-900 dark:text-white">
+                          Table {tableNum}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-zinc-500 dark:text-zinc-400">Payment Method:</span>
+                        <span className="font-bold text-zinc-900 dark:text-white">
+                          {selectedPaymentMethod}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-zinc-200/60 dark:border-white/5">
+                        <span className="text-zinc-500 dark:text-zinc-400 font-medium">Total Amount:</span>
+                        <span className="font-mono font-black text-sm text-primary dark:text-[#D4AF37]">
+                          ₹{Number(bill.grandTotal || bill.total || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowPaymentConfirmationAlert(false)}
+                        disabled={isSettlingBill}
+                        className="flex-1 py-2.5 rounded-xl border border-zinc-300 dark:border-white/15 bg-white dark:bg-[#18181A] text-zinc-700 dark:text-zinc-300 font-extrabold text-xs hover:bg-zinc-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmPayment}
+                        disabled={isSettlingBill}
+                        className="flex-1 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-black text-xs shadow-sm active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                      >
+                        {isSettlingBill ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Confirming...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Yes / Confirm</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -3487,19 +3634,30 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                   )}
                                 </div>
 
-                                <button
-                                  type="button"
-                                  disabled={updatingItemIds.has(item.id) || isServingBatch}
-                                  onClick={() => handleServeItemFromModal(item.id)}
-                                  className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
-                                >
-                                  {updatingItemIds.has(item.id) ? (
-                                    <Loader2 size={14} className="animate-spin" />
-                                  ) : (
-                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                  )}
-                                  <span>{updatingItemIds.has(item.id) ? 'Delivering...' : 'Deliver & Serve'}</span>
-                                </button>
+                                 {isServedUndoPending(item.id) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => cancelServedUndo(item.id)}
+                                    className="h-9 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 animate-pulse"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                    <span>Undo {getServedUndoSeconds(item.id)}s</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={updatingItemIds.has(item.id) || isServingBatch}
+                                    onClick={() => handleServeItemFromModal(item.id)}
+                                    className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
+                                  >
+                                    {updatingItemIds.has(item.id) ? (
+                                      <Loader2 size={14} className="animate-spin" />
+                                    ) : (
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                    )}
+                                    <span>{updatingItemIds.has(item.id) ? 'Delivering...' : 'Deliver & Serve'}</span>
+                                  </button>
+                                )}
                               </div>
                             );
                           })}
@@ -3588,19 +3746,30 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                   )}
                                 </div>
 
-                                <button
-                                  type="button"
-                                  disabled={updatingItemIds.has(item.id) || isServingBatch}
-                                  onClick={() => handleServeItemFromModal(item.id)}
-                                  className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
-                                >
-                                  {updatingItemIds.has(item.id) ? (
-                                    <Loader2 size={14} className="animate-spin" />
-                                  ) : (
-                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                  )}
-                                  <span>{updatingItemIds.has(item.id) ? 'Delivering...' : 'Deliver & Serve'}</span>
-                                </button>
+                                {isServedUndoPending(item.id) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => cancelServedUndo(item.id)}
+                                    className="h-9 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 animate-pulse"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                    <span>Undo {getServedUndoSeconds(item.id)}s</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={updatingItemIds.has(item.id) || isServingBatch}
+                                    onClick={() => handleServeItemFromModal(item.id)}
+                                    className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
+                                  >
+                                    {updatingItemIds.has(item.id) ? (
+                                      <Loader2 size={14} className="animate-spin" />
+                                    ) : (
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                    )}
+                                    <span>{updatingItemIds.has(item.id) ? 'Delivering...' : 'Deliver & Serve'}</span>
+                                  </button>
+                                )}
                               </div>
                             );
                           })}

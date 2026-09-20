@@ -332,24 +332,52 @@ export class OrderService {
   /**
    * Get all active orders for a token session
    */
-  async getOrdersForToken(tokenIdOrNumber: string, tableId?: string) {
-    let tokenId = tokenIdOrNumber;
-    const t = await prisma.token.findFirst({
-      where: {
-        OR: [
-          { id: tokenIdOrNumber },
-          { tokenNumber: tokenIdOrNumber },
-          ...(tableId ? [{ tableId, status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] } }] : []),
-        ],
-      },
-      orderBy: { issuedAt: 'desc' },
-    });
-    if (t) {
-      tokenId = t.id;
+  async getOrdersForToken(tokenIdOrNumber?: string, tableId?: string, tableNumber?: string) {
+    let resolvedTokenId: string | undefined;
+
+    if (tokenIdOrNumber) {
+      const t = await prisma.token.findFirst({
+        where: {
+          OR: [
+            { id: tokenIdOrNumber },
+            { tokenNumber: tokenIdOrNumber },
+          ],
+        },
+      });
+      if (t) {
+        resolvedTokenId = t.id;
+      }
+    }
+
+    if (!resolvedTokenId && (tableId || tableNumber)) {
+      const t = await prisma.token.findFirst({
+        where: {
+          ...(tableId ? { tableId } : {}),
+          ...(tableNumber ? { table: { tableNumber } } : {}),
+          status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] },
+        },
+        orderBy: { issuedAt: 'desc' },
+      });
+      if (t) {
+        resolvedTokenId = t.id;
+      }
+    }
+
+    const whereClause: any = {};
+    if (resolvedTokenId) {
+      whereClause.tokenId = resolvedTokenId;
+    } else if (tableId) {
+      whereClause.tableId = tableId;
+    } else if (tableNumber) {
+      whereClause.table = { tableNumber };
+    } else if (tokenIdOrNumber) {
+      whereClause.tokenId = tokenIdOrNumber;
+    } else {
+      return [];
     }
 
     return prisma.order.findMany({
-      where: { tokenId },
+      where: whereClause,
       orderBy: { placedAt: 'asc' },
       include: {
         items: true,
@@ -455,13 +483,13 @@ export class OrderService {
       throw new Error(`OrderItem ${orderItemId} not found`);
     }
 
-    // State Machine Validation Rules
+    // State Machine Validation Rules (forward and 1-step corrective reverse transitions)
     const validTransitions: Record<OrderStatus, OrderStatus[]> = {
       [OrderStatus.PLACED]: [OrderStatus.ACCEPTED, OrderStatus.CANCELLED],
-      [OrderStatus.ACCEPTED]: [OrderStatus.PREPARING, OrderStatus.CANCELLED],
-      [OrderStatus.PREPARING]: [OrderStatus.READY, OrderStatus.CANCELLED],
-      [OrderStatus.READY]: [OrderStatus.SERVED],
-      [OrderStatus.SERVED]: [],
+      [OrderStatus.ACCEPTED]: [OrderStatus.PREPARING, OrderStatus.PLACED, OrderStatus.CANCELLED],
+      [OrderStatus.PREPARING]: [OrderStatus.READY, OrderStatus.ACCEPTED, OrderStatus.CANCELLED],
+      [OrderStatus.READY]: [OrderStatus.SERVED, OrderStatus.PREPARING],
+      [OrderStatus.SERVED]: [OrderStatus.READY],
       [OrderStatus.CANCELLED]: [],
     };
 
@@ -486,8 +514,10 @@ export class OrderService {
             throw new Error('Bartender is only authorized to manage Bar items');
           }
         } else if (['waiter', 'server'].includes(roleName)) {
-          if (status !== OrderStatus.SERVED || item.status !== OrderStatus.READY) {
-            throw new Error('Waiters and Servers are only authorized to mark Ready items as Served');
+          const isServing = status === OrderStatus.SERVED && item.status === OrderStatus.READY;
+          const isUndoing = status === OrderStatus.READY && item.status === OrderStatus.SERVED;
+          if (!isServing && !isUndoing) {
+            throw new Error('Waiters and Servers are only authorized to mark Ready items as Served and undo recent serves');
           }
         }
       }
@@ -495,12 +525,24 @@ export class OrderService {
 
     const timestampData: any = { status };
     const now = new Date();
-    if (status === OrderStatus.PREPARING && !item.preparedAt) {
-      timestampData.preparedAt = now;
-    } else if (status === OrderStatus.READY && !item.readyAt) {
-      timestampData.readyAt = now;
-    } else if (status === OrderStatus.SERVED && !item.servedAt) {
-      timestampData.servedAt = now;
+
+    if (status === OrderStatus.PLACED) {
+      timestampData.preparedAt = null;
+      timestampData.readyAt = null;
+      timestampData.servedAt = null;
+    } else if (status === OrderStatus.ACCEPTED) {
+      timestampData.preparedAt = null;
+      timestampData.readyAt = null;
+      timestampData.servedAt = null;
+    } else if (status === OrderStatus.PREPARING) {
+      timestampData.preparedAt = item.preparedAt || now;
+      timestampData.readyAt = null;
+      timestampData.servedAt = null;
+    } else if (status === OrderStatus.READY) {
+      timestampData.readyAt = item.readyAt || now;
+      timestampData.servedAt = null;
+    } else if (status === OrderStatus.SERVED) {
+      timestampData.servedAt = item.servedAt || now;
     }
 
     const updatedItem = await prisma.orderItem.update({

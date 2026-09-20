@@ -426,8 +426,34 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     });
 
-    const unsubMenuUpdated = onSocketEvent('menu.updated', () => {
-      refreshMenu();
+    const unsubMenuUpdated = onSocketEvent('menu.updated', (payload: any) => {
+      if (payload && payload.action === 'item_availability' && payload.itemId) {
+        const targetId = payload.itemId;
+        const newAvailable = Boolean(payload.details?.isAvailable);
+        setMenu((prevMenu) => {
+          if (!Array.isArray(prevMenu)) return prevMenu;
+          return prevMenu.map((section: any) => ({
+            ...section,
+            items: (section.items || []).map((it: any) =>
+              it.id === targetId ? { ...it, isAvailable: newAvailable } : it
+            ),
+            categories: (section.categories || []).map((cat: any) => ({
+              ...cat,
+              items: (cat.items || []).map((it: any) =>
+                it.id === targetId ? { ...it, isAvailable: newAvailable } : it
+              ),
+              subcategories: (cat.subcategories || []).map((sub: any) => ({
+                ...sub,
+                items: (sub.items || []).map((it: any) =>
+                  it.id === targetId ? { ...it, isAvailable: newAvailable } : it
+                ),
+              })),
+            })),
+          }));
+        });
+      } else {
+        refreshMenu();
+      }
     });
 
     return () => {

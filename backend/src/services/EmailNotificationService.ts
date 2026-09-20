@@ -157,16 +157,24 @@ export class EmailNotificationService {
     let rawHtml = '';
 
     if (job.type === 'EXTENSION') {
-      subject = 'Session Extension — Pegs N Bottles';
+      subject = isPremium
+        ? 'Session Extension Confirmed — Pegs N Bottles Table Pass'
+        : 'Session Extension Confirmed — Pegs N Bottles Entry Pass';
       const formattedEndTime = job.newEndTime ? new Date(job.newEndTime).toLocaleString() : 'N/A';
       
       if (isPremium) {
         rawHtml = `
           <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
-            <h2 style="color: #8D6CE5; margin-bottom: 16px; font-weight: 800;">Session Extension Confirmed</h2>
-            <p style="color: #475569; font-size: 16px; line-height: 1.5;">Dear ${customerName || 'Customer'},</p>
-            <p style="color: #475569; font-size: 14px; line-height: 1.5;">Your dining session at Pegs N Bottles has been extended! Here is your 6-digit access code to continue ordering from your phone:</p>
+            <div style="text-align: center; margin-bottom: 20px;">
+              <div style="display: inline-block; width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #8D6CE5 0%, #6366F1 100%); color: #ffffff; font-size: 22px; font-weight: 900; line-height: 44px; text-align: center;">P</div>
+              <h2 style="color: #111827; margin: 12px 0 4px 0; font-weight: 800; font-size: 22px;">Session Extension Confirmed</h2>
+              <p style="color: #64748b; font-size: 14px; margin: 0;">Your Digital Table Pass & Customer Portal</p>
+            </div>
+
+            <p style="color: #475569; font-size: 15px; line-height: 1.5;">Dear <strong>${customerName || 'Guest'}</strong>,</p>
+            <p style="color: #475569; font-size: 14px; line-height: 1.5;">Your dining session at Pegs N Bottles has been extended! Here is your 6-digit access code to continue ordering from your table:</p>
             
+            <!-- 6-Digit Access Code Box with Copy Code Button -->
             <div style="text-align: center; margin: 20px 0; padding: 20px; background-color: #f8fafc; border-radius: 14px; border: 1px solid #e2e8f0;">
               <p style="color: #64748b; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 10px 0;">6-Digit Table Access Code</p>
               
@@ -182,22 +190,24 @@ export class EmailNotificationService {
               </table>
 
               <p style="color: #475569; font-size: 13px; line-height: 1.5; margin: 14px 0 0 0; padding-top: 12px; border-top: 1px dashed #cbd5e1;">
-                💡 <strong>Important:</strong> Please copy this 6-digit code before opening the table ordering portal below to resume placing orders.
+                💡 <strong>Important:</strong> Please copy this 6-digit code before clicking the <strong>Customer Portal</strong> button below to resume ordering.
               </p>
             </div>
 
-            <div style="text-align: center; margin: 25px 0;">
-              <a href="${accessUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #8D6CE5 0%, #6366F1 100%); color: #ffffff; text-decoration: none; font-weight: bold; font-size: 16px; padding: 14px 28px; border-radius: 12px; box-shadow: 0 4px 14px rgba(141, 108, 229, 0.4);">
-                Resume Table Ordering
+            <!-- Start Ordering Button (Customer Portal) -->
+            <div style="text-align: center; margin: 26px 0 20px 0;">
+              <a href="${accessUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #8D6CE5 0%, #6366F1 100%); color: #ffffff; text-decoration: none; font-weight: 800; font-size: 16px; padding: 15px 32px; border-radius: 14px; box-shadow: 0 4px 16px rgba(141, 108, 229, 0.4);">
+                Customer Portal
               </a>
+              <p style="color: #64748b; font-size: 12px; margin-top: 10px;">Opens instantly on your phone browser. No app download needed.</p>
             </div>
 
-            <div style="text-align: center; margin: 25px 0; padding: 20px; background-color: #f8fafc; border-radius: 12px;">
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(accessUrl)}" alt="QR Code" style="border: 4px solid #8D6CE5; border-radius: 12px; max-width: 220px; height: auto;" />
-              <p style="color: #64748b; font-size: 12px; margin-top: 10px; margin-bottom: 0;">Scan to access ordering on your smartphone</p>
+            <div style="text-align: center; margin: 20px 0; padding: 20px; background-color: #f8fafc; border-radius: 14px; border: 1px dashed #cbd5e1;">
+              <p style="color: #8D6CE5; font-size: 13px; font-weight: bold; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 0.5px;">Or Scan QR Code with Phone Camera</p>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(accessUrl)}" alt="Access QR Code" style="border: 4px solid #8D6CE5; border-radius: 12px; max-width: 200px; height: auto;" />
             </div>
 
-            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+            <table style="width: 100%; border-collapse: collapse; margin-top: 24px;">
               <tr style="border-bottom: 1px solid #e2e8f0;">
                 <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold; vertical-align: middle;">Access Code:</td>
                 <td style="padding: 10px 0; text-align: right; vertical-align: middle;">
@@ -229,20 +239,20 @@ export class EmailNotificationService {
                 </td>
               </tr>
               <tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Assigned Table:</td>
-                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: bold;">${job.tableNumber || tableNumber}</td>
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Assigned Table:</td>
+                <td style="padding: 10px 0; color: #8D6CE5; font-size: 14px; text-align: right; font-weight: 800;">Table ${job.tableNumber || tableNumber}</td>
               </tr>
               <tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Extension Duration:</td>
-                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right;">+${job.extraMinutes} Minutes</td>
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Extension Duration:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: 600;">+${job.extraMinutes} Minutes</td>
               </tr>
               <tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">New End Time:</td>
-                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: bold;">${formattedEndTime}</td>
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">New End Time:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: 800;">${formattedEndTime}</td>
               </tr>
               <tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Additional Amount:</td>
-                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right;">₹${job.additionalAmount}</td>
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Additional Amount:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: 600;">₹${job.additionalAmount}</td>
               </tr>
             </table>
 
@@ -254,16 +264,22 @@ export class EmailNotificationService {
       } else {
         rawHtml = `
           <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
-            <h2 style="color: #8D6CE5; margin-bottom: 16px; font-weight: 800;">Session Extension Confirmed</h2>
-            <p style="color: #475569; font-size: 16px; line-height: 1.5;">Dear ${customerName || 'Customer'},</p>
-            <p style="color: #475569; font-size: 14px; line-height: 1.5;">Your bar session at Pegs N Bottles has been extended. Please present the QR code below at the bar counter to continue enjoying your drinks and service.</p>
-            
-            <div style="text-align: center; margin: 25px 0; padding: 20px; background-color: #f8fafc; border-radius: 12px; border: 1px dashed #cbd5e1;">
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(tokenNumber)}" alt="QR Code" style="border: 4px solid #8D6CE5; border-radius: 12px; max-width: 220px; height: auto;" />
-              <p style="color: #64748b; font-size: 12px; margin-top: 10px; margin-bottom: 0;">Present this QR code to the bartender for drink redemption and service</p>
+            <div style="text-align: center; margin-bottom: 20px;">
+              <div style="display: inline-block; width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #8D6CE5 0%, #6366F1 100%); color: #ffffff; font-size: 22px; font-weight: 900; line-height: 44px; text-align: center;">P</div>
+              <h2 style="color: #111827; margin: 12px 0 4px 0; font-weight: 800; font-size: 22px;">Session Extension Confirmed</h2>
+              <p style="color: #64748b; font-size: 14px; margin: 0;">Your Digital Entry Pass</p>
             </div>
 
-            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+            <p style="color: #475569; font-size: 15px; line-height: 1.5;">Dear <strong>${customerName || 'Guest'}</strong>,</p>
+            <p style="color: #475569; font-size: 14px; line-height: 1.5;">Your bar session at Pegs N Bottles has been extended. Please present the QR code below at the bar counter to continue enjoying your drinks and service.</p>
+            
+            <div style="text-align: center; margin: 24px 0; padding: 20px; background-color: #f8fafc; border-radius: 14px; border: 1px dashed #cbd5e1;">
+              <p style="color: #8D6CE5; font-size: 13px; font-weight: bold; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 0.5px;">Entry Pass QR Code</p>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(tokenNumber)}" alt="Entry Pass QR Code" style="border: 4px solid #8D6CE5; border-radius: 12px; max-width: 200px; height: auto;" />
+              <p style="color: #64748b; font-size: 12px; margin-top: 10px; margin-bottom: 0;">Present this QR code to staff or bartender at the bar counter for drink redemption and service</p>
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse; margin-top: 24px;">
               <tr style="border-bottom: 1px solid #e2e8f0;">
                 <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold; vertical-align: middle;">Token Number:</td>
                 <td style="padding: 10px 0; text-align: right; vertical-align: middle;">
@@ -280,20 +296,20 @@ export class EmailNotificationService {
                 </td>
               </tr>
               <tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Seating Area:</td>
-                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: bold;">${placeTypeName}</td>
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Seating Area:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 13px; text-align: right;">${placeTypeName}</td>
               </tr>
               <tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Extension Duration:</td>
-                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right;">+${job.extraMinutes} Minutes</td>
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Extension Duration:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: 600;">+${job.extraMinutes} Minutes</td>
               </tr>
               <tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">New End Time:</td>
-                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: bold;">${formattedEndTime}</td>
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">New End Time:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: 800;">${formattedEndTime}</td>
               </tr>
               <tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: bold;">Additional Amount:</td>
-                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right;">₹${job.additionalAmount}</td>
+                <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: bold;">Additional Amount:</td>
+                <td style="padding: 10px 0; color: #111827; font-size: 14px; text-align: right; font-weight: 600;">₹${job.additionalAmount}</td>
               </tr>
             </table>
 
@@ -457,9 +473,16 @@ export class EmailNotificationService {
 
     // 2. HTML Sanitization
     const sanitizedHtml = this.sanitizeHtml(rawHtml);
-    const bodyText = isPremium
-      ? `Your table check-in has been completed. Your 6-digit access code is: ${accessCode}. Please copy this code before opening your table ordering portal: ${accessUrl} (Token: ${tokenNumber}).`
-      : `Your digital check-in has been successfully completed. Token: ${tokenNumber}. Please present this token at the bar counter for service.`;
+    let bodyText = '';
+    if (job.type === 'EXTENSION') {
+      bodyText = isPremium
+        ? `Your session at Pegs N Bottles has been extended (+${job.extraMinutes} mins). Your 6-digit access code is: ${accessCode}. Customer portal: ${accessUrl} (Token: ${tokenNumber}).`
+        : `Your session at Pegs N Bottles has been extended (+${job.extraMinutes} mins). Token: ${tokenNumber}. Please present this token at the bar counter for service.`;
+    } else {
+      bodyText = isPremium
+        ? `Your table check-in has been completed. Your 6-digit access code is: ${accessCode}. Please copy this code before opening your table ordering portal: ${accessUrl} (Token: ${tokenNumber}).`
+        : `Your digital check-in has been successfully completed. Token: ${tokenNumber}. Please present this token at the bar counter for service.`;
+    }
 
     // 3. API Dispatch with x-api-key authentication
     const apiKey = process.env.NOTIFICATION_API_KEY || '';

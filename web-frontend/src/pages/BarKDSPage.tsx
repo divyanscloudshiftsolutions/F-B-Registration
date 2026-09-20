@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Wine, Clock, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Wine, Clock, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Layers, X } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { joinRoom, leaveRoom, onSocketEvent } from '../services/socket';
+import { BarStockTab } from '../components/bartender/BarStockTab';
+import { useServedUndo } from '../services/servedUndoManager';
 
 interface KdsItem {
   id: string;
@@ -29,15 +31,28 @@ interface KdsTicket {
   items: KdsItem[];
 }
 
-export const BarKDSPage: React.FC = () => {
+interface BarKDSPageProps {
+  initialSubTab?: 'tickets' | 'stock';
+}
+
+export const BarKDSPage: React.FC<BarKDSPageProps> = ({ initialSubTab = 'tickets' }) => {
   const { user, showToast } = useAuth();
   const userRoleLower = user?.role ? user.role.toLowerCase() : '';
   const canBump = ['bartender', 'admin', 'manager'].includes(userRoleLower);
 
+  const [activeSubTab, setActiveSubTab] = useState<'tickets' | 'stock'>(initialSubTab);
   const [tickets, setTickets] = useState<KdsTicket[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
   const [now, setNow] = useState<number>(Date.now());
+
+  // Shared in-memory 5s Undo manager that survives tab switching
+  const {
+    isPending: isServedUndoPending,
+    getRemainingSeconds: getServedUndoSeconds,
+    startUndo: startServedUndo,
+    cancelUndo: cancelServedUndo,
+  } = useServedUndo();
 
   const isFetchingRef = useRef<boolean>(false);
   const pendingFetchRef = useRef<boolean>(false);
@@ -120,16 +135,30 @@ export const BarKDSPage: React.FC = () => {
     };
   }, []);
 
-  const handleAdvanceStatus = async (orderItemId: string, nextStatus: string) => {
+  const handleUpdateStatus = async (
+    orderItemId: string,
+    targetStatus: string,
+    isReverse: boolean = false,
+    itemInfo?: { itemName?: string; tableNumber?: string }
+  ) => {
     if (updatingIds.has(orderItemId)) return; // Prevent double-clicks
+
+    if (targetStatus === 'SERVED' && !isReverse) {
+      startServedUndo(orderItemId, user?.id, () => fetchTickets(true));
+      return;
+    }
 
     setUpdatingIds((prev) => new Set(prev).add(orderItemId));
     try {
-      await api.updateOrderItemStatus(orderItemId, nextStatus, user?.id);
-      showToast(`Drink status updated to ${nextStatus}`, 'success');
+      await api.updateOrderItemStatus(orderItemId, targetStatus, user?.id);
+      showToast(
+        isReverse ? `Drink moved back to ${targetStatus}` : `Drink status updated to ${targetStatus}`,
+        isReverse ? 'info' : 'success'
+      );
       await fetchTickets(true);
     } catch (err: any) {
       showToast(err.message || 'Failed to update drink status', 'danger');
+      await fetchTickets(true);
     } finally {
       setUpdatingIds((prev) => {
         const next = new Set(prev);
@@ -159,11 +188,18 @@ export const BarKDSPage: React.FC = () => {
     );
   }, [tickets]);
 
-  const columns: { key: KdsItem['status']; label: string; actionLabel: string; nextStatus: string }[] = [
+  const columns: {
+    key: KdsItem['status'];
+    label: string;
+    actionLabel: string;
+    nextStatus: string;
+    prevStatus?: string;
+    prevLabel?: string;
+  }[] = [
     { key: 'PLACED', label: 'New', actionLabel: 'Accept', nextStatus: 'ACCEPTED' },
-    { key: 'ACCEPTED', label: 'Accepted', actionLabel: 'Pouring', nextStatus: 'PREPARING' },
-    { key: 'PREPARING', label: 'Preparing', actionLabel: 'Ready at Bar', nextStatus: 'READY' },
-    { key: 'READY', label: 'Ready for Pickup', actionLabel: 'Served', nextStatus: 'SERVED' },
+    { key: 'ACCEPTED', label: 'Accepted', actionLabel: 'Pouring', nextStatus: 'PREPARING', prevStatus: 'PLACED', prevLabel: 'Move back to Placed' },
+    { key: 'PREPARING', label: 'Preparing', actionLabel: 'Ready at Bar', nextStatus: 'READY', prevStatus: 'ACCEPTED', prevLabel: 'Move back to Accepted' },
+    { key: 'READY', label: 'Ready for Pickup', actionLabel: 'Served', nextStatus: 'SERVED', prevStatus: 'PREPARING', prevLabel: 'Move back to Pouring' },
   ];
 
   return (
@@ -181,10 +217,47 @@ export const BarKDSPage: React.FC = () => {
             <p className="text-xs text-zinc-500 dark:text-text-muted font-medium">Cocktails, pints, and spirit pours synchronized in real time</p>
           </div>
         </div>
+        {/* Subtab Toggle (Orders vs Stock In / Stock Out) */}
+        <div className="flex items-center p-1 rounded-2xl bg-zinc-200/80 dark:bg-white/5 border border-zinc-300 dark:border-white/10 shrink-0">
+          <button
+            onClick={() => setActiveSubTab('tickets')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeSubTab === 'tickets'
+                ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-xs border border-zinc-200 dark:border-white/10'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <Layers size={14} />
+            <span>Orders</span>
+            {activeItems.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-primary/10 text-primary dark:bg-amber-500/20 dark:text-amber-400">
+                {activeItems.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveSubTab('stock')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeSubTab === 'stock'
+                ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-xs border border-zinc-200 dark:border-white/10'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <Wine size={14} />
+            <span>Stock In / Stock Out</span>
+          </button>
+        </div>
       </div>
 
-      {/* Responsive Kanban Board: 1 col on mobile, 2 cols on tablet, 4 cols on desktop */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 flex-1">
+      {activeSubTab === 'stock' ? (
+        <BarStockTab />
+      ) : loading && tickets.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center py-24 text-zinc-500 text-sm">
+          <Loader2 className="animate-spin mr-2" size={20} /> Loading Bar tickets...
+        </div>
+      ) : (
+        /* Responsive Kanban Board: 1 col on mobile, 2 cols on tablet, 4 cols on desktop */
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 flex-1">
         {columns.map((col) => {
           const list = activeItems.filter((entry) => entry.item.status === col.key);
 
@@ -254,26 +327,65 @@ export const BarKDSPage: React.FC = () => {
                         </div>
                       )}
 
-                      <div className="pt-2 border-t border-zinc-200 dark:border-white/10 flex items-center justify-end">
-                        {canBump ? (
-                          <button
-                            type="button"
-                            disabled={isUpdating}
-                            onClick={() => handleAdvanceStatus(item.id, col.nextStatus)}
-                            className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-extrabold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {isUpdating ? (
-                              <Loader2 size={14} className="animate-spin" />
-                            ) : (
-                              <CheckCircle2 size={14} />
-                            )}
-                            <span>{isUpdating ? 'Updating...' : col.actionLabel}</span>
-                          </button>
-                        ) : (
-                          <span className="text-[10px] text-zinc-600 dark:text-zinc-400 italic px-2.5 py-1 rounded-lg bg-zinc-100 border border-zinc-200 dark:bg-white/5 dark:border-white/10">
-                            View Only
-                          </span>
-                        )}
+                      <div className="pt-2 border-t border-zinc-200 dark:border-white/10 flex items-center justify-between gap-2">
+                        <div>
+                          {canBump && col.prevStatus && (
+                            <button
+                              type="button"
+                              disabled={isUpdating}
+                              onClick={() => handleUpdateStatus(item.id, col.prevStatus!, true)}
+                              title={col.prevLabel}
+                              aria-label={col.prevLabel}
+                              className={`p-2 rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-100 hover:bg-zinc-200 dark:bg-white/5 dark:hover:bg-white/10 text-zinc-600 dark:text-zinc-300 transition-all flex items-center justify-center cursor-pointer hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                isUpdating ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
+                            >
+                              {isUpdating ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <RotateCcw size={14} />
+                              )}
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {isServedUndoPending(item.id) ? (
+                            <button
+                              type="button"
+                              onClick={() => cancelServedUndo(item.id)}
+                              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer animate-pulse"
+                            >
+                              <RotateCcw size={14} />
+                              <span>Undo {getServedUndoSeconds(item.id) ?? 1}s</span>
+                            </button>
+                          ) : canBump ? (
+                            <button
+                              type="button"
+                              disabled={isUpdating}
+                              onClick={() =>
+                                handleUpdateStatus(item.id, col.nextStatus, false, {
+                                  itemName: item.itemName,
+                                  tableNumber: ticket.tableNumber,
+                                })
+                              }
+                              className={`px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-extrabold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                                isUpdating ? 'opacity-60 cursor-not-allowed' : ''
+                              }`}
+                            >
+                              {isUpdating ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <CheckCircle2 size={14} />
+                              )}
+                              <span>{isUpdating ? 'Updating...' : col.actionLabel}</span>
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-zinc-600 dark:text-zinc-400 italic px-2.5 py-1 rounded-lg bg-zinc-100 border border-zinc-200 dark:bg-white/5 dark:border-white/10">
+                              View Only
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -289,6 +401,7 @@ export const BarKDSPage: React.FC = () => {
           );
         })}
       </div>
+      )}
     </div>
   );
 };

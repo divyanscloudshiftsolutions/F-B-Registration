@@ -16,7 +16,6 @@ import {
   Camera, 
   ArrowUpRight,
   ArrowRight,
-  ChevronRight,
   Search,
   Sparkles,
   MapPin,
@@ -608,52 +607,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     <div className="space-y-8 text-text-main animate-fadeIn pb-12">
 
       {/* ========================================================================= */}
-      {/* 1. OPERATIONAL WORKFLOW PIPELINE (Visual Connective Header)               */}
-      {/* ========================================================================= */}
-      <div className="glass-panel rounded-2xl p-3 sm:p-4 border border-border-main bg-bg-surface/50 backdrop-blur-md">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-text-main">Live Floor Operational Workflow</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 dark:bg-[#D4AF37]/10 text-primary dark:text-[#D4AF37] font-bold border border-primary/20 dark:border-[#D4AF37]/20">
-                Shift Active
-              </span>
-            </div>
-          </div>
-
-          {/* Connected Pipeline Steps */}
-          <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-bold text-text-muted overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-bg-secondary-surface border border-border-main shrink-0">
-              <span className="w-4 h-4 rounded-full bg-primary/20 dark:bg-[#D4AF37]/20 text-primary dark:text-[#D4AF37] text-[9px] flex items-center justify-center font-bold">1</span>
-              <span>Registration</span>
-            </div>
-            <ChevronRight size={12} className="shrink-0 text-text-muted/60" />
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-bg-secondary-surface border border-border-main shrink-0">
-              <span className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 text-[9px] flex items-center justify-center font-bold">2</span>
-              <span>Floor Seating ({occupiedTablesCount})</span>
-            </div>
-            <ChevronRight size={12} className="shrink-0 text-text-muted/60" />
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-bg-secondary-surface border border-border-main shrink-0">
-              <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 text-[9px] flex items-center justify-center font-bold">3</span>
-              <span>Service & Drinks ({totalRedemptionsUsed})</span>
-            </div>
-            <ChevronRight size={12} className="shrink-0 text-text-muted/60" />
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-bg-secondary-surface border border-border-main shrink-0">
-              <span className="w-4 h-4 rounded-full bg-blue-500/20 text-blue-400 text-[9px] flex items-center justify-center font-bold">4</span>
-              <span>Billing & Checkout</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 2. ZONE 1: LIVE FLOOR PULSE & PRIORITY DISPATCH                           */}
+      {/* LIVE FLOOR PULSE & PRIORITY DISPATCH                                      */}
       {/* ========================================================================= */}
       <section className="space-y-4">
         <div className="flex items-center justify-between border-b border-border-main pb-2">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black px-2 py-0.5 rounded bg-neutral-900 text-[#D4AF37] dark:bg-white/10 dark:text-[#D4AF37] tracking-wider uppercase">01</span>
             <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-text-main">
               Live Floor Pulse & Priority Dispatch
             </h3>
@@ -677,7 +635,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                   </div>
                   <div className="min-w-0 text-center sm:text-left w-full">
                     <div className="flex items-center justify-center sm:justify-start gap-1.5">
-                      <span className="text-[9px] font-mono font-bold dark:text-[#D4AF37]/70 text-primary/70">{act.step}</span>
                       <h5 className="text-[11px] sm:text-xs font-bold text-text-main dark:text-white transition-colors truncate">
                         {act.title}
                       </h5>
@@ -732,12 +689,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       </section>
 
       {/* ========================================================================= */}
-      {/* 3. ZONE 2: ACTIVE GUEST SESSIONS & ATTENTION DISPATCH                     */}
+      {/* LIVE GUEST SESSIONS & ATTENTION DISPATCH                                  */}
       {/* ========================================================================= */}
       <section className="space-y-4">
         <div className="flex items-center justify-between border-b border-border-main pb-2">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black px-2 py-0.5 rounded bg-neutral-900 text-[#D4AF37] dark:bg-white/10 dark:text-[#D4AF37] tracking-wider uppercase">02</span>
             <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-text-main">
               Live Guest Sessions & Attention Dispatch
             </h3>
@@ -1064,13 +1020,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       </section>
 
       {/* ========================================================================= */}
-      {/* 4. ZONE 3: SHIFT INTELLIGENCE & BUSINESS PERFORMANCE                      */}
+      {/* SHIFT INTELLIGENCE & BUSINESS PERFORMANCE                                 */}
       {/* ========================================================================= */}
       {isManagement && (
         <section id="revenue-analytics-section" className="space-y-4 pt-2">
           <div className="flex items-center justify-between border-b border-border-main pb-2">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black px-2 py-0.5 rounded bg-neutral-900 text-[#D4AF37] dark:bg-white/10 dark:text-[#D4AF37] tracking-wider uppercase">03</span>
               <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-text-main">
                 Shift Intelligence & Business Performance
               </h3>
