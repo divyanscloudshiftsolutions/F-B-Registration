@@ -878,11 +878,11 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                       <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-emerald-400 rounded-br-lg" />
 
                       {/* Ambient Text Identifier */}
-                      <div className="absolute top-4 left-12 bg-black/60 px-2 py-0.5 rounded-md border border-white/10">
+                      <div className="absolute top-4 left-12 bg-black/60 px-2 py-0.5 rounded-md border border-white/10 backdrop-blur-sm">
                         <span className="text-[9px] text-emerald-400 font-black uppercase tracking-wider">Full-Frame Auto Scanner</span>
                       </div>
 
-                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 w-[90%] sm:w-max px-4 py-1.5 rounded-full border border-border-main flex items-center justify-center">
+                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 w-[90%] sm:w-max px-4 py-1.5 rounded-full border border-white/20 backdrop-blur-md z-30 flex items-center justify-center shadow-lg">
                         <p className="text-[10px] text-white font-extrabold uppercase tracking-widest text-center leading-tight">
                           Place QR Code anywhere in the camera view
                         </p>

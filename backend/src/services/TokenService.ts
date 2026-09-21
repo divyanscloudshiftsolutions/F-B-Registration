@@ -317,6 +317,11 @@ export class TokenService {
         JSON.stringify({ tokenId: token.id, tokenNumber })
       );
 
+      // Generate and cache 6-digit access code immediately for the token
+      const accessCode = Math.floor(100000 + Math.random() * 900000).toString();
+      await redisService.setex(`customer-code:${accessCode}`, 86400 * 30, tokenNumber);
+      await redisService.setex(`token-code:${tokenNumber}`, 86400 * 30, accessCode);
+
       return token;
     }, { timeout: 15000 });
 
@@ -1066,6 +1071,11 @@ export class TokenService {
         86400,
         JSON.stringify({ name: request.customerName, email: finalEmail || null })
       );
+
+      // Generate and cache 6-digit access code immediately for the token
+      const accessCode = Math.floor(100000 + Math.random() * 900000).toString();
+      await redisService.setex(`customer-code:${accessCode}`, 86400 * 30, tokenNumber);
+      await redisService.setex(`token-code:${tokenNumber}`, 86400 * 30, accessCode);
 
       if (resolvedTableId) {
         await redisService.del(`table:available:${request.placeTypeId}`);

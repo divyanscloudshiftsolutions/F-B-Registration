@@ -470,17 +470,51 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [tokenNumber, tableNumber, tableId, refreshOrders, refreshBill, refreshMenu, handleSessionClosure]);
 
   // Cart Handlers
+  const areCartItemsEqual = (
+    a: { menuItemId: string; variantId?: string | null; modifiers?: any[]; specialInstructions?: string },
+    b: { menuItemId: string; variantId?: string | null; modifiers?: any[]; specialInstructions?: string }
+  ): boolean => {
+    if (a.menuItemId !== b.menuItemId) return false;
+    if ((a.variantId || null) !== (b.variantId || null)) return false;
+    if ((a.specialInstructions || '').trim().toLowerCase() !== (b.specialInstructions || '').trim().toLowerCase()) return false;
+
+    const aMods = (a.modifiers || [])
+      .map((m: any) => `${m.groupId || ''}:${m.optionId || ''}`)
+      .sort()
+      .join('|');
+    const bMods = (b.modifiers || [])
+      .map((m: any) => `${m.groupId || ''}:${m.optionId || ''}`)
+      .sort()
+      .join('|');
+
+    return aMods === bMods;
+  };
+
   const addToCart = (item: Omit<CartItem, 'id'>) => {
-    const id = `cart_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-    setCart((prev) => [
-      ...prev,
-      {
-        ...item,
-        id,
-        unitPrice: Number(item.unitPrice || 0),
-        quantity: Number(item.quantity || 1),
-      },
-    ]);
+    setCart((prev) => {
+      const existingIndex = prev.findIndex((ci) => areCartItemsEqual(ci, item));
+      if (existingIndex > -1) {
+        const updated = [...prev];
+        const existing = updated[existingIndex];
+        updated[existingIndex] = {
+          ...existing,
+          quantity: (existing.quantity || 1) + (item.quantity || 1),
+          unitPrice: Number(item.unitPrice || existing.unitPrice || 0),
+        };
+        return updated;
+      }
+
+      const id = `cart_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+      return [
+        ...prev,
+        {
+          ...item,
+          id,
+          unitPrice: Number(item.unitPrice || 0),
+          quantity: Number(item.quantity || 1),
+        },
+      ];
+    });
   };
 
   const updateCartQuantity = (cartItemId: string, delta: number) => {
@@ -518,11 +552,31 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (isSessionClosed) {
       throw new Error('Cannot place order: This dining session has concluded.');
     }
+    if (activeBill?.status === 'PAID' || activeBill?.status === 'SETTLED' || activeBill?.isPaid === true) {
+      throw new Error('Cannot place order: Bill payment has been completed for this session.');
+    }
     if (sessionData && sessionData.paymentVerified === false) {
       throw new Error('Cannot place order: Session payment has not been verified yet.');
     }
     if (tableStatus === 'SETTLING') {
       throw new Error('Bill settlement is in progress with your server. Ordering is currently locked.');
+    }
+
+    if (sessionData) {
+      const endTime = sessionData.endTime || sessionData.session?.endTime;
+      const startTime = sessionData.startTime || sessionData.session?.startTime;
+      let endTimestamp: number | null = null;
+      if (endTime) {
+        const parsed = new Date(endTime).getTime();
+        if (!isNaN(parsed)) endTimestamp = parsed;
+      }
+      if (!endTimestamp && startTime) {
+        const parsedStart = new Date(startTime).getTime();
+        if (!isNaN(parsedStart)) endTimestamp = parsedStart + 2 * 60 * 60 * 1000;
+      }
+      if (endTimestamp && (endTimestamp - Date.now()) <= 15 * 60 * 1000) {
+        throw new Error('Cannot place order: Ordering is closed as session has 15 minutes or less remaining.');
+      }
     }
 
     setIsOrdering(true);

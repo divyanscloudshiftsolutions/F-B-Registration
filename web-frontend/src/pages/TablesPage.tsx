@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Grid3X3, X, CheckCircle2, Users, ArrowRight, Search, UserPlus, AlertTriangle, Clock, Lock, Mail, User, Phone, Filter, RefreshCw } from 'lucide-react';
+import { Grid3X3, X, CheckCircle2, Users, ArrowRight, Search, UserPlus, AlertTriangle, Clock, Lock, Mail, User, Phone, Filter, RefreshCw, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Table, Token } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -126,6 +126,32 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
   type ValidationStatus = 'IDLE' | 'PENDING' | 'VALID' | 'CONFLICT' | 'INVALID';
 
+  interface CustomerSuggestion {
+    id: string;
+    phoneNumber: string;
+    displayPhone: string;
+    name: string;
+    email: string;
+  }
+
+  // Validation functions matching CheckInPage exactly
+  const isValidName = (name: string): boolean => {
+    const trimmed = name.trim();
+    return /^[a-zA-Z\s.'-]{2,100}$/.test(trimmed);
+  };
+
+  const isValidPhone = (phone: string): boolean => {
+    const trimmed = phone.trim();
+    return /^(?:\+91)?[6-9]\d{9}$/.test(trimmed);
+  };
+
+  const isValidEmail = (emailStr: string): boolean => {
+    if (!emailStr || !emailStr.trim()) return false;
+    const trimmed = emailStr.trim().toLowerCase();
+    const regex = /^(?!.*\.\.)(?!\.)(?!.*\.$)[a-z0-9]+(\.[a-z0-9]+)*@gmail\.com$/;
+    return regex.test(trimmed);
+  };
+
   // Reserve Form State
   const [reservingTable, setReservingTable] = useState<Table | null>(null);
   const [resName, setResName] = useState('');
@@ -145,25 +171,225 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   const [isSubmittingReserve, setIsSubmittingReserve] = useState(false);
   const [isAssignFlow, setIsAssignFlow] = useState(false);
 
-  const handleResPhoneChange = (val: string) => {
-    setResPhone(val);
+  const autoFilledResCustomerRef = useRef<{ phone: string; name: string; email: string }>({ phone: '', name: '', email: '' });
+  const lastLookedUpResPhoneRef = useRef<string>('');
+  const isResNameManuallyEditedRef = useRef<boolean>(false);
+  const isResEmailManuallyEditedRef = useRef<boolean>(false);
+  const [isLookingUpResCustomer, setIsLookingUpResCustomer] = useState(false);
+  const resLookupRequestIdRef = useRef<number>(0);
+
+  // Phone live prefix suggestions state for Reservation & Table Assignment
+  const [resPhoneSuggestions, setResPhoneSuggestions] = useState<CustomerSuggestion[]>([]);
+  const [showResSuggestions, setShowResSuggestions] = useState(false);
+  const [selectedResSuggestionIndex, setSelectedResSuggestionIndex] = useState<number>(-1);
+  const resSuggestionRequestIdRef = useRef<number>(0);
+  const resSuggestionDebounceTimerRef = useRef<any>(null);
+  const resPhoneContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Click outside to dismiss suggestions dropdown in Reserve / Assign modal
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (resPhoneContainerRef.current && !resPhoneContainerRef.current.contains(e.target as Node)) {
+        setShowResSuggestions(false);
+        setSelectedResSuggestionIndex(-1);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const fetchResSuggestions = (query: string) => {
+    if (resSuggestionDebounceTimerRef.current) {
+      clearTimeout(resSuggestionDebounceTimerRef.current);
+    }
+
+    const clean = query.replace(/[^\d]/g, '');
+    if (!clean || clean.length < 2) {
+      setResPhoneSuggestions([]);
+      setShowResSuggestions(false);
+      setSelectedResSuggestionIndex(-1);
+      return;
+    }
+
+    const currentRequestId = ++resSuggestionRequestIdRef.current;
+    resSuggestionDebounceTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await api.getCustomerSuggestions(clean);
+        if (currentRequestId === resSuggestionRequestIdRef.current) {
+          if (res && res.success && res.customers && res.customers.length > 0) {
+            setResPhoneSuggestions(res.customers.slice(0, 3));
+            setShowResSuggestions(true);
+            setSelectedResSuggestionIndex(-1);
+          } else {
+            setResPhoneSuggestions([]);
+            setShowResSuggestions(false);
+            setSelectedResSuggestionIndex(-1);
+          }
+        }
+      } catch {
+        if (currentRequestId === resSuggestionRequestIdRef.current) {
+          setResPhoneSuggestions([]);
+          setShowResSuggestions(false);
+          setSelectedResSuggestionIndex(-1);
+        }
+      }
+    }, 180);
+  };
+
+  const handleSelectResSuggestion = (cust: CustomerSuggestion) => {
+    setShowResSuggestions(false);
+    setResPhoneSuggestions([]);
+    setSelectedResSuggestionIndex(-1);
+
+    // Set selected phone number
+    setResPhone(cust.phoneNumber);
     setResPhoneConflictDetail(null);
-    const trimmed = val.trim();
-    if (!trimmed) {
-      setResPhoneValidationStatus('IDLE');
-      setResPhoneConflict(false);
-      setResValidatedPhone('');
-    } else if (!isValidPhone(trimmed)) {
-      setResPhoneValidationStatus('INVALID');
-      setResPhoneConflict(false);
-      setResValidatedPhone('');
-    } else {
+    lastLookedUpResPhoneRef.current = cust.phoneNumber;
+
+    // Prefill the confirmed customer name and email
+    if (cust.name) {
+      isResNameManuallyEditedRef.current = false;
+      setResName(cust.name);
+      autoFilledResCustomerRef.current.name = cust.name;
+    }
+    if (cust.email) {
+      isResEmailManuallyEditedRef.current = false;
+      setResEmail(cust.email);
+      autoFilledResCustomerRef.current.email = cust.email;
+    }
+    autoFilledResCustomerRef.current.phone = cust.phoneNumber;
+
+    if (isValidPhone(cust.phoneNumber)) {
       setResPhoneValidationStatus('PENDING');
       setResValidatedPhone('');
     }
   };
 
+  const handleResPhoneKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showResSuggestions || resPhoneSuggestions.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedResSuggestionIndex(prev => (prev < 0 ? 0 : (prev + 1) % resPhoneSuggestions.length));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedResSuggestionIndex(prev => (prev <= 0 ? resPhoneSuggestions.length - 1 : prev - 1));
+    } else if (e.key === 'Enter') {
+      if (selectedResSuggestionIndex >= 0 && selectedResSuggestionIndex < resPhoneSuggestions.length) {
+        e.preventDefault();
+        handleSelectResSuggestion(resPhoneSuggestions[selectedResSuggestionIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setShowResSuggestions(false);
+      setSelectedResSuggestionIndex(-1);
+    }
+  };
+
+  const lookupResCustomerByPhone = async (phoneToLookup: string) => {
+    const cleanPhone = phoneToLookup.trim();
+    if (!isValidPhone(cleanPhone)) return;
+    if (lastLookedUpResPhoneRef.current === cleanPhone) return;
+    lastLookedUpResPhoneRef.current = cleanPhone;
+
+    const currentRequestId = ++resLookupRequestIdRef.current;
+    setIsLookingUpResCustomer(true);
+
+    try {
+      const res = await api.lookupCustomer(cleanPhone);
+      // Drop stale / out-of-order responses
+      if (currentRequestId !== resLookupRequestIdRef.current) return;
+
+      if (res && res.success && res.customer) {
+        const cust = res.customer;
+        if (cust.name && !isResNameManuallyEditedRef.current) {
+          setResName(cust.name);
+          autoFilledResCustomerRef.current.name = cust.name;
+        }
+        if (cust.email && !isResEmailManuallyEditedRef.current) {
+          setResEmail(cust.email);
+          autoFilledResCustomerRef.current.email = cust.email;
+        }
+        autoFilledResCustomerRef.current.phone = cleanPhone;
+      } else {
+        // Customer not found or has no confirmed visits
+        if (autoFilledResCustomerRef.current.name && !isResNameManuallyEditedRef.current) {
+          setResName(prev => (prev === autoFilledResCustomerRef.current.name ? '' : prev));
+          autoFilledResCustomerRef.current.name = '';
+        }
+        if (autoFilledResCustomerRef.current.email && !isResEmailManuallyEditedRef.current) {
+          setResEmail(prev => (prev === autoFilledResCustomerRef.current.email ? '' : prev));
+          autoFilledResCustomerRef.current.email = '';
+        }
+        autoFilledResCustomerRef.current.phone = '';
+      }
+    } catch (err) {
+      console.error('Customer lookup failed in reservation:', err);
+    } finally {
+      if (currentRequestId === resLookupRequestIdRef.current) {
+        setIsLookingUpResCustomer(false);
+      }
+    }
+  };
+
+  const handleResPhoneBlur = () => {
+    const p = resPhone.trim();
+    if (isValidPhone(p)) {
+      lookupResCustomerByPhone(p);
+    }
+  };
+
+  const handleResCustomerFieldFocus = () => {
+    setShowResSuggestions(false);
+    const p = resPhone.trim();
+    if (isValidPhone(p) && lastLookedUpResPhoneRef.current !== p) {
+      lookupResCustomerByPhone(p);
+    }
+  };
+
+  const handleResPhoneChange = (val: string) => {
+    setResPhone(val);
+    setResPhoneConflictDetail(null);
+    const trimmed = val.trim();
+    if (trimmed !== autoFilledResCustomerRef.current.phone) {
+      lastLookedUpResPhoneRef.current = '';
+    }
+    if (!trimmed) {
+      setResPhoneValidationStatus('IDLE');
+      setResPhoneConflict(false);
+      setResValidatedPhone('');
+      setResPhoneSuggestions([]);
+      setShowResSuggestions(false);
+      if (autoFilledResCustomerRef.current.name && !isResNameManuallyEditedRef.current) {
+        setResName(prev => (prev === autoFilledResCustomerRef.current.name ? '' : prev));
+        autoFilledResCustomerRef.current.name = '';
+      }
+      if (autoFilledResCustomerRef.current.email && !isResEmailManuallyEditedRef.current) {
+        setResEmail(prev => (prev === autoFilledResCustomerRef.current.email ? '' : prev));
+        autoFilledResCustomerRef.current.email = '';
+      }
+      autoFilledResCustomerRef.current.phone = '';
+    } else if (!isValidPhone(trimmed)) {
+      setResPhoneValidationStatus('INVALID');
+      setResPhoneConflict(false);
+      setResValidatedPhone('');
+      fetchResSuggestions(trimmed);
+    } else {
+      setResPhoneValidationStatus('PENDING');
+      setResValidatedPhone('');
+      fetchResSuggestions(trimmed);
+    }
+  };
+
+  const handleResNameChange = (val: string) => {
+    isResNameManuallyEditedRef.current = true;
+    setResName(val);
+  };
+
   const handleResEmailChange = (val: string) => {
+    isResEmailManuallyEditedRef.current = true;
     setResEmail(val);
     setResEmailConflictDetail(null);
     const trimmed = val.trim();
@@ -179,6 +405,28 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
       setResEmailValidationStatus('PENDING');
       setResValidatedEmail('');
     }
+  };
+
+  const resetResModalFields = () => {
+    setResName('');
+    setResPhone('');
+    setResEmail('');
+    setResPhoneValidationStatus('IDLE');
+    setResEmailValidationStatus('IDLE');
+    setResPhoneConflict(false);
+    setResEmailConflict(false);
+    setResPhoneConflictDetail(null);
+    setResEmailConflictDetail(null);
+    setResValidatedPhone('');
+    setResValidatedEmail('');
+    setResPhoneSuggestions([]);
+    setShowResSuggestions(false);
+    setSelectedResSuggestionIndex(-1);
+    setIsLookingUpResCustomer(false);
+    autoFilledResCustomerRef.current = { phone: '', name: '', email: '' };
+    lastLookedUpResPhoneRef.current = '';
+    isResNameManuallyEditedRef.current = false;
+    isResEmailManuallyEditedRef.current = false;
   };
 
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -328,24 +576,6 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
     return () => clearTimeout(timer);
   }, [resPhone, resEmail, reservingTable, refreshTrigger]);
-
-  // Validation functions matching CheckInPage exactly
-  const isValidName = (name: string): boolean => {
-    const trimmed = name.trim();
-    return /^[a-zA-Z\s.'-]{2,100}$/.test(trimmed);
-  };
-
-  const isValidPhone = (phone: string): boolean => {
-    const trimmed = phone.trim();
-    return /^(?:\+91)?[6-9]\d{9}$/.test(trimmed);
-  };
-
-  const isValidEmail = (emailStr: string): boolean => {
-    if (!emailStr || !emailStr.trim()) return false;
-    const trimmed = emailStr.trim().toLowerCase();
-    const regex = /^(?!.*\.\.)(?!\.)(?!.*\.$)[a-z0-9]+(\.[a-z0-9]+)*@gmail\.com$/;
-    return regex.test(trimmed);
-  };
 
   // Active Check-in Duplicate Session Check for Dialog
   const normalizedResPhone = resPhone.trim().startsWith('+91') ? resPhone.trim() : `+91${resPhone.trim()}`;
@@ -703,17 +933,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
       setReservingTable(tb);
       setIsAssignFlow(true);
       setResPersons(tb.capacity || 4);
-      setResName('');
-      setResPhone('');
-      setResEmail('');
-      setResPhoneValidationStatus('IDLE');
-      setResEmailValidationStatus('IDLE');
-      setResPhoneConflict(false);
-      setResEmailConflict(false);
-      setResPhoneConflictDetail(null);
-      setResEmailConflictDetail(null);
-      setResValidatedPhone('');
-      setResValidatedEmail('');
+      resetResModalFields();
       refreshTables();
     } catch (err: any) {
       showToast(err.message || `Table ${tb.tableNumber} is locked or unavailable.`, 'danger');
@@ -725,17 +945,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     setReservingTable(tb);
     setIsAssignFlow(false);
     setResPersons(tb.capacity || 4);
-    setResName('');
-    setResPhone('');
-    setResEmail('');
-    setResPhoneValidationStatus('IDLE');
-    setResEmailValidationStatus('IDLE');
-    setResPhoneConflict(false);
-    setResEmailConflict(false);
-    setResPhoneConflictDetail(null);
-    setResEmailConflictDetail(null);
-    setResValidatedPhone('');
-    setResValidatedEmail('');
+    resetResModalFields();
   };
 
   const handleCloseReserveModal = async () => {
@@ -748,17 +958,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     }
     setReservingTable(null);
     setIsAssignFlow(false);
-    setResName('');
-    setResPhone('');
-    setResEmail('');
-    setResPhoneValidationStatus('IDLE');
-    setResEmailValidationStatus('IDLE');
-    setResPhoneConflict(false);
-    setResEmailConflict(false);
-    setResPhoneConflictDetail(null);
-    setResEmailConflictDetail(null);
-    setResValidatedPhone('');
-    setResValidatedEmail('');
+    resetResModalFields();
     refreshTables();
   };
 
@@ -2002,55 +2202,95 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
         </div>
 
         <form onSubmit={handleReserveSubmit} className="space-y-4 text-left">
-          {/* 1. Customer Full Name */}
-          <div>
-            <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
-              <User size={14} className="text-text-main" /> Customer Full Name <span className="dark:text-red-400 text-red-700">*</span>
-            </label>
-            <input
-              type="text"
-              value={resName}
-              onChange={e => setResName(e.target.value)}
-              placeholder="e.g. First Last"
-              className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
-                resName.trim().length > 0 && !isResNameOk
-                  ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-                  : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
-              }`}
-              required
-            />
-            {resName.trim().length > 0 && !isResNameOk && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
-                <AlertTriangle size={14} className="shrink-0" />
-                <span>Full name must be 2-100 characters (letters, spaces, dots, apostrophes only).</span>
-              </div>
-            )}
-          </div>
-
-          {/* 2. Phone Number */}
-          <div>
+          {/* 1. Phone Number */}
+          <div ref={resPhoneContainerRef} className="relative">
             <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
               <Phone size={14} className="text-text-main" /> Phone Number <span className="dark:text-red-400 text-red-700">*</span>
             </label>
-            <input
-              type="tel"
-              value={resPhone}
-              onChange={e => handleResPhoneChange(e.target.value)}
-              placeholder="e.g. 9999999999"
-              className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
-                resPhone.trim().length > 0 && (!isValidPhone(resPhone) || resPhoneConflict || isResPhoneActive || resPhoneValidationStatus === 'CONFLICT')
-                  ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-                  : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
-              }`}
-              required
-            />
-            {resPhone.trim().length > 0 && !isValidPhone(resPhone) && (
+            <div className="relative">
+              <input
+                type="tel"
+                value={resPhone}
+                onChange={e => handleResPhoneChange(e.target.value)}
+                onKeyDown={handleResPhoneKeyDown}
+                onBlur={handleResPhoneBlur}
+                onFocus={() => {
+                  if (resPhone.trim().length >= 2) {
+                    fetchResSuggestions(resPhone);
+                  }
+                }}
+                placeholder="e.g. 9999999999"
+                className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 pr-10 text-xs text-text-main focus:outline-none transition-all ${
+                  resPhone.trim().length > 0 && (!isValidPhone(resPhone) || resPhoneConflict || isResPhoneActive || resPhoneValidationStatus === 'CONFLICT')
+                    ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                    : 'border-border-main dark:focus:border-primary focus:border-primary focus:ring-2 dark:focus:ring-primary/20 focus:ring-primary/20'
+                }`}
+                required
+              />
+              {isLookingUpResCustomer && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-primary animate-spin pointer-events-none">
+                  <Loader2 size={16} />
+                </div>
+              )}
+            </div>
+
+            {/* Live Suggestions Dropdown (Top 3 Ascending Prefix Matches) */}
+            {showResSuggestions && resPhoneSuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-bg-surface border border-border-main rounded-2xl shadow-2xl overflow-hidden animate-fadeIn">
+                <div className="px-3.5 py-2 border-b border-border-main bg-bg-primary/50 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                    Matching Registered Guests ({resPhoneSuggestions.length})
+                  </span>
+                  <span className="text-[9px] text-text-muted font-medium">Prefix Match</span>
+                </div>
+                <div className="divide-y divide-border-main/50">
+                  {resPhoneSuggestions.map((cust, idx) => {
+                    const isSelected = idx === selectedResSuggestionIndex;
+                    return (
+                      <button
+                        key={cust.id}
+                        type="button"
+                        onMouseEnter={() => setSelectedResSuggestionIndex(idx)}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleSelectResSuggestion(cust);
+                        }}
+                        className={`w-full px-4 py-2.5 text-left transition-colors flex items-center justify-between group cursor-pointer ${
+                          isSelected ? 'bg-primary/15 dark:bg-primary/20 border-l-2 border-primary' : 'hover:bg-primary/10'
+                        }`}
+                      >
+                        <div className="flex flex-col min-w-0 pr-2">
+                          <span className={`text-xs font-mono font-bold flex items-center gap-1.5 transition-colors ${
+                            isSelected ? 'text-primary' : 'text-text-main group-hover:text-primary'
+                          }`}>
+                            <Phone size={11} className={`shrink-0 ${
+                              isSelected ? 'text-primary' : 'text-text-muted group-hover:text-primary'
+                            }`} />
+                            {cust.phoneNumber}
+                          </span>
+                          <span className={`text-[11px] truncate ${isSelected ? 'text-text-main dark:text-gray-200 font-medium' : 'text-text-muted'}`}>
+                            {cust.name} {cust.email ? `• ${cust.email}` : ''}
+                          </span>
+                        </div>
+                        <span className={`text-[10px] font-bold uppercase tracking-wider text-primary transition-opacity shrink-0 ${
+                          isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                        }`}>
+                          Select ↵
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {resPhone.trim().length > 0 && !isValidPhone(resPhone) && !showResSuggestions && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
                 <AlertTriangle size={14} className="shrink-0" />
                 <span>Please enter a valid 10-digit Indian mobile number (starts with 6-9).</span>
               </div>
             )}
-            {(resPhoneConflict || resPhoneValidationStatus === 'CONFLICT') && (
+            {(resPhoneConflict || resPhoneValidationStatus === 'CONFLICT') && !showResSuggestions && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
                 <AlertTriangle size={14} className="shrink-0" />
                 <span>
@@ -2058,6 +2298,32 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                     ? `This phone number is already reserved by ${resPhoneConflictDetail.name || 'a customer'}.`
                     : `This phone number is currently being used by ${resPhoneConflictDetail?.name || 'another user'}.`}
                 </span>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Customer Full Name */}
+          <div>
+            <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
+              <User size={14} className="text-text-main" /> Customer Full Name <span className="dark:text-red-400 text-red-700">*</span>
+            </label>
+            <input
+              type="text"
+              value={resName}
+              onChange={e => handleResNameChange(e.target.value)}
+              onFocus={handleResCustomerFieldFocus}
+              placeholder="e.g. First Last"
+              className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
+                resName.trim().length > 0 && !isResNameOk
+                  ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                  : 'border-border-main dark:focus:border-primary focus:border-primary focus:ring-2 dark:focus:ring-primary/20 focus:ring-primary/20'
+              }`}
+              required
+            />
+            {resName.trim().length > 0 && !isResNameOk && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>Full name must be 2-100 characters (letters, spaces, dots, apostrophes only).</span>
               </div>
             )}
           </div>
@@ -2076,11 +2342,12 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               type="email"
               value={resEmail}
               onChange={e => handleResEmailChange(e.target.value)}
-              placeholder="e.g. name@example.com"
+              onFocus={handleResCustomerFieldFocus}
+              placeholder="e.g. name@gmail.com"
               className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
                 resEmail.trim().length === 0 || !isValidEmail(resEmail) || resEmailConflict || isResEmailActive || resEmailValidationStatus === 'CONFLICT'
                   ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-                  : 'border-border-main dark:focus:border-[#D4AF37] focus:border-primary focus:ring-2 dark:focus:ring-[#D4AF37]/20 focus:ring-primary/20'
+                  : 'border-border-main dark:focus:border-primary focus:border-primary focus:ring-2 dark:focus:ring-primary/20 focus:ring-primary/20'
               }`}
               required
             />
@@ -2116,7 +2383,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             <select
               value={resPersons}
               onChange={e => setResPersons(Number(e.target.value))}
-              className="w-full bg-bg-primary border border-border-main rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none dark:focus:border-[#D4AF37] focus:border-primary cursor-pointer"
+              className="w-full bg-bg-primary border border-border-main rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none dark:focus:border-primary focus:border-primary cursor-pointer"
               required
             >
               {Array.from({ length: reservingTable.capacity || 4 }, (_, i) => i + 1).map(num => (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Droplet,
   Utensils,
@@ -70,12 +70,56 @@ export const CallWaiterSheet: React.FC<CallWaiterSheetProps> = ({
   const [submittingType, setSubmittingType] = useState<ServiceRequestType | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'info' | 'error'; message: string } | null>(null);
 
+  // Swipe-down to dismiss state
+  const [dragY, setDragY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const touchStartY = useRef<number | null>(null);
+  const touchStartScrollTop = useRef<number>(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
   const handleClose = () => {
     setShowOther(false);
     setOtherNote('');
     setFeedback(null);
     setSubmittingType(null);
+    setDragY(0);
+    setIsDragging(false);
+    setIsClosing(false);
     onClose();
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+    touchStartScrollTop.current = scrollRef.current ? scrollRef.current.scrollTop : 0;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartY.current === null) return;
+    const currentY = e.touches[0].clientY;
+    const deltaY = currentY - touchStartY.current;
+    const currentScrollTop = scrollRef.current ? scrollRef.current.scrollTop : 0;
+
+    if (deltaY > 0 && currentScrollTop <= 0 && touchStartScrollTop.current <= 0) {
+      setDragY(deltaY);
+      setIsDragging(true);
+    } else if (isDragging && deltaY <= 0) {
+      setDragY(0);
+      setIsDragging(false);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (dragY > 70) {
+      setIsClosing(true);
+      setTimeout(() => {
+        handleClose();
+      }, 200);
+    } else {
+      setDragY(0);
+      setIsDragging(false);
+    }
+    touchStartY.current = null;
   };
 
   // Close on Escape key press
@@ -141,20 +185,42 @@ export const CallWaiterSheet: React.FC<CallWaiterSheetProps> = ({
     }
   };
 
+  const backdropOpacity = isClosing
+    ? 0
+    : isDragging
+    ? Math.max(0.15, 1 - dragY / 400)
+    : 1;
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="call-waiter-title"
       onClick={handleClose}
+      style={{
+        opacity: backdropOpacity,
+        transition: isDragging ? 'none' : 'opacity 0.22s ease-out',
+      }}
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 animate-fade-in"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md md:max-w-lg rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#18181B] border border-primary/20 dark:border-white/10 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{
+          transform: isDragging ? `translateY(${dragY}px)` : isClosing ? 'translateY(100%)' : 'translateY(0)',
+          transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+        className="w-full max-w-md md:max-w-lg rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#18181B] border border-primary/20 dark:border-white/10 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col will-change-transform"
       >
+        {/* Mobile Drag Pill Handle */}
+        <div className="w-full pt-2.5 pb-0.5 flex justify-center sm:hidden cursor-grab active:cursor-grabbing">
+          <div className="w-12 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-600" />
+        </div>
+
         {/* Header */}
-        <div className="p-4 border-b border-border/80 dark:border-white/10 flex items-center justify-between">
+        <div className="p-4 pt-2 sm:pt-4 border-b border-border/80 dark:border-white/10 flex items-center justify-between">
           <div>
             <h3 id="call-waiter-title" className="font-bold text-base text-text-primary dark:text-white">
               Call Waiter
@@ -164,14 +230,14 @@ export const CallWaiterSheet: React.FC<CallWaiterSheetProps> = ({
           <button
             onClick={handleClose}
             aria-label="Close call waiter dialog"
-            className="min-h-[44px] min-w-[44px] rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-text-muted hover:text-text-primary dark:hover:text-white transition-colors cursor-pointer flex items-center justify-center"
+            className="min-h-[44px] min-w-[44px] rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-text-muted hover:text-text-primary dark:hover:text-white transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-4 overflow-y-auto space-y-4 flex-1">
+        <div ref={scrollRef} className="p-4 overflow-y-auto space-y-4 flex-1">
           {/* Feedback banner */}
           {feedback && (
             <div

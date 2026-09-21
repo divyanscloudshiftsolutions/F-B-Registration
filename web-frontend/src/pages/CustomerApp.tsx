@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CustomerProvider, useCustomer } from '../context/CustomerContext';
 import { VegBadge } from '../components/customer/VegBadge';
 import { MenuItemCard } from '../components/customer/MenuItemCard';
@@ -129,6 +129,50 @@ const CustomerAppInner: React.FC = () => {
 
   const [selectedImageModal, setSelectedImageModal] = useState<{ url: string; name: string } | null>(null);
   const [selectedDetailItem, setSelectedDetailItem] = useState<any | null>(null);
+
+  // Swipe-down to dismiss state for Product Details sheet
+  const [detailDragY, setDetailDragY] = useState<number>(0);
+  const [isDetailDragging, setIsDetailDragging] = useState<boolean>(false);
+  const [isDetailClosing, setIsDetailClosing] = useState<boolean>(false);
+  const detailTouchStartY = useRef<number | null>(null);
+  const detailTouchStartScrollTop = useRef<number>(0);
+  const detailScrollRef = useRef<HTMLDivElement>(null);
+
+  const handleDetailTouchStart = (e: React.TouchEvent) => {
+    detailTouchStartY.current = e.touches[0].clientY;
+    detailTouchStartScrollTop.current = detailScrollRef.current ? detailScrollRef.current.scrollTop : 0;
+  };
+
+  const handleDetailTouchMove = (e: React.TouchEvent) => {
+    if (detailTouchStartY.current === null) return;
+    const currentY = e.touches[0].clientY;
+    const deltaY = currentY - detailTouchStartY.current;
+    const currentScrollTop = detailScrollRef.current ? detailScrollRef.current.scrollTop : 0;
+
+    if (deltaY > 0 && currentScrollTop <= 0 && detailTouchStartScrollTop.current <= 0) {
+      setDetailDragY(deltaY);
+      setIsDetailDragging(true);
+    } else if (isDetailDragging && deltaY <= 0) {
+      setDetailDragY(0);
+      setIsDetailDragging(false);
+    }
+  };
+
+  const handleDetailTouchEnd = () => {
+    if (detailDragY > 70) {
+      setIsDetailClosing(true);
+      setTimeout(() => {
+        setDetailDragY(0);
+        setIsDetailDragging(false);
+        setIsDetailClosing(false);
+        setSelectedDetailItem(null);
+      }, 200);
+    } else {
+      setDetailDragY(0);
+      setIsDetailDragging(false);
+    }
+    detailTouchStartY.current = null;
+  };
   const {
     tokenNumber,
     tableNumber,
@@ -376,6 +420,47 @@ const CustomerAppInner: React.FC = () => {
   const [cartToast, setCartToast] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
+  // 1-second live ticker to evaluate 15-minute ordering cutoff dynamically against session timer
+  const [currentNow, setCurrentNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const sessionEndTime = sessionData?.endTime || (sessionData?.session?.endTime ?? null);
+  const sessionStartTime = sessionData?.startTime || (sessionData?.session?.startTime ?? null);
+
+  const remainingSessionSeconds = useMemo(() => {
+    let endTimestamp: number | null = null;
+    if (sessionEndTime) {
+      const parsed = new Date(sessionEndTime).getTime();
+      if (!isNaN(parsed)) endTimestamp = parsed;
+    }
+    if (!endTimestamp && sessionStartTime) {
+      const parsedStart = new Date(sessionStartTime).getTime();
+      if (!isNaN(parsedStart)) endTimestamp = parsedStart + 2 * 60 * 60 * 1000;
+    }
+    if (!endTimestamp) return null;
+    return Math.floor((endTimestamp - currentNow) / 1000);
+  }, [sessionEndTime, sessionStartTime, currentNow]);
+
+  const isSessionExpired = remainingSessionSeconds !== null && remainingSessionSeconds <= 0;
+  // Strict Business Rule: Remaining session time <= 15 minutes (900 seconds) = Ordering blocked
+  const isOrderingCutoffReached = remainingSessionSeconds !== null && remainingSessionSeconds <= 15 * 60;
+
+  // Strict Business Rule: Final bill payment completed = permanently locked
+  const isBillPaidOrSettled = Boolean(
+    isSessionClosed ||
+    tableStatus === 'SETTLING' ||
+    sessionData?.session?.status === 'CLOSED' ||
+    sessionData?.session?.status === 'SETTLED' ||
+    activeBill?.status === 'PAID' ||
+    activeBill?.status === 'SETTLED' ||
+    activeBill?.isPaid === true
+  );
+
+  const isOrderingBlocked = isOrderingCutoffReached || isBillPaidOrSettled || isSessionExpired;
+
   // Map menuItemId -> total quantity in cart for instant in-card feedback
   const cartItemQuantityMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -498,6 +583,16 @@ const CustomerAppInner: React.FC = () => {
   // Order Placement
   const handlePlaceOrder = async () => {
     setCheckoutError(null);
+    if (isOrderingBlocked) {
+      setCheckoutError(
+        isOrderingCutoffReached
+          ? 'Ordering is closed: 15 minutes or less remaining in your dining session.'
+          : isBillPaidOrSettled
+          ? 'Ordering is closed: Bill payment has been completed for this session.'
+          : 'Ordering is currently unavailable.'
+      );
+      return;
+    }
     try {
       const order = await placeOrder();
       setOrderSuccessToast(`Order #${order?.orderNumber || '01'} placed successfully!`);
@@ -510,6 +605,15 @@ const CustomerAppInner: React.FC = () => {
 
   // Direct Add handler with immediate feedback
   const handleDirectAdd = (item: CustomizerItem) => {
+    if (isOrderingBlocked) {
+      setCartToast(
+        isOrderingCutoffReached
+          ? 'Ordering is closed (15 min or less remaining in session)'
+          : 'Ordering is closed for this settled session'
+      );
+      setTimeout(() => setCartToast(null), 3000);
+      return;
+    }
     addToCart({
       menuItemId: item.id,
       name: item.name,
@@ -518,7 +622,7 @@ const CustomerAppInner: React.FC = () => {
       variantName: null,
       modifiers: [],
       quantity: 1,
-      unitPrice: item.basePrice,
+      unitPrice: Number(item.finalPrice ?? item.basePrice),
       station: item.station,
       foodType: item.foodType,
     });
@@ -528,9 +632,19 @@ const CustomerAppInner: React.FC = () => {
 
   // Card increment handler
   const handleCardIncrement = (item: CustomizerItem) => {
-    const existingCartItem = cart.find((ci) => ci.menuItemId === item.id);
-    if (existingCartItem) {
-      updateCartQuantity(existingCartItem.id, 1);
+    if (isOrderingBlocked) {
+      setCartToast(
+        isOrderingCutoffReached
+          ? 'Ordering is closed (15 min or less remaining in session)'
+          : 'Ordering is closed for this settled session'
+      );
+      setTimeout(() => setCartToast(null), 3000);
+      return;
+    }
+    const matchingCartItems = cart.filter((ci) => ci.menuItemId === item.id);
+    if (matchingCartItems.length > 0) {
+      const targetItem = matchingCartItems[matchingCartItems.length - 1];
+      updateCartQuantity(targetItem.id, 1);
     } else {
       handleDirectAdd(item);
     }
@@ -538,9 +652,10 @@ const CustomerAppInner: React.FC = () => {
 
   // Card decrement handler
   const handleCardDecrement = (item: CustomizerItem) => {
-    const existingCartItem = cart.find((ci) => ci.menuItemId === item.id);
-    if (existingCartItem) {
-      updateCartQuantity(existingCartItem.id, -1);
+    const matchingCartItems = cart.filter((ci) => ci.menuItemId === item.id);
+    if (matchingCartItems.length > 0) {
+      const targetItem = matchingCartItems[matchingCartItems.length - 1];
+      updateCartQuantity(targetItem.id, -1);
     }
   };
 
@@ -601,8 +716,8 @@ const CustomerAppInner: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F3FA] dark:bg-[#111114] text-text-primary dark:text-zinc-100 font-sans antialiased transition-colors duration-200">
-      <div className="w-full min-h-screen flex flex-col pb-28 sm:pb-32 lg:pb-12 relative">
+    <div className="min-h-screen bg-[#F5F3FA] dark:bg-[#111114] text-text-primary dark:text-zinc-100 font-sans antialiased transition-colors duration-200 w-full max-w-full overflow-x-clip">
+      <div className="w-full max-w-full min-h-screen flex flex-col pb-28 sm:pb-32 lg:pb-12 relative">
         {/* 1. Header (Brand + Session Pill + Desktop Navigation + Quick Actions) */}
         <header className="sticky top-0 z-30 border-b border-border/80 dark:border-white/10 bg-white/95 dark:bg-[#18181B]/95 backdrop-blur-md transition-colors shadow-2xs">
           <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -748,7 +863,7 @@ const CustomerAppInner: React.FC = () => {
             </div>
 
             {/* Mobile & Tablet Sub-nav Tabs (Hidden on Desktop lg+) */}
-            <div className="lg:hidden flex items-center justify-between gap-2 overflow-x-auto py-1 text-xs scrollbar-none border-t border-border/40 dark:border-white/5">
+            <div className="lg:hidden flex items-center justify-between gap-2 overflow-x-auto py-1 text-xs scrollbar-none no-scrollbar overscroll-x-contain border-t border-border/40 dark:border-white/5">
               <div className="flex items-center gap-1.5 shrink-0">
                 {[
                   { id: 'home', label: 'For You' },
@@ -788,6 +903,26 @@ const CustomerAppInner: React.FC = () => {
             <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-2.5 shadow-xs">
               <Clock className="w-4 h-4 shrink-0" />
               <span>Your bill has been requested. Waiter is on the way to {tableNumber ? `Table ${tableNumber}` : 'your table'}.</span>
+            </div>
+          </div>
+        )}
+
+        {/* Ordering Cutoff Notice (15-Minute Remaining Business Rule) */}
+        {isOrderingCutoffReached && !isBillPaidOrSettled && (
+          <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 animate-fade-in">
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-2.5 shadow-xs">
+              <Clock className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>Ordering is closed as there are 15 minutes or less remaining in your table session. You can still view your bill and call the waiter.</span>
+            </div>
+          </div>
+        )}
+
+        {/* Session Settled Notice */}
+        {isBillPaidOrSettled && (
+          <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 animate-fade-in">
+            <div className="rounded-2xl border border-primary/30 dark:border-[#D4AF37]/30 bg-primary/5 dark:bg-[#D4AF37]/10 p-4 text-xs font-bold text-primary dark:text-[#D4AF37] flex items-center gap-2.5 shadow-xs">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>Your dining session bill is settled. Thank you for dining at Pegs N Bottles!</span>
             </div>
           </div>
         )}
@@ -927,13 +1062,14 @@ const CustomerAppInner: React.FC = () => {
                     View All →
                   </button>
                 </div>
-                <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-5 overflow-x-auto md:overflow-visible no-scrollbar -mx-4 sm:-mx-6 px-4 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
+                <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-3.5 lg:gap-4 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
                   {featuredItems.map((i) => (
-                    <div key={i.id} className="w-[285px] sm:w-[320px] shrink-0 md:w-auto snap-start h-full">
+                    <div key={i.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
                       <MenuItemCard
                         item={i}
                         variant="home"
                         cartQuantity={cartItemQuantityMap[i.id] || 0}
+                        isOrderingDisabled={isOrderingBlocked}
                         onOpenCustomizer={setCustomizingItem}
                         onDirectAdd={handleDirectAdd}
                         onIncrement={handleCardIncrement}
@@ -960,13 +1096,14 @@ const CustomerAppInner: React.FC = () => {
                     View All →
                   </button>
                 </div>
-                <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-5 overflow-x-auto md:overflow-visible no-scrollbar -mx-4 sm:-mx-6 px-4 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
+                <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-3.5 lg:gap-4 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
                   {popularItems.map((i) => (
-                    <div key={i.id} className="w-[285px] sm:w-[320px] shrink-0 md:w-auto snap-start h-full">
+                    <div key={i.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
                       <MenuItemCard
                         item={i}
                         variant="home"
                         cartQuantity={cartItemQuantityMap[i.id] || 0}
+                        isOrderingDisabled={isOrderingBlocked}
                         onOpenCustomizer={setCustomizingItem}
                         onDirectAdd={handleDirectAdd}
                         onIncrement={handleCardIncrement}
@@ -993,13 +1130,14 @@ const CustomerAppInner: React.FC = () => {
                     View Bar →
                   </button>
                 </div>
-                <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-5 overflow-x-auto md:overflow-visible no-scrollbar -mx-4 sm:-mx-6 px-4 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
+                <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-3.5 lg:gap-4 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
                   {drinkHighlights.map((i) => (
-                    <div key={i.id} className="w-[285px] sm:w-[320px] shrink-0 md:w-auto snap-start h-full">
+                    <div key={i.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
                       <MenuItemCard
                         item={i}
                         variant="home"
                         cartQuantity={cartItemQuantityMap[i.id] || 0}
+                        isOrderingDisabled={isOrderingBlocked}
                         onOpenCustomizer={setCustomizingItem}
                         onDirectAdd={handleDirectAdd}
                         onIncrement={handleCardIncrement}
@@ -1024,13 +1162,14 @@ const CustomerAppInner: React.FC = () => {
                     View All →
                   </button>
                 </div>
-                <div className="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-5 overflow-x-auto md:overflow-visible no-scrollbar -mx-4 sm:-mx-6 px-4 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
+                <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-3.5 lg:gap-4 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
                   {dessertItems.map((i) => (
-                    <div key={i.id} className="w-[285px] sm:w-[320px] shrink-0 md:w-auto snap-start h-full">
+                    <div key={i.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
                       <MenuItemCard
                         item={i}
                         variant="home"
                         cartQuantity={cartItemQuantityMap[i.id] || 0}
+                        isOrderingDisabled={isOrderingBlocked}
                         onOpenCustomizer={setCustomizingItem}
                         onDirectAdd={handleDirectAdd}
                         onIncrement={handleCardIncrement}
@@ -1054,23 +1193,23 @@ const CustomerAppInner: React.FC = () => {
           <div className="space-y-4 sm:space-y-5 animate-fade-in">
             {/* 1. Header & Live Search Bar */}
             <div className="space-y-2.5 pb-2 border-b border-border/60 dark:border-white/10">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
-                <div>
+              <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                <div className="min-w-0">
                   <h2 className="font-black text-lg sm:text-xl text-text-primary dark:text-white leading-tight">
                     Food Menu
                   </h2>
-                  <p className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 mt-0.5">
+                  <p className="hidden sm:block text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 mt-0.5">
                     Freshly prepared in our chef's kitchen. Tap any dish to customize or order.
                   </p>
                 </div>
 
-                {/* Dietary Toggle Filter (All, Veg, Egg, Non-Veg) */}
-                <div className="flex items-center gap-0.5 sm:gap-1 bg-black/5 dark:bg-white/5 p-0.5 sm:p-1 rounded-xl w-fit border border-border/40 dark:border-white/10 shrink-0">
+                {/* Dietary Toggle Filter (All, Veg, Egg, Non-Veg) - Aligned to right of Food Menu */}
+                <div className="flex items-center gap-0.5 sm:gap-1 bg-black/5 dark:bg-white/5 p-0.5 sm:p-1 rounded-xl border border-border/40 dark:border-white/10 shrink-0">
                   {(['ALL', 'VEG', 'EGG', 'NON_VEG'] as const).map((df) => (
                     <button
                       key={df}
                       onClick={() => setDietaryFilter(df)}
-                      className={`text-xs font-bold px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                      className={`text-[10px] xs:text-[11px] sm:text-xs font-bold px-1.5 xs:px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 select-none ${
                         dietaryFilter === df
                           ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-extrabold'
                           : 'text-text-muted hover:text-text-primary hover:bg-black/5 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5'
@@ -1092,6 +1231,9 @@ const CustomerAppInner: React.FC = () => {
                   ))}
                 </div>
               </div>
+              <p className="sm:hidden text-[11px] text-text-muted dark:text-zinc-400">
+                Freshly prepared in our chef's kitchen. Tap any dish to customize or order.
+              </p>
 
               {/* In-Menu Instant Search Bar */}
               <div className="relative w-full">
@@ -1115,8 +1257,8 @@ const CustomerAppInner: React.FC = () => {
               </div>
             </div>
 
-            {/* 2. Sticky Category Filter Chips (Mobile & Tablet) */}
-            <div className="lg:hidden sticky top-[86px] sm:top-[90px] z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-1.5 bg-[#F5F3FA]/95 dark:bg-[#111114]/95 backdrop-blur-md border-b border-border/40 dark:border-white/5 overflow-x-auto no-scrollbar flex items-center gap-1.5">
+            {/* 2. Category Filter Chips (Mobile & Tablet - Natural scroll) */}
+            <div className="lg:hidden -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 py-1.5 overflow-x-auto overscroll-x-contain no-scrollbar flex items-center gap-1.5">
               <button
                 onClick={() => handleSelectEatCategory('ALL')}
                 className={`text-xs font-bold px-3 py-1 rounded-full shrink-0 transition-all cursor-pointer ${
@@ -1385,21 +1527,23 @@ const CustomerAppInner: React.FC = () => {
                                       </button>
                                     </div>
                                   ) : (
-                                    <div className={`p-2.5 sm:p-3.5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-3.5 ${
+                                    <div className={`p-2.5 sm:p-3.5 flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3 lg:gap-3.5 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain snap-x snap-mandatory scroll-smooth pb-2 pt-0.5 ${
                                       availableSubcategories.length === 0 ? 'border-t border-border/40 dark:border-white/5' : ''
                                     }`}>
                                       {displayedItems.map((item) => (
-                                        <MenuItemCard
-                                          key={item.id}
-                                          item={item}
-                                          cartQuantity={cartItemQuantityMap[item.id] || 0}
-                                          onOpenCustomizer={setCustomizingItem}
-                                          onDirectAdd={handleDirectAdd}
-                                          onIncrement={handleCardIncrement}
-                                          onDecrement={handleCardDecrement}
-                                          onOpenDetails={setSelectedDetailItem}
-                                          onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
-                                        />
+                                        <div key={item.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
+                                          <MenuItemCard
+                                            item={item}
+                                            cartQuantity={cartItemQuantityMap[item.id] || 0}
+                                            isOrderingDisabled={isOrderingBlocked}
+                                            onOpenCustomizer={setCustomizingItem}
+                                            onDirectAdd={handleDirectAdd}
+                                            onIncrement={handleCardIncrement}
+                                            onDecrement={handleCardDecrement}
+                                            onOpenDetails={setSelectedDetailItem}
+                                            onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
+                                          />
+                                        </div>
                                       ))}
                                     </div>
                                   )}
@@ -1437,19 +1581,21 @@ const CustomerAppInner: React.FC = () => {
                               </button>
 
                               {isExpanded && (
-                                <div className="p-2.5 sm:p-3.5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-3.5 border-t border-border/40 dark:border-white/5">
+                                <div className="p-2.5 sm:p-3.5 flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3 lg:gap-3.5 border-t border-border/40 dark:border-white/5 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain snap-x snap-mandatory scroll-smooth pb-2 pt-0.5">
                                   {unassignedEatItems.map((item) => (
-                                    <MenuItemCard
-                                      key={item.id}
-                                      item={item}
-                                      cartQuantity={cartItemQuantityMap[item.id] || 0}
-                                      onOpenCustomizer={setCustomizingItem}
-                                      onDirectAdd={handleDirectAdd}
-                                      onIncrement={handleCardIncrement}
-                                      onDecrement={handleCardDecrement}
-                                      onOpenDetails={setSelectedDetailItem}
-                                      onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
-                                    />
+                                    <div key={item.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
+                                      <MenuItemCard
+                                        item={item}
+                                        cartQuantity={cartItemQuantityMap[item.id] || 0}
+                                        isOrderingDisabled={isOrderingBlocked}
+                                        onOpenCustomizer={setCustomizingItem}
+                                        onDirectAdd={handleDirectAdd}
+                                        onIncrement={handleCardIncrement}
+                                        onDecrement={handleCardDecrement}
+                                        onOpenDetails={setSelectedDetailItem}
+                                        onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
+                                      />
+                                    </div>
                                   ))}
                                 </div>
                               )}
@@ -1505,8 +1651,8 @@ const CustomerAppInner: React.FC = () => {
               </div>
             </div>
 
-            {/* 2. Sticky Category Filter Chips (Mobile & Tablet) */}
-            <div className="lg:hidden sticky top-[86px] sm:top-[90px] z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-1.5 bg-[#F5F3FA]/95 dark:bg-[#111114]/95 backdrop-blur-md border-b border-border/40 dark:border-white/5 overflow-x-auto no-scrollbar flex items-center gap-1.5">
+            {/* 2. Category Filter Chips (Mobile & Tablet - Natural scroll) */}
+            <div className="lg:hidden -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 py-1.5 overflow-x-auto overscroll-x-contain no-scrollbar flex items-center gap-1.5">
               <button
                 onClick={() => handleSelectDrinkCategory('ALL')}
                 className={`text-xs font-bold px-3 py-1 rounded-full shrink-0 transition-all cursor-pointer ${
@@ -1774,26 +1920,28 @@ const CustomerAppInner: React.FC = () => {
                                         </button>
                                       </div>
                                     ) : (
-                                      <div className={`p-2.5 sm:p-3.5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-3.5 ${
-                                        availableSubcategories.length === 0 ? 'border-t border-border/40 dark:border-white/5' : ''
-                                      }`}>
-                                        {displayedItems.map((item) => (
-                                          <MenuItemCard
-                                            key={item.id}
-                                            item={item}
-                                            cartQuantity={cartItemQuantityMap[item.id] || 0}
-                                            onOpenCustomizer={setCustomizingItem}
-                                            onDirectAdd={handleDirectAdd}
-                                            onIncrement={handleCardIncrement}
-                                            onDecrement={handleCardDecrement}
-                                            onOpenDetails={setSelectedDetailItem}
-                                            onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
-                                          />
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
+                                        <div className={`p-2.5 sm:p-3.5 flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3 lg:gap-3.5 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain snap-x snap-mandatory scroll-smooth pb-2 pt-0.5 ${
+                                          availableSubcategories.length === 0 ? 'border-t border-border/40 dark:border-white/5' : ''
+                                        }`}>
+                                          {displayedItems.map((item) => (
+                                            <div key={item.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
+                                              <MenuItemCard
+                                                item={item}
+                                                cartQuantity={cartItemQuantityMap[item.id] || 0}
+                                                isOrderingDisabled={isOrderingBlocked}
+                                                onOpenCustomizer={setCustomizingItem}
+                                                onDirectAdd={handleDirectAdd}
+                                                onIncrement={handleCardIncrement}
+                                                onDecrement={handleCardDecrement}
+                                                onOpenDetails={setSelectedDetailItem}
+                                                onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
+                                              />
+                                            </div>
+                                          ))}
+                                        </div>
+                                     )}
+                                   </div>
+                                 )}
                               </div>
                             );
                           })}
@@ -1826,19 +1974,21 @@ const CustomerAppInner: React.FC = () => {
                                 </button>
 
                                 {isExpanded && (
-                                  <div className="p-2.5 sm:p-3.5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-3.5 border-t border-border/40 dark:border-white/5">
+                                  <div className="p-2.5 sm:p-3.5 flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3 lg:gap-3.5 border-t border-border/40 dark:border-white/5 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain snap-x snap-mandatory scroll-smooth pb-2 pt-0.5">
                                     {unassignedDrinkItems.map((item) => (
-                                      <MenuItemCard
-                                        key={item.id}
-                                        item={item}
-                                        cartQuantity={cartItemQuantityMap[item.id] || 0}
-                                        onOpenCustomizer={setCustomizingItem}
-                                        onDirectAdd={handleDirectAdd}
-                                        onIncrement={handleCardIncrement}
-                                        onDecrement={handleCardDecrement}
-                                        onOpenDetails={setSelectedDetailItem}
-                                        onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
-                                      />
+                                      <div key={item.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
+                                        <MenuItemCard
+                                          item={item}
+                                          cartQuantity={cartItemQuantityMap[item.id] || 0}
+                                          isOrderingDisabled={isOrderingBlocked}
+                                          onOpenCustomizer={setCustomizingItem}
+                                          onDirectAdd={handleDirectAdd}
+                                          onIncrement={handleCardIncrement}
+                                          onDecrement={handleCardDecrement}
+                                          onOpenDetails={setSelectedDetailItem}
+                                          onOpenImageModal={(url, name) => setSelectedImageModal({ url, name })}
+                                        />
+                                      </div>
                                     ))}
                                   </div>
                                 )}
@@ -1925,12 +2075,13 @@ const CustomerAppInner: React.FC = () => {
               }
 
               return (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-4.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 sm:landscape:grid-cols-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3.5 lg:gap-4">
                   {merchItems.map((item) => (
                     <MenuItemCard
                       key={item.id}
                       item={item}
                       cartQuantity={cartItemQuantityMap[item.id] || 0}
+                      isOrderingDisabled={isOrderingBlocked}
                       onOpenCustomizer={setCustomizingItem}
                       onDirectAdd={handleDirectAdd}
                       onIncrement={handleCardIncrement}
@@ -1970,7 +2121,7 @@ const CustomerAppInner: React.FC = () => {
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-3.5 sm:gap-4 lg:gap-4.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 sm:landscape:grid-cols-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3.5 lg:gap-4">
               {allItems
                 .filter((i) => {
                   if (!searchQuery.trim()) return true;
@@ -2019,6 +2170,7 @@ const CustomerAppInner: React.FC = () => {
                     key={item.id}
                     item={item}
                     cartQuantity={cartItemQuantityMap[item.id] || 0}
+                    isOrderingDisabled={isOrderingBlocked}
                     onOpenCustomizer={setCustomizingItem}
                     onDirectAdd={handleDirectAdd}
                     onIncrement={handleCardIncrement}
@@ -2035,30 +2187,30 @@ const CustomerAppInner: React.FC = () => {
         {/* VIEW: CART (Split 2-Column on Desktop)                                */}
         {/* ==================================================================== */}
         {/* ==================================================================== */}
-        {/* VIEW: CART (Split 2-Column on Tablet & Desktop)                       */}
+        {/* VIEW: CART (Split 2-Column on Tablet & Desktop, Compact on Mobile)   */}
         {/* ==================================================================== */}
         {activeTab === 'cart' && (
-          <div className="space-y-6 animate-fade-in pb-28 sm:pb-32">
+          <div className="space-y-4 sm:space-y-6 animate-fade-in pb-20 sm:pb-32">
             {/* Header with Title, Context Subtitle, Session Context & Items Badge */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/60 dark:border-white/10">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 pb-2.5 sm:pb-3 border-b border-border/60 dark:border-white/10">
               <div>
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h2 className="font-black text-2xl sm:text-3xl text-text-primary dark:text-white tracking-tight">
+                <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+                  <h2 className="font-black text-xl sm:text-3xl text-text-primary dark:text-white tracking-tight">
                     Your Table Cart
                   </h2>
                   {cart.length > 0 && (
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37]">
+                    <span className="px-2 sm:px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-bold bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37]">
                       {cartCount} {cartCount === 1 ? 'item' : 'items'}
                     </span>
                   )}
                 </div>
-                <p className="text-xs sm:text-sm text-text-muted dark:text-zinc-400 mt-1">
-                  Review your selected unplaced items before dispatching to the floor.
+                <p className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 mt-0.5">
+                  Review your selected unplaced items before dispatching to the kitchen &amp; bar.
                 </p>
               </div>
 
               {/* Table / Dining Session Context */}
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] text-xs font-bold text-text-muted dark:text-zinc-300 w-fit shrink-0">
+              <div className="flex items-center gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] text-xs font-bold text-text-muted dark:text-zinc-300 w-fit shrink-0">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                 <span>{tableNumber ? `Table ${tableNumber}` : 'Active Session'}</span>
                 {tokenNumber && (
@@ -2077,7 +2229,7 @@ const CustomerAppInner: React.FC = () => {
               <div
                 role="alert"
                 aria-live="assertive"
-                className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center justify-between gap-3 animate-in fade-in"
+                className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center justify-between gap-3 animate-in fade-in"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <AlertCircle className="w-4 h-4 shrink-0" />
@@ -2094,29 +2246,29 @@ const CustomerAppInner: React.FC = () => {
             )}
 
             {cart.length === 0 ? (
-              <div className="max-w-xl mx-auto p-8 sm:p-12 text-center border border-dashed border-border/80 dark:border-white/10 rounded-3xl bg-white dark:bg-[#18181B] shadow-xs">
-                <div className="w-14 h-14 rounded-2xl bg-primary/10 dark:bg-[#D4AF37]/15 flex items-center justify-center mx-auto mb-3">
-                  <ShoppingCart className="w-7 h-7 text-primary dark:text-[#D4AF37]" />
+              <div className="max-w-xl mx-auto p-6 sm:p-12 text-center border border-dashed border-border/80 dark:border-white/10 rounded-3xl bg-white dark:bg-[#18181B] shadow-xs">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-primary/10 dark:bg-[#D4AF37]/15 flex items-center justify-center mx-auto mb-2.5 sm:mb-3">
+                  <ShoppingCart className="w-6 h-6 sm:w-7 sm:h-7 text-primary dark:text-[#D4AF37]" />
                 </div>
-                <h3 className="font-bold text-base text-text-primary dark:text-white">Your cart is empty</h3>
+                <h3 className="font-bold text-sm sm:text-base text-text-primary dark:text-white">Your cart is empty</h3>
                 <p className="text-xs text-text-muted dark:text-zinc-400 mt-1 max-w-sm mx-auto leading-relaxed">
                   Browse our Food or Bar Menu to add items to your table session.
                 </p>
-                <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+                <div className="mt-5 flex flex-col sm:flex-row items-center justify-center gap-2.5 sm:gap-3">
                   <button
                     onClick={() => setActiveTab('eat')}
-                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
+                    className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
                   >
                     Browse Food Menu
                   </button>
                   <button
                     onClick={() => setActiveTab('drink')}
-                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-border/80 dark:border-white/10 hover:border-primary/50 dark:hover:border-[#D4AF37]/50 bg-white dark:bg-white/5 hover:bg-primary/5 dark:hover:bg-[#D4AF37]/10 text-xs font-bold text-text-primary dark:text-white transition-colors cursor-pointer"
+                    className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl border border-border/80 dark:border-white/10 hover:border-primary/50 dark:hover:border-[#D4AF37]/50 bg-white dark:bg-white/5 hover:bg-primary/5 dark:hover:bg-[#D4AF37]/10 text-xs font-bold text-text-primary dark:text-white transition-colors cursor-pointer"
                   >
                     Browse Bar Menu
                   </button>
                 </div>
-                <div className="mt-5 pt-4 border-t border-border/60 dark:border-white/10 text-[11px] text-text-muted dark:text-zinc-500">
+                <div className="mt-4 pt-3 border-t border-border/60 dark:border-white/10 text-[11px] text-text-muted dark:text-zinc-500">
                   Previously placed orders can be tracked in{' '}
                   <button
                     onClick={() => setActiveTab('orders')}
@@ -2128,88 +2280,91 @@ const CustomerAppInner: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="md:grid md:grid-cols-12 md:gap-6 lg:gap-8 items-start space-y-6 md:space-y-0">
-                {/* Left Column: Cart Items List */}
-                <div className="md:col-span-7 lg:col-span-7 xl:col-span-8 space-y-3">
+              <div className="md:grid md:grid-cols-12 md:gap-6 lg:gap-8 items-start space-y-4 md:space-y-0">
+                {/* Left Column: Compact Cart Items List */}
+                <div className="md:col-span-7 lg:col-span-7 xl:col-span-8 space-y-2.5 sm:space-y-3">
                   {cart.map((c) => (
                     <div
                       key={c.id}
-                      className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-4 sm:p-5 shadow-xs transition-colors"
+                      className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-3 sm:p-5 shadow-xs transition-colors"
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      {/* Item Top Row: Name + Badge on Left, Total Price on Right */}
+                      <div className="flex items-start justify-between gap-2.5">
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <VegBadge type={c.foodType} size="sm" />
-                            <div className="font-extrabold text-sm sm:text-base text-text-primary dark:text-white truncate sm:whitespace-normal">
+                            <div className="font-extrabold text-sm sm:text-base text-text-primary dark:text-white leading-tight break-words">
                               {c.name}
                             </div>
                           </div>
                           {(c.variantName || (c.modifiers && c.modifiers.length > 0)) && (
-                            <div className="mt-1 text-xs text-text-muted dark:text-zinc-400 break-words">
+                            <div className="mt-0.5 text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 break-words">
                               {[c.variantName, ...(c.modifiers || []).map((m: any) => m.optionName)].filter(Boolean).join(' · ')}
                             </div>
                           )}
                           {c.specialInstructions && (
-                            <div className="mt-1 text-xs italic text-amber-500 break-words">"{c.specialInstructions}"</div>
+                            <div className="mt-0.5 text-[11px] italic text-amber-500 break-words">"{c.specialInstructions}"</div>
                           )}
                         </div>
 
-                        <button
-                          disabled={isOrdering}
-                          onClick={() => removeFromCart(c.id)}
-                          aria-label={`Remove ${c.name} from cart`}
-                          className="min-h-[44px] min-w-[44px] -mr-2 -mt-1 flex items-center justify-center rounded-xl text-text-muted hover:text-rose-500 hover:bg-rose-500/10 dark:hover:bg-rose-500/10 transition-colors disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="text-right shrink-0">
+                          <div className="text-sm sm:text-base font-black text-primary dark:text-[#D4AF37]">
+                            ₹{(Number(c.unitPrice || 0) * (c.quantity || 1)).toFixed(2)}
+                          </div>
+                          <div className="text-[10px] text-text-muted dark:text-zinc-400">
+                            ₹{Number(c.unitPrice || 0).toFixed(2)}/ea
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="mt-3 flex items-center justify-between pt-3 border-t border-border/60 dark:border-white/10 gap-3">
-                        {/* Stepper with comfortable touch targets (44x44px mobile touch area) */}
-                        <div className="flex items-center gap-1.5">
+                      {/* Item Bottom Row: Compact Stepper on Left, Delete Action on Right */}
+                      <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-border/60 dark:border-white/10 gap-2">
+                        {/* Stepper with compact responsive touch targets */}
+                        <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-0.5 rounded-lg border border-border/60 dark:border-white/10">
                           <button
                             disabled={isOrdering}
                             onClick={() => updateCartQuantity(c.id, -1)}
                             aria-label={c.quantity === 1 ? `Remove ${c.name} from cart` : `Decrease quantity of ${c.name}`}
-                            className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:w-8 sm:h-8 rounded-xl sm:rounded-lg border border-border/80 dark:border-white/10 flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer text-text-primary dark:text-white"
+                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-md flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer text-text-primary dark:text-white"
                           >
                             {c.quantity === 1 ? (
-                              <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-rose-500" />
+                              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
                             ) : (
-                              <Minus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                              <Minus className="w-3.5 h-3.5" />
                             )}
                           </button>
-                          <span className="w-8 text-center font-black text-sm text-primary dark:text-[#D4AF37]">
+                          <span className="w-7 text-center font-black text-xs sm:text-sm text-primary dark:text-[#D4AF37]">
                             {c.quantity}
                           </span>
                           <button
                             disabled={isOrdering}
                             onClick={() => updateCartQuantity(c.id, 1)}
                             aria-label={`Increase quantity of ${c.name}`}
-                            className="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:w-8 sm:h-8 rounded-xl sm:rounded-lg border border-border/80 dark:border-white/10 flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer text-text-primary dark:text-white"
+                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-md flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer text-text-primary dark:text-white"
                           >
-                            <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                            <Plus className="w-3.5 h-3.5" />
                           </button>
                         </div>
 
-                        {/* Unit price & Line Total */}
-                        <div className="text-right">
-                          <div className="text-[11px] text-text-muted dark:text-zinc-400">
-                            ₹{Number(c.unitPrice || 0).toFixed(2)} each
-                          </div>
-                          <div className="text-base font-black text-primary dark:text-[#D4AF37]">
-                            ₹{(Number(c.unitPrice || 0) * (c.quantity || 1)).toFixed(2)}
-                          </div>
-                        </div>
+                        {/* Remove Action */}
+                        <button
+                          disabled={isOrdering}
+                          onClick={() => removeFromCart(c.id)}
+                          aria-label={`Remove ${c.name} from cart`}
+                          className="px-2 py-1 rounded-lg text-[11px] font-bold text-text-muted hover:text-rose-500 hover:bg-rose-500/10 dark:hover:bg-rose-500/10 transition-colors disabled:opacity-40 disabled:pointer-events-none cursor-pointer flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Remove</span>
+                        </button>
                       </div>
                     </div>
                   ))}
                 </div>
 
                 {/* Right Column: Order Summary Card */}
-                <div className="md:col-span-5 lg:col-span-5 xl:col-span-4 md:sticky md:top-24 space-y-4">
-                  <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-5 space-y-3.5 text-xs shadow-xs">
-                    <h3 className="font-black text-base text-text-primary dark:text-white pb-2 border-b border-border/60 dark:border-white/10">
+                <div className="md:col-span-5 lg:col-span-5 xl:col-span-4 md:sticky md:top-24 space-y-3.5">
+                  <div className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-4 sm:p-5 space-y-3 text-xs shadow-xs">
+                    <h3 className="font-black text-sm sm:text-base text-text-primary dark:text-white pb-2 border-b border-border/60 dark:border-white/10">
                       Order Summary
                     </h3>
 
@@ -2220,38 +2375,56 @@ const CustomerAppInner: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="flex justify-between text-text-primary dark:text-white font-extrabold text-sm pt-1">
+                    <div className="flex justify-between text-text-primary dark:text-white font-extrabold text-sm pt-0.5">
                       <span>Cart Subtotal</span>
-                      <span className="text-base text-primary dark:text-[#D4AF37]">
+                      <span className="text-sm sm:text-base text-primary dark:text-[#D4AF37]">
                         ₹{Number(cartTotal || 0).toFixed(2)}
                       </span>
                     </div>
 
-                    <div className="border-t border-border/60 dark:border-white/10 pt-3 text-[11px] text-text-muted dark:text-zinc-400 leading-relaxed">
+                    <div className="border-t border-border/60 dark:border-white/10 pt-2.5 text-[10.5px] sm:text-[11px] text-text-muted dark:text-zinc-400 leading-relaxed">
                       Taxes, service charge, and applicable discounts are calculated as part of your final table bill.
                     </div>
 
-                    {tableStatus === 'SETTLING' && (
-                      <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5 text-amber-700 dark:text-amber-400 animate-fade-in">
-                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                        <div className="text-xs leading-relaxed">
-                          <p className="font-bold">Bill Settlement in Progress</p>
+                    {isOrderingBlocked ? (
+                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-amber-700 dark:text-amber-400 animate-fade-in">
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div className="text-[11px] leading-relaxed">
+                          <p className="font-bold">
+                            {isBillPaidOrSettled ? 'Session Settled / Closed' : 'Ordering Closed (15-Minute Cutoff)'}
+                          </p>
                           <p className="mt-0.5 opacity-90">
-                            Your server is currently finalizing the bill at your table. Adding new items is temporarily paused.
+                            {isBillPaidOrSettled
+                              ? 'Your table session has been settled. Ordering new items is disabled.'
+                              : 'Orders can only be placed when more than 15 minutes remain in the session. You may still view your bill or call the waiter.'}
                           </p>
                         </div>
                       </div>
-                    )}
+                    ) : tableStatus === 'SETTLING' ? (
+                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-amber-700 dark:text-amber-400 animate-fade-in">
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div className="text-[11px] leading-relaxed">
+                          <p className="font-bold">Bill Settlement in Progress</p>
+                          <p className="mt-0.5 opacity-90">
+                            Your server is finalizing the bill at your table. Ordering is temporarily paused.
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
 
                     <button
-                      disabled={isOrdering || cart.length === 0 || tableStatus === 'SETTLING'}
+                      disabled={isOrdering || cart.length === 0 || isOrderingBlocked || tableStatus === 'SETTLING'}
                       onClick={handlePlaceOrder}
-                      className="w-full h-13 mt-2 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black disabled:opacity-50 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-between px-5 cursor-pointer"
+                      className="w-full h-11 sm:h-13 mt-1.5 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black disabled:opacity-50 text-white font-extrabold text-xs sm:text-sm shadow-md transition-all flex items-center justify-between px-4 sm:px-5 cursor-pointer disabled:cursor-not-allowed"
                     >
                       <span className="flex items-center gap-2">
-                        {isOrdering && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {isOrdering && <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />}
                         <span>
-                          {tableStatus === 'SETTLING'
+                          {isBillPaidOrSettled
+                            ? 'Ordering Locked (Settled)'
+                            : isOrderingCutoffReached
+                            ? 'Ordering Closed (15m Cutoff)'
+                            : tableStatus === 'SETTLING'
                             ? 'Ordering Locked (Settling)'
                             : isOrdering
                             ? 'Placing Order...'
@@ -2403,20 +2576,20 @@ const CustomerAppInner: React.FC = () => {
                   return (
                     <div
                       key={o.id || idx}
-                      className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-5 space-y-3 shadow-xs flex flex-col justify-between"
+                      className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-3.5 sm:p-5 space-y-2.5 sm:space-y-3 shadow-xs flex flex-col justify-between"
                     >
                       <div>
-                        <div className="flex items-center justify-between pb-3 border-b border-border/60 dark:border-white/10">
+                        <div className="flex items-center justify-between pb-2 sm:pb-3 border-b border-border/60 dark:border-white/10">
                           <div>
-                            <div className="font-black text-base text-text-primary dark:text-white">
+                            <div className="font-black text-sm sm:text-base text-text-primary dark:text-white">
                               Order #{String(o.orderNumber || idx + 1).padStart(2, '0')}
                             </div>
-                            <div className="text-[11px] text-text-muted dark:text-zinc-400 mt-0.5">
+                            <div className="text-[10px] sm:text-[11px] text-text-muted dark:text-zinc-400 mt-0.5">
                               Placed {new Date(o.placedAt || o.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           </div>
                           <span
-                            className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full ${getOrderStatusBadgeClass(
+                            className={`text-[9.5px] sm:text-[10px] font-extrabold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full ${getOrderStatusBadgeClass(
                               o.status
                             )}`}
                           >
@@ -2424,40 +2597,40 @@ const CustomerAppInner: React.FC = () => {
                           </span>
                         </div>
 
-                        <div className="divide-y divide-border/40 dark:divide-white/5 mt-2">
+                        <div className="divide-y divide-border/40 dark:divide-white/5 mt-1.5 sm:mt-2">
                           {(o.items || []).map((item: any) => (
-                            <div key={item.id} className="flex items-start justify-between gap-3 py-2.5 text-xs">
+                            <div key={item.id} className="flex items-start justify-between gap-2.5 py-2 sm:py-2.5 text-xs">
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {item.foodType && (
                                     <VegBadge type={item.foodType} size="sm" />
                                   )}
-                                  <span className="font-bold text-text-primary dark:text-white break-words">
+                                  <span className="font-bold text-text-primary dark:text-white break-words text-[11.5px] sm:text-xs">
                                     {item.itemName || item.name}
                                   </span>
                                   {item.variantName && (
-                                    <span className="text-text-muted dark:text-zinc-400 text-[11px]">
+                                    <span className="text-text-muted dark:text-zinc-400 text-[10.5px] sm:text-[11px]">
                                       · {item.variantName}
                                     </span>
                                   )}
                                   {item.selectedModifiers && Array.isArray(item.selectedModifiers) && item.selectedModifiers.length > 0 && (
-                                    <span className="text-text-muted dark:text-zinc-400 text-[11px]">
+                                    <span className="text-text-muted dark:text-zinc-400 text-[10.5px] sm:text-[11px]">
                                       · {item.selectedModifiers.map((m: any) => m.optionName || m.name || m).join(', ')}
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-[10px] text-text-muted dark:text-zinc-400 mt-0.5">
+                                <div className="text-[9.5px] sm:text-[10px] text-text-muted dark:text-zinc-400 mt-0.5">
                                   Qty {item.quantity} · {item.station?.toLowerCase()}
                                 </div>
                                 {item.specialInstructions && (
-                                  <div className="text-[10px] text-amber-600 dark:text-amber-400 italic mt-0.5">
+                                  <div className="text-[9.5px] sm:text-[10px] text-amber-600 dark:text-amber-400 italic mt-0.5">
                                     Note: {item.specialInstructions}
                                   </div>
                                 )}
                               </div>
                               <div className="text-right shrink-0">
                                 <span
-                                  className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${
+                                  className={`text-[8.5px] sm:text-[9px] font-bold px-1.5 sm:px-2 py-0.5 rounded-md ${
                                     item.status === 'SERVED'
                                       ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                                       : item.status === 'READY'
@@ -2469,7 +2642,7 @@ const CustomerAppInner: React.FC = () => {
                                 >
                                   {item.status || 'PREPARING'}
                                 </span>
-                                <div className="mt-1 font-bold text-text-primary dark:text-white">
+                                <div className="mt-0.5 font-bold text-xs sm:text-sm text-text-primary dark:text-white">
                                   ₹{Number(item.lineTotal || item.unitPrice * item.quantity).toFixed(2)}
                                 </div>
                               </div>
@@ -2479,21 +2652,21 @@ const CustomerAppInner: React.FC = () => {
                       </div>
 
                       {/* Order Card Footer */}
-                      <div className="pt-3 border-t border-border/60 dark:border-white/10 mt-2 space-y-1.5">
+                      <div className="pt-2 sm:pt-3 border-t border-border/60 dark:border-white/10 mt-1.5 sm:mt-2 space-y-1 sm:space-y-1.5">
                         {o.notes && (
-                          <div className="text-[11px] text-text-muted dark:text-zinc-400 italic">
+                          <div className="text-[10px] sm:text-[11px] text-text-muted dark:text-zinc-400 italic">
                             Order Note: {o.notes}
                           </div>
                         )}
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-text-muted dark:text-zinc-400 font-medium">
+                          <span className="text-text-muted dark:text-zinc-400 font-medium text-[11px] sm:text-xs">
                             {totalItemsCount} {totalItemsCount === 1 ? 'item' : 'items'}
                           </span>
                           <div className="flex items-baseline gap-1.5">
-                            <span className="text-[11px] text-text-muted dark:text-zinc-400 font-medium">
+                            <span className="text-[10px] sm:text-[11px] text-text-muted dark:text-zinc-400 font-medium">
                               Order Total:
                             </span>
-                            <span className="font-black text-sm text-primary dark:text-[#D4AF37]">
+                            <span className="font-black text-xs sm:text-sm text-primary dark:text-[#D4AF37]">
                               ₹{orderTotalAmount.toFixed(2)}
                             </span>
                           </div>
@@ -3613,7 +3786,9 @@ const CustomerAppInner: React.FC = () => {
                             </span>
                             <button
                               type="button"
+                              disabled={isOrderingBlocked}
                               onClick={() => {
+                                if (isOrderingBlocked) return;
                                 (order.items || []).forEach((item: any) => {
                                   addToCart({
                                     menuItemId: item.menuItemId || item.id,
@@ -3627,10 +3802,14 @@ const CustomerAppInner: React.FC = () => {
                                 });
                                 setActiveTab('cart');
                               }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-white dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:hover:bg-[#D4AF37] dark:hover:text-black text-xs font-bold transition-colors cursor-pointer"
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                                isOrderingBlocked
+                                  ? 'bg-zinc-100 dark:bg-white/5 text-zinc-400 opacity-50 cursor-not-allowed'
+                                  : 'bg-primary/10 hover:bg-primary text-primary hover:text-white dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:hover:bg-[#D4AF37] dark:hover:text-black cursor-pointer'
+                              }`}
                             >
                               <RotateCcw className="w-3.5 h-3.5" />
-                              <span>Re-order Items</span>
+                              <span>{isOrderingBlocked ? 'Ordering Closed' : 'Re-order Items'}</span>
                             </button>
                           </div>
                         </div>
@@ -3663,80 +3842,81 @@ const CustomerAppInner: React.FC = () => {
         </div>
       )}
 
-      {/* Floating Mobile Cart Summary Bar (Positioned above bottom nav on mobile/tablet) */}
+      {/* Compact Floating Mobile Cart Control (Positioned at bottom-right above mobile nav) */}
       {cartCount > 0 && activeTab !== 'cart' && (
-        <div className="lg:hidden fixed bottom-[68px] inset-x-0 z-30 px-4 pointer-events-none">
-          <div className="max-w-md mx-auto pointer-events-auto">
-            <button
-              onClick={() => setActiveTab('cart')}
-              className="w-full py-3 px-4 rounded-2xl bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-lg shadow-primary/25 dark:shadow-[#D4AF37]/20 flex items-center justify-between font-extrabold text-xs transition-transform active:scale-[0.98] cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-white/20 dark:bg-black/20 flex items-center justify-center text-[11px]">
-                  {cartCount}
-                </span>
-                <span>{cartCount === 1 ? '1 item' : `${cartCount} items`}</span>
-                <span className="opacity-70">·</span>
-                <span>₹{Number(cartTotal || 0).toFixed(2)}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span>View Cart</span>
-                <span className="text-sm">→</span>
-              </div>
-            </button>
-          </div>
+        <div className="lg:hidden fixed bottom-[72px] sm:bottom-[76px] right-3.5 sm:right-5 z-30 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab('cart')}
+            aria-label={`View Cart: ${cartCount} items, total ₹${Number(cartTotal || 0).toFixed(0)}`}
+            className="group relative flex items-center gap-2.5 pl-3 pr-3.5 py-2.5 rounded-full bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] text-white dark:text-black shadow-xl shadow-primary/30 dark:shadow-black/60 border-2 border-white dark:border-[#18181B] transition-all transform active:scale-95 cursor-pointer select-none"
+          >
+            {/* Cart Icon with badge count */}
+            <div className="relative shrink-0">
+              <ShoppingCart className="w-4.5 h-4.5 stroke-[2.2]" />
+              <span className="absolute -top-2 -right-2 min-w-[17px] h-[17px] px-0.5 rounded-full bg-white dark:bg-black text-primary dark:text-[#D4AF37] text-[9.5px] font-black flex items-center justify-center shadow-xs border border-primary/20 dark:border-white/20">
+                {cartCount}
+              </span>
+            </div>
+
+            {/* Cart Amount */}
+            <div className="flex flex-col text-left leading-none">
+              <span className="text-[8.5px] uppercase tracking-wider font-extrabold opacity-80">Cart</span>
+              <span className="text-[12px] font-black mt-0.5">₹{Number(cartTotal || 0).toFixed(0)}</span>
+            </div>
+          </button>
         </div>
       )}
 
       {/* 2. Premium Mobile Bottom Navigation Bar (Shown on mobile & tablet, hidden on desktop lg+) */}
-      <nav className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border/80 dark:border-white/10 bg-white/95 dark:bg-[#18181B]/95 backdrop-blur-xl shadow-[0_-8px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_-8px_24px_rgba(0,0,0,0.4)]">
-        <div className="max-w-md md:max-w-xl mx-auto grid grid-cols-5 gap-1 px-2 pt-1.5 pb-2.5 items-end text-center">
+      <nav className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border/80 dark:border-white/10 bg-white/95 dark:bg-[#18181B]/95 backdrop-blur-xl shadow-[0_-8px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_-8px_24px_rgba(0,0,0,0.4)] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="w-full max-w-md md:max-w-xl mx-auto grid grid-cols-5 gap-1 px-1.5 sm:px-2 pt-1.5 pb-1 sm:pb-1.5 items-end text-center">
           {/* 1. Home */}
           <button
             type="button"
             onClick={() => setActiveTab('home')}
-            className={`flex flex-col items-center justify-center gap-1 py-1 rounded-xl transition-all cursor-pointer ${
+            className={`flex flex-col items-center justify-center gap-0.5 sm:gap-1 py-1 px-0.5 rounded-xl transition-all cursor-pointer min-w-0 ${
               activeTab === 'home' || activeTab === 'eat' || activeTab === 'drink' || activeTab === 'merch'
                 ? 'text-primary dark:text-[#D4AF37] font-black scale-105'
                 : 'text-zinc-500 dark:text-zinc-400 hover:text-text-primary'
             }`}
           >
-            <HomeIcon className="w-4.5 h-4.5" />
-            <span className="text-[10px] sm:text-[11px] font-bold">Home</span>
+            <HomeIcon className="w-4.5 h-4.5 shrink-0" />
+            <span className="text-[10px] sm:text-[11px] font-bold leading-tight truncate max-w-full">Home</span>
           </button>
 
           {/* 2. Repeat */}
           <button
             type="button"
             onClick={() => setActiveTab('repeat')}
-            className={`flex flex-col items-center justify-center gap-1 py-1 rounded-xl transition-all cursor-pointer ${
+            className={`flex flex-col items-center justify-center gap-0.5 sm:gap-1 py-1 px-0.5 rounded-xl transition-all cursor-pointer min-w-0 ${
               activeTab === 'repeat'
                 ? 'text-primary dark:text-[#D4AF37] font-black scale-105'
                 : 'text-zinc-500 dark:text-zinc-400 hover:text-text-primary'
             }`}
           >
-            <RotateCcw className="w-4.5 h-4.5" />
-            <span className="text-[10px] sm:text-[11px] font-bold">Repeat</span>
+            <RotateCcw className="w-4.5 h-4.5 shrink-0" />
+            <span className="text-[10px] sm:text-[11px] font-bold leading-tight truncate max-w-full">Repeat</span>
           </button>
 
           {/* 3. Call Waiter (Center Primary Floating Action ~1.5-2x size) */}
-          <div className="flex flex-col items-center justify-center -mt-7 sm:-mt-8 relative z-10">
+          <div className="flex flex-col items-center justify-center -mt-6 sm:-mt-8 relative z-10 min-w-0">
             <button
               type="button"
               onClick={() => setIsCallWaiterOpen(true)}
               aria-haspopup="dialog"
               aria-expanded={isCallWaiterOpen}
               aria-label="Call waiter"
-              className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-primary via-purple-600 to-indigo-600 dark:from-[#D4AF37] dark:via-amber-500 dark:to-yellow-400 text-white dark:text-black shadow-lg shadow-primary/30 dark:shadow-black/50 flex items-center justify-center border-4 border-white dark:border-[#18181B] ring-2 ring-primary/20 dark:ring-[#D4AF37]/30 transition-transform hover:scale-105 active:scale-95 cursor-pointer relative group"
+              className="w-13 h-13 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-primary via-purple-600 to-indigo-600 dark:from-[#D4AF37] dark:via-amber-500 dark:to-yellow-400 text-white dark:text-black shadow-lg shadow-primary/30 dark:shadow-black/50 flex items-center justify-center border-4 border-white dark:border-[#18181B] ring-2 ring-primary/20 dark:ring-[#D4AF37]/30 transition-transform hover:scale-105 active:scale-95 cursor-pointer relative group shrink-0"
             >
-              <PhoneCall className="w-6.5 h-6.5 sm:w-7 sm:h-7 stroke-[2.2] group-hover:rotate-12 transition-transform duration-200" />
+              <PhoneCall className="w-6 h-6 sm:w-7 sm:h-7 stroke-[2.2] group-hover:rotate-12 transition-transform duration-200" />
               {activeRequests.length > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-[#D4AF37] text-zinc-950 dark:bg-purple-600 dark:text-white text-[10px] font-black border-2 border-white dark:border-[#18181B] flex items-center justify-center shadow-md select-none">
                   {activeRequests.length}
                 </span>
               )}
             </button>
-            <span className="text-[10px] sm:text-[11px] font-extrabold text-primary dark:text-[#D4AF37] mt-1.5 leading-none tracking-tight select-none">
+            <span className="text-[10px] sm:text-[11px] font-extrabold text-primary dark:text-[#D4AF37] mt-1 leading-none tracking-tight select-none whitespace-nowrap">
               Call Waiter
             </span>
           </div>
@@ -3745,35 +3925,35 @@ const CustomerAppInner: React.FC = () => {
           <button
             type="button"
             onClick={() => setActiveTab('orders')}
-            className={`flex flex-col items-center justify-center gap-1 py-1 rounded-xl transition-all relative cursor-pointer ${
+            className={`flex flex-col items-center justify-center gap-0.5 sm:gap-1 py-1 px-0.5 rounded-xl transition-all relative cursor-pointer min-w-0 ${
               activeTab === 'orders'
                 ? 'text-primary dark:text-[#D4AF37] font-black scale-105'
                 : 'text-zinc-500 dark:text-zinc-400 hover:text-text-primary'
             }`}
           >
             <div className="relative">
-              <ClipboardList className="w-4.5 h-4.5" />
+              <ClipboardList className="w-4.5 h-4.5 shrink-0" />
               {pendingOrders.length > 0 && (
                 <span className="absolute -top-1.5 -right-2.5 w-4 h-4 rounded-full bg-primary dark:bg-[#D4AF37] text-white dark:text-black text-[8px] font-black flex items-center justify-center shadow-xs">
                   {pendingOrders.length}
                 </span>
               )}
             </div>
-            <span className="text-[10px] sm:text-[11px] font-bold">My Orders</span>
+            <span className="text-[10px] sm:text-[11px] font-bold leading-tight truncate max-w-full">My Orders</span>
           </button>
 
           {/* 5. Pay Bill */}
           <button
             type="button"
             onClick={() => setActiveTab('bill')}
-            className={`flex flex-col items-center justify-center gap-1 py-1 rounded-xl transition-all cursor-pointer ${
+            className={`flex flex-col items-center justify-center gap-0.5 sm:gap-1 py-1 px-0.5 rounded-xl transition-all cursor-pointer min-w-0 ${
               activeTab === 'bill'
                 ? 'text-primary dark:text-[#D4AF37] font-black scale-105'
                 : 'text-zinc-500 dark:text-zinc-400 hover:text-text-primary'
             }`}
           >
-            <Receipt className="w-4.5 h-4.5" />
-            <span className="text-[10px] sm:text-[11px] font-bold">Pay Bill</span>
+            <Receipt className="w-4.5 h-4.5 shrink-0" />
+            <span className="text-[10px] sm:text-[11px] font-bold leading-tight truncate max-w-full">Pay Bill</span>
           </button>
         </div>
       </nav>
@@ -3784,6 +3964,7 @@ const CustomerAppInner: React.FC = () => {
         open={!!customizingItem}
         onClose={() => setCustomizingItem(null)}
         onAddToCart={addToCart}
+        isOrderingDisabled={isOrderingBlocked}
       />
 
       {/* Call Waiter Sheet */}
@@ -3799,20 +3980,43 @@ const CustomerAppInner: React.FC = () => {
       />
 
       {/* 1. Customer Portal Read-Only Product Details View */}
-      {selectedDetailItem && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="product-detail-title"
-          onClick={() => setSelectedDetailItem(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/25 dark:bg-black/80 backdrop-blur-sm animate-fade-in cursor-pointer"
-        >
+      {selectedDetailItem && (() => {
+        const detailBackdropOpacity = isDetailClosing
+          ? 0
+          : isDetailDragging
+          ? Math.max(0.15, 1 - detailDragY / 400)
+          : 1;
+
+        return (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-detail-title"
+            onClick={() => setSelectedDetailItem(null)}
+            style={{
+              opacity: detailBackdropOpacity,
+              transition: isDetailDragging ? 'none' : 'opacity 0.22s ease-out',
+            }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 dark:bg-black/80 backdrop-blur-xs animate-fade-in cursor-pointer"
+          >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-xl max-h-[90vh] bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col cursor-default text-text-primary dark:text-zinc-100"
+            onTouchStart={handleDetailTouchStart}
+            onTouchMove={handleDetailTouchMove}
+            onTouchEnd={handleDetailTouchEnd}
+            style={{
+              transform: isDetailDragging ? `translateY(${detailDragY}px)` : isDetailClosing ? 'translateY(100%)' : 'translateY(0)',
+              transition: isDetailDragging ? 'none' : 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+            className="relative w-full max-w-xl max-h-[90vh] bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl flex flex-col cursor-default text-text-primary dark:text-zinc-100 will-change-transform"
           >
+            {/* Mobile Drag Handle */}
+            <div className="w-full pt-2.5 pb-0.5 flex justify-center sm:hidden cursor-grab active:cursor-grabbing bg-[#F5F3FA] dark:bg-white/5">
+              <div className="w-12 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-600" />
+            </div>
+
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-border/80 dark:border-white/10 flex items-center justify-between shrink-0 bg-[#F5F3FA] dark:bg-white/5">
+            <div className="px-5 sm:px-6 py-3.5 sm:py-4 border-b border-border/80 dark:border-white/10 flex items-center justify-between shrink-0 bg-[#F5F3FA] dark:bg-white/5">
               <div className="flex items-center gap-2.5 min-w-0">
                 {selectedDetailItem.foodType && (
                   <VegBadge type={selectedDetailItem.foodType} size="sm" />
@@ -3832,7 +4036,7 @@ const CustomerAppInner: React.FC = () => {
             </div>
 
             {/* Scrollable Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-5 flex-1 text-xs">
+            <div ref={detailScrollRef} className="p-6 overflow-y-auto space-y-5 flex-1 text-xs">
               {/* Product Image Preview: Aspect-square contained container with blurred background fill */}
               {selectedDetailItem.image || selectedDetailItem.imageUrl ? (
                 <div
@@ -4038,19 +4242,58 @@ const CustomerAppInner: React.FC = () => {
               </div>
             </div>
 
-            {/* Modal Footer (Strictly View-Only Close Action) */}
-            <div className="p-4 px-6 border-t border-border/80 dark:border-white/10 bg-[#F5F3FA] dark:bg-white/5 flex items-center justify-end shrink-0">
+            {/* Modal Footer (Close + Add to Cart Actions) */}
+            <div className="p-3.5 sm:p-4 px-4 sm:px-6 border-t border-border/80 dark:border-white/10 bg-[#F5F3FA] dark:bg-white/5 flex items-center justify-between gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedDetailItem(null)}
-                className="px-5 py-2 rounded-xl text-xs font-bold text-text-primary dark:text-zinc-300 hover:text-text-primary dark:hover:text-white bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-text-muted hover:text-text-primary dark:text-zinc-400 dark:hover:text-white bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer"
               >
                 Close
               </button>
+
+              {selectedDetailItem.isAvailable === false ? (
+                <span className="px-4 py-2.5 rounded-xl text-xs font-bold border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                  Out of Stock
+                </span>
+              ) : isOrderingBlocked ? (
+                <button
+                  type="button"
+                  disabled
+                  className="flex-1 max-w-[240px] py-2.5 px-4 rounded-xl bg-zinc-200 dark:bg-white/10 text-zinc-500 dark:text-zinc-400 font-extrabold text-xs transition-colors flex items-center justify-center gap-1.5 opacity-60 cursor-not-allowed"
+                >
+                  <span>{isBillPaidOrSettled ? 'Session Settled' : 'Ordering Closed (15m Cutoff)'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const item = selectedDetailItem;
+                    const hasModifiers =
+                      (item.variants && item.variants.length > 0) ||
+                      (item.modifierGroups && item.modifierGroups.length > 0);
+                    setSelectedDetailItem(null);
+                    if (hasModifiers) {
+                      setCustomizingItem(item);
+                    } else {
+                      handleDirectAdd(item);
+                    }
+                  }}
+                  className="flex-1 max-w-[240px] py-2.5 px-4 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] text-white dark:text-black font-extrabold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>
+                    {(selectedDetailItem.variants && selectedDetailItem.variants.length > 0) ||
+                    (selectedDetailItem.modifierGroups && selectedDetailItem.modifierGroups.length > 0)
+                      ? 'Customize & Add'
+                      : `Add to Cart • ₹${Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice ?? 0).toFixed(0)}`}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </div>
-      )}
+      ); })()}
 
       {/* 2. Customer Portal Maximized Image Preview (z-[100] Layering to Appear Above All Modals & Sheets) */}
       {selectedImageModal && (

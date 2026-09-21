@@ -142,11 +142,22 @@ export class EmailNotificationService {
       console.warn(`[Email Worker] Failed to check token details, falling back to defaults: ${e.message}`);
     }
 
-    // Generate a random 6-digit access code for the customer
-    const accessCode = Math.floor(100000 + Math.random() * 900000).toString();
+    // Fetch existing 6-digit access code for this token, or generate a new one if not yet created
+    let accessCode: string | null = null;
     try {
-      await redisService.setex(`customer-code:${accessCode}`, 86400 * 7, tokenNumber);
-      await redisService.setex(`token-code:${tokenNumber}`, 86400 * 7, accessCode);
+      accessCode = await redisService.get(`token-code:${tokenNumber}`);
+    } catch (e: any) {
+      console.warn(`[Email Worker] Could not fetch cached token-code: ${e.message}`);
+    }
+
+    if (!accessCode || !/^\d{6}$/.test(accessCode)) {
+      accessCode = Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
+    try {
+      // 30 days TTL so active session codes never expire or conflict
+      await redisService.setex(`customer-code:${accessCode}`, 86400 * 30, tokenNumber);
+      await redisService.setex(`token-code:${tokenNumber}`, 86400 * 30, accessCode);
     } catch (e: any) {
       console.warn(`[Email Worker] Could not cache access code in redis: ${e.message}`);
     }

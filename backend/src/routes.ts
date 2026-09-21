@@ -5692,6 +5692,34 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
       });
     }
 
+    // 4. Fallback search for active tokens matching cached token-code
+    if (!token && /^\d{6}$/.test(resolvedToken)) {
+      try {
+        const activeTokens = await prisma.token.findMany({
+          where: {
+            status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] }
+          },
+          include: {
+            customer: true,
+            table: true,
+            placeType: true,
+          },
+          orderBy: { issuedAt: 'desc' },
+          take: 30,
+        });
+
+        for (const actToken of activeTokens) {
+          const actCode = await redisService.get(`token-code:${actToken.tokenNumber}`);
+          if (actCode === resolvedToken) {
+            token = actToken;
+            // Repair the reverse mapping in redis with 30-day TTL
+            await redisService.setex(`customer-code:${resolvedToken}`, 86400 * 30, actToken.tokenNumber);
+            break;
+          }
+        }
+      } catch (e: any) {}
+    }
+
     if (!token) {
       return res.status(404).json({
         authorized: false,
@@ -5823,6 +5851,28 @@ router.post('/customer/recover', async (req: Request, res: Response) => {
         if (found) {
           targetTokenNumber = found.tokenNumber;
         }
+      }
+
+      // Check active tokens if 6-digit code
+      if (!targetTokenNumber && /^\d{6}$/.test(codeStr)) {
+        try {
+          const activeTokens = await prisma.token.findMany({
+            where: {
+              status: { in: [TokenStatus.ACTIVE, TokenStatus.EXTENDED] }
+            },
+            orderBy: { issuedAt: 'desc' },
+            take: 30
+          });
+
+          for (const actToken of activeTokens) {
+            const actCode = await redisService.get(`token-code:${actToken.tokenNumber}`);
+            if (actCode === codeStr) {
+              targetTokenNumber = actToken.tokenNumber;
+              await redisService.setex(`customer-code:${codeStr}`, 86400 * 30, actToken.tokenNumber);
+              break;
+            }
+          }
+        } catch (e: any) {}
       }
     }
 

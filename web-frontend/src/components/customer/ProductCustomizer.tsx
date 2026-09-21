@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { VegBadge } from './VegBadge';
 import { Minus, Plus, X, Check, AlertCircle } from 'lucide-react';
 
@@ -37,6 +37,7 @@ interface ProductCustomizerProps {
   item: CustomizerItem | null;
   open: boolean;
   onClose: () => void;
+  isOrderingDisabled?: boolean;
   onAddToCart: (configuredItem: {
     menuItemId: string;
     name: string;
@@ -62,6 +63,7 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
   item,
   open,
   onClose,
+  isOrderingDisabled = false,
   onAddToCart,
 }) => {
   const [variantId, setVariantId] = useState<string | null>(null);
@@ -70,6 +72,14 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
   const [qty, setQty] = useState(1);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // Swipe-down to dismiss state
+  const [dragY, setDragY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const touchStartY = useRef<number | null>(null);
+  const touchStartScrollTop = useRef<number>(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (open && item) {
       setVariantId(item.variants && item.variants.length > 0 ? item.variants[0].id : null);
@@ -77,6 +87,9 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
       setInstructions('');
       setQty(1);
       setValidationError(null);
+      setDragY(0);
+      setIsDragging(false);
+      setIsClosing(false);
     }
   }, [open, item]);
 
@@ -140,6 +153,7 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
   const grandTotal = Math.round((unitPrice * qty) * 100) / 100;
 
   const handleAdd = () => {
+    if (isOrderingDisabled) return;
     if (!isFormValid) {
       const names = missingRequiredGroups.map((g) => g.name).join(', ');
       setValidationError(`Please make a selection for: ${names}`);
@@ -180,11 +194,78 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
     onClose();
   };
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+    touchStartScrollTop.current = scrollRef.current ? scrollRef.current.scrollTop : 0;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartY.current === null) return;
+    const currentY = e.touches[0].clientY;
+    const deltaY = currentY - touchStartY.current;
+    const currentScrollTop = scrollRef.current ? scrollRef.current.scrollTop : 0;
+
+    // Only allow downward drag when scroll is at top
+    if (deltaY > 0 && currentScrollTop <= 0 && touchStartScrollTop.current <= 0) {
+      setDragY(deltaY);
+      setIsDragging(true);
+    } else if (isDragging && deltaY <= 0) {
+      setDragY(0);
+      setIsDragging(false);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (dragY > 70) {
+      setIsClosing(true);
+      setTimeout(() => {
+        setDragY(0);
+        setIsDragging(false);
+        setIsClosing(false);
+        onClose();
+      }, 200);
+    } else {
+      setDragY(0);
+      setIsDragging(false);
+    }
+    touchStartY.current = null;
+  };
+
+  const backdropOpacity = isClosing
+    ? 0
+    : isDragging
+    ? Math.max(0.15, 1 - dragY / 400)
+    : 1;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/25 dark:bg-black/80 backdrop-blur-xs p-0 sm:p-4 animate-fade-in">
-      <div className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        opacity: backdropOpacity,
+        transition: isDragging ? 'none' : 'opacity 0.22s ease-out',
+      }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 dark:bg-black/80 backdrop-blur-xs p-0 sm:p-4 animate-fade-in"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{
+          transform: isDragging ? `translateY(${dragY}px)` : isClosing ? 'translateY(100%)' : 'translateY(0)',
+          transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+        className="w-full max-w-lg rounded-t-3xl sm:rounded-2xl bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col will-change-transform"
+      >
+        {/* Mobile Drag Pill Handle */}
+        <div className="w-full pt-2.5 pb-0.5 flex justify-center sm:hidden cursor-grab active:cursor-grabbing">
+          <div className="w-12 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-600" />
+        </div>
+
         {/* Header */}
-        <div className="p-4 border-b border-border/80 dark:border-white/10 flex items-start justify-between">
+        <div className="p-4 pt-2 sm:pt-4 border-b border-border/80 dark:border-white/10 flex items-start justify-between">
           <div className="flex items-start gap-2.5">
             <VegBadge type={item.foodType} size="md" className="mt-1" />
             <div>
@@ -195,15 +276,17 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-text-muted hover:text-text-primary dark:hover:text-white transition-colors cursor-pointer"
+            aria-label="Close customizer"
+            className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-text-muted hover:text-text-primary dark:hover:text-white transition-colors cursor-pointer shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Scrollable Content */}
-        <div className="p-4 overflow-y-auto space-y-4 flex-1">
+        <div ref={scrollRef} className="p-4 overflow-y-auto space-y-4 flex-1">
           {/* Variants / Sizes */}
           {variants.length > 0 && (
             <div>
@@ -352,8 +435,11 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
               <span className="w-6 text-center font-bold text-sm text-primary dark:text-[#D4AF37]">{qty}</span>
               <button
                 type="button"
+                disabled={isOrderingDisabled}
                 onClick={() => setQty((q) => q + 1)}
-                className="w-8 h-8 rounded-lg flex items-center justify-center border border-border/80 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-text-primary dark:text-white transition-colors cursor-pointer"
+                className={`w-8 h-8 rounded-lg flex items-center justify-center border border-border/80 dark:border-white/10 text-text-primary dark:text-white transition-colors cursor-pointer ${
+                  isOrderingDisabled ? 'opacity-30 cursor-not-allowed pointer-events-none' : 'hover:bg-black/5 dark:hover:bg-white/10'
+                }`}
               >
                 <Plus className="w-3.5 h-3.5" />
               </button>
@@ -371,10 +457,15 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
           )}
           <button
             type="button"
+            disabled={isOrderingDisabled}
             onClick={handleAdd}
-            className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-between cursor-pointer"
+            className={`w-full py-3 px-4 rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-between cursor-pointer ${
+              isOrderingDisabled
+                ? 'bg-zinc-300 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-500 opacity-60 cursor-not-allowed pointer-events-none'
+                : 'bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black text-white hover:shadow-lg'
+            }`}
           >
-            <span>Add to Cart</span>
+            <span>{isOrderingDisabled ? 'Ordering Closed (15m Cutoff)' : 'Add to Cart'}</span>
             <span>₹{grandTotal.toFixed(2)}</span>
           </button>
         </div>
