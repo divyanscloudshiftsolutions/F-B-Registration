@@ -1,8 +1,293 @@
 import { PrismaClient } from '@prisma/client';
+import { redisService } from './RedisService';
+import { getIO, SOCKET_EVENTS } from '../realtime';
+import { logger } from '../lib/logger';
 
 const prisma = new PrismaClient();
 
+// In-memory reservation tracker for fallback / instant aggregation
+const activeReservationsMap = new Map<string, { tokenNumber: string; menuItemId: string; quantity: number; expiresAt: number }>();
+
 export class InventoryService {
+  /**
+   * Startup migration helper ensuring all existing and newly created menu items have an associated StockItem with default stock 50
+   */
+  async ensureAllItemsHaveStock() {
+    try {
+      const items = await prisma.menuItem.findMany({
+        where: { isArchived: false },
+        include: { stockItem: true },
+      });
+
+      let createdCount = 0;
+      for (const item of items) {
+        if (!item.stockItem) {
+          await prisma.stockItem.create({
+            data: {
+              menuItemId: item.id,
+              currentStock: 50,
+              lowStockThreshold: 5,
+              isActive: true,
+            },
+          });
+          createdCount++;
+        }
+      }
+
+      if (createdCount > 0) {
+        logger.info(`[InventoryService] Initialized default StockItem (50) for ${createdCount} menu items.`);
+      }
+    } catch (err: any) {
+      logger.warn('[InventoryService] Error ensuring stock items exist:', { error: err.message });
+    }
+  }
+
+  /**
+   * Helper to safely broadcast stock and availability changes
+   */
+  private notifyStockUpdated(payload: { itemId: string; isAvailable: boolean; availableStock: number; currentStock: number; name?: string; station?: string }) {
+    try {
+      getIO().emit(SOCKET_EVENTS.MENU_UPDATED, {
+        action: 'item_availability',
+        itemId: payload.itemId,
+        details: {
+          isAvailable: payload.isAvailable,
+          availableStock: payload.availableStock,
+          currentStock: payload.currentStock,
+          name: payload.name,
+          station: payload.station,
+        },
+      });
+    } catch {
+      // Ignored if socket server not initialized
+    }
+  }
+
+  /**
+   * Get active reserved quantity for a menuItemId across all active customer carts
+   */
+  async getReservedQuantity(menuItemId: string, excludeTokenNumber?: string): Promise<number> {
+    const now = Date.now();
+    let total = 0;
+
+    // Scan memory map and prune expired entries
+    for (const [key, entry] of activeReservationsMap.entries()) {
+      if (entry.expiresAt < now) {
+        activeReservationsMap.delete(key);
+      } else if (entry.menuItemId === menuItemId) {
+        if (!excludeTokenNumber || entry.tokenNumber !== excludeTokenNumber) {
+          total += entry.quantity;
+        }
+      }
+    }
+
+    return total;
+  }
+
+  /**
+   * Get available-to-sell stock for a specific menuItemId
+   */
+  async getAvailableStock(menuItemId: string, forTokenNumber?: string): Promise<{
+    currentStock: number;
+    reservedStock: number;
+    availableStock: number;
+    isAvailable: boolean;
+  }> {
+    const item = await prisma.menuItem.findUnique({
+      where: { id: menuItemId },
+      include: { stockItem: true },
+    });
+
+    if (!item) {
+      return { currentStock: 0, reservedStock: 0, availableStock: 0, isAvailable: false };
+    }
+
+    const currentStock = item.stockItem?.currentStock ?? 50;
+    const reservedStock = await this.getReservedQuantity(menuItemId, forTokenNumber);
+    const availableStock = Math.max(0, currentStock - reservedStock);
+    const isEffectiveAvailable = item.isAvailable && availableStock > 0;
+
+    return {
+      currentStock,
+      reservedStock,
+      availableStock,
+      isAvailable: isEffectiveAvailable,
+    };
+  }
+
+  /**
+   * Reserve cart stock for a dining session token (TTL: 15 minutes / 900 seconds)
+   */
+  async reserveCartStock(tokenNumber: string, menuItemId: string, quantity: number): Promise<{
+    success: boolean;
+    availableStock: number;
+    currentStock: number;
+    message?: string;
+  }> {
+    if (!tokenNumber || !menuItemId || quantity < 0) {
+      throw new Error('Invalid reservation parameters');
+    }
+
+    const item = await prisma.menuItem.findUnique({
+      where: { id: menuItemId },
+      include: { stockItem: true },
+    });
+
+    if (!item || item.isArchived) {
+      return { success: false, availableStock: 0, currentStock: 0, message: 'Item not found' };
+    }
+
+    // If item is manually 86'd, no reservations allowed
+    if (!item.isAvailable) {
+      return { success: false, availableStock: 0, currentStock: item.stockItem?.currentStock ?? 0, message: 'Item is currently Out of Stock' };
+    }
+
+    const currentStock = item.stockItem?.currentStock ?? 50;
+    const otherReserved = await this.getReservedQuantity(menuItemId, tokenNumber);
+    const availableForThisToken = Math.max(0, currentStock - otherReserved);
+
+    if (quantity > availableForThisToken) {
+      return {
+        success: false,
+        availableStock: availableForThisToken,
+        currentStock,
+        message: `Only ${availableForThisToken} left in stock`,
+      };
+    }
+
+    const key = `cart:reserve:${tokenNumber}:${menuItemId}`;
+    const ttlSeconds = 900; // 15 minutes
+    const expiresAt = Date.now() + ttlSeconds * 1000;
+
+    if (quantity === 0) {
+      activeReservationsMap.delete(key);
+      await redisService.del(key);
+    } else {
+      activeReservationsMap.set(key, {
+        tokenNumber,
+        menuItemId,
+        quantity,
+        expiresAt,
+      });
+      await redisService.setex(key, ttlSeconds, String(quantity));
+    }
+
+    const newTotalReserved = await this.getReservedQuantity(menuItemId);
+    const newAvailableStock = Math.max(0, currentStock - newTotalReserved);
+
+    // If available stock reaches 0, broadcast live update so other users see it Out of Stock
+    this.notifyStockUpdated({
+      itemId: menuItemId,
+      isAvailable: item.isAvailable && newAvailableStock > 0,
+      availableStock: newAvailableStock,
+      currentStock,
+      name: item.name,
+      station: item.station,
+    });
+
+    return {
+      success: true,
+      availableStock: newAvailableStock,
+      currentStock,
+    };
+  }
+
+  /**
+   * Release reserved cart stock for an item
+   */
+  async releaseCartStock(tokenNumber: string, menuItemId: string) {
+    const key = `cart:reserve:${tokenNumber}:${menuItemId}`;
+    activeReservationsMap.delete(key);
+    await redisService.del(key);
+
+    const stockInfo = await this.getAvailableStock(menuItemId);
+    const item = await prisma.menuItem.findUnique({ where: { id: menuItemId } });
+
+    if (item) {
+      this.notifyStockUpdated({
+        itemId: menuItemId,
+        isAvailable: item.isAvailable && stockInfo.availableStock > 0,
+        availableStock: stockInfo.availableStock,
+        currentStock: stockInfo.currentStock,
+        name: item.name,
+        station: item.station,
+      });
+    }
+  }
+
+  /**
+   * Clear all cart reservations for a session (e.g. upon order placement, checkout, or cart clear)
+   */
+  async clearSessionCartReservations(tokenNumber: string) {
+    const affectedItemIds: string[] = [];
+
+    for (const [key, entry] of activeReservationsMap.entries()) {
+      if (entry.tokenNumber === tokenNumber) {
+        affectedItemIds.push(entry.menuItemId);
+        activeReservationsMap.delete(key);
+        redisService.del(key).catch(() => {});
+      }
+    }
+
+    for (const menuItemId of Array.from(new Set(affectedItemIds))) {
+      const stockInfo = await this.getAvailableStock(menuItemId);
+      const item = await prisma.menuItem.findUnique({ where: { id: menuItemId } });
+      if (item) {
+        this.notifyStockUpdated({
+          itemId: menuItemId,
+          isAvailable: item.isAvailable && stockInfo.availableStock > 0,
+          availableStock: stockInfo.availableStock,
+          currentStock: stockInfo.currentStock,
+          name: item.name,
+          station: item.station,
+        });
+      }
+    }
+  }
+
+  /**
+   * Set or adjust authoritative stock quantity for a menu item
+   */
+  async setStockQuantity(menuItemId: string, stockQuantity: number, reason: string, userId?: string) {
+    const qty = Math.max(0, Math.floor(Number(stockQuantity) || 0));
+
+    return prisma.$transaction(async (tx) => {
+      let stockItem = await tx.stockItem.findUnique({
+        where: { menuItemId },
+      });
+
+      if (!stockItem) {
+        stockItem = await tx.stockItem.create({
+          data: {
+            menuItemId,
+            currentStock: qty,
+            lowStockThreshold: 5,
+            isActive: true,
+          },
+        });
+      } else {
+        const prevStock = stockItem.currentStock;
+        stockItem = await tx.stockItem.update({
+          where: { id: stockItem.id },
+          data: { currentStock: qty },
+        });
+
+        await tx.inventoryLog.create({
+          data: {
+            stockItemId: stockItem.id,
+            quantityDelta: qty - prevStock,
+            previousStock: prevStock,
+            newStock: qty,
+            reason,
+            userId: userId || null,
+          },
+        });
+      }
+
+      return stockItem;
+    });
+  }
+
   /**
    * Get all tracked stock items with low-stock status
    */

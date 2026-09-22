@@ -1,6 +1,8 @@
 import { PrismaClient, OrderStatus, OrderSource, Station } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { broadcastOrderCreated, broadcastOrderItemUpdated } from '../realtime';
+import { inventoryService } from './InventoryService';
+import { menuService } from './MenuService';
 
 const prisma = new PrismaClient();
 
@@ -126,7 +128,7 @@ export class OrderService {
       gstAmount?: Decimal;
     }> = [];
 
-    const stockDeductions: Array<{ stockItemId: string; quantity: number; itemName: string }> = [];
+    const stockDeductions: Array<{ stockItemId: string; menuItemId: string; quantity: number; itemName: string; newStock?: number }> = [];
 
     for (const itemInput of input.items) {
       const menuItem = menuItemMap.get(itemInput.menuItemId);
@@ -147,6 +149,7 @@ export class OrderService {
       if (menuItem.stockItem && menuItem.stockItem.isActive) {
         stockDeductions.push({
           stockItemId: menuItem.stockItem.id,
+          menuItemId: menuItem.id,
           quantity: qty,
           itemName: menuItem.name,
         });
@@ -242,6 +245,7 @@ export class OrderService {
     const orderNumber = existingOrdersCount + 1;
 
     // 6. Execute Transactional Order Creation with Atomic Inventory Lock
+    const zeroStockItemIds: string[] = [];
     const createdOrder = await prisma.$transaction(async (tx) => {
       // Validate and deduct stock atomically
       for (const deduction of stockDeductions) {
@@ -253,6 +257,7 @@ export class OrderService {
         }
 
         const newStock = stock.currentStock - deduction.quantity;
+        deduction.newStock = newStock;
         await tx.stockItem.update({
           where: { id: stock.id },
           data: { currentStock: newStock },
@@ -268,6 +273,14 @@ export class OrderService {
             userId: input.handlerId || null,
           },
         });
+
+        if (newStock === 0) {
+          zeroStockItemIds.push(deduction.menuItemId);
+          await tx.menuItem.update({
+            where: { id: deduction.menuItemId },
+            data: { isAvailable: false },
+          });
+        }
       }
 
       const createdOrder = await tx.order.create({
@@ -295,7 +308,43 @@ export class OrderService {
       return createdOrder;
     });
 
-    // Broadcast order.created in real-time after successful DB commit
+    // 7. Clear Cart Reservations for this session
+    try {
+      await inventoryService.clearSessionCartReservations(token.tokenNumber);
+    } catch (clearErr) {
+      console.warn('[OrderService] Failed to clear cart reservations after order:', clearErr);
+    }
+
+    // 8. Auto-Stock-Out cascade for items that reached 0 stock
+    for (const zeroItemId of zeroStockItemIds) {
+      try {
+        await menuService.setItemAvailability(zeroItemId, false);
+      } catch (zeroErr) {
+        console.warn(`[OrderService] Failed to execute auto stock-out for item ${zeroItemId}:`, zeroErr);
+      }
+    }
+
+    // 9. Invalidate menu cache & notify real-time stock changes for deducted items
+    try {
+      await menuService.invalidateMenuCache();
+      for (const deduction of stockDeductions) {
+        if (!zeroStockItemIds.includes(deduction.menuItemId)) {
+          const currentStock = deduction.newStock ?? 0;
+          const reserved = await inventoryService.getReservedQuantity(deduction.menuItemId);
+          const availableStock = Math.max(0, currentStock - reserved);
+          inventoryService.notifyStockChanged({
+            itemId: deduction.menuItemId,
+            stockQuantity: currentStock,
+            availableStock,
+            isAvailable: currentStock > 0,
+          });
+        }
+      }
+    } catch (syncErr) {
+      console.warn('[OrderService] Failed to sync stock changes after order:', syncErr);
+    }
+
+    // 10. Broadcast order.created in real-time after successful DB commit
     try {
       broadcastOrderCreated({
         orderId: createdOrder.id,
@@ -443,6 +492,8 @@ export class OrderService {
         subtotal: Number(o.subtotal || 0),
         notes: o.notes,
         tableId: o.tableId,
+        tokenId: o.tokenId,
+        sessionId: o.tokenId,
         tableNumber: o.table?.tableNumber || 'N/A',
         areaName: o.table?.placeType?.name || 'Dine-In',
         sessionTokenNumber: o.token?.tokenNumber || 'N/A',
@@ -485,12 +536,13 @@ export class OrderService {
 
     // State Machine Validation Rules (forward and 1-step corrective reverse transitions)
     const validTransitions: Record<OrderStatus, OrderStatus[]> = {
-      [OrderStatus.PLACED]: [OrderStatus.ACCEPTED, OrderStatus.CANCELLED],
+      [OrderStatus.PLACED]: [OrderStatus.ACCEPTED, OrderStatus.CANCELLED, OrderStatus.STOCK_OUT],
       [OrderStatus.ACCEPTED]: [OrderStatus.PREPARING, OrderStatus.PLACED, OrderStatus.CANCELLED],
       [OrderStatus.PREPARING]: [OrderStatus.READY, OrderStatus.ACCEPTED, OrderStatus.CANCELLED],
       [OrderStatus.READY]: [OrderStatus.SERVED, OrderStatus.PREPARING],
       [OrderStatus.SERVED]: [OrderStatus.READY],
       [OrderStatus.CANCELLED]: [],
+      [OrderStatus.STOCK_OUT]: [],
     };
 
     if (item.status !== status && !validTransitions[item.status]?.includes(status)) {
@@ -523,8 +575,8 @@ export class OrderService {
       }
     }
 
-    const timestampData: any = { status };
     const now = new Date();
+    const timestampData: any = { status };
 
     if (status === OrderStatus.PLACED) {
       timestampData.preparedAt = null;
@@ -535,14 +587,18 @@ export class OrderService {
       timestampData.readyAt = null;
       timestampData.servedAt = null;
     } else if (status === OrderStatus.PREPARING) {
-      timestampData.preparedAt = item.preparedAt || now;
+      timestampData.preparedAt = now;
       timestampData.readyAt = null;
       timestampData.servedAt = null;
     } else if (status === OrderStatus.READY) {
-      timestampData.readyAt = item.readyAt || now;
+      timestampData.readyAt = now;
       timestampData.servedAt = null;
     } else if (status === OrderStatus.SERVED) {
-      timestampData.servedAt = item.servedAt || now;
+      timestampData.servedAt = now;
+    } else if (status === OrderStatus.STOCK_OUT) {
+      timestampData.preparedAt = null;
+      timestampData.readyAt = null;
+      timestampData.servedAt = null;
     }
 
     const updatedItem = await prisma.orderItem.update({
@@ -555,7 +611,9 @@ export class OrderService {
       where: { orderId: item.orderId },
     });
 
-    const activeItems = allOrderItems.filter((i) => i.status !== OrderStatus.CANCELLED);
+    const activeItems = allOrderItems.filter(
+      (i) => i.status !== OrderStatus.CANCELLED && i.status !== OrderStatus.STOCK_OUT
+    );
     const allCancelled = allOrderItems.length > 0 && activeItems.length === 0;
     const allServed = activeItems.length > 0 && activeItems.every((i) => i.status === OrderStatus.SERVED);
     const allReady = activeItems.length > 0 && activeItems.every((i) => i.status === OrderStatus.READY || i.status === OrderStatus.SERVED);
@@ -575,9 +633,17 @@ export class OrderService {
       newOrderStatus = OrderStatus.PLACED;
     }
 
+    const newSubtotal = activeItems.reduce(
+      (sum, i) => sum.plus(new Decimal(i.lineTotal)),
+      new Decimal(0)
+    );
+
     await prisma.order.update({
       where: { id: item.orderId },
-      data: { status: newOrderStatus },
+      data: {
+        status: newOrderStatus,
+        subtotal: newSubtotal,
+      },
     });
 
     // Broadcast order.item.updated after successful DB commit
@@ -612,6 +678,146 @@ export class OrderService {
     }
 
     return updatedItem;
+  }
+
+  /**
+   * Cancel/Delete an individual order item by customer before KDS acceptance
+   */
+  async cancelOrderItemByCustomer(orderItemId: string, tokenNumber: string) {
+    const item = await prisma.orderItem.findUnique({
+      where: { id: orderItemId },
+      include: {
+        order: {
+          include: {
+            token: true,
+            table: true,
+          },
+        },
+        menuItem: {
+          include: {
+            stockItem: true,
+          },
+        },
+      },
+    });
+
+    if (!item) {
+      throw new Error('Order item not found');
+    }
+
+    // Validate that the item belongs to the customer's session
+    if (
+      item.order?.token?.tokenNumber !== tokenNumber &&
+      item.order?.tokenId !== tokenNumber
+    ) {
+      throw new Error('Unauthorized: Item does not belong to this dining session');
+    }
+
+    // Authoritative KDS Accept lock check
+    if (item.status !== OrderStatus.PLACED) {
+      throw new Error('Cannot delete item: This item has already been accepted by the kitchen/bar for preparation.');
+    }
+
+    const now = new Date();
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Restore inventory stock if tracked
+      if (item.menuItem?.stockItem && item.menuItem.stockItem.isActive) {
+        const stock = await tx.stockItem.findUnique({
+          where: { id: item.menuItem.stockItem.id },
+        });
+        if (stock) {
+          const newStock = stock.currentStock + item.quantity;
+          await tx.stockItem.update({
+            where: { id: stock.id },
+            data: { currentStock: newStock },
+          });
+
+          await tx.inventoryLog.create({
+            data: {
+              stockItemId: stock.id,
+              quantityDelta: item.quantity,
+              previousStock: stock.currentStock,
+              newStock,
+              reason: 'ORDER_CANCELLATION',
+              userId: null,
+            },
+          });
+        }
+      }
+
+      // Mark order item status as CANCELLED
+      const updatedItem = await tx.orderItem.update({
+        where: { id: orderItemId },
+        data: {
+          status: OrderStatus.CANCELLED,
+        },
+      });
+
+      // Recalculate parent order subtotal and overall status
+      const allOrderItems = await tx.orderItem.findMany({
+        where: { orderId: item.orderId },
+      });
+
+      const activeItems = allOrderItems.filter((i) => i.status !== OrderStatus.CANCELLED);
+      const newSubtotal = activeItems.reduce(
+        (sum, i) => sum.plus(new Decimal(i.lineTotal)),
+        new Decimal(0)
+      );
+
+      let newOrderStatus = OrderStatus.PLACED;
+      if (allOrderItems.length > 0 && activeItems.length === 0) {
+        newOrderStatus = OrderStatus.CANCELLED;
+      } else if (activeItems.every((i) => i.status === OrderStatus.SERVED)) {
+        newOrderStatus = OrderStatus.SERVED;
+      } else if (activeItems.every((i) => i.status === OrderStatus.READY || i.status === OrderStatus.SERVED)) {
+        newOrderStatus = OrderStatus.READY;
+      } else if (activeItems.some((i) => i.status === OrderStatus.PREPARING || i.status === OrderStatus.READY || i.status === OrderStatus.SERVED)) {
+        newOrderStatus = OrderStatus.PREPARING;
+      } else if (activeItems.some((i) => i.status === OrderStatus.ACCEPTED)) {
+        newOrderStatus = OrderStatus.ACCEPTED;
+      } else {
+        newOrderStatus = OrderStatus.PLACED;
+      }
+
+      await tx.order.update({
+        where: { id: item.orderId },
+        data: {
+          subtotal: newSubtotal,
+          status: newOrderStatus,
+        },
+      });
+
+      return { updatedItem, newOrderStatus, newSubtotal };
+    });
+
+    // Broadcast real-time order item update
+    try {
+      broadcastOrderItemUpdated({
+        orderId: item.orderId,
+        orderItemId: item.id,
+        orderNumber: item.order.orderNumber,
+        tokenNumber: item.order.token?.tokenNumber || '',
+        tableId: item.order.tableId,
+        tableNumber: item.order.table?.tableNumber,
+        station: item.station,
+        itemName: item.itemName,
+        variantName: item.variantName,
+        selectedModifiers: item.selectedModifiers,
+        specialInstructions: item.specialInstructions,
+        quantity: item.quantity,
+        previousStatus: item.status,
+        status: OrderStatus.CANCELLED,
+        preparedAt: null,
+        readyAt: null,
+        servedAt: null,
+        updatedAt: now.toISOString(),
+      });
+    } catch (broadcastErr) {
+      console.warn('Real-time cancellation broadcast error:', broadcastErr);
+    }
+
+    return result.updatedItem;
   }
 }
 

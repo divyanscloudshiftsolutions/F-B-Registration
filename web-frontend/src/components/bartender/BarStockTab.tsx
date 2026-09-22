@@ -18,6 +18,8 @@ interface FlatMenuItem {
   categoryName?: string;
   sectionName?: string;
   foodType?: string | null;
+  stockQuantity?: number;
+  availableStock?: number;
   variants?: Array<{ id: string; name: string; priceDelta: number }>;
 }
 
@@ -29,6 +31,13 @@ export const BarStockTab: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'available' | 'unavailable'>('all');
+
+  // Stock Out Modal state
+  const [stockOutModalItem, setStockOutModalItem] = useState<FlatMenuItem | null>(null);
+
+  // Stock In Modal state
+  const [stockInModalItem, setStockInModalItem] = useState<FlatMenuItem | null>(null);
+  const [stockInQuantity, setStockInQuantity] = useState<number>(50);
 
   const userRole = (user?.role || '').toLowerCase();
   const canControl = ['bartender', 'admin', 'manager'].includes(userRole);
@@ -51,6 +60,8 @@ export const BarStockTab: React.FC = () => {
                   categoryName: 'General Bar',
                   basePrice: Number(it.basePrice || 0),
                   finalPrice: Number(it.finalPrice ?? it.basePrice ?? 0),
+                  stockQuantity: Number(it.stockQuantity ?? it.stockItem?.currentStock ?? 50),
+                  availableStock: Number(it.availableStock ?? it.stockItem?.currentStock ?? 50),
                 });
               }
             });
@@ -68,6 +79,8 @@ export const BarStockTab: React.FC = () => {
                       categoryName: cat.name,
                       basePrice: Number(it.basePrice || 0),
                       finalPrice: Number(it.finalPrice ?? it.basePrice ?? 0),
+                      stockQuantity: Number(it.stockQuantity ?? it.stockItem?.currentStock ?? 50),
+                      availableStock: Number(it.availableStock ?? it.stockItem?.currentStock ?? 50),
                     });
                   }
                 });
@@ -85,6 +98,8 @@ export const BarStockTab: React.FC = () => {
                           categoryName: `${cat.name} · ${sub.name}`,
                           basePrice: Number(it.basePrice || 0),
                           finalPrice: Number(it.finalPrice ?? it.basePrice ?? 0),
+                          stockQuantity: Number(it.stockQuantity ?? it.stockItem?.currentStock ?? 50),
+                          availableStock: Number(it.availableStock ?? it.stockItem?.currentStock ?? 50),
                         });
                       }
                     });
@@ -111,13 +126,22 @@ export const BarStockTab: React.FC = () => {
     fetchBarItems();
 
     const unsubMenuUpdated = onSocketEvent('menu.updated', (payload: any) => {
-      if (payload && payload.action === 'item_availability' && payload.itemId) {
+      if (payload && (payload.action === 'item_availability' || payload.action === 'stock_changed') && payload.itemId) {
         setItems((prev) =>
-          prev.map((it) =>
-            it.id === payload.itemId
-              ? { ...it, isAvailable: Boolean(payload.details?.isAvailable) }
-              : it
-          )
+          prev.map((it) => {
+            if (it.id === payload.itemId) {
+              const nextAvailable = payload.details?.isAvailable !== undefined ? Boolean(payload.details.isAvailable) : it.isAvailable;
+              const nextStock = payload.details?.currentStock ?? payload.details?.stockQuantity ?? it.stockQuantity;
+              const nextAvailStock = payload.details?.availableStock ?? it.availableStock;
+              return {
+                ...it,
+                isAvailable: nextAvailable,
+                stockQuantity: nextStock,
+                availableStock: nextAvailStock,
+              };
+            }
+            return it;
+          })
         );
       } else {
         fetchBarItems(true);
@@ -129,37 +153,65 @@ export const BarStockTab: React.FC = () => {
     };
   }, [fetchBarItems]);
 
-  const handleToggleAvailability = async (item: FlatMenuItem) => {
-    if (!canControl || updatingIds.has(item.id)) return;
+  const handleOpenStockIn = (item: FlatMenuItem) => {
+    setStockInModalItem(item);
+    setStockInQuantity(item.stockQuantity && item.stockQuantity > 0 ? item.stockQuantity : 50);
+  };
 
-    const newStatus = !item.isAvailable;
-    setUpdatingIds((prev) => new Set(prev).add(item.id));
+  const handleConfirmStockIn = async () => {
+    if (!stockInModalItem || updatingIds.has(stockInModalItem.id)) return;
+    const itemId = stockInModalItem.id;
+    const qty = Math.max(1, Math.floor(Number(stockInQuantity)));
 
-    // Optimistic update
+    setUpdatingIds((prev) => new Set(prev).add(itemId));
     setItems((prev) =>
-      prev.map((it) => (it.id === item.id ? { ...it, isAvailable: newStatus } : it))
+      prev.map((it) => (it.id === itemId ? { ...it, isAvailable: true, stockQuantity: qty, availableStock: qty } : it))
     );
 
     try {
-      const res = await api.setItemAvailability(item.id, newStatus);
+      const res = await api.setItemAvailability(itemId, true, qty);
       if (res && res.success) {
-        showToast(
-          `${item.name} marked ${newStatus ? 'Stock In (Available)' : 'Stock Out (Out of Stock)'}`,
-          newStatus ? 'success' : 'warning'
-        );
+        showToast(`${stockInModalItem.name} marked Stock In with quantity ${qty}`, 'success');
+        setStockInModalItem(null);
       } else {
         throw new Error(res?.error?.message || 'Update failed');
       }
     } catch (err: any) {
-      // Revert optimistic update on failure
-      setItems((prev) =>
-        prev.map((it) => (it.id === item.id ? { ...it, isAvailable: !newStatus } : it))
-      );
-      showToast(err.message || 'Failed to update item availability', 'danger');
+      fetchBarItems(true);
+      showToast(err.message || 'Failed to update stock in', 'danger');
     } finally {
       setUpdatingIds((prev) => {
         const next = new Set(prev);
-        next.delete(item.id);
+        next.delete(itemId);
+        return next;
+      });
+    }
+  };
+
+  const handleConfirmStockOut = async () => {
+    if (!stockOutModalItem || updatingIds.has(stockOutModalItem.id)) return;
+    const itemId = stockOutModalItem.id;
+
+    setUpdatingIds((prev) => new Set(prev).add(itemId));
+    setItems((prev) =>
+      prev.map((it) => (it.id === itemId ? { ...it, isAvailable: false } : it))
+    );
+
+    try {
+      const res = await api.setItemAvailability(itemId, false);
+      if (res && res.success) {
+        showToast(`${stockOutModalItem.name} marked Stock Out (Underlying stock preserved)`, 'warning');
+        setStockOutModalItem(null);
+      } else {
+        throw new Error(res?.error?.message || 'Update failed');
+      }
+    } catch (err: any) {
+      fetchBarItems(true);
+      showToast(err.message || 'Failed to mark stock out', 'danger');
+    } finally {
+      setUpdatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
         return next;
       });
     }
@@ -175,16 +227,12 @@ export const BarStockTab: React.FC = () => {
 
   const filteredItems = useMemo(() => {
     return items.filter((it) => {
-      // Category filter
       if (selectedCategory !== 'all' && it.categoryName !== selectedCategory) {
         return false;
       }
-
-      // Status filter
       if (statusFilter === 'available' && !it.isAvailable) return false;
       if (statusFilter === 'unavailable' && it.isAvailable) return false;
 
-      // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchName = it.name.toLowerCase().includes(q);
@@ -213,7 +261,7 @@ export const BarStockTab: React.FC = () => {
               Bar Stock Management
             </h2>
             <p className="text-xs text-text-muted mt-0.5">
-              Instantly toggle physical drink availability for customer ordering
+              Control bar inventory and availability in real time with preserved stock tracking
             </p>
           </div>
         </div>
@@ -342,6 +390,9 @@ export const BarStockTab: React.FC = () => {
           {filteredItems.map((item) => {
             const isUpdating = updatingIds.has(item.id);
             const isAvailable = item.isAvailable;
+            const stockQty = item.stockQuantity ?? 50;
+            const availQty = item.availableStock ?? stockQty;
+            const isLowStock = isAvailable && availQty > 0 && availQty <= 10;
 
             return (
               <div
@@ -385,15 +436,20 @@ export const BarStockTab: React.FC = () => {
                       {item.name}
                     </h4>
 
-                    <div className="flex items-baseline gap-2 mt-1">
+                    <div className="flex items-center justify-between gap-2 mt-1">
                       <span className="text-xs font-mono font-bold text-text-main">
                         ₹{item.finalPrice ?? item.basePrice}
                       </span>
-                      {item.variants && item.variants.length > 0 && (
-                        <span className="text-[10px] text-text-muted font-medium">
-                          ({item.variants.length} options)
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md bg-black/5 dark:bg-white/5 border border-border-main dark:border-white/10 text-text-main">
+                          Stock: {stockQty}
                         </span>
-                      )}
+                        {isLowStock && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                            Low ({availQty})
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -407,7 +463,13 @@ export const BarStockTab: React.FC = () => {
                   <button
                     type="button"
                     disabled={isUpdating || !canControl}
-                    onClick={() => handleToggleAvailability(item)}
+                    onClick={() => {
+                      if (isAvailable) {
+                        setStockOutModalItem(item);
+                      } else {
+                        handleOpenStockIn(item);
+                      }
+                    }}
                     className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ${
                       isAvailable
                         ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-400 border border-rose-500/30'
@@ -429,6 +491,118 @@ export const BarStockTab: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Stock Out Confirmation Modal */}
+      {stockOutModalItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-bg-surface border border-border-main dark:border-white/10 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-text-main">
+                  Mark "{stockOutModalItem.name}" as Stock Out?
+                </h3>
+                <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                  This will keep all already-accepted items unaffected, but automatically mark all unaccepted orders as Stock Out (₹0) and update menu availability. Underlying stock ({stockOutModalItem.stockQuantity ?? 50}) will remain preserved.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-border-main dark:border-white/5">
+              <button
+                type="button"
+                disabled={updatingIds.has(stockOutModalItem.id)}
+                onClick={() => setStockOutModalItem(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer border border-border-main dark:border-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={updatingIds.has(stockOutModalItem.id)}
+                onClick={handleConfirmStockOut}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                {updatingIds.has(stockOutModalItem.id) ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <span>Confirm Stock Out</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stock In Replenish Modal */}
+      {stockInModalItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-bg-surface border border-border-main dark:border-white/10 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                <CheckCircle2 size={20} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-text-main">
+                  Stock In: {stockInModalItem.name}
+                </h3>
+                <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                  Underlying preserved stock is <strong className="text-text-main font-mono">{stockInModalItem.stockQuantity ?? 50}</strong>. Confirm this quantity or enter a replenished amount to make this item available for future orders.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-text-main">
+                Available Stock Quantity
+              </label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={stockInQuantity}
+                onChange={(e) => setStockInQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="w-full px-3.5 py-2.5 bg-bg-surface border border-border-main dark:border-white/10 rounded-xl text-sm font-mono font-bold text-text-main focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                placeholder="Enter stock quantity (e.g. 50)"
+              />
+              <p className="text-[11px] text-text-muted">
+                Must be a positive whole number. Past Stock-Out items will remain unaffected.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-border-main dark:border-white/5">
+              <button
+                type="button"
+                disabled={updatingIds.has(stockInModalItem.id)}
+                onClick={() => setStockInModalItem(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer border border-border-main dark:border-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={updatingIds.has(stockInModalItem.id) || !stockInQuantity || stockInQuantity < 1}
+                onClick={handleConfirmStockIn}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover shadow-sm transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {updatingIds.has(stockInModalItem.id) ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Updating...</span>
+                  </>
+                ) : (
+                  <span>Confirm Stock In</span>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

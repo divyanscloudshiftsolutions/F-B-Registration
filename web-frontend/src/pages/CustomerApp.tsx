@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CustomerProvider, useCustomer } from '../context/CustomerContext';
 import { VegBadge } from '../components/customer/VegBadge';
 import { MenuItemCard } from '../components/customer/MenuItemCard';
-import { ProductCustomizer, type CustomizerItem } from '../components/customer/ProductCustomizer';
+import { ProductCustomizer, type CustomizerItem, type ProductCustomizerInitialConfig } from '../components/customer/ProductCustomizer';
 import { CallWaiterSheet } from '../components/customer/CallWaiterSheet';
 import { formatImageUrl } from '../utils/imageUrl';
 import {
@@ -48,6 +48,8 @@ import {
   Square,
   CheckSquare,
   Timer,
+  ChevronRight,
+  Ban,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -198,6 +200,7 @@ const CustomerAppInner: React.FC = () => {
     isLoading,
     isOrdering,
     placeOrder,
+    cancelOrderItem,
     refreshOrders,
     refreshBill,
     requestBill,
@@ -209,6 +212,8 @@ const CustomerAppInner: React.FC = () => {
     sessionError,
     refreshSession,
     tableStatus,
+    notifications,
+    dismissNotification,
   } = useCustomer();
 
   // Circular wave theme transition
@@ -329,20 +334,69 @@ const CustomerAppInner: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [dietaryFilter, setDietaryFilter] = useState<'ALL' | 'VEG' | 'NON_VEG' | 'EGG'>('ALL');
   const [customizingItem, setCustomizingItem] = useState<CustomizerItem | null>(null);
+  const [customizingInitialConfig, setCustomizingInitialConfig] = useState<any | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const [billRequested, setBillRequested] = useState<boolean>(false);
   const [orderSuccessToast, setOrderSuccessToast] = useState<string | null>(null);
   const [activeOrdersSubTab, setActiveOrdersSubTab] = useState<'pending' | 'done'>('pending');
   const [copiedToken, setCopiedToken] = useState<boolean>(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState<boolean>(false);
+  const [cancellingItemId, setCancellingItemId] = useState<string | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [selectedHistorySession, setSelectedHistorySession] = useState<any | null>(null);
 
-  const handleCopyToken = (tokenToCopy: string) => {
-    if (!tokenToCopy) return;
+  const handleDeleteOrderItem = (orderItemId: string, itemName: string) => {
+    if (cancellingItemId) return;
+    setItemToDelete({ id: orderItemId, name: itemName });
+  };
+
+  const handleConfirmDeleteItem = async () => {
+    if (!itemToDelete || cancellingItemId) return;
+    const targetId = itemToDelete.id;
+    const targetName = itemToDelete.name;
+
+    setCancellingItemId(targetId);
     try {
-      navigator.clipboard.writeText(tokenToCopy);
+      await cancelOrderItem(targetId);
+      setItemToDelete(null);
+      setOrderSuccessToast(`"${targetName}" removed from order`);
+      setTimeout(() => setOrderSuccessToast(null), 3000);
+    } catch (err: any) {
+      setCheckoutError(err?.message || 'Failed to remove item from order.');
+      setTimeout(() => setCheckoutError(null), 4000);
+      setItemToDelete(null);
+    } finally {
+      setCancellingItemId(null);
+    }
+  };
+
+  const handleCopyToken = async (tokenToCopy: string) => {
+    if (!tokenToCopy) return;
+    let copied = false;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(tokenToCopy);
+        copied = true;
+      }
+    } catch {}
+    if (!copied) {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = tokenToCopy;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        copied = document.execCommand('copy');
+        document.body.removeChild(textArea);
+      } catch {}
+    }
+    if (copied) {
       setCopiedToken(true);
       setTimeout(() => setCopiedToken(false), 2000);
-    } catch {}
+    }
   };
 
   // Isolate background scroll when modal or bottom sheet is open
@@ -369,6 +423,7 @@ const CustomerAppInner: React.FC = () => {
           setSelectedDetailItem(null);
         } else if (customizingItem) {
           setCustomizingItem(null);
+          setCustomizingInitialConfig(null);
         } else if (isCallWaiterOpen) {
           setIsCallWaiterOpen(false);
         }
@@ -378,7 +433,7 @@ const CustomerAppInner: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isLogoutModalOpen, selectedImageModal, selectedDetailItem, customizingItem, isCallWaiterOpen]);
 
-  // Flatten all menu items
+  // Flatten all menu items (including subcategories and unassigned items)
   const allItems: any[] = useMemo(() => {
     const list: any[] = [];
     menu.forEach((section: any) => {
@@ -397,6 +452,18 @@ const CustomerAppInner: React.FC = () => {
             categoryId: cat.id || item.categoryId,
           });
         });
+        (cat.subcategories || []).forEach((sub: any) => {
+          (sub.items || []).forEach((item: any) => {
+            list.push({
+              ...item,
+              featured: Boolean(item.isFeatured ?? item.featured),
+              popular: Boolean(item.isPopular ?? item.popular),
+              sectionSlug: section.slug,
+              categoryName: `${catDisplayName} · ${sub.name}`,
+              categoryId: cat.id || item.categoryId,
+            });
+          });
+        });
       });
       // Unassigned items directly under section:
       (section.items || []).forEach((item: any) => {
@@ -412,6 +479,30 @@ const CustomerAppInner: React.FC = () => {
     });
     return list;
   }, [menu]);
+
+  const handleNotificationClick = (notif: any) => {
+    if (notif.type === 'stock_in' && notif.menuItemId) {
+      const target = allItems.find((i) => String(i.id) === String(notif.menuItemId));
+      if (target) {
+        if (target.sectionSlug === 'eat' || target.station === 'KITCHEN' || target.station === 'DESSERT') {
+          setActiveTab('eat');
+          if (target.categoryId) {
+            setSelectedEatCategory(target.categoryId);
+          }
+        } else if (target.sectionSlug === 'drink' || target.station === 'BAR') {
+          setActiveTab('drink');
+          if (target.categoryId) {
+            setSelectedDrinkCategory(target.categoryId);
+          }
+        } else if (target.sectionSlug === 'merchandise') {
+          setActiveTab('merch');
+        }
+
+        setSelectedDetailItem(target);
+      }
+      dismissNotification(notif.id);
+    }
+  };
 
   const [eatSearchQuery, setEatSearchQuery] = useState<string>('');
   const [selectedEatCategory, setSelectedEatCategory] = useState<string>('ALL');
@@ -603,6 +694,45 @@ const CustomerAppInner: React.FC = () => {
     }
   };
 
+  // Unified handler to open Product Customizer with prefilled latest configuration
+  const handleOpenCustomizer = (item: CustomizerItem, customConfig?: ProductCustomizerInitialConfig | null) => {
+    if (isOrderingBlocked) {
+      setCartToast(
+        isOrderingCutoffReached
+          ? 'Ordering is closed (15 min or less remaining in session)'
+          : 'Ordering is closed for this settled session'
+      );
+      setTimeout(() => setCartToast(null), 3000);
+      return;
+    }
+
+    let initialConfig: ProductCustomizerInitialConfig | null = customConfig || null;
+
+    if (!initialConfig) {
+      const matchingCartItems = cart.filter((ci) => ci.menuItemId === item.id);
+      if (matchingCartItems.length > 0) {
+        const latest = matchingCartItems[matchingCartItems.length - 1];
+        initialConfig = {
+          variantId: latest.variantId || null,
+          variantName: latest.variantName || null,
+          modifiers: (latest.modifiers || []).map((m: any) => ({
+            groupId: m.groupId,
+            groupName: m.groupName,
+            optionId: m.optionId,
+            optionName: m.optionName,
+            name: m.optionName,
+            priceDelta: Number(m.priceDelta || 0),
+          })),
+          specialInstructions: latest.specialInstructions || '',
+          quantity: 1, // Start quantity at 1 for the new customization instance
+        };
+      }
+    }
+
+    setCustomizingInitialConfig(initialConfig);
+    setCustomizingItem(item);
+  };
+
   // Direct Add handler with immediate feedback
   const handleDirectAdd = (item: CustomizerItem) => {
     if (isOrderingBlocked) {
@@ -641,6 +771,16 @@ const CustomerAppInner: React.FC = () => {
       setTimeout(() => setCartToast(null), 3000);
       return;
     }
+
+    const hasModifiers =
+      (item.variants && item.variants.length > 0) ||
+      (item.modifierGroups && item.modifierGroups.length > 0);
+
+    if (hasModifiers) {
+      handleOpenCustomizer(item);
+      return;
+    }
+
     const matchingCartItems = cart.filter((ci) => ci.menuItemId === item.id);
     if (matchingCartItems.length > 0) {
       const targetItem = matchingCartItems[matchingCartItems.length - 1];
@@ -676,10 +816,403 @@ const CustomerAppInner: React.FC = () => {
     }
   };
 
-  // Reorder items
+  // Reorder / Repeat helpers & Presentation Deduplication
+  interface RepeatItemConfig {
+    key: string;
+    menuItemId: string;
+    itemName: string;
+    image?: string | null;
+    variantId: string | null;
+    variantName: string | null;
+    selectedModifiers: Array<{
+      groupId: string;
+      groupName: string;
+      optionId: string;
+      optionName: string;
+      priceDelta: number;
+    }>;
+    specialInstructions: string;
+    station: string;
+    foodType: string;
+    sectionSlug: string;
+    unitPrice: number;
+    isAvailable: boolean;
+    totalQuantityOrdered: number;
+    orderCount: number;
+  }
+
+  const resolveOrderItemConfig = (orderItem: any, catalogItems: any[]): RepeatItemConfig => {
+    const menuItemId = orderItem.menuItemId || orderItem.itemId || orderItem.menuItem?.id || orderItem.id;
+    const catalogItem =
+      catalogItems.find(
+        (ci: any) =>
+          ci.id === menuItemId ||
+          (orderItem.itemName && ci.name?.toLowerCase() === orderItem.itemName.toLowerCase()) ||
+          (orderItem.name && ci.name?.toLowerCase() === orderItem.name.toLowerCase())
+      ) || null;
+
+    // 1. Availability check: item must exist in catalog and not be disabled
+    const isAvailable = catalogItem ? catalogItem.isAvailable !== false : true;
+
+    // 2. Variant resolution against current catalog
+    let variantId: string | null = null;
+    let variantName: string | null = orderItem.variantName || null;
+    let variantDelta = 0;
+
+    if (catalogItem && Array.isArray(catalogItem.variants) && catalogItem.variants.length > 0) {
+      let matchedVariant = null;
+      if (variantName) {
+        matchedVariant = catalogItem.variants.find(
+          (v: any) =>
+            v.name?.toLowerCase() === variantName!.toLowerCase() ||
+            (orderItem.variantId && v.id === orderItem.variantId)
+        );
+      }
+      if (matchedVariant) {
+        variantId = matchedVariant.id;
+        variantName = matchedVariant.name;
+        variantDelta = Number(matchedVariant.priceDelta || 0);
+      }
+    }
+
+    // 3. Modifier resolution against current catalog options
+    const rawModifiers = Array.isArray(orderItem.selectedModifiers)
+      ? orderItem.selectedModifiers
+      : [];
+    let totalModDelta = 0;
+    const normalizedModifiers = rawModifiers.map((mod: any) => {
+      let priceDelta = Number(mod.priceDelta || 0);
+      let groupId = mod.groupId || '';
+      let groupName = mod.groupName || '';
+      let optionId = mod.optionId || '';
+      let optionName = mod.optionName || mod.name || '';
+
+      if (catalogItem && Array.isArray(catalogItem.modifierGroups)) {
+        for (const mg of catalogItem.modifierGroups) {
+          const foundOpt = mg.options?.find(
+            (o: any) =>
+              (optionId && o.id === optionId) ||
+              (optionName && o.name?.toLowerCase() === optionName.toLowerCase())
+          );
+          if (foundOpt) {
+            groupId = mg.id;
+            groupName = mg.name;
+            optionId = foundOpt.id;
+            optionName = foundOpt.name;
+            priceDelta = Number(foundOpt.priceDelta || 0);
+            break;
+          }
+        }
+      }
+      totalModDelta += priceDelta;
+      return {
+        groupId,
+        groupName,
+        optionId,
+        optionName,
+        priceDelta,
+      };
+    });
+
+    // 4. Live authoritative catalog pricing
+    const basePrice = catalogItem
+      ? Number(catalogItem.finalPrice ?? catalogItem.basePrice ?? orderItem.unitPrice ?? 0)
+      : Number(orderItem.unitPrice || 0);
+    const calculatedUnitPrice = Math.round((basePrice + variantDelta + totalModDelta) * 100) / 100;
+    const currentUnitPrice = calculatedUnitPrice > 0 ? calculatedUnitPrice : Number(orderItem.unitPrice || 0);
+
+    // 5. Normalization of instructions, image, and metadata
+    const specialInstructions = (orderItem.specialInstructions || orderItem.notes || '').trim();
+    const station = catalogItem?.station || orderItem.station || 'KITCHEN';
+    const foodType = catalogItem?.foodType || orderItem.foodType || 'VEG';
+    const sectionSlug = catalogItem?.sectionSlug || orderItem.sectionSlug || 'eat';
+    const itemName = catalogItem?.name || orderItem.itemName || orderItem.name || 'Menu Item';
+    const image = catalogItem?.image || catalogItem?.imageUrl || orderItem.image || orderItem.imageUrl || null;
+
+    // 6. Unique grouping key (menuItemId + variant + sorted modifiers + specialInstructions)
+    const modsKey = normalizedModifiers
+      .map((m: any) => `${m.groupId || m.groupName}:${m.optionId || m.optionName}`)
+      .sort()
+      .join('|');
+    const key = `${menuItemId}::${variantName || ''}::${modsKey}::${specialInstructions.toLowerCase()}`;
+
+    return {
+      key,
+      menuItemId,
+      itemName,
+      image,
+      variantId,
+      variantName,
+      selectedModifiers: normalizedModifiers,
+      specialInstructions,
+      station,
+      foodType,
+      sectionSlug,
+      unitPrice: currentUnitPrice,
+      isAvailable,
+      totalQuantityOrdered: Number(orderItem.quantity || 1),
+      orderCount: 1,
+    };
+  };
+
+  // Reorder items from current active session (deduplicated & filtered)
   const flatHistoryItems = useMemo(() => {
-    return activeOrders.flatMap((o) => (o.items || []).map((i: any) => ({ ...i, orderNumber: o.orderNumber })));
-  }, [activeOrders]);
+    const validItems: any[] = [];
+    activeOrders.forEach((o) => {
+      if (o.status === 'CANCELLED') return;
+      (o.items || []).forEach((i: any) => {
+        if (i.status === 'CANCELLED' || i.status === 'STOCK_OUT') return;
+        validItems.push({ ...i, orderNumber: o.orderNumber });
+      });
+    });
+
+    const groupedMap = new Map<string, RepeatItemConfig>();
+    for (const item of validItems) {
+      const resolved = resolveOrderItemConfig(item, allItems);
+      if (groupedMap.has(resolved.key)) {
+        const existing = groupedMap.get(resolved.key)!;
+        existing.totalQuantityOrdered += resolved.totalQuantityOrdered;
+        existing.orderCount += 1;
+      } else {
+        groupedMap.set(resolved.key, resolved);
+      }
+    }
+
+    return Array.from(groupedMap.values());
+  }, [activeOrders, allItems]);
+
+  // Authoritative session-wise order history grouping
+  const sessionHistory = useMemo(() => {
+    if (!Array.isArray(orderHistory) || orderHistory.length === 0) return [];
+
+    const map = new Map<string, {
+      sessionId: string;
+      sessionTokenNumber: string;
+      tableNumber: string;
+      areaName: string;
+      sessionStatus: string;
+      sessionStartTime: string | null;
+      sessionClosedAt: string | null;
+      placedAt: string;
+      formattedDate: string;
+      formattedTime: string;
+      orders: any[];
+      totalOrdersCount: number;
+      totalItemsCount: number;
+      totalAmount: number;
+      hasServedItems: boolean;
+      isAllCancelled: boolean;
+    }>();
+
+    orderHistory.forEach((order: any) => {
+      // Authoritative session key based on token/session relationship
+      const key =
+        order.sessionId ||
+        order.tokenId ||
+        order.sessionTokenNumber ||
+        (order.token?.id) ||
+        (order.token?.tokenNumber) ||
+        order.id;
+
+      const orderSubtotal = Number(order.subtotal || order.totalAmount || 0);
+      const orderItems = order.items || [];
+      const orderItemsCount = orderItems.reduce(
+        (sum: number, it: any) => sum + (Number(it.quantity) || 1),
+        0
+      );
+      const placedAtTime = order.placedAt
+        ? new Date(order.placedAt).getTime()
+        : new Date(order.createdAt).getTime();
+
+      if (!map.has(key)) {
+        const orderDate = order.placedAt ? new Date(order.placedAt) : new Date(order.createdAt);
+        map.set(key, {
+          sessionId: key,
+          sessionTokenNumber:
+            order.sessionTokenNumber ||
+            order.token?.tokenNumber ||
+            (typeof key === 'string' && key.startsWith('T-') ? key : 'N/A'),
+          tableNumber: order.table?.tableNumber || order.tableNumber || 'N/A',
+          areaName: order.areaName || order.table?.placeType?.name || 'Dine-In',
+          sessionStatus: order.sessionStatus || order.token?.status || 'CLOSED',
+          sessionStartTime: order.sessionStartTime || order.token?.startTime || null,
+          sessionClosedAt: order.sessionClosedAt || order.token?.closedAt || null,
+          placedAt: order.placedAt || order.createdAt,
+          formattedDate: orderDate.toLocaleDateString([], {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          }),
+          formattedTime: orderDate.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          orders: [order],
+          totalOrdersCount: 1,
+          totalItemsCount: orderItemsCount,
+          totalAmount: orderSubtotal,
+          hasServedItems: order.status === 'SERVED',
+          isAllCancelled: order.status === 'CANCELLED',
+        });
+      } else {
+        const group = map.get(key)!;
+        group.orders.push(order);
+        group.totalOrdersCount += 1;
+        group.totalItemsCount += orderItemsCount;
+        group.totalAmount += orderSubtotal;
+        if (order.status === 'SERVED') group.hasServedItems = true;
+        if (order.status !== 'CANCELLED') group.isAllCancelled = false;
+
+        const currentGroupTime = new Date(group.placedAt).getTime();
+        if (placedAtTime > currentGroupTime) {
+          group.placedAt = order.placedAt || order.createdAt;
+          const newDate = new Date(group.placedAt);
+          group.formattedDate = newDate.toLocaleDateString([], {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          });
+          group.formattedTime = newDate.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+        }
+      }
+    });
+
+    const list = Array.from(map.values());
+    // Sort sessions newest first
+    list.sort((a, b) => new Date(b.placedAt).getTime() - new Date(a.placedAt).getTime());
+
+    // Inside each session, sort orders by orderNumber asc / placedAt asc
+    list.forEach((session) => {
+      session.orders.sort((a, b) => {
+        if (a.orderNumber && b.orderNumber) return a.orderNumber - b.orderNumber;
+        return (
+          new Date(a.placedAt || a.createdAt).getTime() -
+          new Date(b.placedAt || b.createdAt).getTime()
+        );
+      });
+    });
+
+    return list;
+  }, [orderHistory]);
+
+  const handleRepeatItem = (repeatItem: RepeatItemConfig) => {
+    if (isOrderingBlocked) {
+      setCartToast(
+        isOrderingCutoffReached
+          ? 'Ordering is closed (15 min or less remaining in session)'
+          : 'Ordering is closed for this settled session'
+      );
+      setTimeout(() => setCartToast(null), 3000);
+      return;
+    }
+    if (!repeatItem.isAvailable) {
+      setCartToast(`Sorry, ${repeatItem.itemName} is currently out of stock`);
+      setTimeout(() => setCartToast(null), 3000);
+      return;
+    }
+
+    // Find catalog item to provide complete variant & modifier schema
+    const catalogItem = allItems.find((it) => it.id === repeatItem.menuItemId);
+    const customizerItem: CustomizerItem = catalogItem
+      ? {
+          id: catalogItem.id,
+          name: catalogItem.name,
+          description: catalogItem.description,
+          basePrice: Number(catalogItem.basePrice || 0),
+          finalPrice: Number(catalogItem.finalPrice ?? catalogItem.basePrice ?? 0),
+          discountMode: catalogItem.discountMode,
+          discountValue: Number(catalogItem.discountValue || 0),
+          foodType: catalogItem.foodType || repeatItem.foodType || 'VEG',
+          station: catalogItem.station || repeatItem.station || 'KITCHEN',
+          image: catalogItem.image || repeatItem.image || undefined,
+          imageUrl: catalogItem.imageUrl || undefined,
+          sectionSlug: catalogItem.sectionSlug || repeatItem.sectionSlug,
+          variants: catalogItem.variants,
+          modifierGroups: catalogItem.modifierGroups,
+        }
+      : {
+          id: repeatItem.menuItemId,
+          name: repeatItem.itemName,
+          basePrice: repeatItem.unitPrice,
+          finalPrice: repeatItem.unitPrice,
+          foodType: repeatItem.foodType,
+          station: repeatItem.station,
+          image: repeatItem.image || undefined,
+          sectionSlug: repeatItem.sectionSlug,
+          variants: repeatItem.variantId
+            ? [{ id: repeatItem.variantId, name: repeatItem.variantName || 'Selected', priceDelta: 0 }]
+            : [],
+          modifierGroups: [],
+        };
+
+    setCustomizingInitialConfig({
+      variantId: repeatItem.variantId,
+      variantName: repeatItem.variantName,
+      modifiers: repeatItem.selectedModifiers,
+      specialInstructions: repeatItem.specialInstructions,
+      quantity: 1,
+    });
+    setCustomizingItem(customizerItem);
+  };
+
+  const handleReorderHistoricalOrder = (order: any) => {
+    if (isOrderingBlocked) {
+      setCartToast(
+        isOrderingCutoffReached
+          ? 'Ordering is closed (15 min or less remaining in session)'
+          : 'Ordering is closed for this settled session'
+      );
+      setTimeout(() => setCartToast(null), 3000);
+      return;
+    }
+
+    const validItems = (order.items || []).filter((it: any) => it.status !== 'CANCELLED');
+    if (validItems.length === 0) {
+      setCartToast('No active items to reorder from this past order');
+      setTimeout(() => setCartToast(null), 2500);
+      return;
+    }
+
+    let addedCount = 0;
+    let unavailableCount = 0;
+
+    for (const item of validItems) {
+      const resolved = resolveOrderItemConfig(item, allItems);
+      if (!resolved.isAvailable) {
+        unavailableCount++;
+        continue;
+      }
+      addToCart({
+        menuItemId: resolved.menuItemId,
+        name: resolved.itemName,
+        sectionSlug: resolved.sectionSlug,
+        variantId: resolved.variantId,
+        variantName: resolved.variantName,
+        modifiers: resolved.selectedModifiers,
+        specialInstructions: resolved.specialInstructions,
+        quantity: 1,
+        unitPrice: resolved.unitPrice,
+        station: resolved.station,
+        foodType: resolved.foodType,
+      });
+      addedCount++;
+    }
+
+    if (addedCount > 0) {
+      setCartToast(
+        unavailableCount > 0
+          ? `Added ${addedCount} item(s) to cart (${unavailableCount} unavailable item(s) skipped)`
+          : `Added ${addedCount} item(s) to cart`
+      );
+      setActiveTab('cart');
+    } else {
+      setCartToast('All items in this order are currently unavailable');
+    }
+    setTimeout(() => setCartToast(null), 3000);
+  };
 
   // Billable placed items (excluding cancelled items, preferring backend consolidated items)
   const billableItems = useMemo(() => {
@@ -707,6 +1240,7 @@ const CustomerAppInner: React.FC = () => {
       case 'PREPARING':
       case 'ACCEPTED':
         return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20';
+      case 'STOCK_OUT':
       case 'CANCELLED':
         return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20';
       case 'PLACED':
@@ -1070,7 +1604,7 @@ const CustomerAppInner: React.FC = () => {
                         variant="home"
                         cartQuantity={cartItemQuantityMap[i.id] || 0}
                         isOrderingDisabled={isOrderingBlocked}
-                        onOpenCustomizer={setCustomizingItem}
+                        onOpenCustomizer={handleOpenCustomizer}
                         onDirectAdd={handleDirectAdd}
                         onIncrement={handleCardIncrement}
                         onDecrement={handleCardDecrement}
@@ -1104,7 +1638,7 @@ const CustomerAppInner: React.FC = () => {
                         variant="home"
                         cartQuantity={cartItemQuantityMap[i.id] || 0}
                         isOrderingDisabled={isOrderingBlocked}
-                        onOpenCustomizer={setCustomizingItem}
+                        onOpenCustomizer={handleOpenCustomizer}
                         onDirectAdd={handleDirectAdd}
                         onIncrement={handleCardIncrement}
                         onDecrement={handleCardDecrement}
@@ -1138,7 +1672,7 @@ const CustomerAppInner: React.FC = () => {
                         variant="home"
                         cartQuantity={cartItemQuantityMap[i.id] || 0}
                         isOrderingDisabled={isOrderingBlocked}
-                        onOpenCustomizer={setCustomizingItem}
+                        onOpenCustomizer={handleOpenCustomizer}
                         onDirectAdd={handleDirectAdd}
                         onIncrement={handleCardIncrement}
                         onDecrement={handleCardDecrement}
@@ -1170,7 +1704,7 @@ const CustomerAppInner: React.FC = () => {
                         variant="home"
                         cartQuantity={cartItemQuantityMap[i.id] || 0}
                         isOrderingDisabled={isOrderingBlocked}
-                        onOpenCustomizer={setCustomizingItem}
+                        onOpenCustomizer={handleOpenCustomizer}
                         onDirectAdd={handleDirectAdd}
                         onIncrement={handleCardIncrement}
                         onDecrement={handleCardDecrement}
@@ -1536,7 +2070,7 @@ const CustomerAppInner: React.FC = () => {
                                             item={item}
                                             cartQuantity={cartItemQuantityMap[item.id] || 0}
                                             isOrderingDisabled={isOrderingBlocked}
-                                            onOpenCustomizer={setCustomizingItem}
+                                            onOpenCustomizer={handleOpenCustomizer}
                                             onDirectAdd={handleDirectAdd}
                                             onIncrement={handleCardIncrement}
                                             onDecrement={handleCardDecrement}
@@ -1588,7 +2122,7 @@ const CustomerAppInner: React.FC = () => {
                                         item={item}
                                         cartQuantity={cartItemQuantityMap[item.id] || 0}
                                         isOrderingDisabled={isOrderingBlocked}
-                                        onOpenCustomizer={setCustomizingItem}
+                                        onOpenCustomizer={handleOpenCustomizer}
                                         onDirectAdd={handleDirectAdd}
                                         onIncrement={handleCardIncrement}
                                         onDecrement={handleCardDecrement}
@@ -1929,7 +2463,7 @@ const CustomerAppInner: React.FC = () => {
                                                 item={item}
                                                 cartQuantity={cartItemQuantityMap[item.id] || 0}
                                                 isOrderingDisabled={isOrderingBlocked}
-                                                onOpenCustomizer={setCustomizingItem}
+                                                onOpenCustomizer={handleOpenCustomizer}
                                                 onDirectAdd={handleDirectAdd}
                                                 onIncrement={handleCardIncrement}
                                                 onDecrement={handleCardDecrement}
@@ -1981,7 +2515,7 @@ const CustomerAppInner: React.FC = () => {
                                           item={item}
                                           cartQuantity={cartItemQuantityMap[item.id] || 0}
                                           isOrderingDisabled={isOrderingBlocked}
-                                          onOpenCustomizer={setCustomizingItem}
+                                          onOpenCustomizer={handleOpenCustomizer}
                                           onDirectAdd={handleDirectAdd}
                                           onIncrement={handleCardIncrement}
                                           onDecrement={handleCardDecrement}
@@ -2082,7 +2616,7 @@ const CustomerAppInner: React.FC = () => {
                       item={item}
                       cartQuantity={cartItemQuantityMap[item.id] || 0}
                       isOrderingDisabled={isOrderingBlocked}
-                      onOpenCustomizer={setCustomizingItem}
+                      onOpenCustomizer={handleOpenCustomizer}
                       onDirectAdd={handleDirectAdd}
                       onIncrement={handleCardIncrement}
                       onDecrement={handleCardDecrement}
@@ -2171,7 +2705,7 @@ const CustomerAppInner: React.FC = () => {
                     item={item}
                     cartQuantity={cartItemQuantityMap[item.id] || 0}
                     isOrderingDisabled={isOrderingBlocked}
-                    onOpenCustomizer={setCustomizingItem}
+                    onOpenCustomizer={handleOpenCustomizer}
                     onDirectAdd={handleDirectAdd}
                     onIncrement={handleCardIncrement}
                     onDecrement={handleCardDecrement}
@@ -2565,11 +3099,13 @@ const CustomerAppInner: React.FC = () => {
                     (acc: number, item: any) => acc + (Number(item.quantity) || 1),
                     0
                   );
-                  const orderTotalAmount = o.subtotal
+                  const orderTotalAmount = o.subtotal != null
                     ? Number(o.subtotal)
                     : (o.items || []).reduce(
                         (acc: number, item: any) =>
-                          acc + Number(item.lineTotal || item.unitPrice * item.quantity || 0),
+                          item.status === 'CANCELLED' || item.status === 'STOCK_OUT'
+                            ? acc
+                            : acc + Number(item.lineTotal || item.unitPrice * item.quantity || 0),
                         0
                       );
 
@@ -2599,53 +3135,110 @@ const CustomerAppInner: React.FC = () => {
 
                         <div className="divide-y divide-border/40 dark:divide-white/5 mt-1.5 sm:mt-2">
                           {(o.items || []).map((item: any) => (
-                            <div key={item.id} className="flex items-start justify-between gap-2.5 py-2 sm:py-2.5 text-xs">
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  {item.foodType && (
-                                    <VegBadge type={item.foodType} size="sm" />
-                                  )}
-                                  <span className="font-bold text-text-primary dark:text-white break-words text-[11.5px] sm:text-xs">
-                                    {item.itemName || item.name}
-                                  </span>
-                                  {item.variantName && (
-                                    <span className="text-text-muted dark:text-zinc-400 text-[10.5px] sm:text-[11px]">
-                                      · {item.variantName}
+                            <div key={item.id} className="flex flex-col py-2 sm:py-2.5 text-xs">
+                              <div className="flex items-start justify-between gap-2.5">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {item.foodType && (
+                                      <VegBadge type={item.foodType} size="sm" />
+                                    )}
+                                    <span className="font-bold text-text-primary dark:text-white break-words text-[11.5px] sm:text-xs">
+                                      {item.itemName || item.name}
                                     </span>
-                                  )}
-                                  {item.selectedModifiers && Array.isArray(item.selectedModifiers) && item.selectedModifiers.length > 0 && (
-                                    <span className="text-text-muted dark:text-zinc-400 text-[10.5px] sm:text-[11px]">
-                                      · {item.selectedModifiers.map((m: any) => m.optionName || m.name || m).join(', ')}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-[9.5px] sm:text-[10px] text-text-muted dark:text-zinc-400 mt-0.5">
-                                  Qty {item.quantity} · {item.station?.toLowerCase()}
-                                </div>
-                                {item.specialInstructions && (
-                                  <div className="text-[9.5px] sm:text-[10px] text-amber-600 dark:text-amber-400 italic mt-0.5">
-                                    Note: {item.specialInstructions}
+                                    {item.variantName && (
+                                      <span className="text-text-muted dark:text-zinc-400 text-[10.5px] sm:text-[11px]">
+                                        · {item.variantName}
+                                      </span>
+                                    )}
+                                    {item.selectedModifiers && Array.isArray(item.selectedModifiers) && item.selectedModifiers.length > 0 && (
+                                      <span className="text-text-muted dark:text-zinc-400 text-[10.5px] sm:text-[11px]">
+                                        · {item.selectedModifiers.map((m: any) => m.optionName || m.name || m).join(', ')}
+                                      </span>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                              <div className="text-right shrink-0">
-                                <span
-                                  className={`text-[8.5px] sm:text-[9px] font-bold px-1.5 sm:px-2 py-0.5 rounded-md ${
-                                    item.status === 'SERVED'
-                                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                      : item.status === 'READY'
-                                      ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
-                                      : item.status === 'CANCELLED'
-                                      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                                  }`}
-                                >
-                                  {item.status || 'PREPARING'}
-                                </span>
-                                <div className="mt-0.5 font-bold text-xs sm:text-sm text-text-primary dark:text-white">
-                                  ₹{Number(item.lineTotal || item.unitPrice * item.quantity).toFixed(2)}
+                                  <div className="text-[9.5px] sm:text-[10px] text-text-muted dark:text-zinc-400 mt-0.5">
+                                    Qty {item.quantity} · {item.station?.toLowerCase()}
+                                  </div>
+                                  {item.specialInstructions && (
+                                    <div className="text-[9.5px] sm:text-[10px] text-amber-600 dark:text-amber-400 italic mt-0.5">
+                                      Note: {item.specialInstructions}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                                  <div className="flex items-center gap-1.5">
+                                    {/* Delete / Cancel Item Button: ONLY visible when item is NOT yet accepted by KDS (i.e. status is strictly 'PLACED') */}
+                                    {item.status === 'PLACED' && (
+                                      <button
+                                        type="button"
+                                        disabled={cancellingItemId === item.id}
+                                        onClick={() => handleDeleteOrderItem(item.id, item.itemName || item.name)}
+                                        aria-label={`Remove ${item.itemName || item.name} from order`}
+                                        title="Remove item before kitchen/bar acceptance"
+                                        className="p-1 rounded-md text-text-muted hover:text-rose-500 hover:bg-rose-500/10 dark:hover:bg-rose-500/10 transition-colors cursor-pointer disabled:opacity-40 disabled:pointer-events-none flex items-center gap-1 text-[10px] font-bold"
+                                      >
+                                        {cancellingItemId === item.id ? (
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                                        ) : (
+                                          <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                                        )}
+                                        <span className="hidden xs:inline">Delete</span>
+                                      </button>
+                                    )}
+                                    <span
+                                      className={`text-[8.5px] sm:text-[9px] font-bold px-1.5 sm:px-2 py-0.5 rounded-md ${
+                                        item.status === 'SERVED'
+                                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                          : item.status === 'READY'
+                                          ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                                          : item.status === 'STOCK_OUT'
+                                          ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                                          : item.status === 'CANCELLED'
+                                          ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                                          : item.status === 'ACCEPTED' || item.status === 'PREPARING'
+                                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                          : 'bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37]'
+                                      }`}
+                                    >
+                                      {item.status === 'STOCK_OUT' ? 'STOCK OUT' : (item.status || 'PLACED')}
+                                    </span>
+                                  </div>
+                                  {item.status === 'STOCK_OUT' ? (
+                                    <div className="mt-0.5 flex flex-col items-end">
+                                      <span className="line-through text-text-muted text-[10px]">
+                                        ₹{Number(item.unitPrice * item.quantity).toFixed(2)}
+                                      </span>
+                                      <span className="font-bold text-xs text-rose-600 dark:text-rose-400">
+                                        Not charged · ₹0.00
+                                      </span>
+                                    </div>
+                                  ) : item.status === 'CANCELLED' ? (
+                                    <div className="mt-0.5 flex flex-col items-end">
+                                      <span className="line-through text-text-muted text-[10px]">
+                                        ₹{Number(item.unitPrice * item.quantity).toFixed(2)}
+                                      </span>
+                                      <span className="font-bold text-xs text-rose-600 dark:text-rose-400">
+                                        Cancelled · ₹0.00
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div className="mt-0.5 font-bold text-xs sm:text-sm text-text-primary dark:text-white">
+                                      ₹{Number(item.lineTotal || item.unitPrice * item.quantity).toFixed(2)}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
+
+                              {item.status === 'STOCK_OUT' && (
+                                <div className="mt-2 text-[10px] sm:text-[10.5px] text-rose-600 dark:text-rose-400 font-medium bg-rose-500/5 dark:bg-rose-500/10 border border-rose-500/20 rounded-xl p-2.5 space-y-0.5">
+                                  <div className="font-bold flex items-center gap-1 text-[11px]">
+                                    <span>Stock Unavailable</span>
+                                  </div>
+                                  <p className="text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-300">
+                                    This item is currently out of stock and could not be prepared. The amount for this item will not be added to your bill. You can choose another available item.
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -2836,17 +3429,34 @@ const CustomerAppInner: React.FC = () => {
                         {billableItems.map((item: any, idx: number) => (
                           <div key={item.id || idx} className="flex items-start justify-between py-2.5 gap-3 text-xs">
                             <div className="min-w-0 flex-1">
-                              <div className="font-bold text-text-primary dark:text-white break-words">
-                                {item.quantity} × {item.itemName || item.name}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-text-primary dark:text-white break-words">
+                                  {item.quantity} × {item.itemName || item.name}
+                                </span>
+                                {item.status === 'STOCK_OUT' && (
+                                  <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                    Stock Out
+                                  </span>
+                                )}
                               </div>
                               <div className="text-[11px] text-text-muted dark:text-zinc-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
                                 <span>Order #{String(item.orderNumber || 1).padStart(2, '0')}</span>
                                 {item.variantName && <span>· {item.variantName}</span>}
-                                <span>· @ ₹{Number(item.unitPrice).toFixed(2)}</span>
+                                {item.status === 'STOCK_OUT' ? (
+                                  <span className="text-rose-600 dark:text-rose-400 font-semibold">· Not Charged (Out of stock)</span>
+                                ) : (
+                                  <span>· @ ₹{Number(item.unitPrice).toFixed(2)}</span>
+                                )}
                               </div>
                             </div>
-                            <div className="font-bold text-text-primary dark:text-white shrink-0 text-right">
-                              ₹{Number(item.lineTotal || item.unitPrice * item.quantity).toFixed(2)}
+                            <div className="font-bold shrink-0 text-right">
+                              {item.status === 'STOCK_OUT' ? (
+                                <span className="text-rose-600 dark:text-rose-400 font-bold">₹0.00</span>
+                              ) : (
+                                <span className="text-text-primary dark:text-white font-bold">
+                                  ₹{Number(item.lineTotal || item.unitPrice * item.quantity).toFixed(2)}
+                                </span>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -3063,35 +3673,102 @@ const CustomerAppInner: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
-                {flatHistoryItems.map((item: any, idx: number) => (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                {flatHistoryItems.map((item: RepeatItemConfig) => (
                   <div
-                    key={item.id || idx}
-                    className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-4 flex items-center justify-between gap-3 shadow-xs hover:border-primary/40 dark:hover:border-[#D4AF37]/40 transition-colors"
+                    key={item.key}
+                    className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-3 sm:p-3.5 flex items-center justify-between gap-3 shadow-xs hover:border-primary/40 dark:hover:border-[#D4AF37]/40 transition-all"
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="font-bold text-sm text-text-primary dark:text-white truncate">
-                        {item.itemName || item.name}
+                    {/* Left: Compact Thumbnail */}
+                    <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-zinc-100 dark:bg-white/5 border border-border/40 dark:border-white/10 shrink-0 flex items-center justify-center">
+                      {item.image ? (
+                        <img
+                          src={formatImageUrl(item.image)}
+                          alt={item.itemName}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="text-text-muted dark:text-zinc-500">
+                          {item.station?.toUpperCase() === 'BAR' || item.foodType === 'BEVERAGE' ? (
+                            <Wine className="w-6 h-6" />
+                          ) : (
+                            <UtensilsCrossed className="w-6 h-6" />
+                          )}
+                        </div>
+                      )}
+                      {item.foodType && (
+                        <div className="absolute top-1 left-1">
+                          <VegBadge type={item.foodType} size="sm" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Middle: Title, Configuration Summary, Live Price */}
+                    <div className="min-w-0 flex-1 space-y-0.5 sm:space-y-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h4 className="font-bold text-xs sm:text-sm text-text-primary dark:text-white truncate">
+                          {item.itemName}
+                        </h4>
+                        {item.variantName && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] shrink-0">
+                            {item.variantName}
+                          </span>
+                        )}
                       </div>
-                      <div className="text-xs text-primary dark:text-[#D4AF37] font-extrabold mt-0.5">
-                        ₹{Number(item.unitPrice).toFixed(2)}
+
+                      {/* Short configuration info */}
+                      <div className="text-[11px] text-text-muted dark:text-zinc-400 flex items-center gap-1.5 flex-wrap truncate">
+                        {item.selectedModifiers.length > 0 && (
+                          <span className="truncate">
+                            +{item.selectedModifiers.map((m) => m.optionName).join(', ')}
+                          </span>
+                        )}
+                        {item.specialInstructions && (
+                          <span className="italic truncate text-[10.5px]">
+                            &quot;{item.specialInstructions}&quot;
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Price & Ordered times */}
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-black text-xs sm:text-sm text-primary dark:text-[#D4AF37]">
+                          ₹{item.unitPrice.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-text-muted dark:text-zinc-400">
+                          · Ordered {item.totalQuantityOrdered}x
+                        </span>
                       </div>
                     </div>
-                    <button
-                      onClick={() => {
-                        handleDirectAdd({
-                          id: item.menuItemId,
-                          name: item.itemName || item.name,
-                          basePrice: Number(item.unitPrice),
-                          station: item.station || 'KITCHEN',
-                          foodType: item.foodType || 'VEG',
-                        });
-                        setActiveTab('cart');
-                      }}
-                      className="shrink-0 px-4 py-2 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-white dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:hover:bg-[#D4AF37] dark:hover:text-black font-extrabold text-xs transition-colors cursor-pointer min-h-[38px] flex items-center justify-center"
-                    >
-                      Re-order
-                    </button>
+
+                    {/* Right: Re-order CTA */}
+                    <div className="shrink-0">
+                      <button
+                        type="button"
+                        disabled={isOrderingBlocked || !item.isAvailable}
+                        onClick={() => handleRepeatItem(item)}
+                        className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer ${
+                          isOrderingBlocked
+                            ? 'bg-zinc-100 dark:bg-white/5 text-zinc-400 opacity-60 cursor-not-allowed'
+                            : !item.isAvailable
+                            ? 'bg-zinc-100 dark:bg-white/5 text-zinc-400 opacity-60 cursor-not-allowed'
+                            : 'bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black hover:scale-105 active:scale-95'
+                        }`}
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span className="hidden xs:inline">
+                          {isOrderingBlocked
+                            ? 'Closed'
+                            : !item.isAvailable
+                            ? 'Out of Stock'
+                            : 'Re-order'}
+                        </span>
+                        <span className="xs:hidden">
+                          {!item.isAvailable ? 'Out' : 'Re-order'}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -3153,7 +3830,7 @@ const CustomerAppInner: React.FC = () => {
               >
                 <History className="w-4 h-4" />
                 <span>Order History</span>
-                {orderHistory.length > 0 && (
+                {sessionHistory.length > 0 && (
                   <span
                     className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
                       accountSubTab === 'history'
@@ -3161,7 +3838,7 @@ const CustomerAppInner: React.FC = () => {
                         : 'bg-primary/15 text-primary dark:bg-[#D4AF37]/20 dark:text-[#D4AF37]'
                     }`}
                   >
-                    {orderHistory.length}
+                    {sessionHistory.length}
                   </span>
                 )}
               </button>
@@ -3406,7 +4083,7 @@ const CustomerAppInner: React.FC = () => {
                               onClick={() => setAccountSubTab('history')}
                               className="font-bold text-primary dark:text-[#D4AF37] hover:underline flex items-center gap-1 cursor-pointer"
                             >
-                              <span>{orderHistory.length} {orderHistory.length === 1 ? 'past order' : 'past orders'}</span>
+                              <span>{sessionHistory.length} {sessionHistory.length === 1 ? 'past session' : 'past sessions'}</span>
                               <ArrowRight className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -3474,7 +4151,7 @@ const CustomerAppInner: React.FC = () => {
                                   Order History
                                 </span>
                                 <span className="block text-[11px] text-text-muted dark:text-zinc-400">
-                                  {orderHistory.length} completed
+                                  {sessionHistory.length} {sessionHistory.length === 1 ? 'session' : 'sessions'} completed
                                 </span>
                               </div>
                             </div>
@@ -3617,25 +4294,25 @@ const CustomerAppInner: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Content: Loading, Empty, or Orders List */}
-                {isHistoryLoading && orderHistory.length === 0 ? (
+                {/* Content: Loading, Empty, or Session-Wise History List */}
+                {isHistoryLoading && sessionHistory.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 text-center">
                     <Loader2 className="w-8 h-8 text-primary dark:text-[#D4AF37] animate-spin mb-3" />
                     <p className="text-sm font-semibold text-text-primary dark:text-white">
-                      Loading order history...
+                      Loading dining session history...
                     </p>
                     <p className="text-xs text-text-muted dark:text-zinc-400 mt-1">
                       Fetching your past dining records from PostgreSQL.
                     </p>
                   </div>
-                ) : orderHistory.length === 0 ? (
+                ) : sessionHistory.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-border/80 dark:border-white/15 bg-white/50 dark:bg-[#18181B]/50 p-12 text-center max-w-md mx-auto space-y-4">
                     <div className="w-14 h-14 rounded-2xl bg-primary/10 dark:bg-[#D4AF37]/10 flex items-center justify-center mx-auto text-primary dark:text-[#D4AF37]">
                       <History className="w-7 h-7" />
                     </div>
                     <div>
                       <h3 className="font-black text-lg text-text-primary dark:text-white">
-                        No Past Orders Found
+                        No Past Sessions Found
                       </h3>
                       <p className="text-xs text-text-muted dark:text-zinc-400 mt-1">
                         Completed orders from your dining sessions are saved permanently and will appear here.
@@ -3653,170 +4330,360 @@ const CustomerAppInner: React.FC = () => {
                 ) : (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between text-xs text-text-muted dark:text-zinc-400 px-1">
-                      <span>Showing {orderHistory.length} {orderHistory.length === 1 ? 'completed order' : 'completed orders'}</span>
+                      <span>
+                        Showing {sessionHistory.length} {sessionHistory.length === 1 ? 'dining session' : 'dining sessions'}
+                        {orderHistory.length > sessionHistory.length && ` (${orderHistory.length} orders total)`}
+                      </span>
                       <span className="text-[11px]">Saved in database · Sorted newest first</span>
                     </div>
 
-                    {orderHistory.map((order: any) => {
-                      const orderDate = order.placedAt ? new Date(order.placedAt) : null;
-                      const formattedDate = orderDate
-                        ? orderDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
-                        : 'Recent';
-                      const formattedTime = orderDate
-                        ? orderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        : '';
-                      const totalItems = (order.items || []).reduce((sum: number, it: any) => sum + (it.quantity || 1), 0);
-                      const isServed = order.status === 'SERVED';
-                      const isCancelled = order.status === 'CANCELLED';
+                    <div className="space-y-3.5">
+                      {sessionHistory.map((session: any) => {
+                        const isCompleted = session.hasServedItems || session.sessionStatus === 'CLOSED';
+                        const isAllCancelled = session.isAllCancelled;
 
-                      return (
-                        <div
-                          key={order.id}
-                          className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-5 space-y-4 shadow-xs hover:border-primary/30 dark:hover:border-[#D4AF37]/30 transition-all"
-                        >
-                          {/* Order Header: ID, Date, Status */}
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-border/40 dark:border-white/5">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2.5 flex-wrap">
-                                <span className="font-mono font-black text-base text-text-primary dark:text-white">
-                                  Order #{order.orderNumber || order.id.slice(-6).toUpperCase()}
-                                </span>
-                                <span
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                                    isServed
-                                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                                      : isCancelled
-                                      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
-                                      : 'bg-zinc-100 dark:bg-white/10 text-text-muted dark:text-zinc-400 border border-border/60 dark:border-white/10'
-                                  }`}
-                                >
-                                  <span
-                                    className={`w-1.5 h-1.5 rounded-full ${
-                                      isServed ? 'bg-emerald-500' : isCancelled ? 'bg-rose-500' : 'bg-zinc-400'
-                                    }`}
-                                  />
-                                  <span>{order.status || 'COMPLETED'}</span>
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-3 text-xs text-text-muted dark:text-zinc-400 flex-wrap">
-                                <span className="flex items-center gap-1">
-                                  <Calendar className="w-3.5 h-3.5" />
-                                  <span>{formattedDate} {formattedTime && `at ${formattedTime}`}</span>
-                                </span>
-                                {(order.table?.tableNumber || order.tableNumber) && (
-                                  <span className="flex items-center gap-1">
-                                    <span className="opacity-50">·</span>
-                                    <span>Table {order.table?.tableNumber || order.tableNumber}</span>
-                                    {order.table?.area && <span className="opacity-70">({order.table.area})</span>}
-                                  </span>
-                                )}
-                                {(order.token?.tokenNumber || order.tokenNumber) && (
-                                  <span className="flex items-center gap-1 font-mono text-[11px]">
-                                    <span className="opacity-50">·</span>
-                                    <span>Token: {order.token?.tokenNumber || order.tokenNumber}</span>
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="text-right sm:text-right flex sm:flex-col items-baseline sm:items-end justify-between sm:justify-center">
-                              <span className="text-[11px] text-text-muted dark:text-zinc-400 sm:block">
-                                {totalItems} {totalItems === 1 ? 'item' : 'items'}
-                              </span>
-                              <span className="font-black text-lg text-primary dark:text-[#D4AF37]">
-                                ₹{Number(order.subtotal || order.totalAmount || 0).toFixed(2)}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Itemized list */}
-                          <div className="space-y-2 pt-1">
-                            {(order.items || []).map((item: any, idx: number) => {
-                              const itemPrice = Number(item.price || item.unitPrice || 0);
-                              const itemQty = Number(item.quantity || 1);
-                              return (
-                                <div
-                                  key={item.id || idx}
-                                  className="flex items-center justify-between py-1.5 text-xs text-text-primary dark:text-zinc-200"
-                                >
-                                  <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                                    <span className="w-5 h-5 rounded-md bg-zinc-100 dark:bg-white/5 flex items-center justify-center font-bold text-[11px] text-text-muted dark:text-zinc-400 shrink-0">
-                                      {itemQty}x
+                        return (
+                          <div
+                            key={session.sessionId}
+                            onClick={() => setSelectedHistorySession(session)}
+                            className="group rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-4 sm:p-5 space-y-3.5 shadow-xs hover:border-primary/40 dark:hover:border-[#D4AF37]/40 hover:shadow-md transition-all cursor-pointer"
+                          >
+                            {/* Top Header: Session & Status Badge */}
+                            <div className="flex items-center justify-between gap-3 pb-3 border-b border-border/40 dark:border-white/5">
+                              <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                                <div className="w-8 h-8 rounded-xl bg-primary/10 dark:bg-[#D4AF37]/10 flex items-center justify-center text-primary dark:text-[#D4AF37] shrink-0 font-black text-xs">
+                                  <Receipt className="w-4 h-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-mono font-black text-sm sm:text-base text-text-primary dark:text-white">
+                                      Dining Session · {session.sessionTokenNumber}
                                     </span>
-                                    <div className="truncate">
-                                      <span className="font-semibold text-text-primary dark:text-white">
-                                        {item.name || item.itemName || item.menuItem?.name || 'Item'}
-                                      </span>
-                                      {item.variantName && (
-                                        <span className="text-text-muted dark:text-zinc-400 text-[11px] ml-1">
-                                          · {item.variantName}
-                                        </span>
-                                      )}
-                                      {item.selectedModifiers && Array.isArray(item.selectedModifiers) && item.selectedModifiers.length > 0 && (
-                                        <span className="text-text-muted dark:text-zinc-400 text-[10px] block truncate">
-                                          + {item.selectedModifiers.map((m: any) => m.optionName || m.name || m).join(', ')}
-                                        </span>
-                                      )}
-                                      {(item.notes || item.specialInstructions) && (
-                                        <span className="block text-[10px] text-text-muted dark:text-zinc-400 italic truncate">
-                                          Note: {item.notes || item.specialInstructions}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {item.station && (
-                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-white/5 text-text-muted dark:text-zinc-400 uppercase shrink-0">
-                                        {item.station}
+                                    <span
+                                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] font-bold ${
+                                        isAllCancelled
+                                          ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                                          : isCompleted
+                                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                          : 'bg-zinc-100 dark:bg-white/10 text-text-muted dark:text-zinc-400 border border-border/60 dark:border-white/10'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`w-1.5 h-1.5 rounded-full ${
+                                          isAllCancelled ? 'bg-rose-500' : isCompleted ? 'bg-emerald-500' : 'bg-zinc-400'
+                                        }`}
+                                      />
+                                      <span>{isAllCancelled ? 'CANCELLED' : session.sessionStatus === 'ACTIVE' ? 'ACTIVE' : 'COMPLETED'}</span>
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs text-text-muted dark:text-zinc-400 flex-wrap mt-0.5">
+                                    <span className="flex items-center gap-1">
+                                      <Calendar className="w-3.5 h-3.5" />
+                                      <span>{session.formattedDate} {session.formattedTime && `at ${session.formattedTime}`}</span>
+                                    </span>
+                                    {session.tableNumber && session.tableNumber !== 'N/A' && (
+                                      <span className="flex items-center gap-1">
+                                        <span className="opacity-50">·</span>
+                                        <span>Table {session.tableNumber}</span>
+                                        {session.areaName && <span className="opacity-70">({session.areaName})</span>}
                                       </span>
                                     )}
                                   </div>
-                                  <span className="font-medium text-text-muted dark:text-zinc-400 shrink-0">
-                                    ₹{(itemPrice * itemQty).toFixed(2)}
-                                  </span>
                                 </div>
-                              );
-                            })}
-                          </div>
+                              </div>
 
-                          {/* Reorder Action */}
-                          <div className="pt-3 border-t border-border/40 dark:border-white/5 flex items-center justify-between">
-                            <span className="text-[11px] text-text-muted dark:text-zinc-400 flex items-center gap-1">
-                              <Check className="w-3.5 h-3.5 text-emerald-500" />
-                              <span>Fulfilled &amp; Recorded</span>
-                            </span>
-                            <button
-                              type="button"
-                              disabled={isOrderingBlocked}
-                              onClick={() => {
-                                if (isOrderingBlocked) return;
-                                (order.items || []).forEach((item: any) => {
-                                  addToCart({
-                                    menuItemId: item.menuItemId || item.id,
-                                    name: item.name || item.menuItem?.name || 'Item',
-                                    unitPrice: Number(item.price || item.unitPrice || 0),
-                                    station: item.station || 'KITCHEN',
-                                    foodType: item.foodType || 'VEG',
-                                    quantity: 1,
-                                    modifiers: [],
-                                  });
-                                });
-                                setActiveTab('cart');
-                              }}
-                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
-                                isOrderingBlocked
-                                  ? 'bg-zinc-100 dark:bg-white/5 text-zinc-400 opacity-50 cursor-not-allowed'
-                                  : 'bg-primary/10 hover:bg-primary text-primary hover:text-white dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:hover:bg-[#D4AF37] dark:hover:text-black cursor-pointer'
-                              }`}
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              <span>{isOrderingBlocked ? 'Ordering Closed' : 'Re-order Items'}</span>
-                            </button>
+                              <div className="text-right shrink-0">
+                                <span className="text-[10.5px] text-text-muted dark:text-zinc-400 block font-medium">
+                                  Session Total
+                                </span>
+                                <span className="font-black text-base sm:text-lg text-primary dark:text-[#D4AF37]">
+                                  ₹{session.totalAmount.toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Summary Metrics & Order Previews */}
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pt-0.5 text-xs">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-white/5 font-bold text-text-primary dark:text-zinc-200 text-[11px]">
+                                  {session.totalOrdersCount} {session.totalOrdersCount === 1 ? 'Order' : 'Orders'}
+                                </span>
+                                <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-white/5 text-text-muted dark:text-zinc-400 text-[11px] font-medium">
+                                  {session.totalItemsCount} {session.totalItemsCount === 1 ? 'item' : 'items total'}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 text-primary dark:text-[#D4AF37] font-bold text-xs group-hover:translate-x-0.5 transition-transform">
+                                <span>View Session Orders</span>
+                                <ChevronRight className="w-4 h-4" />
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Session Detail Modal */}
+            {selectedHistorySession && (
+              <div
+                className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 md:p-6 overflow-y-auto animate-fade-in"
+                onClick={() => setSelectedHistorySession(null)}
+              >
+                <div
+                  className="relative w-full max-w-2xl bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden my-auto flex flex-col max-h-[90vh]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Modal Header */}
+                  <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border/60 dark:border-white/10 bg-zinc-50/70 dark:bg-white/5">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-black text-base sm:text-lg text-text-primary dark:text-white">
+                          Dining Session Details
+                        </h3>
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-primary/10 text-primary dark:bg-[#D4AF37]/15 dark:text-[#D4AF37]">
+                          {selectedHistorySession.sessionTokenNumber}
+                        </span>
+                      </div>
+                      <p className="text-xs text-text-muted dark:text-zinc-400">
+                        {selectedHistorySession.formattedDate} {selectedHistorySession.formattedTime && `at ${selectedHistorySession.formattedTime}`}
+                        {selectedHistorySession.tableNumber && selectedHistorySession.tableNumber !== 'N/A' && ` · Table ${selectedHistorySession.tableNumber} (${selectedHistorySession.areaName})`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedHistorySession(null)}
+                      className="p-2 rounded-xl text-text-muted hover:text-text-primary hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                      aria-label="Close details"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Modal Scrollable Body */}
+                  <div className="p-4 sm:p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
+                    {/* Session Summary Card */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-zinc-50 dark:bg-white/5 border border-border/60 dark:border-white/5">
+                      <div>
+                        <span className="text-[10px] sm:text-[11px] text-text-muted dark:text-zinc-400 block font-medium uppercase tracking-wider">
+                          Total Spend
+                        </span>
+                        <span className="font-black text-base sm:text-lg text-primary dark:text-[#D4AF37]">
+                          ₹{selectedHistorySession.totalAmount.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] sm:text-[11px] text-text-muted dark:text-zinc-400 block font-medium uppercase tracking-wider">
+                          Orders Placed
+                        </span>
+                        <span className="font-black text-base sm:text-lg text-text-primary dark:text-white">
+                          {selectedHistorySession.totalOrdersCount}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] sm:text-[11px] text-text-muted dark:text-zinc-400 block font-medium uppercase tracking-wider">
+                          Total Items
+                        </span>
+                        <span className="font-black text-base sm:text-lg text-text-primary dark:text-white">
+                          {selectedHistorySession.totalItemsCount}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] sm:text-[11px] text-text-muted dark:text-zinc-400 block font-medium uppercase tracking-wider">
+                          Session Status
+                        </span>
+                        <span className="font-bold text-xs text-emerald-600 dark:text-emerald-400 mt-1 block">
+                          {selectedHistorySession.sessionStatus === 'ACTIVE' ? 'Active' : 'Settled & Completed'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Orders Breakdown */}
+                    <div className="space-y-4">
+                      <h4 className="text-xs font-black text-text-muted dark:text-zinc-400 uppercase tracking-wider">
+                        Orders in this Session ({selectedHistorySession.orders.length})
+                      </h4>
+
+                      <div className="space-y-4">
+                        {selectedHistorySession.orders.map((order: any, idx: number) => {
+                          const orderDate = order.placedAt ? new Date(order.placedAt) : null;
+                          const formattedTime = orderDate
+                            ? orderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : '';
+                          const isServed = order.status === 'SERVED';
+                          const isCancelled = order.status === 'CANCELLED';
+                          const orderSubtotal = Number(order.subtotal || order.totalAmount || 0);
+
+                          return (
+                            <div
+                              key={order.id || idx}
+                              className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#141416] p-4 sm:p-5 space-y-3.5 shadow-2xs"
+                            >
+                              {/* Order Header */}
+                              <div className="flex items-center justify-between pb-3 border-b border-border/40 dark:border-white/5">
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-mono font-black text-sm sm:text-base text-text-primary dark:text-white">
+                                      Order #{String(order.orderNumber || idx + 1).padStart(2, '0')}
+                                    </span>
+                                    <span
+                                      className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-full ${
+                                        isServed
+                                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                          : isCancelled
+                                          ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                                          : 'bg-zinc-100 dark:bg-white/10 text-text-muted dark:text-zinc-400 border border-border/60 dark:border-white/10'
+                                      }`}
+                                    >
+                                      {order.status || 'COMPLETED'}
+                                    </span>
+                                  </div>
+                                  {formattedTime && (
+                                    <div className="text-[11px] text-text-muted dark:text-zinc-400 mt-0.5">
+                                      Placed at {formattedTime}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="text-right">
+                                  <span className="text-[10.5px] text-text-muted dark:text-zinc-400 block">
+                                    Order Subtotal
+                                  </span>
+                                  <span className="font-black text-sm sm:text-base text-primary dark:text-[#D4AF37]">
+                                    ₹{orderSubtotal.toFixed(2)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Order Itemized List */}
+                              <div className="divide-y divide-border/40 dark:divide-white/5 text-xs">
+                                {(order.items || []).map((item: any, itIdx: number) => {
+                                  const itemPrice = Number(item.price || item.unitPrice || 0);
+                                  const itemQty = Number(item.quantity || 1);
+                                  const isStockOut = item.status === 'STOCK_OUT';
+                                  const isCancelledItem = item.status === 'CANCELLED';
+
+                                  return (
+                                    <div
+                                      key={item.id || itIdx}
+                                      className="py-2.5 flex items-start justify-between gap-3 text-text-primary dark:text-zinc-200"
+                                    >
+                                      <div className="min-w-0 flex-1 space-y-0.5">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          {item.foodType && <VegBadge type={item.foodType} size="sm" />}
+                                          <span className="font-semibold text-text-primary dark:text-white">
+                                            {item.quantity} × {item.name || item.itemName || item.menuItem?.name || 'Item'}
+                                          </span>
+                                          {item.variantName && (
+                                            <span className="text-text-muted dark:text-zinc-400 text-[11px]">
+                                              · {item.variantName}
+                                            </span>
+                                          )}
+                                          {isStockOut && (
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                              Stock Out
+                                            </span>
+                                          )}
+                                          {isCancelledItem && (
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                                              Cancelled
+                                            </span>
+                                          )}
+                                          {item.station && (
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-white/5 text-text-muted dark:text-zinc-400 uppercase">
+                                              {item.station}
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {item.selectedModifiers && Array.isArray(item.selectedModifiers) && item.selectedModifiers.length > 0 && (
+                                          <div className="text-text-muted dark:text-zinc-400 text-[10.5px]">
+                                            + {item.selectedModifiers.map((m: any) => m.optionName || m.name || m).join(', ')}
+                                          </div>
+                                        )}
+
+                                        {(item.notes || item.specialInstructions) && (
+                                          <div className="text-[10.5px] text-amber-600 dark:text-amber-400 italic">
+                                            Note: {item.notes || item.specialInstructions}
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      <div className="text-right shrink-0">
+                                        {isStockOut || isCancelledItem ? (
+                                          <span className="font-bold text-rose-600 dark:text-rose-400">
+                                            ₹0.00
+                                          </span>
+                                        ) : (
+                                          <span className="font-bold text-text-primary dark:text-white">
+                                            ₹{Number(item.lineTotal || itemPrice * itemQty).toFixed(2)}
+                                          </span>
+                                        )}
+                                        <div className="text-[10px] text-text-muted dark:text-zinc-400">
+                                          @ ₹{itemPrice.toFixed(2)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Order Footer Actions */}
+                              <div className="pt-2 border-t border-border/40 dark:border-white/5 flex items-center justify-between">
+                                {order.notes ? (
+                                  <span className="text-[10.5px] text-text-muted dark:text-zinc-400 italic">
+                                    Order Note: {order.notes}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10.5px] text-text-muted dark:text-zinc-400">
+                                    {order.items?.length || 0} {(order.items?.length || 0) === 1 ? 'item' : 'items'}
+                                  </span>
+                                )}
+
+                                <button
+                                  type="button"
+                                  disabled={isOrderingBlocked}
+                                  onClick={() => handleReorderHistoricalOrder(order)}
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                                    isOrderingBlocked
+                                      ? 'bg-zinc-100 dark:bg-white/5 text-zinc-400 opacity-50 cursor-not-allowed'
+                                      : 'bg-primary/10 hover:bg-primary text-primary hover:text-white dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:hover:bg-[#D4AF37] dark:hover:text-black cursor-pointer'
+                                  }`}
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                  <span>{isOrderingBlocked ? 'Ordering Closed' : 'Re-order Items'}</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="p-4 sm:p-5 border-t border-border/60 dark:border-white/10 bg-zinc-50/70 dark:bg-white/5 flex items-center justify-between gap-3">
+                    <div>
+                      <span className="text-[11px] text-text-muted dark:text-zinc-400 block font-medium">
+                        Session Grand Total
+                      </span>
+                      <span className="font-black text-base sm:text-xl text-primary dark:text-[#D4AF37]">
+                        ₹{selectedHistorySession.totalAmount.toFixed(2)}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedHistorySession(null)}
+                      className="px-5 py-2.5 rounded-xl bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-extrabold text-xs hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -3958,11 +4825,78 @@ const CustomerAppInner: React.FC = () => {
         </div>
       </nav>
 
+      {/* Global Real-Time Customer Stock & Status Notifications */}
+      {notifications.length > 0 && (
+        <aside aria-label="Customer real-time notifications" className="fixed top-3 inset-x-0 z-[60] flex flex-col items-center pointer-events-none px-3 space-y-2">
+          {notifications.map((notif) => {
+            const isStockIn = notif.type === 'stock_in';
+
+            return (
+              <div
+                key={notif.id}
+                onClick={() => isStockIn && handleNotificationClick(notif)}
+                className={`pointer-events-auto max-w-md w-full animate-fade-in flex items-center justify-between gap-2.5 sm:gap-3 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-2xl shadow-xl backdrop-blur-md transition-all ${
+                  isStockIn
+                    ? 'cursor-pointer bg-white/95 dark:bg-[#18181B]/95 text-zinc-900 dark:text-white border-2 border-emerald-500/35 dark:border-emerald-500/40 hover:border-emerald-500/60 dark:hover:border-emerald-400/60 active:scale-[0.99] shadow-emerald-500/10'
+                    : 'bg-zinc-900/95 dark:bg-black/95 text-white border border-rose-500/30 shadow-2xl'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div
+                    className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${
+                      isStockIn
+                        ? 'bg-emerald-500/15 text-emerald-600 dark:bg-emerald-500/25 dark:text-emerald-400 border border-emerald-500/20 shadow-2xs'
+                        : 'bg-rose-500/20 text-rose-400'
+                    }`}
+                  >
+                    {isStockIn ? <Sparkles className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-xs font-semibold leading-snug ${
+                      isStockIn ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-100'
+                    }`}>
+                      {notif.message}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {isStockIn && (
+                    <span className="text-[10.5px] font-extrabold px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:border-[#D4AF37]/30 flex items-center gap-0.5 shadow-2xs">
+                      View →
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      dismissNotification(notif.id);
+                    }}
+                    className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                      isStockIn
+                        ? 'text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/10'
+                        : 'text-zinc-400 hover:text-white hover:bg-white/10'
+                    }`}
+                    title="Dismiss"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </aside>
+      )}
+
       {/* Product Customizer Sheet */}
       <ProductCustomizer
         item={customizingItem}
         open={!!customizingItem}
-        onClose={() => setCustomizingItem(null)}
+        initialConfig={customizingInitialConfig}
+        onClose={() => {
+          setCustomizingItem(null);
+          setCustomizingInitialConfig(null);
+        }}
         onAddToCart={addToCart}
         isOrderingDisabled={isOrderingBlocked}
       />
@@ -4274,7 +5208,7 @@ const CustomerAppInner: React.FC = () => {
                       (item.modifierGroups && item.modifierGroups.length > 0);
                     setSelectedDetailItem(null);
                     if (hasModifiers) {
-                      setCustomizingItem(item);
+                      handleOpenCustomizer(item);
                     } else {
                       handleDirectAdd(item);
                     }
@@ -4390,6 +5324,64 @@ const CustomerAppInner: React.FC = () => {
                 className="flex-1 py-3 px-4 rounded-xl text-xs font-extrabold text-white bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-600/25 transition-all active:scale-95 cursor-pointer"
               >
                 Leave / Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Remove Order Item Confirmation Dialog */}
+      {itemToDelete && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-item-dialog-title"
+          onClick={() => !cancellingItemId && setItemToDelete(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/25 dark:bg-black/80 backdrop-blur-sm animate-fade-in cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-sm sm:max-w-md rounded-3xl bg-white dark:bg-[#18181B] border border-primary/30 dark:border-[#D4AF37]/50 shadow-2xl p-6 sm:p-7 space-y-5 text-center cursor-default animate-in fade-in zoom-in-95 duration-200"
+          >
+            {/* Modal Icon Pill */}
+            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20 flex items-center justify-center mx-auto shadow-xs">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            {/* Title & Description */}
+            <div className="space-y-2">
+              <h3 id="delete-item-dialog-title" className="text-lg sm:text-xl font-black text-text-primary dark:text-white tracking-tight">
+                Remove Item?
+              </h3>
+              <p className="text-xs sm:text-sm text-text-muted dark:text-zinc-400 leading-relaxed max-w-xs mx-auto">
+                Are you sure you want to remove <span className="font-bold text-text-primary dark:text-white">"{itemToDelete.name}"</span> from this order?
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                disabled={Boolean(cancellingItemId)}
+                onClick={() => setItemToDelete(null)}
+                className="flex-1 py-3 px-4 rounded-xl text-xs font-bold text-text-primary dark:text-zinc-200 bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 border border-border/80 dark:border-white/10 transition-all cursor-pointer disabled:opacity-50"
+              >
+                Keep Item
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(cancellingItemId)}
+                onClick={handleConfirmDeleteItem}
+                className="flex-1 py-3 px-4 rounded-xl text-xs font-extrabold text-white bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-600/25 transition-all active:scale-95 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {cancellingItemId ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Removing...</span>
+                  </>
+                ) : (
+                  <span>Remove Item</span>
+                )}
               </button>
             </div>
           </div>

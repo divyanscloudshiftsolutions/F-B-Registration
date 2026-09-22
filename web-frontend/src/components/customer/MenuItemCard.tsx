@@ -38,6 +38,12 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
     (item.variants && item.variants.length > 0) ||
     (item.modifierGroups && item.modifierGroups.length > 0);
   const isAvailable = item.isAvailable !== false;
+  const stockQty = (item as any).stockQuantity ?? 50;
+  const availableStock = (item as any).availableStock !== undefined ? Number((item as any).availableStock) : stockQty;
+  const isLowStock = isAvailable && availableStock > 0 && availableStock <= 10;
+  const isOutOfStock = !isAvailable || availableStock <= 0;
+  const isMaxReached = isAvailable && cartQuantity >= availableStock;
+
   const isPopular = Boolean(item.popular ?? (item as any).isPopular);
   const isFeatured = Boolean(item.featured ?? (item as any).isFeatured ?? (item as any).isSignature ?? (item as any).signature);
   const displayImage = (item as any).image || item.imageUrl;
@@ -46,7 +52,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
   const hasDiscount = numFinalPrice < numBasePrice;
 
   const handleAddClick = () => {
-    if (!isAvailable || isOrderingDisabled) return;
+    if (isOutOfStock || isOrderingDisabled) return;
     if (hasModifiers) {
       onOpenCustomizer(item);
     } else {
@@ -56,7 +62,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
 
   const handleIncrement = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isOrderingDisabled) return;
+    if (isOrderingDisabled || isMaxReached) return;
     if (onIncrement) {
       onIncrement(item);
     } else if (hasModifiers) {
@@ -96,6 +102,15 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
           </div>
         )}
 
+        {/* Low Stock Badge on Image */}
+        {isLowStock && (
+          <div className="absolute top-1 right-1 xs:top-1.5 xs:right-1.5 z-10 pointer-events-none">
+            <span className="text-[8px] xs:text-[8.5px] font-extrabold px-1.5 py-0.5 rounded-md bg-amber-500 text-white shadow-xs backdrop-blur-xs">
+              Only {availableStock} left
+            </span>
+          </div>
+        )}
+
         {/* Popular / Signature Tag overlay */}
         {(isPopular || isFeatured) && (
           <div className="absolute bottom-1 left-1 xs:bottom-1.5 xs:left-1.5 z-10 pointer-events-none">
@@ -128,9 +143,9 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
           </div>
 
           <div className="shrink-0">
-            {!isAvailable ? (
+            {isOutOfStock ? (
               <span className="text-[8.5px] xs:text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                Out
+                Out of Stock
               </span>
             ) : cartQuantity > 0 ? (
               <div className="flex items-center gap-0.5 xs:gap-1 sm:gap-1.5 px-1 xs:px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full border border-primary text-primary dark:border-[#D4AF37] dark:text-[#D4AF37] bg-primary/10 dark:bg-[#D4AF37]/10 shadow-2xs">
@@ -147,11 +162,12 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
                 </span>
                 <button
                   type="button"
-                  disabled={isOrderingDisabled}
+                  disabled={isOrderingDisabled || isMaxReached}
                   onClick={handleIncrement}
                   aria-label={`Increase quantity of ${item.name}`}
+                  title={isMaxReached ? `Only ${availableStock} available in stock` : undefined}
                   className={`w-3.5 h-3.5 sm:w-4 sm:h-4 flex items-center justify-center rounded-full hover:bg-primary/20 dark:hover:bg-[#D4AF37]/20 transition-colors cursor-pointer ${
-                    isOrderingDisabled ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''
+                    isOrderingDisabled || isMaxReached ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''
                   }`}
                 >
                   <Plus className="w-2.5 h-2.5 sm:w-3 sm:h-3" />

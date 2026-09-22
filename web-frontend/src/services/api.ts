@@ -910,6 +910,13 @@ class ApiService {
     return data.item;
   }
 
+  async cancelOrderItem(orderItemId: string, tokenNumber: string) {
+    const data = await this.request<{ success: boolean; item: any }>(`/orders/items/${orderItemId}?tokenNumber=${encodeURIComponent(tokenNumber)}`, {
+      method: 'DELETE',
+    });
+    return data.item;
+  }
+
   async getSections() {
     const data = await this.request<{ success: boolean; sections: any[] }>('/menu/sections');
     return data.sections || [];
@@ -1034,10 +1041,34 @@ class ApiService {
     return data.promotions || [];
   }
 
-  async setItemAvailability(itemId: string, isAvailable: boolean) {
+  async setItemAvailability(itemId: string, isAvailable: boolean, stockQuantity?: number) {
     return this.request<{ success: boolean; item: any }>(`/menu/items/${itemId}/availability`, {
       method: 'PUT',
-      body: JSON.stringify({ isAvailable }),
+      body: JSON.stringify({ isAvailable, stockQuantity }),
+    });
+  }
+
+  async reserveCartStock(tokenNumber: string, menuItemId: string, quantity: number) {
+    return this.request<{ success: boolean; reservedQuantity: number; availableStock: number }>(
+      '/customer/cart/reserve',
+      {
+        method: 'POST',
+        body: JSON.stringify({ tokenNumber, menuItemId, quantity }),
+      }
+    );
+  }
+
+  async releaseCartStock(tokenNumber: string, menuItemId: string) {
+    return this.request<{ success: boolean }>('/customer/cart/release', {
+      method: 'POST',
+      body: JSON.stringify({ tokenNumber, menuItemId }),
+    });
+  }
+
+  async clearCartReservations(tokenNumber: string) {
+    return this.request<{ success: boolean }>('/customer/cart/clear', {
+      method: 'POST',
+      body: JSON.stringify({ tokenNumber }),
     });
   }
 

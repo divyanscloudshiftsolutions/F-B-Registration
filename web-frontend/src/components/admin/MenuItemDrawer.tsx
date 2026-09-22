@@ -59,6 +59,7 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
   const [basePrice, setBasePrice] = useState<string>('');
   const [discountMode, setDiscountMode] = useState<DiscountMode>('AMOUNT');
   const [discountValue, setDiscountValue] = useState<string>('0');
+  const [stockQuantity, setStockQuantity] = useState<number>(50);
   const [gstTags, setGstTags] = useState<GstTaxTag[]>([]);
   const [selectedGstTaxTagId, setSelectedGstTaxTagId] = useState<string>('');
 
@@ -163,6 +164,7 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
       setBasePrice(String(itemToEdit.basePrice ?? ''));
       setDiscountMode((itemToEdit.discountMode as DiscountMode) || 'AMOUNT');
       setDiscountValue(String(itemToEdit.discountValue ?? '0'));
+      setStockQuantity(Number(itemToEdit.stockQuantity ?? itemToEdit.stockItem?.currentStock ?? 50));
 
       setImageUrl(itemToEdit.image || '');
       setImageTab(itemToEdit.image && itemToEdit.image.startsWith('http') ? 'url' : 'upload');
@@ -201,6 +203,7 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
       setFoodType('VEG');
       setStation('KITCHEN');
       setPreparationTime(10);
+      setStockQuantity(50);
       setIsAvailable(true);
       setIsFeatured(false);
       setIsPopular(false);
@@ -421,6 +424,7 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
         station,
         image: imageUrl.trim() || null,
         preparationTime: Number(preparationTime) || 10,
+        stockQuantity: Math.max(0, Math.floor(Number(stockQuantity) || 50)),
         isAvailable,
         isFeatured,
         isPopular,
@@ -735,19 +739,39 @@ export const MenuItemDrawer: React.FC<MenuItemDrawerProps> = ({
                 </div>
               </div>
 
-              {/* Preparation Time & Description */}
-              <div>
-                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
-                  Preparation Time (Minutes)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="180"
-                  value={preparationTime}
-                  onChange={(e) => setPreparationTime(Number(e.target.value))}
-                  className="w-32 px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
+              {/* Preparation Time & Stock Quantity */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                    Preparation Time (Minutes)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="180"
+                    value={preparationTime}
+                    onChange={(e) => setPreparationTime(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                    Stock Quantity (Inventory)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={stockQuantity}
+                    onChange={(e) => setStockQuantity(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="w-full px-3 py-2 text-xs font-mono font-bold rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="Default: 50"
+                  />
+                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1">
+                    Default is 50. Must be a non-negative whole number.
+                  </p>
+                </div>
               </div>
 
               <div>

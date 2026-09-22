@@ -1,7 +1,8 @@
-import { PrismaClient, FoodType, Station } from '@prisma/client';
+import { PrismaClient, FoodType, Station, OrderStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { redisService } from './RedisService';
-import { getIO, SOCKET_EVENTS } from '../realtime';
+import { inventoryService } from './InventoryService';
+import { getIO, SOCKET_EVENTS, broadcastOrderItemUpdated } from '../realtime';
 import { logger } from '../lib/logger';
 
 const prisma = new PrismaClient();
@@ -149,14 +150,77 @@ export class MenuService {
       },
     });
 
-    const mappedSections = sections.map((s) => ({
-      ...s,
-      name: s.slug === 'eat' ? 'Food' : s.name,
-    }));
+    const mappedSections = await Promise.all(
+      sections.map(async (s) => {
+        const mappedDirectItems = await Promise.all(
+          (s.items || []).map(async (it: any) => {
+            const currentStock = it.stockItem?.currentStock ?? 50;
+            const reserved = await inventoryService.getReservedQuantity(it.id);
+            const availableStock = Math.max(0, currentStock - reserved);
+            return {
+              ...it,
+              stockQuantity: currentStock,
+              availableStock,
+            };
+          })
+        );
 
-    // 3. Cache for 5 minutes
+        const mappedCategories = await Promise.all(
+          (s.categories || []).map(async (cat: any) => {
+            const mappedCatItems = await Promise.all(
+              (cat.items || []).map(async (it: any) => {
+                const currentStock = it.stockItem?.currentStock ?? 50;
+                const reserved = await inventoryService.getReservedQuantity(it.id);
+                const availableStock = Math.max(0, currentStock - reserved);
+                return {
+                  ...it,
+                  stockQuantity: currentStock,
+                  availableStock,
+                };
+              })
+            );
+
+            const mappedSubcategories = await Promise.all(
+              (cat.subcategories || []).map(async (sub: any) => {
+                const mappedSubItems = await Promise.all(
+                  ((sub as any).items || []).map(async (it: any) => {
+                    const currentStock = it.stockItem?.currentStock ?? 50;
+                    const reserved = await inventoryService.getReservedQuantity(it.id);
+                    const availableStock = Math.max(0, currentStock - reserved);
+                    return {
+                      ...it,
+                      stockQuantity: currentStock,
+                      availableStock,
+                    };
+                  })
+                );
+                return {
+                  ...sub,
+                  items: mappedSubItems,
+                };
+              })
+            );
+
+            return {
+              ...cat,
+              items: mappedCatItems,
+              subcategories: mappedSubcategories,
+            };
+          })
+        );
+
+        return {
+          ...s,
+          name: s.slug === 'eat' ? 'Food' : s.name,
+          items: mappedDirectItems,
+          categories: mappedCategories,
+        };
+      })
+    );
+
+    // 3. Cache for 2 minutes (short TTL to keep real-time stock sync fresh)
     try {
-      await redisService.setex(cacheKey, 300, JSON.stringify(mappedSections));
+      await redisService.setex(cacheKey, 120, JSON.stringify(mappedSections));
     } catch (err: any) {
       logger.warn('[MenuService] Redis setex failed:', { error: err.message });
     }
@@ -416,6 +480,7 @@ export class MenuService {
       preparationTime?: number;
       sortOrder?: number;
       variants?: Array<{ name: string; priceDelta: number; sortOrder?: number }>;
+      stockQuantity?: number;
       modifierGroups?: Array<{
         name: string;
         isRequired?: boolean;
@@ -460,6 +525,8 @@ export class MenuService {
       finalGstTaxTagId = defaultTag ? defaultTag.id : null;
     }
 
+    const initialStock = data.stockQuantity !== undefined ? Math.max(0, Math.floor(Number(data.stockQuantity))) : 50;
+
     const createdItem = await prisma.$transaction(async (tx) => {
       const item = await tx.menuItem.create({
         data: {
@@ -476,7 +543,7 @@ export class MenuService {
           discountMode: pricing.discountMode,
           discountValue: pricing.discountValue,
           finalPrice: pricing.finalPrice,
-          isAvailable: data.isAvailable ?? true,
+          isAvailable: data.isAvailable ?? (initialStock > 0),
           isFeatured: data.isFeatured ?? false,
           isPopular: data.isPopular ?? false,
           tags: data.tags || [],
@@ -524,6 +591,15 @@ export class MenuService {
         },
       });
 
+      await tx.stockItem.create({
+        data: {
+          menuItemId: item.id,
+          currentStock: initialStock,
+          lowStockThreshold: 5,
+          isActive: true,
+        },
+      });
+
       return item;
     });
 
@@ -557,6 +633,7 @@ export class MenuService {
       preparationTime?: number;
       sortOrder?: number;
       variants?: Array<{ id?: string; name: string; priceDelta: number; sortOrder?: number }>;
+      stockQuantity?: number;
       modifierGroups?: Array<{
         id?: string;
         name: string;
@@ -576,6 +653,7 @@ export class MenuService {
             options: true,
           },
         },
+        stockItem: true,
       },
     });
 
@@ -635,34 +713,147 @@ export class MenuService {
       pricing = this.computeFinalPrice(newBasePrice, newDiscountMode, newDiscountValue);
     }
 
+    let transitionedItems: any[] = [];
+    const isTransitioningToStockOut =
+      data.isAvailable === false && existing.isAvailable === true;
+
     const updatedItem = await prisma.$transaction(async (tx) => {
       // 1. Update Core Item Fields
       await tx.menuItem.update({
         where: { id },
         data: {
           ...(data.name && { name: data.name.trim() }),
-          ...(data.description !== undefined && { description: data.description.trim() }),
-          ...(data.categoryId !== undefined ? { categoryId: data.categoryId || null, ...(data.categoryId ? { sectionId } : {}) } : {}),
-          ...(data.subcategoryId !== undefined ? { subcategoryId: data.subcategoryId || null } : {}),
-          ...(data.gstTaxTagId !== undefined && { gstTaxTagId: data.gstTaxTagId || null }),
+          ...(data.description !== undefined && { description: data.description?.trim() || '' }),
+          ...(data.categoryId !== undefined && { categoryId: targetCategoryId }),
+          ...(data.subcategoryId !== undefined && { subcategoryId: data.subcategoryId }),
+          ...(data.gstTaxTagId !== undefined && { gstTaxTagId: data.gstTaxTagId }),
           ...(data.foodType !== undefined && { foodType: data.foodType }),
           ...(data.station !== undefined && { station: data.station }),
           ...(data.image !== undefined && { image: data.image }),
+          ...(data.isAvailable !== undefined && { isAvailable: data.isAvailable }),
+          ...(data.isFeatured !== undefined && { isFeatured: data.isFeatured }),
+          ...(data.isPopular !== undefined && { isPopular: data.isPopular }),
+          ...(data.tags !== undefined && { tags: data.tags }),
+          ...(data.allergens !== undefined && { allergens: data.allergens }),
+          ...(data.preparationTime !== undefined && { preparationTime: data.preparationTime }),
+          ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
+          sectionId,
           ...(pricing && {
             basePrice: pricing.basePrice,
             discountMode: pricing.discountMode,
             discountValue: pricing.discountValue,
             finalPrice: pricing.finalPrice,
           }),
-          ...(data.isAvailable !== undefined && { isAvailable: data.isAvailable }),
-          ...(data.isFeatured !== undefined && { isFeatured: data.isFeatured }),
-          ...(data.isPopular !== undefined && { isPopular: data.isPopular }),
-          ...(data.tags && { tags: data.tags }),
-          ...(data.allergens && { allergens: data.allergens }),
-          ...(data.preparationTime !== undefined && { preparationTime: data.preparationTime }),
-          ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
         },
       });
+
+      // Update StockItem if stockQuantity provided
+      if (data.stockQuantity !== undefined) {
+        const newStock = Math.max(0, Math.floor(Number(data.stockQuantity)));
+        const stockItem = await tx.stockItem.findUnique({ where: { menuItemId: id } });
+        if (stockItem) {
+          const prevStock = stockItem.currentStock;
+          await tx.stockItem.update({
+            where: { id: stockItem.id },
+            data: { currentStock: newStock },
+          });
+          if (newStock !== prevStock) {
+            await tx.inventoryLog.create({
+              data: {
+                stockItemId: stockItem.id,
+                quantityDelta: newStock - prevStock,
+                previousStock: prevStock,
+                newStock,
+                reason: 'MANUAL_ADJUSTMENT',
+              },
+            });
+          }
+        } else {
+          await tx.stockItem.create({
+            data: {
+              menuItemId: id,
+              currentStock: newStock,
+              lowStockThreshold: 5,
+              isActive: true,
+            },
+          });
+        }
+      }
+
+      // If transitioning to Stock Out, mark unaccepted (PLACED) OrderItems as STOCK_OUT
+      if (isTransitioningToStockOut) {
+        const pendingPlacedItems = await tx.orderItem.findMany({
+          where: {
+            menuItemId: id,
+            status: OrderStatus.PLACED,
+          },
+          include: {
+            order: {
+              include: {
+                token: true,
+                table: true,
+              },
+            },
+          },
+        });
+
+        if (pendingPlacedItems.length > 0) {
+          const itemIdsToUpdate = pendingPlacedItems.map((pi) => pi.id);
+          await tx.orderItem.updateMany({
+            where: { id: { in: itemIdsToUpdate } },
+            data: { status: OrderStatus.STOCK_OUT },
+          });
+
+          const affectedOrderIds = Array.from(new Set(pendingPlacedItems.map((pi) => pi.orderId)));
+
+          for (const ordId of affectedOrderIds) {
+            const allItems = await tx.orderItem.findMany({
+              where: { orderId: ordId },
+            });
+
+            const activeItems = allItems.filter(
+              (i) => i.status !== OrderStatus.CANCELLED && i.status !== OrderStatus.STOCK_OUT
+            );
+
+            const newSubtotal = activeItems.reduce(
+              (sum, i) => sum.plus(new Decimal(i.lineTotal)),
+              new Decimal(0)
+            );
+
+            let newOrderStatus = OrderStatus.PLACED;
+            if (allItems.length > 0 && activeItems.length === 0) {
+              newOrderStatus = OrderStatus.CANCELLED;
+            } else if (activeItems.every((i) => i.status === OrderStatus.SERVED)) {
+              newOrderStatus = OrderStatus.SERVED;
+            } else if (activeItems.every((i) => i.status === OrderStatus.READY || i.status === OrderStatus.SERVED)) {
+              newOrderStatus = OrderStatus.READY;
+            } else if (
+              activeItems.some(
+                (i) =>
+                  i.status === OrderStatus.PREPARING ||
+                  i.status === OrderStatus.READY ||
+                  i.status === OrderStatus.SERVED
+              )
+            ) {
+              newOrderStatus = OrderStatus.PREPARING;
+            } else if (activeItems.some((i) => i.status === OrderStatus.ACCEPTED)) {
+              newOrderStatus = OrderStatus.ACCEPTED;
+            } else {
+              newOrderStatus = OrderStatus.PLACED;
+            }
+
+            await tx.order.update({
+              where: { id: ordId },
+              data: {
+                subtotal: newSubtotal,
+                status: newOrderStatus,
+              },
+            });
+          }
+
+          transitionedItems = pendingPlacedItems;
+        }
+      }
 
       // 2. In-place Variants Sync (Preserve existing IDs)
       if (data.variants !== undefined) {
@@ -748,8 +939,8 @@ export class MenuService {
             .map((o) => o.id as string);
 
           const toDeleteOptionIds = existingOptions
-            .filter((o) => !payloadOptionIds.includes(o.id))
-            .map((o) => o.id);
+            .filter((eo) => !payloadOptionIds.includes(eo.id))
+            .map((eo) => eo.id);
 
           if (toDeleteOptionIds.length > 0) {
             await tx.modifierOption.deleteMany({
@@ -794,12 +985,64 @@ export class MenuService {
           category: true,
           subcategory: true,
           gstTaxTag: true,
+          stockItem: true,
         },
       });
     });
 
+    // Broadcast real-time order item updates for each transitioned item
+    if (transitionedItems.length > 0) {
+      const nowIso = new Date().toISOString();
+      for (const transitioned of transitionedItems) {
+        try {
+          broadcastOrderItemUpdated({
+            orderId: transitioned.orderId,
+            orderItemId: transitioned.id,
+            orderNumber: transitioned.order?.orderNumber || 0,
+            tokenNumber: transitioned.order?.token?.tokenNumber || '',
+            tableId: transitioned.order?.tableId || '',
+            tableNumber: transitioned.order?.table?.tableNumber,
+            station: transitioned.station,
+            itemName: transitioned.itemName,
+            variantName: transitioned.variantName,
+            selectedModifiers: transitioned.selectedModifiers,
+            specialInstructions: transitioned.specialInstructions,
+            quantity: transitioned.quantity,
+            previousStatus: OrderStatus.PLACED,
+            status: OrderStatus.STOCK_OUT,
+            preparedAt: null,
+            readyAt: null,
+            servedAt: null,
+            updatedAt: nowIso,
+          });
+        } catch (bErr) {
+          logger.warn('[MenuService] Failed to broadcast stock-out order item update:', bErr);
+        }
+      }
+    }
+
     await this.invalidateMenuCache();
     this.notifyMenuUpdated({ action: 'item_updated', itemId: id });
+
+    if (data.isAvailable !== undefined && data.isAvailable !== existing.isAvailable) {
+      const currentStock = updatedItem?.stockItem?.currentStock ?? 50;
+      const reserved = await inventoryService.getReservedQuantity(id);
+      const availableStock = Math.max(0, currentStock - reserved);
+
+      this.notifyMenuUpdated({
+        action: 'item_availability',
+        itemId: id,
+        details: {
+          isAvailable: data.isAvailable && availableStock > 0,
+          currentStock,
+          availableStock,
+          station: updatedItem?.station || existing.station,
+          name: updatedItem?.name || existing.name,
+          affectedItemsCount: transitionedItems.length,
+        },
+      });
+    }
+
     return updatedItem;
   }
 
@@ -815,17 +1058,127 @@ export class MenuService {
     const orderCount = await prisma.orderItem.count({ where: { menuItemId: id } });
 
     if (orderCount > 0) {
+      let transitionedItems: any[] = [];
       // Soft Archive to protect foreign keys and historical orders
-      await prisma.menuItem.update({
-        where: { id },
-        data: {
-          isArchived: true,
-          isAvailable: false,
-        },
+      await prisma.$transaction(async (tx) => {
+        await tx.menuItem.update({
+          where: { id },
+          data: {
+            isArchived: true,
+            isAvailable: false,
+          },
+        });
+
+        // Any remaining unaccepted PLACED items become STOCK_OUT
+        const pendingPlacedItems = await tx.orderItem.findMany({
+          where: {
+            menuItemId: id,
+            status: OrderStatus.PLACED,
+          },
+          include: {
+            order: {
+              include: {
+                token: true,
+                table: true,
+              },
+            },
+          },
+        });
+
+        if (pendingPlacedItems.length > 0) {
+          const itemIdsToUpdate = pendingPlacedItems.map((pi) => pi.id);
+          await tx.orderItem.updateMany({
+            where: { id: { in: itemIdsToUpdate } },
+            data: { status: OrderStatus.STOCK_OUT },
+          });
+
+          const affectedOrderIds = Array.from(new Set(pendingPlacedItems.map((pi) => pi.orderId)));
+          for (const ordId of affectedOrderIds) {
+            const allItems = await tx.orderItem.findMany({
+              where: { orderId: ordId },
+            });
+
+            const activeItems = allItems.filter(
+              (i) => i.status !== OrderStatus.CANCELLED && i.status !== OrderStatus.STOCK_OUT
+            );
+
+            const newSubtotal = activeItems.reduce(
+              (sum, i) => sum.plus(new Decimal(i.lineTotal)),
+              new Decimal(0)
+            );
+
+            let newOrderStatus = OrderStatus.PLACED;
+            if (allItems.length > 0 && activeItems.length === 0) {
+              newOrderStatus = OrderStatus.CANCELLED;
+            } else if (activeItems.every((i) => i.status === OrderStatus.SERVED)) {
+              newOrderStatus = OrderStatus.SERVED;
+            } else if (activeItems.every((i) => i.status === OrderStatus.READY || i.status === OrderStatus.SERVED)) {
+              newOrderStatus = OrderStatus.READY;
+            } else if (
+              activeItems.some(
+                (i) =>
+                  i.status === OrderStatus.PREPARING ||
+                  i.status === OrderStatus.READY ||
+                  i.status === OrderStatus.SERVED
+              )
+            ) {
+              newOrderStatus = OrderStatus.PREPARING;
+            } else if (activeItems.some((i) => i.status === OrderStatus.ACCEPTED)) {
+              newOrderStatus = OrderStatus.ACCEPTED;
+            } else {
+              newOrderStatus = OrderStatus.PLACED;
+            }
+
+            await tx.order.update({
+              where: { id: ordId },
+              data: {
+                subtotal: newSubtotal,
+                status: newOrderStatus,
+              },
+            });
+          }
+
+          transitionedItems = pendingPlacedItems;
+        }
       });
+
+      if (transitionedItems.length > 0) {
+        const nowIso = new Date().toISOString();
+        for (const transitioned of transitionedItems) {
+          try {
+            broadcastOrderItemUpdated({
+              orderId: transitioned.orderId,
+              orderItemId: transitioned.id,
+              orderNumber: transitioned.order?.orderNumber || 0,
+              tokenNumber: transitioned.order?.token?.tokenNumber || '',
+              tableId: transitioned.order?.tableId || '',
+              tableNumber: transitioned.order?.table?.tableNumber,
+              station: transitioned.station,
+              itemName: transitioned.itemName,
+              variantName: transitioned.variantName,
+              selectedModifiers: transitioned.selectedModifiers,
+              specialInstructions: transitioned.specialInstructions,
+              quantity: transitioned.quantity,
+              previousStatus: OrderStatus.PLACED,
+              status: OrderStatus.STOCK_OUT,
+              preparedAt: null,
+              readyAt: null,
+              servedAt: null,
+              updatedAt: nowIso,
+            });
+          } catch (bErr) {
+            logger.warn('[MenuService] Failed to broadcast stock-out on archive:', bErr);
+          }
+        }
+      }
 
       await this.invalidateMenuCache();
       this.notifyMenuUpdated({ action: 'item_archived', itemId: id });
+      this.notifyMenuUpdated({
+        action: 'item_availability',
+        itemId: id,
+        details: { isAvailable: false, station: item.station, name: item.name },
+      });
       return {
         softDeleted: true,
         message: `Item has been archived (${orderCount} historical orders preserved).`,
@@ -846,30 +1199,223 @@ export class MenuService {
   }
 
   /**
-   * Operational 86 availability toggle
+   * Operational 86 availability toggle with authoritative item-level Stock Out handling and preserved numeric stock
    */
-  async setItemAvailability(itemId: string, isAvailable: boolean) {
+  async setItemAvailability(itemId: string, isAvailable: boolean, stockQuantity?: number) {
     const item = await prisma.menuItem.findUnique({
       where: { id: itemId },
+      include: { stockItem: true },
     });
 
     if (!item || item.isArchived) {
       throw new Error(`MenuItem with ID ${itemId} not found`);
     }
 
-    const updated = await prisma.menuItem.update({
-      where: { id: itemId },
-      data: { isAvailable },
-    });
+    let transitionedItems: any[] = [];
+    const preservedStock = item.stockItem?.currentStock ?? 50;
 
-    await this.invalidateMenuCache();
-    this.notifyMenuUpdated({
-      action: 'item_availability',
-      itemId,
-      details: { isAvailable, station: item.station, name: item.name },
-    });
+    if (!isAvailable) {
+      // MANUAL STOCK OUT ACTION:
+      // 1. Mark menu item unavailable (isAvailable = false)
+      // 2. Underlying numeric stock is PRESERVED (never destroyed/set to 0)
+      // 3. Transition ONLY unaccepted (PLACED) OrderItems for this menuItem to STOCK_OUT
+      // 4. Leave ACCEPTED, PREPARING, READY, SERVED items completely untouched
+      const result = await prisma.$transaction(async (tx) => {
+        const updated = await tx.menuItem.update({
+          where: { id: itemId },
+          data: { isAvailable: false },
+        });
 
-    return updated;
+        // Find strictly unaccepted PLACED items
+        const pendingPlacedItems = await tx.orderItem.findMany({
+          where: {
+            menuItemId: itemId,
+            status: OrderStatus.PLACED,
+          },
+          include: {
+            order: {
+              include: {
+                token: true,
+                table: true,
+              },
+            },
+          },
+        });
+
+        if (pendingPlacedItems.length > 0) {
+          const itemIdsToUpdate = pendingPlacedItems.map((pi) => pi.id);
+          await tx.orderItem.updateMany({
+            where: { id: { in: itemIdsToUpdate } },
+            data: { status: OrderStatus.STOCK_OUT },
+          });
+
+          // Unique affected order IDs
+          const affectedOrderIds = Array.from(new Set(pendingPlacedItems.map((pi) => pi.orderId)));
+
+          // Recalculate parent order subtotal and status for each affected order
+          for (const ordId of affectedOrderIds) {
+            const allItems = await tx.orderItem.findMany({
+              where: { orderId: ordId },
+            });
+
+            const activeItems = allItems.filter(
+              (i) => i.status !== OrderStatus.CANCELLED && i.status !== OrderStatus.STOCK_OUT
+            );
+
+            const newSubtotal = activeItems.reduce(
+              (sum, i) => sum.plus(new Decimal(i.lineTotal)),
+              new Decimal(0)
+            );
+
+            let newOrderStatus = OrderStatus.PLACED;
+            if (allItems.length > 0 && activeItems.length === 0) {
+              newOrderStatus = OrderStatus.CANCELLED;
+            } else if (activeItems.every((i) => i.status === OrderStatus.SERVED)) {
+              newOrderStatus = OrderStatus.SERVED;
+            } else if (activeItems.every((i) => i.status === OrderStatus.READY || i.status === OrderStatus.SERVED)) {
+              newOrderStatus = OrderStatus.READY;
+            } else if (
+              activeItems.some(
+                (i) =>
+                  i.status === OrderStatus.PREPARING ||
+                  i.status === OrderStatus.READY ||
+                  i.status === OrderStatus.SERVED
+              )
+            ) {
+              newOrderStatus = OrderStatus.PREPARING;
+            } else if (activeItems.some((i) => i.status === OrderStatus.ACCEPTED)) {
+              newOrderStatus = OrderStatus.ACCEPTED;
+            } else {
+              newOrderStatus = OrderStatus.PLACED;
+            }
+
+            await tx.order.update({
+              where: { id: ordId },
+              data: {
+                subtotal: newSubtotal,
+                status: newOrderStatus,
+              },
+            });
+          }
+        }
+
+        return { updated, pendingPlacedItems };
+      });
+
+      transitionedItems = result.pendingPlacedItems;
+
+      // Broadcast real-time order item updates for each transitioned item
+      const nowIso = new Date().toISOString();
+      for (const transitioned of transitionedItems) {
+        try {
+          broadcastOrderItemUpdated({
+            orderId: transitioned.orderId,
+            orderItemId: transitioned.id,
+            orderNumber: transitioned.order?.orderNumber || 0,
+            tokenNumber: transitioned.order?.token?.tokenNumber || '',
+            tableId: transitioned.order?.tableId || '',
+            tableNumber: transitioned.order?.table?.tableNumber,
+            station: transitioned.station,
+            itemName: transitioned.itemName,
+            variantName: transitioned.variantName,
+            selectedModifiers: transitioned.selectedModifiers,
+            specialInstructions: transitioned.specialInstructions,
+            quantity: transitioned.quantity,
+            previousStatus: OrderStatus.PLACED,
+            status: OrderStatus.STOCK_OUT,
+            preparedAt: null,
+            readyAt: null,
+            servedAt: null,
+            updatedAt: nowIso,
+          });
+        } catch (bErr) {
+          logger.warn('[MenuService] Failed to broadcast stock-out order item update:', bErr);
+        }
+      }
+
+      await this.invalidateMenuCache();
+      this.notifyMenuUpdated({
+        action: 'item_availability',
+        itemId,
+        details: {
+          isAvailable: false,
+          currentStock: preservedStock,
+          availableStock: 0,
+          station: item.station,
+          name: item.name,
+          affectedItemsCount: transitionedItems.length,
+        },
+      });
+
+      return {
+        ...result.updated,
+        currentStock: preservedStock,
+        availableStock: 0,
+      };
+    } else {
+      // MANUAL STOCK IN ACTION:
+      // If stockQuantity is specified (e.g. user confirmed 3 or updated to 5):
+      const newStock = stockQuantity !== undefined ? Math.max(0, Math.floor(Number(stockQuantity))) : (preservedStock > 0 ? preservedStock : 50);
+      const shouldBeAvailable = newStock > 0;
+
+      await prisma.$transaction(async (tx) => {
+        await tx.menuItem.update({
+          where: { id: itemId },
+          data: { isAvailable: shouldBeAvailable },
+        });
+
+        if (item.stockItem) {
+          const prevStock = item.stockItem.currentStock;
+          await tx.stockItem.update({
+            where: { id: item.stockItem.id },
+            data: { currentStock: newStock },
+          });
+          if (newStock !== prevStock) {
+            await tx.inventoryLog.create({
+              data: {
+                stockItemId: item.stockItem.id,
+                quantityDelta: newStock - prevStock,
+                previousStock: prevStock,
+                newStock,
+                reason: 'STOCK_IN_ADJUSTMENT',
+              },
+            });
+          }
+        } else {
+          await tx.stockItem.create({
+            data: {
+              menuItemId: itemId,
+              currentStock: newStock,
+              lowStockThreshold: 5,
+              isActive: true,
+            },
+          });
+        }
+      });
+
+      const reserved = await inventoryService.getReservedQuantity(itemId);
+      const availableStock = Math.max(0, newStock - reserved);
+
+      await this.invalidateMenuCache();
+      this.notifyMenuUpdated({
+        action: 'item_availability',
+        itemId,
+        details: {
+          isAvailable: shouldBeAvailable && availableStock > 0,
+          currentStock: newStock,
+          availableStock,
+          station: item.station,
+          name: item.name,
+        },
+      });
+
+      return {
+        id: itemId,
+        isAvailable: shouldBeAvailable && availableStock > 0,
+        currentStock: newStock,
+        availableStock,
+      };
+    }
   }
 
   /**

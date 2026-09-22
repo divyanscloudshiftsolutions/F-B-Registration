@@ -73,7 +73,26 @@ export class BillingService {
 
     for (const order of token.orders) {
       for (const item of order.items) {
-        if (item.status === 'CANCELLED') continue;
+        if (item.status === 'CANCELLED' || item.status === 'STOCK_OUT') {
+          consolidatedItems.push({
+            id: item.id,
+            orderNumber: order.orderNumber,
+            itemName: item.itemName,
+            variantName: item.variantName,
+            selectedModifiers: item.selectedModifiers,
+            sectionSlug: item.sectionSlug,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            lineTotal: new Decimal(0),
+            gstRate: 0,
+            gstPercentage: 0,
+            gstTaxTagName: item.status === 'STOCK_OUT' ? 'Stock Out (Not Charged)' : 'Cancelled (Not Charged)',
+            gstAmount: new Decimal(0),
+            station: item.station,
+            status: item.status,
+          });
+          continue;
+        }
 
         const lineTot = new Decimal(item.lineTotal);
         if (item.sectionSlug === 'drink') {

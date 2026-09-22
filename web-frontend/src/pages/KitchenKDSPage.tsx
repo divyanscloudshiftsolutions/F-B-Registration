@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ChefHat, Clock, AlertTriangle, CheckCircle2, Loader2, RotateCcw, UtensilsCrossed, Layers, X } from 'lucide-react';
+import { ChefHat, Clock, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Layers, UtensilsCrossed, Ban, X } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { joinRoom, leaveRoom, onSocketEvent } from '../services/socket';
@@ -16,7 +16,7 @@ interface KdsItem {
   specialInstructions?: string | null;
   quantity: number;
   station: string;
-  status: 'PLACED' | 'ACCEPTED' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED';
+  status: 'PLACED' | 'ACCEPTED' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED' | 'STOCK_OUT';
   foodType?: string;
   createdAt: string;
 }
@@ -45,6 +45,8 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
   const [loading, setLoading] = useState<boolean>(true);
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
   const [now, setNow] = useState<number>(Date.now());
+  const [stockOutModalItem, setStockOutModalItem] = useState<{ menuItemId: string; itemName: string } | null>(null);
+  const [isStockOutSubmitting, setIsStockOutSubmitting] = useState<boolean>(false);
 
   // Shared in-memory 5s Undo manager that survives tab switching
   const {
@@ -94,7 +96,6 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
     joinRoom('kds:kitchen');
 
     const unsubItemUpdated = onSocketEvent('order.item.updated', (payload) => {
-      // Re-fetch tickets silently if event affects kitchen/dessert station or general orders
       if (!payload?.station || payload.station === 'KITCHEN' || payload.station === 'DESSERT') {
         fetchTickets(true);
       }
@@ -107,10 +108,13 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
       }
     });
 
+    const unsubMenuUpdated = onSocketEvent('menu.updated', () => {
+      fetchTickets(true);
+    });
+
     const handleGlobalRefresh = () => fetchTickets(true);
     window.addEventListener('app:global-refresh', handleGlobalRefresh);
 
-    // Visibility change handler: pause polling when backgrounded
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         fetchTickets(true);
@@ -118,7 +122,6 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Fallback polling every 5 seconds (only when tab is visible)
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchTickets(true);
@@ -129,6 +132,7 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
       leaveRoom('kds:kitchen');
       unsubItemUpdated();
       unsubOrderCreated();
+      unsubMenuUpdated();
       window.removeEventListener('app:global-refresh', handleGlobalRefresh);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(interval);
@@ -152,12 +156,12 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
     try {
       await api.updateOrderItemStatus(orderItemId, targetStatus, user?.id);
       showToast(
-        isReverse ? `Item moved back to ${targetStatus}` : `Item updated to ${targetStatus}`,
+        isReverse ? `Dish moved back to ${targetStatus}` : `Dish status updated to ${targetStatus}`,
         isReverse ? 'info' : 'success'
       );
       await fetchTickets(true);
     } catch (err: any) {
-      showToast(err.message || 'Failed to update item status', 'danger');
+      showToast(err.message || 'Failed to update dish status', 'danger');
       await fetchTickets(true);
     } finally {
       setUpdatingIds((prev) => {
@@ -168,32 +172,47 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
     }
   };
 
+  const handleOpenStockOutModal = (menuItemId: string, itemName: string) => {
+    if (!canBump) return;
+    setStockOutModalItem({ menuItemId, itemName });
+  };
+
+  const handleConfirmStockOut = async () => {
+    if (!stockOutModalItem || isStockOutSubmitting) return;
+    setIsStockOutSubmitting(true);
+    try {
+      await api.setItemAvailability(stockOutModalItem.menuItemId, false);
+      showToast(`"${stockOutModalItem.itemName}" marked as Stock Out`, 'warning');
+      setStockOutModalItem(null);
+      await fetchTickets(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update stock status', 'danger');
+    } finally {
+      setIsStockOutSubmitting(false);
+    }
+  };
+
   const getElapsedMin = (placedAt: string) => {
-    if (!placedAt) return 0;
-    const t = new Date(placedAt).getTime();
-    if (isNaN(t)) return 0;
-    return Math.max(0, Math.floor((now - t) / 60000));
+    return Math.max(0, Math.floor((now - new Date(placedAt).getTime()) / 60000));
   };
 
   const formatElapsedMMSS = (placedAt: string) => {
-    if (!placedAt) return '00:00';
-    const t = new Date(placedAt).getTime();
-    if (isNaN(t)) return '00:00';
-    const totalSecs = Math.max(0, Math.floor((now - t) / 1000));
+    const totalSecs = Math.max(0, Math.floor((now - new Date(placedAt).getTime()) / 1000));
     const mins = Math.floor(totalSecs / 60);
     const secs = totalSecs % 60;
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  // Flatten active food & dessert items for board columns (excluding terminal SERVED and CANCELLED states)
+  // Flatten active KITCHEN/DESSERT items for board columns (excluding terminal SERVED, CANCELLED, STOCK_OUT)
   const activeItems = useMemo(() => {
     return tickets.flatMap((t) =>
-      (t.items || [])
+      t.items
         .filter(
           (i) =>
             (i.station === 'KITCHEN' || i.station === 'DESSERT') &&
             i.status !== 'SERVED' &&
-            i.status !== 'CANCELLED'
+            (i.status as string) !== 'CANCELLED' &&
+            (i.status as string) !== 'STOCK_OUT'
         )
         .map((i) => ({ ticket: t, item: i }))
     );
@@ -340,7 +359,7 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
                         )}
 
                         <div className="pt-2 border-t border-zinc-200 dark:border-white/10 flex items-center justify-between gap-2">
-                          <div>
+                          <div className="flex items-center gap-1.5">
                             {canBump && col.prevStatus && (
                               <button
                                 type="button"
@@ -357,6 +376,20 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
                                 ) : (
                                   <RotateCcw size={14} />
                                 )}
+                              </button>
+                            )}
+
+                            {canBump && col.key === 'PLACED' && (
+                              <button
+                                type="button"
+                                disabled={isUpdating}
+                                onClick={() => handleOpenStockOutModal(item.menuItemId, item.itemName)}
+                                title={`Mark "${item.itemName}" as Stock Out`}
+                                aria-label={`Mark "${item.itemName}" as Stock Out`}
+                                className="px-2.5 py-1.5 rounded-xl border border-rose-200 dark:border-rose-500/20 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-400 font-bold text-xs transition-all flex items-center gap-1 cursor-pointer hover:scale-105 active:scale-95 disabled:opacity-50"
+                              >
+                                <Ban size={13} />
+                                <span>Stock Out</span>
                               </button>
                             )}
                           </div>
@@ -412,6 +445,72 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Stock Out Confirmation Dialog */}
+      {stockOutModalItem && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="stockout-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
+        >
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-500/20">
+                <Ban className="w-5 h-5" />
+              </div>
+              <button
+                type="button"
+                disabled={isStockOutSubmitting}
+                onClick={() => setStockOutModalItem(null)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div>
+              <h3 id="stockout-dialog-title" className="text-base font-black text-zinc-900 dark:text-white">
+                Mark "{stockOutModalItem.itemName}" as Stock Out?
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                Are you sure you want to mark <strong className="text-zinc-900 dark:text-white font-bold">{stockOutModalItem.itemName}</strong> as out of stock?
+              </p>
+              <div className="text-xs text-zinc-600 dark:text-zinc-300 mt-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 p-3.5 rounded-xl space-y-1.5">
+                <p className="text-[11px] leading-relaxed">
+                  • <strong>Already accepted items</strong> (Accepted, Preparing, Ready, Served) remain unaffected and continue through normal kitchen workflow.
+                </p>
+                <p className="text-[11px] leading-relaxed">
+                  • <strong>All unaccepted orders</strong> for this dish will automatically become <strong>Stock Out (₹0 / Not Charged)</strong>.
+                </p>
+                <p className="text-[11px] leading-relaxed">
+                  • Menu catalog availability will be turned <strong>OFF</strong> for future customer orders.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isStockOutSubmitting}
+                onClick={() => setStockOutModalItem(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isStockOutSubmitting}
+                onClick={handleConfirmStockOut}
+                className="px-4 py-2 rounded-xl text-xs font-black bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {isStockOutSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
+                Confirm Stock Out
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
 import { joinRoom, onSocketEvent } from '../services/socket';
 
@@ -21,6 +21,17 @@ export interface CartItem {
   unitPrice: number;
   station: string;
   foodType: string;
+}
+
+export interface CustomerNotification {
+  id: string;
+  type: 'stock_out_cart' | 'stock_out_order' | 'stock_in' | 'info';
+  message: string;
+  subMessage?: string;
+  menuItemId?: string;
+  itemName?: string;
+  durationMs: number;
+  createdAt: number;
 }
 
 export interface CustomerContextType {
@@ -53,6 +64,7 @@ export interface CustomerContextType {
   isLoading: boolean;
   isOrdering: boolean;
   placeOrder: () => Promise<any>;
+  cancelOrderItem: (orderItemId: string) => Promise<any>;
   refreshOrders: () => Promise<void>;
   refreshBill: () => Promise<any>;
   requestBill: () => Promise<any>;
@@ -62,6 +74,9 @@ export interface CustomerContextType {
   refreshMenu: () => Promise<void>;
   isSessionClosed: boolean;
   logout: () => void;
+  notifications: CustomerNotification[];
+  showCustomerNotification: (notif: Omit<CustomerNotification, 'id' | 'createdAt'>) => void;
+  dismissNotification: (id: string) => void;
 }
 
 const defaultCustomerContext: CustomerContextType = {
@@ -94,6 +109,7 @@ const defaultCustomerContext: CustomerContextType = {
   isLoading: false,
   isOrdering: false,
   placeOrder: async () => null,
+  cancelOrderItem: async () => null,
   refreshOrders: async () => {},
   refreshBill: async () => null,
   requestBill: async () => null,
@@ -103,6 +119,9 @@ const defaultCustomerContext: CustomerContextType = {
   tableStatus: null,
   isSessionClosed: false,
   logout: () => {},
+  notifications: [],
+  showCustomerNotification: () => {},
+  dismissNotification: () => {},
 };
 
 const CustomerContext = createContext<CustomerContextType>(defaultCustomerContext);
@@ -213,6 +232,32 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
+  const [notifications, setNotifications] = useState<CustomerNotification[]>([]);
+  const availabilityMapRef = useRef<Map<string, boolean>>(new Map());
+
+  const dismissNotification = useCallback((id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  }, []);
+
+  const showCustomerNotification = useCallback(
+    (notif: Omit<CustomerNotification, 'id' | 'createdAt'>) => {
+      const id = `notif-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      const fullNotif: CustomerNotification = {
+        ...notif,
+        id,
+        createdAt: Date.now(),
+      };
+      setNotifications((prev) => [
+        fullNotif,
+        ...prev.filter((p) => p.menuItemId !== notif.menuItemId).slice(0, 3),
+      ]);
+      setTimeout(() => {
+        setNotifications((prev) => prev.filter((n) => n.id !== id));
+      }, notif.durationMs || 3000);
+    },
+    []
+  );
+
   const refreshMenu = useCallback(async () => {
     try {
       const [menuData, catData, promoData] = await Promise.all([
@@ -223,6 +268,30 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setMenu(menuData);
       setCategories(catData);
       setPromotions(promoData);
+
+      if (Array.isArray(menuData)) {
+        for (const sec of menuData) {
+          for (const item of sec.items || []) {
+            if (item.id) {
+              availabilityMapRef.current.set(item.id, item.isAvailable !== false);
+            }
+          }
+          for (const cat of sec.categories || []) {
+            for (const item of cat.items || []) {
+              if (item.id) {
+                availabilityMapRef.current.set(item.id, item.isAvailable !== false);
+              }
+            }
+            for (const sub of cat.subcategories || []) {
+              for (const item of sub.items || []) {
+                if (item.id) {
+                  availabilityMapRef.current.set(item.id, item.isAvailable !== false);
+                }
+              }
+            }
+          }
+        }
+      }
     } catch (err) {
       console.warn('Failed to load menu catalog:', err);
     }
@@ -269,6 +338,21 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     return null;
   }, [tokenNumber]);
+
+  const cancelOrderItem = useCallback(async (orderItemId: string) => {
+    if (!tokenNumber) return;
+    try {
+      await api.cancelOrderItem(orderItemId, tokenNumber);
+      await Promise.all([
+        refreshOrders(),
+        refreshBill(),
+        refreshOrderHistory(),
+      ]);
+    } catch (err: any) {
+      console.warn('Failed to cancel order item:', err);
+      throw err;
+    }
+  }, [tokenNumber, refreshOrders, refreshBill, refreshOrderHistory]);
 
   const refreshRequests = useCallback(async () => {
     if (!tokenNumber) return;
@@ -371,6 +455,16 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
 
     const unsubItemUpdated = onSocketEvent('order.item.updated', (data: any) => {
+      if (data && data.status === 'STOCK_OUT' && data.previousStatus === 'PLACED') {
+        const itemDisplayName = data.itemName || 'This item';
+        showCustomerNotification({
+          type: 'stock_out_order',
+          message: `${itemDisplayName} became unavailable and was removed from your order. You will not be charged for it.`,
+          menuItemId: data.menuItemId,
+          itemName: itemDisplayName,
+          durationMs: 3000,
+        });
+      }
       refreshOrders();
       refreshOrderHistory();
       refreshBill();
@@ -427,25 +521,85 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
 
     const unsubMenuUpdated = onSocketEvent('menu.updated', (payload: any) => {
-      if (payload && payload.action === 'item_availability' && payload.itemId) {
+      if (payload && (payload.action === 'item_availability' || payload.action === 'stock_changed') && payload.itemId) {
         const targetId = payload.itemId;
-        const newAvailable = Boolean(payload.details?.isAvailable);
+        const details = payload.details || {};
+        const newAvailable = details.isAvailable !== undefined ? Boolean(details.isAvailable) : true;
+        const newStock = details.currentStock ?? details.stockQuantity;
+        const newAvailStock = details.availableStock;
+        const itemName = details.name || '';
+        const prevStatus = availabilityMapRef.current.get(targetId);
+        availabilityMapRef.current.set(targetId, newAvailable);
+
+        // Case 1: Stock Out (!newAvailable or availableStock === 0)
+        if (!newAvailable || (newAvailStock !== undefined && newAvailStock <= 0)) {
+          setCart((prevCart) => {
+            const hasItem = prevCart.some((ci) => ci.menuItemId === targetId);
+            if (hasItem) {
+              const removedItem = prevCart.find((ci) => ci.menuItemId === targetId);
+              const displayName = removedItem?.name || itemName || 'This item';
+              showCustomerNotification({
+                type: 'stock_out_cart',
+                message: `${displayName} is out of stock and was removed from your cart.`,
+                menuItemId: targetId,
+                itemName: displayName,
+                durationMs: 3000,
+              });
+              return prevCart.filter((ci) => ci.menuItemId !== targetId);
+            }
+            return prevCart;
+          });
+        }
+
+        // Case 2: Stock In (genuine transition: prevStatus === false -> newAvailable === true)
+        if (newAvailable && prevStatus === false && (newAvailStock === undefined || newAvailStock > 0)) {
+          const displayName = itemName || 'An item';
+          showCustomerNotification({
+            type: 'stock_in',
+            message: `${displayName} is available again. Tap to view.`,
+            menuItemId: targetId,
+            itemName: displayName,
+            durationMs: 5000,
+          });
+        }
+
         setMenu((prevMenu) => {
           if (!Array.isArray(prevMenu)) return prevMenu;
           return prevMenu.map((section: any) => ({
             ...section,
             items: (section.items || []).map((it: any) =>
-              it.id === targetId ? { ...it, isAvailable: newAvailable } : it
+              it.id === targetId
+                ? {
+                    ...it,
+                    isAvailable: newAvailable,
+                    stockQuantity: newStock ?? it.stockQuantity,
+                    availableStock: newAvailStock ?? it.availableStock,
+                  }
+                : it
             ),
             categories: (section.categories || []).map((cat: any) => ({
               ...cat,
               items: (cat.items || []).map((it: any) =>
-                it.id === targetId ? { ...it, isAvailable: newAvailable } : it
+                it.id === targetId
+                  ? {
+                      ...it,
+                      isAvailable: newAvailable,
+                      stockQuantity: newStock ?? it.stockQuantity,
+                      availableStock: newAvailStock ?? it.availableStock,
+                    }
+                  : it
               ),
               subcategories: (cat.subcategories || []).map((sub: any) => ({
                 ...sub,
                 items: (sub.items || []).map((it: any) =>
-                  it.id === targetId ? { ...it, isAvailable: newAvailable } : it
+                  it.id === targetId
+                    ? {
+                        ...it,
+                        isAvailable: newAvailable,
+                        stockQuantity: newStock ?? it.stockQuantity,
+                        availableStock: newAvailStock ?? it.availableStock,
+                      }
+                    : it
                 ),
               })),
             })),
@@ -468,6 +622,25 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       unsubMenuUpdated();
     };
   }, [tokenNumber, tableNumber, tableId, refreshOrders, refreshBill, refreshMenu, handleSessionClosure]);
+
+  // Sync Cart Stock Reservations in Background
+  useEffect(() => {
+    if (!tokenNumber) return;
+
+    if (cart.length === 0) {
+      api.clearCartReservations(tokenNumber).catch(() => {});
+      return;
+    }
+
+    const itemQuantities = new Map<string, number>();
+    for (const ci of cart) {
+      itemQuantities.set(ci.menuItemId, (itemQuantities.get(ci.menuItemId) || 0) + (ci.quantity || 1));
+    }
+
+    itemQuantities.forEach((qty, menuItemId) => {
+      api.reserveCartStock(tokenNumber, menuItemId, qty).catch(() => {});
+    });
+  }, [cart, tokenNumber]);
 
   // Cart Handlers
   const areCartItemsEqual = (
@@ -636,6 +809,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         isLoading,
         isOrdering,
         placeOrder,
+        cancelOrderItem,
         refreshOrders,
         refreshBill,
         requestBill,
@@ -645,6 +819,9 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         tableStatus,
         isSessionClosed,
         logout,
+        notifications,
+        showCustomerNotification,
+        dismissNotification,
       }}
     >
       {children}

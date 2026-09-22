@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import Redis from 'ioredis';
 import { tokenService } from './services/TokenService';
+import { inventoryService } from './services/InventoryService';
 import { logger, logException, requestLoggingMiddleware } from './lib/logger';
 
 // Trigger Railway rebuild: verified active tokens index fix
@@ -154,6 +155,11 @@ server.listen(Number(port), '0.0.0.0', () => {
     component: 'startup',
     event: 'server.started',
     port: Number(port),
+  });
+
+  // Ensure all menu items have safe default stock inventory initialized
+  inventoryService.ensureAllItemsHaveStock().catch((err) => {
+    logException(err, 'startup', 'ensure_inventory_stock');
   });
 });
 

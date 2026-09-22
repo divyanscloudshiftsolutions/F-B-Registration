@@ -2857,35 +2857,16 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
                     {/* Unserved Items Alert */}
                     {unservedItems.length > 0 && (
-                      <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2.5">
-                        <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-                        <div className="space-y-1">
-                          <div className="font-extrabold text-amber-900 dark:text-amber-100">
-                            Unresolved Orders ({unservedItems.length} items still in prep)
-                          </div>
-                          <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
-                            Some items are not yet marked as served. Confirm with kitchen/bar that all items have reached Table {tableNum} before settling payment.
-                          </p>
-                        </div>
+                      <div className="p-2.5 sm:p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2.5">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <span className="text-[11px] sm:text-xs leading-tight">
+                          <strong className="font-bold text-amber-900 dark:text-amber-100">
+                            {unservedItems.length} item{unservedItems.length === 1 ? '' : 's'} in prep:
+                          </strong>{' '}
+                          All items must be served or cancelled before payment.
+                        </span>
                       </div>
                     )}
-
-                    {/* Unserved Items Alert Banner */}
-                    {(() => {
-                      const unservedCount = (bill.items || []).filter(
-                        (it: any) => it.status !== 'SERVED' && it.status !== 'CANCELLED'
-                      ).length;
-
-                      if (unservedCount > 0) {
-                        return (
-                          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs font-bold flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                            <span>{unservedCount} item(s) are still unserved or preparing. All items must be served or cancelled before proceeding to payment.</span>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
 
                     {/* Itemized Order List */}
                     <div className="space-y-2">
@@ -2899,6 +2880,8 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                           const isItemServed = item.status === 'SERVED';
                           const isItemReady = item.status === 'READY';
                           const isItemPrep = item.status === 'PREPARING';
+                          const isStockOut = item.status === 'STOCK_OUT';
+                          const isCancelled = item.status === 'CANCELLED';
 
                           return (
                             <div
@@ -2939,14 +2922,16 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                       ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20'
                                       : isItemPrep
                                       ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/30'
+                                      : isStockOut || isCancelled
+                                      ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20'
                                       : 'bg-zinc-100 dark:bg-white/10 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-white/10'
                                   }`}
                                 >
-                                  {item.status || 'PLACED'}
+                                  {isStockOut ? 'STOCK OUT' : isCancelled ? 'CANCELLED' : (item.status || 'PLACED')}
                                 </span>
 
-                                <span className="font-mono font-black text-zinc-900 dark:text-white w-16 text-right">
-                                  ₹{((item.unitPrice || item.price || 0) * item.quantity).toFixed(2)}
+                                <span className={`font-mono font-black w-16 text-right ${isStockOut || isCancelled ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-900 dark:text-white'}`}>
+                                  ₹{isStockOut || isCancelled ? '0.00' : ((item.unitPrice || item.price || 0) * item.quantity).toFixed(2)}
                                 </span>
                               </div>
                             </div>

@@ -9,6 +9,7 @@ import redisService from './services/RedisService';
 import bcrypt from 'bcrypt';
 import syncService from './services/SyncService';
 import { menuService } from './services/MenuService';
+import { inventoryService } from './services/InventoryService';
 import { orderService } from './services/OrderService';
 import { kdsService } from './services/KdsService';
 import { serviceRequestService } from './services/ServiceRequestService';
@@ -4527,7 +4528,22 @@ const sendEmailHandler = async (req: Request, res: Response) => {
     if (!token) {
       return res.status(404).json({ success: false, error: { message: 'Token not found' } });
     }
-    if (!token.customer.email) {
+
+    let recipientEmail = token.customer?.email;
+    if (req.body && req.body.email && req.body.email.trim()) {
+      const parsedEmail = normalizeEmail(req.body.email.trim());
+      if (parsedEmail) {
+        recipientEmail = parsedEmail;
+        if (token.customer?.id) {
+          await prisma.customer.update({
+            where: { id: token.customer.id },
+            data: { email: recipientEmail }
+          }).catch(() => {});
+        }
+      }
+    }
+
+    if (!recipientEmail) {
       return res.status(400).json({ success: false, error: { message: 'Customer email is missing' } });
     }
     if (token.status === TokenStatus.CANCELLED || token.status === TokenStatus.EXPIRED) {
@@ -4535,7 +4551,7 @@ const sendEmailHandler = async (req: Request, res: Response) => {
     }
 
     emailNotificationService.enqueueEmailJob(
-      token.customer.email.trim().toLowerCase(),
+      recipientEmail.trim().toLowerCase(),
       token.tokenNumber,
       token.customer.name
     );
@@ -7066,9 +7082,13 @@ router.delete('/menu/items/:id', authenticate, authorize(['admin', 'manager']), 
 // PUT /api/menu/items/:id/availability (86 operational toggle / stock in & out)
 router.put('/menu/items/:id/availability', authenticate, authorize(['admin', 'manager', 'bartender', 'chef']), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { isAvailable } = req.body;
+    const { isAvailable, stockQuantity } = req.body;
     if (typeof isAvailable !== 'boolean') {
       return res.status(400).json({ success: false, error: { message: 'isAvailable must be a boolean' } });
+    }
+
+    if (stockQuantity !== undefined && (typeof stockQuantity !== 'number' || stockQuantity < 0 || !Number.isInteger(stockQuantity))) {
+      return res.status(400).json({ success: false, error: { message: 'stockQuantity must be a non-negative integer' } });
     }
 
     const item = await prisma.menuItem.findUnique({
@@ -7089,10 +7109,55 @@ router.put('/menu/items/:id/availability', authenticate, authorize(['admin', 'ma
       return res.status(403).json({ success: false, error: { message: 'Kitchen Chefs can only control availability for Kitchen and Dessert station items' } });
     }
 
-    const updated = await menuService.setItemAvailability(req.params.id, isAvailable);
+    const updated = await menuService.setItemAvailability(req.params.id, isAvailable, typeof stockQuantity === 'number' ? stockQuantity : undefined);
     return res.json({ success: true, item: updated });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/customer/cart/reserve
+router.post('/customer/cart/reserve', async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber, menuItemId, quantity } = req.body;
+    if (!tokenNumber || !menuItemId || typeof quantity !== 'number') {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber, menuItemId, and quantity are required' } });
+    }
+
+    const result = await inventoryService.reserveCartStock(tokenNumber, menuItemId, quantity);
+    return res.json({ success: true, ...result });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/customer/cart/release
+router.post('/customer/cart/release', async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber, menuItemId } = req.body;
+    if (!tokenNumber || !menuItemId) {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber and menuItemId are required' } });
+    }
+
+    await inventoryService.releaseCartStock(tokenNumber, menuItemId);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/customer/cart/clear
+router.post('/customer/cart/clear', async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber } = req.body;
+    if (!tokenNumber) {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber is required' } });
+    }
+
+    await inventoryService.clearSessionCartReservations(tokenNumber);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
   }
 });
 
@@ -7304,6 +7369,26 @@ router.put('/orders/items/:id/status', authenticate, authorize(['admin', 'manage
     const effectiveStaffId = (req as any).user?.id || staffUserId;
     const updated = await orderService.updateOrderItemStatus(req.params.id, status as OrderStatus, effectiveStaffId);
     return res.json({ success: true, item: updated });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// DELETE /api/orders/items/:id (Customer cancels/deletes unaccepted item before KDS acceptance)
+router.delete('/orders/items/:id', async (req: Request, res: Response) => {
+  try {
+    const tokenNumber =
+      (req.query.tokenNumber as string) ||
+      (req.headers['x-customer-token'] as string) ||
+      (req.body?.tokenNumber as string) ||
+      (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.split(' ')[1] : undefined);
+
+    if (!tokenNumber) {
+      return res.status(401).json({ success: false, error: { message: 'Customer tokenNumber is required' } });
+    }
+
+    const cancelledItem = await orderService.cancelOrderItemByCustomer(req.params.id, tokenNumber);
+    return res.json({ success: true, item: cancelledItem });
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { message: err.message } });
   }

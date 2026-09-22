@@ -166,17 +166,17 @@ export class TokenService {
           }
         });
       } else {
-        if (request.paymentVerified) {
-          customer = await tx.customer.update({
-            where: { id: customer.id },
-            data: {
+        customer = await tx.customer.update({
+          where: { id: customer.id },
+          data: {
+            name: request.customerName || customer.name,
+            email: finalEmail !== undefined ? (finalEmail || null) : customer.email,
+            ...(request.paymentVerified ? {
               totalVisits: { increment: 1 },
-              lastVisit: new Date(),
-              name: request.customerName,
-              email: finalEmail || customer.email
-            }
-          });
-        }
+              lastVisit: new Date()
+            } : {})
+          }
+        });
       }
 
       // Get place type
@@ -325,8 +325,9 @@ export class TokenService {
       return token;
     }, { timeout: 15000 });
 
-    if (deliveryMode === 'EMAIL_QR' && request.email) {
-      emailNotificationService.enqueueEmailJob(request.email.trim().toLowerCase(), token.tokenNumber, request.customerName);
+    const recipientEmail = (finalEmail || request.email || token.customer?.email || '').trim().toLowerCase();
+    if (deliveryMode === 'EMAIL_QR' && recipientEmail) {
+      emailNotificationService.enqueueEmailJob(recipientEmail, token.tokenNumber, request.customerName || token.customer?.name || '');
     }
 
     return token;
@@ -983,6 +984,14 @@ export class TokenService {
             totalVisits: 0
           }
         });
+      } else {
+        customer = await tx.customer.update({
+          where: { id: customer.id },
+          data: {
+            name: request.customerName || customer.name,
+            email: finalEmail !== undefined ? (finalEmail || null) : customer.email
+          }
+        });
       }
 
       const placeType = await tx.placeTypeConfig.findUnique({
@@ -1086,11 +1095,12 @@ export class TokenService {
       return token;
     }, { timeout: 15000 });
 
-    if (token.deliveryMode === 'EMAIL_QR' && token.customer?.email) {
+    const recipientEmail = (finalEmail || request.email || token.customer?.email || '').trim().toLowerCase();
+    if (token.deliveryMode === 'EMAIL_QR' && recipientEmail) {
       emailNotificationService.enqueueEmailJob(
-        token.customer.email.trim().toLowerCase(),
+        recipientEmail,
         token.tokenNumber,
-        token.customer.name
+        request.customerName || token.customer?.name || ''
       );
     }
 
