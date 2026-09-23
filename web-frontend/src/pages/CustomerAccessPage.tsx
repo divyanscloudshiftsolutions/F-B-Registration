@@ -627,16 +627,30 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
                   <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Ordered Items</div>
                   {bill.orders.map((ord: any, idx: number) => (
                     <div key={idx} className="space-y-1">
-                      {ord.items.map((it: any, iIdx: number) => (
-                        <div key={iIdx} className="flex justify-between text-xs">
-                          <span className="text-text-main dark:text-white/90 font-medium">
-                            {it.quantity}x {it.itemName}
-                          </span>
-                          <span className="font-mono font-semibold text-text-main dark:text-white">
-                            ₹{it.lineTotal.toFixed(2)}
-                          </span>
-                        </div>
-                      ))}
+                      {ord.items.map((it: any, iIdx: number) => {
+                        const isStockOut = it.status === 'STOCK_OUT';
+                        return (
+                          <div key={iIdx} className="flex justify-between text-xs">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-text-main dark:text-white/90 font-medium">
+                                {it.quantity}x {it.itemName}
+                              </span>
+                              {isStockOut && (
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                  Stock Out / Not Charged
+                                </span>
+                              )}
+                            </div>
+                            <span className="font-mono font-semibold text-text-main dark:text-white">
+                              {isStockOut ? (
+                                <span className="text-rose-600 dark:text-rose-400">₹0.00</span>
+                              ) : (
+                                `₹${(Number(it.lineTotal) || 0).toFixed(2)}`
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   ))}
                 </div>
@@ -770,16 +784,30 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
                   <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
                     {bill?.orders?.map((ord: any, idx: number) => (
                       <div key={idx} className="space-y-1.5">
-                        {ord.items.map((it: any, iIdx: number) => (
-                          <div key={iIdx} className="flex justify-between text-xs">
-                            <span className="text-text-main dark:text-white/90 font-medium">
-                              {it.quantity}x {it.itemName}
-                            </span>
-                            <span className="font-mono font-semibold text-text-main dark:text-white">
-                              ₹{it.lineTotal.toFixed(2)}
-                            </span>
-                          </div>
-                        ))}
+                        {ord.items.map((it: any, iIdx: number) => {
+                          const isStockOut = it.status === 'STOCK_OUT';
+                          return (
+                            <div key={iIdx} className="flex justify-between text-xs">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-text-main dark:text-white/90 font-medium">
+                                  {it.quantity}x {it.itemName}
+                                </span>
+                                {isStockOut && (
+                                  <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                    Stock Out / Not Charged
+                                  </span>
+                                )}
+                              </div>
+                              <span className="font-mono font-semibold text-text-main dark:text-white">
+                                {isStockOut ? (
+                                  <span className="text-rose-600 dark:text-rose-400">₹0.00</span>
+                                ) : (
+                                  `₹${(Number(it.lineTotal) || 0).toFixed(2)}`
+                                )}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     ))}
                   </div>
@@ -939,16 +967,30 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
                     <div className="space-y-2.5 max-h-60 overflow-y-auto pr-2">
                       {bill?.orders?.map((ord: any, idx: number) => (
                         <div key={idx} className="space-y-1.5">
-                          {ord.items.map((it: any, iIdx: number) => (
-                            <div key={iIdx} className="flex justify-between text-xs xl:text-sm">
-                              <span className="text-text-main dark:text-white/90 font-medium">
-                                {it.quantity}x {it.itemName}
-                              </span>
-                              <span className="font-mono font-semibold text-text-main dark:text-white">
-                                ₹{it.lineTotal.toFixed(2)}
-                              </span>
-                            </div>
-                          ))}
+                          {ord.items.map((it: any, iIdx: number) => {
+                            const isStockOut = it.status === 'STOCK_OUT';
+                            return (
+                              <div key={iIdx} className="flex justify-between text-xs xl:text-sm">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-text-main dark:text-white/90 font-medium">
+                                    {it.quantity}x {it.itemName}
+                                  </span>
+                                  {isStockOut && (
+                                    <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                      Stock Out / Not Charged
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="font-mono font-semibold text-text-main dark:text-white">
+                                  {isStockOut ? (
+                                    <span className="text-rose-600 dark:text-rose-400">₹0.00</span>
+                                  ) : (
+                                    `₹${(Number(it.lineTotal) || 0).toFixed(2)}`
+                                  )}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
                       ))}
                     </div>

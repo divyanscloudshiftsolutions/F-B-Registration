@@ -1857,6 +1857,9 @@ router.put('/tables/:tableId/release', authenticate, authorize(['receptionist', 
         tokenNumber: tokenRecord?.tokenNumber || '',
         closedAt: new Date().toISOString(),
       });
+      if (tokenRecord?.tokenNumber) {
+        inventoryService.clearSessionCartReservations(tokenRecord.tokenNumber).catch(() => {});
+      }
     } catch (bErr) {}
 
     return res.json({
@@ -5203,8 +5206,8 @@ const extendSessionHandler = async (req: AuthenticatedRequest, res: Response) =>
   }
 };
 
-router.post('/extend', authenticate, authorize(['receptionist', 'admin', 'manager']), extendSessionHandler);
-router.put('/tokens/:tokenNumber/extend', authenticate, authorize(['receptionist', 'admin', 'bartender', 'manager']), extendSessionHandler);
+router.post('/extend', authenticate, authorize(['receptionist', 'admin', 'manager', 'waiter', 'server', 'bartender']), extendSessionHandler);
+router.put('/tokens/:tokenNumber/extend', authenticate, authorize(['receptionist', 'admin', 'bartender', 'manager', 'waiter', 'server']), extendSessionHandler);
 
 // Checkout Session
 const checkoutSessionHandler = async (req: AuthenticatedRequest, res: Response) => {
@@ -7125,7 +7128,7 @@ router.post('/customer/cart/reserve', async (req: Request, res: Response) => {
     }
 
     const result = await inventoryService.reserveCartStock(tokenNumber, menuItemId, quantity);
-    return res.json({ success: true, ...result });
+    return res.json(result);
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { message: err.message } });
   }
@@ -7394,6 +7397,17 @@ router.delete('/orders/items/:id', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/orders/items/:id/closed-session (KDS staff removes unaccepted order item from a closed dining session)
+router.delete('/orders/items/:id/closed-session', authenticate, authorize(['admin', 'manager', 'chef', 'bartender']), async (req: Request, res: Response) => {
+  try {
+    const staffId = (req as any).user?.id;
+    const cleanedItem = await orderService.cleanupClosedSessionOrderItem(req.params.id, staffId);
+    return res.json({ success: true, item: cleanedItem });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
 // ==========================================
 // 3. KDS STATION & READY APIS
 // ==========================================
@@ -7472,7 +7486,8 @@ router.put('/service-requests/:id/status', authenticate, authorize(['admin', 'ma
     if (!status) {
       return res.status(400).json({ success: false, error: { message: 'status is required' } });
     }
-    const updated = await serviceRequestService.updateStatus(req.params.id, status as ServiceRequestStatus, staffUserId);
+    const effectiveStaffId = staffUserId || (req as any).user?.id;
+    const updated = await serviceRequestService.updateStatus(req.params.id, status as ServiceRequestStatus, effectiveStaffId);
     return res.json({ success: true, request: updated });
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { message: err.message } });

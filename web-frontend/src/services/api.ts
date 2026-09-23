@@ -917,6 +917,13 @@ class ApiService {
     return data.item;
   }
 
+  async cleanupClosedSessionOrderItem(orderItemId: string) {
+    const data = await this.request<{ success: boolean; item: any }>(`/orders/items/${orderItemId}/closed-session`, {
+      method: 'DELETE',
+    });
+    return data.item;
+  }
+
   async getSections() {
     const data = await this.request<{ success: boolean; sections: any[] }>('/menu/sections');
     return data.sections || [];

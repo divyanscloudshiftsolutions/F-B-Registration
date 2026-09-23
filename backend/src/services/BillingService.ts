@@ -1,6 +1,7 @@
 import { PrismaClient, BillStatus, PaymentMethod, CloseReason, ServiceRequestType, ServiceRequestStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { broadcastBillSettled, broadcastTableUpdated, broadcastTableSessionClosed, broadcastServiceRequestCreated } from '../realtime';
+import { inventoryService } from './InventoryService';
 
 const prisma = new PrismaClient();
 
@@ -428,10 +429,21 @@ export class BillingService {
       throw new Error('No active table assigned to this dining session');
     }
 
+    // Determine appropriate reversion status: if an active BILL_REQUEST service request exists, preserve BILL_REQUESTED; otherwise restore to occupied
+    const activeBillReq = await prisma.serviceRequest.findFirst({
+      where: {
+        tokenId: token.id,
+        type: ServiceRequestType.BILL_REQUEST,
+        status: { in: [ServiceRequestStatus.NEW, ServiceRequestStatus.ACKNOWLEDGED] },
+      },
+    });
+
+    const targetStatus = activeBillReq ? 'BILL_REQUESTED' : 'occupied';
+
     await prisma.table.update({
       where: { id: token.tableId },
       data: {
-        status: 'BILL_REQUESTED',
+        status: targetStatus,
       },
     });
 
@@ -439,7 +451,7 @@ export class BillingService {
       broadcastTableUpdated({
         tableId: token.tableId,
         tableNumber: calc.tableNumber,
-        status: 'BILL_REQUESTED',
+        status: targetStatus,
         currentTokenId: token.id,
         updatedAt: new Date().toISOString(),
       });
@@ -449,7 +461,7 @@ export class BillingService {
 
     return {
       success: true,
-      tableStatus: 'BILL_REQUESTED',
+      tableStatus: targetStatus,
       tableId: token.tableId,
       tableNumber: calc.tableNumber,
     };
@@ -653,6 +665,11 @@ export class BillingService {
           tokenNumber: calc.tokenNumber,
           closedAt: result.bill.paidAt ? result.bill.paidAt.toISOString() : new Date().toISOString(),
         });
+
+        // Free any lingering cart reservations for this settled session
+        if (calc.tokenNumber) {
+          inventoryService.clearSessionCartReservations(calc.tokenNumber).catch(() => {});
+        }
       } catch (err) {
         console.warn('Real-time bill settlement broadcast error:', err);
       }
@@ -838,7 +855,16 @@ export class BillingService {
       paymentMethod: b.paymentMethod || 'CASH',
       settlementReference: b.settlementReference || '',
       paidAt: b.paidAt ? b.paidAt.toISOString() : b.createdAt.toISOString(),
-      settledBy: b.settler?.fullName || b.settler?.username || 'Staff',
+      settledBy: b.settler?.fullName
+        ? (b.settler.username ? `${b.settler.fullName} (@${b.settler.username})` : b.settler.fullName)
+        : (b.settler?.username || 'Staff'),
+      settler: b.settler
+        ? {
+            id: b.settler.id,
+            fullName: b.settler.fullName,
+            username: b.settler.username,
+          }
+        : null,
       status: b.status,
     }));
 

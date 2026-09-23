@@ -232,14 +232,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const end = new Date(tk.endTime).getTime();
             const diffMs = end - now;
 
-            if (diffMs > 0 && diffMs <= 10 * 60 * 1000) {
+            if (diffMs > 0 && diffMs <= 15 * 60 * 1000) {
               const existingIdx = updated.findIndex(a => a.id === tk.id);
               const remainingTimeStr = formatRemaining(diffMs);
 
               if (existingIdx !== -1) {
                 const alert = updated[existingIdx];
                 if (alert.expiresAt !== tk.endTime) {
-                  // Session was extended/modified but still within 10-min window
+                  // Session was extended/modified but still within 15-min window
                   updated[existingIdx] = {
                     ...alert,
                     expiresAt: tk.endTime,
@@ -279,7 +279,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 changed = true;
               }
             } else {
-              // Outside of 10-minute warning scope (e.g. extended > 10m or fully expired)
+              // Outside of 15-minute warning scope (e.g. extended > 15m or fully expired)
               const existingIdx = updated.findIndex(a => a.id === tk.id);
               if (existingIdx !== -1) {
                 updated = updated.filter(a => a.id !== tk.id);

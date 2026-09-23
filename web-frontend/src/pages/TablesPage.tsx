@@ -39,8 +39,8 @@ export const TableTimer: React.FC<{ endTime: string }> = ({ endTime }) => {
       const minutes = Math.floor((totalSecs % 3600) / 60);
       const seconds = totalSecs % 60;
 
-      // Close to expiry is defined as <= 10 minutes remaining (600 seconds)
-      const closeToExpiry = totalSecs <= 10 * 60;
+      // Close to expiry is defined as <= 15 minutes remaining (900 seconds)
+      const closeToExpiry = totalSecs <= 15 * 60;
       setIsCloseToExpiry(closeToExpiry);
 
       const hStr = String(hours).padStart(2, '0');

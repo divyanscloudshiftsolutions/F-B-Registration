@@ -37,12 +37,15 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
   const hasModifiers =
     (item.variants && item.variants.length > 0) ||
     (item.modifierGroups && item.modifierGroups.length > 0);
-  const isAvailable = item.isAvailable !== false;
-  const stockQty = (item as any).stockQuantity ?? 50;
-  const availableStock = (item as any).availableStock !== undefined ? Number((item as any).availableStock) : stockQty;
-  const isLowStock = isAvailable && availableStock > 0 && availableStock <= 10;
-  const isOutOfStock = !isAvailable || availableStock <= 0;
-  const isMaxReached = isAvailable && cartQuantity >= availableStock;
+  const isManualAvailable = item.isAvailable !== false;
+  const physicalStock = Number((item as any).stockQuantity ?? 50);
+  const rawAvailable = (item as any).availableStock !== undefined ? Number((item as any).availableStock) : physicalStock;
+  const customerOwnReserved = cartQuantity;
+  const effectivePurchasableForCustomer = Math.min(physicalStock, rawAvailable + customerOwnReserved);
+  const isPhysicalOutOfStock = !isManualAvailable || physicalStock <= 0;
+  const isReservedOutForOthers = !isPhysicalOutOfStock && effectivePurchasableForCustomer <= 0;
+  const isLowStock = !isPhysicalOutOfStock && rawAvailable > 0 && rawAvailable <= 10;
+  const isMaxReached = !isPhysicalOutOfStock && customerOwnReserved >= effectivePurchasableForCustomer;
 
   const isPopular = Boolean(item.popular ?? (item as any).isPopular);
   const isFeatured = Boolean(item.featured ?? (item as any).isFeatured ?? (item as any).isSignature ?? (item as any).signature);
@@ -52,7 +55,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
   const hasDiscount = numFinalPrice < numBasePrice;
 
   const handleAddClick = () => {
-    if (isOutOfStock || isOrderingDisabled) return;
+    if (isPhysicalOutOfStock || isReservedOutForOthers || isOrderingDisabled) return;
     if (hasModifiers) {
       onOpenCustomizer(item);
     } else {
@@ -106,7 +109,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
         {isLowStock && (
           <div className="absolute top-1 right-1 xs:top-1.5 xs:right-1.5 z-10 pointer-events-none">
             <span className="text-[8px] xs:text-[8.5px] font-extrabold px-1.5 py-0.5 rounded-md bg-amber-500 text-white shadow-xs backdrop-blur-xs">
-              Only {availableStock} left
+              Only {rawAvailable} left
             </span>
           </div>
         )}
@@ -143,9 +146,13 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
           </div>
 
           <div className="shrink-0">
-            {isOutOfStock ? (
+            {isPhysicalOutOfStock ? (
               <span className="text-[8.5px] xs:text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400">
                 Out of Stock
+              </span>
+            ) : isReservedOutForOthers && cartQuantity === 0 ? (
+              <span className="text-[8.5px] xs:text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                Reserved
               </span>
             ) : cartQuantity > 0 ? (
               <div className="flex items-center gap-0.5 xs:gap-1 sm:gap-1.5 px-1 xs:px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full border border-primary text-primary dark:border-[#D4AF37] dark:text-[#D4AF37] bg-primary/10 dark:bg-[#D4AF37]/10 shadow-2xs">
@@ -165,7 +172,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
                   disabled={isOrderingDisabled || isMaxReached}
                   onClick={handleIncrement}
                   aria-label={`Increase quantity of ${item.name}`}
-                  title={isMaxReached ? `Only ${availableStock} available in stock` : undefined}
+                  title={isMaxReached ? `Only ${effectivePurchasableForCustomer} available in stock` : undefined}
                   className={`w-3.5 h-3.5 sm:w-4 sm:h-4 flex items-center justify-center rounded-full hover:bg-primary/20 dark:hover:bg-[#D4AF37]/20 transition-colors cursor-pointer ${
                     isOrderingDisabled || isMaxReached ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''
                   }`}
@@ -176,20 +183,26 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
             ) : (
               <button
                 type="button"
-                disabled={isOrderingDisabled}
+                disabled={isOrderingDisabled || isReservedOutForOthers}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleAddClick();
                 }}
                 aria-label={`Add ${item.name} to order`}
-                title={isOrderingDisabled ? 'Ordering is closed (15 minutes or less remaining in session)' : undefined}
-                className={`h-5 xs:h-6 sm:h-7 px-2 xs:px-2.5 sm:px-3 rounded-full border font-extrabold text-[9.5px] xs:text-[10px] sm:text-xs transition-colors flex items-center justify-center gap-0.5 shadow-2xs cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                title={
                   isOrderingDisabled
+                    ? 'Ordering is closed (15 minutes or less remaining in session)'
+                    : isReservedOutForOthers
+                    ? 'Currently reserved in other customers\' carts'
+                    : undefined
+                }
+                className={`h-5 xs:h-6 sm:h-7 px-2 xs:px-2.5 sm:px-3 rounded-full border font-extrabold text-[9.5px] xs:text-[10px] sm:text-xs transition-colors flex items-center justify-center gap-0.5 shadow-2xs cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                  isOrderingDisabled || isReservedOutForOthers
                     ? 'border-border/60 bg-black/5 dark:bg-white/5 text-text-muted dark:text-zinc-500 opacity-60 cursor-not-allowed pointer-events-none'
                     : 'border-primary text-primary hover:bg-primary hover:text-white dark:border-[#D4AF37] dark:text-[#D4AF37] dark:hover:bg-[#D4AF37] dark:hover:text-black focus-visible:outline-primary dark:focus-visible:outline-[#D4AF37]'
                 }`}
               >
-                {isOrderingDisabled ? 'CLOSED' : hasModifiers ? 'ADD +' : 'ADD'}
+                {isOrderingDisabled ? 'CLOSED' : isReservedOutForOthers ? 'RESERVED' : hasModifiers ? 'ADD +' : 'ADD'}
               </button>
             )}
           </div>

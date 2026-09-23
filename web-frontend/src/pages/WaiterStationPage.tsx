@@ -38,6 +38,9 @@ import {
 } from 'lucide-react';
 import { VegBadge } from '../components/customer/VegBadge';
 import { useServedUndo } from '../services/servedUndoManager';
+import { useData } from '../context/DataContext';
+import { ExtendSessionModal } from '../components/modals/ExtendSessionModal';
+import type { Token } from '../types';
 
 export type WaiterTab = 'overview' | 'tables' | 'requests' | 'ready' | 'bills';
 
@@ -48,7 +51,10 @@ interface WaiterStationPageProps {
 
 export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab = 'overview', onTabChange }) => {
   const { user } = useAuth();
+  const { tokens, rates, refreshTokens, refreshTables } = useData();
   const [activeTab, setActiveTabState] = useState<WaiterTab>(initialTab);
+  const [extendingTable, setExtendingTable] = useState<any | null>(null);
+  const [extendingToken, setExtendingToken] = useState<Token | null>(null);
 
   useEffect(() => {
     if (initialTab && initialTab !== activeTab) {
@@ -574,6 +580,45 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     };
   };
 
+  // Helper to format staff identity name e.g. "Divyan (@divyan)" or "Divyan" or "@divyan"
+  const getStaffDisplayName = (
+    staff?: { fullName?: string | null; username?: string | null } | string | null,
+    fallback = 'Staff'
+  ) => {
+    if (!staff) return fallback;
+    if (typeof staff === 'string') {
+      const trimmed = staff.trim();
+      return trimmed || fallback;
+    }
+    const name = staff.fullName?.trim();
+    const username = staff.username?.trim();
+    if (name && username) return `${name} (@${username})`;
+    if (name) return name;
+    if (username) return `@${username}`;
+    return fallback;
+  };
+
+  // Helper to determine if the staff assigned/responsible is the current authenticated user
+  const isCurrentUserStaff = (
+    staff?: { id?: string | null; username?: string | null; fullName?: string | null } | string | null
+  ) => {
+    if (!staff || !user) return false;
+    if (typeof staff === 'string') {
+      const normalized = staff.toLowerCase().trim();
+      return (
+        staff === user.id ||
+        (user.username && normalized === user.username.toLowerCase().trim()) ||
+        (user.fullName && normalized === user.fullName.toLowerCase().trim()) ||
+        (user.username && normalized.includes(`@${user.username.toLowerCase().trim()}`))
+      );
+    }
+    return (
+      (staff.id && staff.id === user.id) ||
+      (staff.username && user.username && staff.username.toLowerCase().trim() === user.username.toLowerCase().trim()) ||
+      (staff.fullName && user.fullName && staff.fullName.toLowerCase().trim() === user.fullName.toLowerCase().trim())
+    );
+  };
+
   // Actions: Service Request Lifecycle
   const handleUpdateReqStatus = async (requestId: string, status: 'ACKNOWLEDGED' | 'COMPLETED') => {
     if (updatingRequestIds.has(requestId)) return;
@@ -712,6 +757,148 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       setIsSubmittingOrder(false);
     }
   };
+
+  // Table Session Active Token & Remaining Time Resolution
+  const getActiveTokenForTable = useCallback(
+    (table: any): Token | null => {
+      if (!table) return null;
+      const targetId = table.id || table.tableId || table._id;
+      const targetNum = (table.tableNumber || table.number || '').toString().trim().toUpperCase();
+      const currentTokenId = table.currentTokenId || table.currentSessionId || table.activeSession?.tokenNumber;
+
+      // 1. Direct match by token number
+      if (currentTokenId) {
+        const matched = (tokens || []).find((tk) => tk.tokenNumber === currentTokenId || tk.id === currentTokenId);
+        if (matched) return matched;
+      }
+
+      // 2. Match by table ID
+      if (targetId) {
+        const matched = (tokens || []).find((tk) => tk.tableId === targetId || (tk.table && tk.table.id === targetId));
+        if (matched) return matched;
+      }
+
+      // 3. Match by table number
+      if (targetNum) {
+        const matched = (tokens || []).find((tk) => {
+          const tkNum = (tk.tableNumber || tk.table?.tableNumber || '').toString().trim().toUpperCase();
+          return tkNum && tkNum === targetNum;
+        });
+        if (matched) return matched;
+      }
+
+      return null;
+    },
+    [tokens]
+  );
+
+  const getTableRemainingMinutes = useCallback(
+    (table: any): number | null => {
+      if (!table) return null;
+      const token = getActiveTokenForTable(table);
+      const endTimeStr = token?.endTime || table.activeSession?.endTime || table.endTime;
+      if (!endTimeStr) return null;
+      const endMs = new Date(endTimeStr).getTime();
+      if (isNaN(endMs)) return null;
+      const diffMs = endMs - now;
+      return Math.max(0, Math.round(diffMs / 60000));
+    },
+    [getActiveTokenForTable, now]
+  );
+
+  const handleOpenExtendModal = useCallback(
+    async (table: any, explicitToken?: Token | null) => {
+      if (!table) return;
+      const token = explicitToken || getActiveTokenForTable(table);
+      if (token) {
+        setExtendingToken(token);
+        setExtendingTable(table);
+        return;
+      }
+
+      // Fetch active session fallback
+      try {
+        const tblIdOrNum = table.tableNumber || table.number || table.id;
+        const sessionRes: any = await api.getTableActiveSession(tblIdOrNum);
+        if (sessionRes?.success && sessionRes?.session) {
+          const s = sessionRes.session;
+          const constructedToken: Token = {
+            id: s.id || s._id || s.tokenNumber,
+            tokenNumber: s.tokenNumber,
+            tableId: table.id || s.tableId,
+            tableNumber: table.tableNumber || table.number || s.tableNumber,
+            placeTypeId: s.placeTypeId || table.placeTypeId,
+            placeType: s.placeType || table.placeType,
+            personsCount: s.personsCount || s.guestCount || table.capacity || 1,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            durationMinutes: s.durationMinutes,
+            status: s.status || 'ACTIVE',
+            customer: s.customer || { name: s.customerName, phone: s.customerPhone },
+          } as any;
+          setExtendingToken(constructedToken);
+          setExtendingTable(table);
+          return;
+        }
+      } catch (e) {
+        console.warn('Failed to fetch table active session fallback:', e);
+      }
+
+      setExtendingToken({
+        id: table.currentTokenId || table.id,
+        tokenNumber: table.currentTokenId || table.activeSession?.tokenNumber || '',
+        tableId: table.id,
+        tableNumber: table.tableNumber || table.number,
+        placeTypeId: table.placeTypeId,
+        placeType: table.placeType?.name || table.placeType,
+        personsCount: table.capacity || 1,
+        endTime: table.activeSession?.endTime,
+        status: 'ACTIVE',
+      } as any);
+      setExtendingTable(table);
+    },
+    [getActiveTokenForTable]
+  );
+
+  // Auto-inspect & navigate to table extension on urgent session alert click
+  useEffect(() => {
+    const handleAutoInspect = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const tableId = customEvent.detail?.tableId;
+      const tableNum = customEvent.detail?.tableNumber;
+      const tokenId = customEvent.detail?.tokenId;
+
+      const targetTable = (tables || []).find(
+        (t) =>
+          (tableId && (t.id === tableId || t._id === tableId)) ||
+          (tableNum && (t.tableNumber === tableNum || t.number === tableNum)) ||
+          (tokenId && (t.currentTokenId === tokenId || t.activeSession?.tokenNumber === tokenId))
+      );
+
+      if (targetTable) {
+        localStorage.removeItem('bar_auto_inspect_table_id');
+        setActiveTabState('tables');
+        handleOpenExtendModal(targetTable);
+      }
+    };
+
+    const autoInspectId = localStorage.getItem('bar_auto_inspect_table_id');
+    if (autoInspectId && (tables || []).length > 0) {
+      const targetTable = (tables || []).find(
+        (t) => t.id === autoInspectId || t._id === autoInspectId || t.tableNumber === autoInspectId
+      );
+      if (targetTable) {
+        localStorage.removeItem('bar_auto_inspect_table_id');
+        setActiveTabState('tables');
+        handleOpenExtendModal(targetTable);
+      }
+    }
+
+    window.addEventListener('bar_auto_inspect', handleAutoInspect);
+    return () => {
+      window.removeEventListener('bar_auto_inspect', handleAutoInspect);
+    };
+  }, [tables, tokens, handleOpenExtendModal]);
 
   const handleOpenBillModal = async (tableOrBill: any) => {
     setSelectedBillTable(tableOrBill);
@@ -1302,6 +1489,19 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                         </span>
                       </div>
                       {req.note && <p className="text-xs text-zinc-600 dark:text-zinc-300 mt-1 italic truncate">"{req.note}"</p>}
+                      
+                      {/* Waiter Ownership / Responsibility Tag */}
+                      {req.status === 'ACKNOWLEDGED' && (
+                        <div className="mt-1 flex items-center gap-1.5 text-[11px] font-bold text-primary dark:text-purple-300">
+                          <User className="w-3 h-3 shrink-0" />
+                          <span className="truncate">
+                            {isCurrentUserStaff(req.assignedStaff || req.assignedStaffName)
+                              ? `Assigned to You (${user?.fullName || user?.username})`
+                              : `Handled by ${getStaffDisplayName(req.assignedStaff || req.assignedStaffName)}`}
+                          </span>
+                        </div>
+                      )}
+
                       <div className="text-[10px] text-zinc-500 dark:text-text-muted mt-1 flex items-center gap-1 font-medium">
                         <Clock className="w-3 h-3" />
                         <span>{getRelativeWaitTime(req.createdAt)}</span>
@@ -1311,7 +1511,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       </div>
                     </div>
 
-                    <div className="shrink-0">
+                    <div className="shrink-0 flex items-center gap-1.5">
                       {req.status === 'NEW' ? (
                         <button
                           type="button"
@@ -1329,7 +1529,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                           onClick={() => handleUpdateReqStatus(req.id, 'COMPLETED')}
                           className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                         >
-                          {updatingRequestIds.has(req.id) ? <Loader2 size={13} className="animate-spin" /> : null}
+                          {updatingRequestIds.has(req.id) ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
                           <span>{updatingRequestIds.has(req.id) ? 'Updating...' : 'Mark Done'}</span>
                         </button>
                       )}
@@ -1454,6 +1654,9 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   {activeTables.map((table) => {
                     const isBillReq = table.status === 'BILL_REQUESTED' || table.isBillRequested;
                     const placeTypeName = table.placeType?.name || (typeof table.placeType === 'string' ? table.placeType : table.categoryName);
+                    const remainingMins = getTableRemainingMinutes(table);
+                    const isUrgent = remainingMins !== null && remainingMins <= 15;
+
                     return (
                       <div
                         key={table.id}
@@ -1465,7 +1668,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                         }`}
                       >
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-black text-sm text-zinc-900 dark:text-white">
                               Table {table.tableNumber || table.number || '-'}
                             </span>
@@ -1478,23 +1681,49 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                             >
                               {table.status || 'OCCUPIED'}
                             </span>
+                            {remainingMins !== null && (
+                              <span
+                                className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black ${
+                                  isUrgent
+                                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800 animate-pulse'
+                                    : 'bg-zinc-100 dark:bg-white/10 text-zinc-600 dark:text-zinc-400'
+                                }`}
+                              >
+                                <Clock className="w-2.5 h-2.5" />
+                                {remainingMins}m left
+                              </span>
+                            )}
                           </div>
                           <div className="text-[10px] text-zinc-500 dark:text-text-muted mt-0.5 font-medium">
                             {table.capacity ? `Cap: ${table.capacity}` : ''} {placeTypeName ? `· ${placeTypeName}` : ''}
                           </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenAssistedOrdering(table);
-                          }}
-                          className="w-8 h-8 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] text-white dark:text-black flex items-center justify-center cursor-pointer shadow-xs active:scale-95 transition-all shrink-0"
-                          title="Take Table Order"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenExtendModal(table);
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 dark:bg-white/10 dark:hover:bg-white/20 dark:text-zinc-200 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 transition-all border border-zinc-200 dark:border-white/10"
+                            title="Extend Session Time"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>Extend</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenAssistedOrdering(table);
+                            }}
+                            className="w-8 h-8 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] text-white dark:text-black flex items-center justify-center cursor-pointer shadow-xs active:scale-95 transition-all shrink-0"
+                            title="Take Table Order"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -1769,6 +1998,8 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       const isBillReq = table.status === 'BILL_REQUESTED' || table.isBillRequested;
                       const statusStyles = getTableStatusClasses(table.status);
                       const displayStatus = formatTableStatus(table.status);
+                      const remainingMins = getTableRemainingMinutes(table);
+                      const isUrgent = remainingMins !== null && remainingMins <= 15;
 
                       return (
                         <div
@@ -1785,8 +2016,20 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                               <span className="font-black text-lg text-zinc-900 dark:text-white truncate block">
                                 Table {table.tableNumber || table.number || '-'}
                               </span>
-                              <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5 font-medium truncate">
-                                {table.currentTokenId ? `Token: ${table.currentTokenId}` : (table.capacity ? `Cap: ${table.capacity} guests` : '')}
+                              <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5 font-medium truncate flex items-center gap-1.5 flex-wrap">
+                                <span>{table.currentTokenId ? `Token: ${table.currentTokenId}` : (table.capacity ? `Cap: ${table.capacity} guests` : '')}</span>
+                                {remainingMins !== null && (
+                                  <span
+                                    className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black ${
+                                      isUrgent
+                                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800 animate-pulse'
+                                        : 'bg-zinc-100 dark:bg-white/10 text-zinc-600 dark:text-zinc-400'
+                                    }`}
+                                  >
+                                    <Clock className="w-2.5 h-2.5" />
+                                    {remainingMins}m left
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <span
@@ -1797,24 +2040,38 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                           </div>
 
                           <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-white/5 flex items-center justify-between text-[11px] gap-2">
-                            <span className="text-zinc-500 dark:text-zinc-400 truncate font-medium max-w-[100px]">
+                            <span className="text-zinc-500 dark:text-zinc-400 truncate font-medium max-w-[80px]">
                               {table.placeType?.name || (typeof table.placeType === 'string' ? table.placeType : table.section || '')}
                             </span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenBillModal(table);
-                              }}
-                              className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] shadow-xs active:scale-95 transition-all shrink-0 cursor-pointer ${
-                                isBillReq
-                                  ? 'bg-amber-500 hover:bg-amber-400 text-zinc-950'
-                                  : 'bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black'
-                              }`}
-                              title="View Bill Details"
-                            >
-                              View Bill
-                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenExtendModal(table);
+                                }}
+                                className="px-2.5 py-1.5 rounded-xl font-extrabold text-[11px] shadow-xs active:scale-95 transition-all shrink-0 cursor-pointer bg-zinc-100 hover:bg-zinc-200 text-zinc-800 dark:bg-white/10 dark:hover:bg-white/20 dark:text-zinc-200 flex items-center gap-1 border border-zinc-200 dark:border-white/10"
+                                title="Extend Session Time"
+                              >
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>Extend</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenBillModal(table);
+                                }}
+                                className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] shadow-xs active:scale-95 transition-all shrink-0 cursor-pointer ${
+                                  isBillReq
+                                    ? 'bg-amber-500 hover:bg-amber-400 text-zinc-950'
+                                    : 'bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black'
+                                }`}
+                                title="View Bill Details"
+                              >
+                                View Bill
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -1906,6 +2163,35 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                         </p>
                       )}
 
+                      {/* Waiter Ownership / Handled By Banner */}
+                      {req.status === 'ACKNOWLEDGED' && (
+                        <div className="mt-2.5 p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/40 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-6 h-6 rounded-full bg-primary/10 dark:bg-primary/25 text-primary dark:text-purple-300 flex items-center justify-center shrink-0">
+                              <User className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-zinc-900 dark:text-white truncate">
+                                {isCurrentUserStaff(req.assignedStaff || req.assignedStaffName) ? (
+                                  <span className="text-primary dark:text-purple-300 font-extrabold">
+                                    Assigned to You ({user?.fullName || user?.username})
+                                  </span>
+                                ) : (
+                                  <span>
+                                    Handled by <span className="font-extrabold text-primary dark:text-purple-300">{getStaffDisplayName(req.assignedStaff || req.assignedStaffName)}</span>
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                          {req.acknowledgedAt && (
+                            <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 shrink-0">
+                              {getRelativeWaitTime(req.acknowledgedAt)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
                       {/* Waiting Time & Creation Timestamp with Visual Escalation */}
                       <div className={`text-xs mt-2.5 flex items-center gap-1.5 ${waitTimeColor}`}>
                         <Clock className="w-3.5 h-3.5 shrink-0" />
@@ -1928,16 +2214,38 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                           {updatingRequestIds.has(req.id) ? <Loader2 size={14} className="animate-spin" /> : null}
                           <span>{updatingRequestIds.has(req.id) ? 'Updating...' : 'Acknowledge'}</span>
                         </button>
-                      ) : (
+                      ) : isCurrentUserStaff(req.assignedStaff || req.assignedStaffName) ? (
                         <button
                           type="button"
                           disabled={updatingRequestIds.has(req.id)}
                           onClick={() => handleUpdateReqStatus(req.id, 'COMPLETED')}
                           className="w-full h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                         >
-                          {updatingRequestIds.has(req.id) ? <Loader2 size={14} className="animate-spin" /> : null}
+                          {updatingRequestIds.has(req.id) ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                           <span>{updatingRequestIds.has(req.id) ? 'Updating...' : 'Mark Done'}</span>
                         </button>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            disabled={updatingRequestIds.has(req.id)}
+                            onClick={() => handleUpdateReqStatus(req.id, 'ACKNOWLEDGED')}
+                            className="h-11 px-3 rounded-xl border border-primary/30 dark:border-purple-500/30 text-primary dark:text-purple-300 hover:bg-primary/5 dark:hover:bg-purple-950/40 font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                            title="Take over this request"
+                          >
+                            {updatingRequestIds.has(req.id) ? <Loader2 size={13} className="animate-spin" /> : <User size={13} />}
+                            <span>Take Over</span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={updatingRequestIds.has(req.id)}
+                            onClick={() => handleUpdateReqStatus(req.id, 'COMPLETED')}
+                            className="h-11 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                          >
+                            {updatingRequestIds.has(req.id) ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                            <span>Mark Done</span>
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -2157,9 +2465,30 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                         )}
                       </div>
 
+                      {/* Order Taker / Handler Responsibility Indicator */}
+                      {(() => {
+                        const handlerMap = new Map();
+                        tbl.readyItems.forEach((it: any) => {
+                          const h = it.order?.handler;
+                          if (h && (h.fullName || h.username)) {
+                            handlerMap.set(h.id || h.username, h);
+                          }
+                        });
+                        const uniqueHandlers = Array.from(handlerMap.values());
+                        if (uniqueHandlers.length === 0) return null;
+                        return (
+                          <div className="mt-2.5 pt-2 border-t border-zinc-100 dark:border-white/5 flex items-center gap-1.5 text-[11px] font-semibold text-primary dark:text-purple-300">
+                            <User className="w-3 h-3 shrink-0" />
+                            <span className="truncate">
+                              Ordered by: {uniqueHandlers.map((h: any) => getStaffDisplayName(h)).join(', ')}
+                            </span>
+                          </div>
+                        );
+                      })()}
+
                       {/* Elapsed Ready Time */}
                       {tbl.earliestReadyAt && (
-                        <div className={`text-xs mt-3 pt-2.5 border-t border-zinc-100 dark:border-white/5 flex items-center gap-1.5 ${waitTimeColor}`}>
+                        <div className={`text-xs mt-2 pt-2 border-t border-zinc-100 dark:border-white/5 flex items-center gap-1.5 ${waitTimeColor}`}>
                           <Clock className="w-3.5 h-3.5 shrink-0" />
                           <span className="font-bold tracking-tight">Ready {getRelativeWaitTime(tbl.earliestReadyAt)}</span>
                           <span className="text-zinc-400 dark:text-zinc-500 font-normal text-[11px]">
@@ -2579,7 +2908,10 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                 )}
                               </td>
                               <td className="py-3 px-4 text-zinc-700 dark:text-zinc-300 font-medium">
-                                {b.settledBy || 'Staff'}
+                                <div className="flex items-center gap-1.5">
+                                  <User className="w-3.5 h-3.5 text-primary dark:text-purple-400 shrink-0" />
+                                  <span className="font-semibold truncate">{getStaffDisplayName(b.settler || b.settledBy)}</span>
+                                </div>
                               </td>
                               <td className="py-3 px-4 text-zinc-500 dark:text-zinc-400">
                                 {b.paidAt ? getRelativeWaitTime(b.paidAt) : 'Today'}
@@ -3446,6 +3778,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
               ...item,
               orderNumber: order.orderNumber,
               orderCreatedAt: order.createdAt,
+              orderHandler: order.handler,
             });
           });
         });
@@ -3483,15 +3816,62 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleCloseTableService}
-                  className="p-2 rounded-xl text-zinc-400 hover:text-zinc-900 dark:text-zinc-500 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/10 cursor-pointer transition-colors"
-                  title="Close"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const targetTable = (tables || []).find(
+                        (t) =>
+                          t.id === selectedServiceTable.tableId ||
+                          t.tableNumber === selectedServiceTable.tableNumber ||
+                          t.number === selectedServiceTable.tableNumber
+                      );
+                      handleOpenExtendModal(
+                        targetTable || {
+                          id: selectedServiceTable.tableId,
+                          tableNumber: selectedServiceTable.tableNumber,
+                          currentTokenId: selectedServiceTable.tokenNumber,
+                          placeType: selectedServiceTable.placeType,
+                        }
+                      );
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary dark:bg-[#D4AF37]/15 dark:hover:bg-[#D4AF37]/25 dark:text-[#D4AF37] text-xs font-black flex items-center gap-1.5 cursor-pointer transition-colors border border-primary/20 dark:border-[#D4AF37]/30 shadow-2xs active:scale-95"
+                    title="Extend Session Time"
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Extend Session</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCloseTableService}
+                    className="p-2 rounded-xl text-zinc-400 hover:text-zinc-900 dark:text-zinc-500 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/10 cursor-pointer transition-colors"
+                    title="Close"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
+
+              {/* Waiter Responsibility / Order Handler Info Bar */}
+              {tableActiveOrders.length > 0 && (() => {
+                const handlerMap = new Map();
+                tableActiveOrders.forEach((o: any) => {
+                  if (o.handler && (o.handler.fullName || o.handler.username)) {
+                    handlerMap.set(o.handler.id || o.handler.username, o.handler);
+                  }
+                });
+                const handlers = Array.from(handlerMap.values());
+                if (handlers.length === 0) return null;
+                return (
+                  <div className="px-4 sm:px-5 py-2.5 bg-purple-50/70 dark:bg-purple-950/20 border-b border-purple-200/60 dark:border-purple-800/30 flex items-center gap-2 text-xs font-semibold text-primary dark:text-purple-300">
+                    <User className="w-3.5 h-3.5 shrink-0" />
+                    <span>Assisted Order Taken By:</span>
+                    <span className="font-bold text-zinc-900 dark:text-white">
+                      {handlers.map((h: any) => getStaffDisplayName(h)).join(', ')}
+                    </span>
+                  </div>
+                );
+              })()}
 
               {/* Status Summary Chips */}
               <div className="px-4 sm:px-5 py-3 border-b border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-2 overflow-x-auto text-xs font-bold">
@@ -3881,6 +4261,28 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           </div>
         );
       })()}
+
+      {/* ==================================================================== */}
+      {/* 7. EXTEND SESSION MODAL (CANONICAL TIME EXTENSION)                    */}
+      {/* ==================================================================== */}
+      {extendingTable && (
+        <ExtendSessionModal
+          isOpen={!!extendingTable}
+          token={extendingToken}
+          rates={rates || []}
+          onClose={() => {
+            setExtendingTable(null);
+            setExtendingToken(null);
+          }}
+          onSuccess={() => {
+            setExtendingTable(null);
+            setExtendingToken(null);
+            refreshTables();
+            refreshTokens();
+            fetchTables(true);
+          }}
+        />
+      )}
     </div>
   );
 };

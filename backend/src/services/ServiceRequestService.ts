@@ -147,6 +147,14 @@ export class ServiceRequestService {
         status: updated.status,
         assignedStaffId: updated.assignedStaffId,
         assignedStaffName: updated.assignedStaff?.fullName || updated.assignedStaff?.username || null,
+        assignedStaffUsername: updated.assignedStaff?.username || null,
+        assignedStaff: updated.assignedStaff
+          ? {
+              id: updated.assignedStaff.id,
+              fullName: updated.assignedStaff.fullName,
+              username: updated.assignedStaff.username,
+            }
+          : null,
         acknowledgedAt: updated.acknowledgedAt ? updated.acknowledgedAt.toISOString() : null,
         completedAt: updated.completedAt ? updated.completedAt.toISOString() : null,
         updatedAt: now.toISOString(),

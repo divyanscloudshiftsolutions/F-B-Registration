@@ -55,6 +55,7 @@ interface ProductCustomizerProps {
   item: CustomizerItem | null;
   open: boolean;
   initialConfig?: ProductCustomizerInitialConfig | null;
+  existingCartQuantity?: number;
   onClose: () => void;
   isOrderingDisabled?: boolean;
   onAddToCart: (configuredItem: {
@@ -82,6 +83,7 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
   item,
   open,
   initialConfig,
+  existingCartQuantity = 0,
   onClose,
   isOrderingDisabled = false,
   onAddToCart,
@@ -99,80 +101,88 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
   const touchStartY = useRef<number | null>(null);
   const touchStartScrollTop = useRef<number>(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const initializedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (open && item) {
-      // 1. Resolve initial variant
-      let resolvedVariantId: string | null = null;
-      if (item.variants && item.variants.length > 0) {
-        if (initialConfig?.variantId) {
-          const match = item.variants.find((v) => v.id === initialConfig.variantId);
-          if (match) resolvedVariantId = match.id;
-        }
-        if (!resolvedVariantId && initialConfig?.variantName) {
-          const match = item.variants.find(
-            (v) => v.name.toLowerCase() === initialConfig.variantName?.toLowerCase()
-          );
-          if (match) resolvedVariantId = match.id;
-        }
-        if (!resolvedVariantId) {
-          resolvedVariantId = item.variants[0].id;
-        }
-      }
-      setVariantId(resolvedVariantId);
+      const currentKey = `${item.id}-${JSON.stringify(initialConfig || {})}`;
+      if (initializedKeyRef.current !== currentKey) {
+        initializedKeyRef.current = currentKey;
 
-      // 2. Resolve initial modifiers
-      const initialModsMap: Record<string, string[]> = {};
-      if (initialConfig?.modifiers && item.modifierGroups) {
-        if (Array.isArray(initialConfig.modifiers)) {
-          initialConfig.modifiers.forEach((mod) => {
-            let targetGroup = item.modifierGroups?.find(
-              (g) =>
-                (mod.groupId && g.id === mod.groupId) ||
-                (mod.groupName && g.name.toLowerCase() === mod.groupName.toLowerCase())
+        // 1. Resolve initial variant
+        let resolvedVariantId: string | null = null;
+        if (item.variants && item.variants.length > 0) {
+          if (initialConfig?.variantId) {
+            const match = item.variants.find((v) => v.id === initialConfig.variantId);
+            if (match) resolvedVariantId = match.id;
+          }
+          if (!resolvedVariantId && initialConfig?.variantName) {
+            const match = item.variants.find(
+              (v) => v.name.toLowerCase() === initialConfig.variantName?.toLowerCase()
             );
-
-            if (!targetGroup) {
-              const optName = mod.optionName || mod.name;
-              if (optName) {
-                targetGroup = item.modifierGroups?.find((g) =>
-                  g.options.some((o) => o.name.toLowerCase() === optName.toLowerCase())
-                );
-              }
-            }
-
-            if (targetGroup) {
-              const optName = mod.optionName || mod.name;
-              const matchedOption = targetGroup.options.find(
-                (o) =>
-                  (mod.optionId && o.id === mod.optionId) ||
-                  (optName && o.name.toLowerCase() === optName.toLowerCase())
-              );
-              if (matchedOption) {
-                if (!initialModsMap[targetGroup.id]) {
-                  initialModsMap[targetGroup.id] = [];
-                }
-                if (!initialModsMap[targetGroup.id].includes(matchedOption.id)) {
-                  initialModsMap[targetGroup.id].push(matchedOption.id);
-                }
-              }
-            }
-          });
-        } else if (typeof initialConfig.modifiers === 'object') {
-          Object.assign(initialModsMap, initialConfig.modifiers);
+            if (match) resolvedVariantId = match.id;
+          }
+          if (!resolvedVariantId) {
+            resolvedVariantId = item.variants[0].id;
+          }
         }
-      }
-      setMods(initialModsMap);
+        setVariantId(resolvedVariantId);
 
-      // 3. Resolve initial instructions & quantity
-      setInstructions(initialConfig?.specialInstructions || '');
-      setQty(
-        initialConfig?.quantity && initialConfig.quantity > 0 ? initialConfig.quantity : 1
-      );
-      setValidationError(null);
-      setDragY(0);
-      setIsDragging(false);
-      setIsClosing(false);
+        // 2. Resolve initial modifiers
+        const initialModsMap: Record<string, string[]> = {};
+        if (initialConfig?.modifiers && item.modifierGroups) {
+          if (Array.isArray(initialConfig.modifiers)) {
+            initialConfig.modifiers.forEach((mod) => {
+              let targetGroup = item.modifierGroups?.find(
+                (g) =>
+                  (mod.groupId && g.id === mod.groupId) ||
+                  (mod.groupName && g.name.toLowerCase() === mod.groupName.toLowerCase())
+              );
+
+              if (!targetGroup) {
+                const optName = mod.optionName || mod.name;
+                if (optName) {
+                  targetGroup = item.modifierGroups?.find((g) =>
+                    g.options.some((o) => o.name.toLowerCase() === optName.toLowerCase())
+                  );
+                }
+              }
+
+              if (targetGroup) {
+                const optName = mod.optionName || mod.name;
+                const matchedOption = targetGroup.options.find(
+                  (o) =>
+                    (mod.optionId && o.id === mod.optionId) ||
+                    (optName && o.name.toLowerCase() === optName.toLowerCase())
+                );
+                if (matchedOption) {
+                  if (!initialModsMap[targetGroup.id]) {
+                    initialModsMap[targetGroup.id] = [];
+                  }
+                  if (!initialModsMap[targetGroup.id].includes(matchedOption.id)) {
+                    initialModsMap[targetGroup.id].push(matchedOption.id);
+                  }
+                }
+              }
+            });
+          } else if (typeof initialConfig.modifiers === 'object') {
+            Object.assign(initialModsMap, initialConfig.modifiers);
+          }
+        }
+        setMods(initialModsMap);
+
+        // 3. Resolve initial instructions & quantity
+        setInstructions(initialConfig?.specialInstructions || '');
+        setQty(
+          initialConfig?.quantity && initialConfig.quantity > 0 ? initialConfig.quantity : 1
+        );
+        setValidationError(null);
+        setDragY(0);
+        setIsDragging(false);
+        setIsClosing(false);
+      }
+    } else if (!open) {
+      initializedKeyRef.current = null;
     }
   }, [open, item, initialConfig]);
 
@@ -235,8 +245,20 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
   const unitPrice = Math.round((effectiveBasePrice + variantDelta + modAdditions) * 100) / 100;
   const grandTotal = Math.round((unitPrice * qty) * 100) / 100;
 
+  const isManualAvailable = item ? item.isAvailable !== false : true;
+  const physicalStock = item?.stockQuantity !== undefined ? Number(item.stockQuantity) : 50;
+  const rawAvailable = item?.availableStock !== undefined ? Number(item.availableStock) : physicalStock;
+  const customerOwnReserved = existingCartQuantity;
+  const effectivePurchasableForCustomer = Math.min(physicalStock, rawAvailable + customerOwnReserved);
+  const isPhysicalOutOfStock = !isManualAvailable || physicalStock <= 0;
+  const isReservedOutForOthers = !isPhysicalOutOfStock && effectivePurchasableForCustomer <= 0;
+  const remainingToAdd = Math.max(0, effectivePurchasableForCustomer - (initialConfig ? 0 : customerOwnReserved));
+  const isLowStock = !isPhysicalOutOfStock && rawAvailable > 0 && rawAvailable <= 10;
+  const isOutOfStock = isPhysicalOutOfStock;
+  const maxAllowedQty = Math.max(1, effectivePurchasableForCustomer);
+
   const handleAdd = () => {
-    if (isOrderingDisabled) return;
+    if (isOrderingDisabled || isPhysicalOutOfStock || isReservedOutForOthers) return;
     if (!isFormValid) {
       const names = missingRequiredGroups.map((g) => g.name).join(', ');
       setValidationError(`Please make a selection for: ${names}`);
@@ -259,6 +281,11 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
         })
         .filter((x): x is NonNullable<typeof x> => x !== null);
     });
+
+    if (!initialConfig && qty > remainingToAdd) {
+      setValidationError(`Only ${remainingToAdd} additional units available in stock.`);
+      return;
+    }
 
     onAddToCart({
       menuItemId: item.id,
@@ -320,13 +347,6 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
     ? Math.max(0.15, 1 - dragY / 400)
     : 1;
 
-  const isAvailable = item ? item.isAvailable !== false : true;
-  const stockQty = item?.stockQuantity ?? 50;
-  const availableStock = item?.availableStock !== undefined ? Number(item.availableStock) : stockQty;
-  const isLowStock = isAvailable && availableStock > 0 && availableStock <= 10;
-  const isOutOfStock = !isAvailable || availableStock <= 0;
-  const maxAllowedQty = Math.max(1, availableStock);
-
   return (
     <div
       role="dialog"
@@ -363,7 +383,7 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
                 <h3 className="font-bold text-lg text-text-primary dark:text-white leading-tight">{item.name}</h3>
                 {isLowStock && (
                   <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
-                    Only {availableStock} left
+                    Only {rawAvailable} left
                   </span>
                 )}
               </div>
@@ -532,11 +552,27 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
               <span className="w-6 text-center font-bold text-sm text-primary dark:text-[#D4AF37]">{qty}</span>
               <button
                 type="button"
-                disabled={isOrderingDisabled || qty >= maxAllowedQty}
-                onClick={() => setQty((q) => Math.min(maxAllowedQty, q + 1))}
-                title={qty >= maxAllowedQty ? `Only ${availableStock} available in stock` : undefined}
+                disabled={
+                  isOrderingDisabled ||
+                  (initialConfig ? qty >= effectivePurchasableForCustomer : (remainingToAdd <= 0 || qty >= remainingToAdd))
+                }
+                onClick={() =>
+                  setQty((q) =>
+                    initialConfig
+                      ? Math.min(effectivePurchasableForCustomer, q + 1)
+                      : Math.min(remainingToAdd, q + 1)
+                  )
+                }
+                title={
+                  (initialConfig ? qty >= effectivePurchasableForCustomer : (remainingToAdd <= 0 || qty >= remainingToAdd))
+                    ? `Only ${initialConfig ? effectivePurchasableForCustomer : remainingToAdd} available in stock`
+                    : undefined
+                }
                 className={`w-8 h-8 rounded-lg flex items-center justify-center border border-border/80 dark:border-white/10 text-text-primary dark:text-white transition-colors cursor-pointer ${
-                  isOrderingDisabled || qty >= maxAllowedQty ? 'opacity-30 cursor-not-allowed pointer-events-none' : 'hover:bg-black/5 dark:hover:bg-white/10'
+                  isOrderingDisabled ||
+                  (initialConfig ? qty >= effectivePurchasableForCustomer : (remainingToAdd <= 0 || qty >= remainingToAdd))
+                    ? 'opacity-30 cursor-not-allowed pointer-events-none'
+                    : 'hover:bg-black/5 dark:hover:bg-white/10'
                 }`}
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -555,15 +591,23 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
           )}
           <button
             type="button"
-            disabled={isOrderingDisabled || isOutOfStock}
+            disabled={isOrderingDisabled || isPhysicalOutOfStock || isReservedOutForOthers}
             onClick={handleAdd}
             className={`w-full py-3 px-4 rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-between cursor-pointer ${
-              isOrderingDisabled || isOutOfStock
+              isOrderingDisabled || isPhysicalOutOfStock || isReservedOutForOthers
                 ? 'bg-zinc-300 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-500 opacity-60 cursor-not-allowed pointer-events-none'
                 : 'bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black text-white hover:shadow-lg'
             }`}
           >
-            <span>{isOutOfStock ? 'Currently Out of Stock' : isOrderingDisabled ? 'Ordering Closed (15m Cutoff)' : 'Add to Cart'}</span>
+            <span>
+              {isPhysicalOutOfStock
+                ? 'Currently Out of Stock'
+                : isReservedOutForOthers
+                ? 'Reserved by Other Customers'
+                : isOrderingDisabled
+                ? 'Ordering Closed (15m Cutoff)'
+                : 'Add to Cart'}
+            </span>
             <span>₹{grandTotal.toFixed(2)}</span>
           </button>
         </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ChefHat, Clock, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Layers, UtensilsCrossed, Ban, X } from 'lucide-react';
+import { ChefHat, Clock, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Layers, UtensilsCrossed, Ban, X, Trash2 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { joinRoom, leaveRoom, onSocketEvent } from '../services/socket';
@@ -18,6 +18,8 @@ interface KdsItem {
   station: string;
   status: 'PLACED' | 'ACCEPTED' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED' | 'STOCK_OUT';
   foodType?: string;
+  isSessionClosed?: boolean;
+  tokenStatus?: string | null;
   createdAt: string;
 }
 
@@ -28,6 +30,8 @@ interface KdsTicket {
   placedAt: string;
   notes: string | null;
   status: string;
+  isSessionClosed?: boolean;
+  tokenStatus?: string | null;
   items: KdsItem[];
 }
 
@@ -47,6 +51,14 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
   const [now, setNow] = useState<number>(Date.now());
   const [stockOutModalItem, setStockOutModalItem] = useState<{ menuItemId: string; itemName: string } | null>(null);
   const [isStockOutSubmitting, setIsStockOutSubmitting] = useState<boolean>(false);
+  const [cleanupModalItem, setCleanupModalItem] = useState<{
+    id: string;
+    itemName: string;
+    tableNumber: string;
+    orderNumber: number;
+    quantity: number;
+  } | null>(null);
+  const [isCleanupSubmitting, setIsCleanupSubmitting] = useState<boolean>(false);
 
   // Shared in-memory 5s Undo manager that survives tab switching
   const {
@@ -94,6 +106,8 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
   useEffect(() => {
     fetchTickets();
     joinRoom('kds:kitchen');
+    joinRoom('staff:all');
+    joinRoom('tables:all');
 
     const unsubItemUpdated = onSocketEvent('order.item.updated', (payload) => {
       if (!payload?.station || payload.station === 'KITCHEN' || payload.station === 'DESSERT') {
@@ -109,6 +123,14 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
     });
 
     const unsubMenuUpdated = onSocketEvent('menu.updated', () => {
+      fetchTickets(true);
+    });
+
+    const unsubSessionClosed = onSocketEvent('table.session.closed', () => {
+      fetchTickets(true);
+    });
+
+    const unsubBillSettled = onSocketEvent('bill.settled', () => {
       fetchTickets(true);
     });
 
@@ -130,9 +152,13 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
 
     return () => {
       leaveRoom('kds:kitchen');
+      leaveRoom('staff:all');
+      leaveRoom('tables:all');
       unsubItemUpdated();
       unsubOrderCreated();
       unsubMenuUpdated();
+      unsubSessionClosed();
+      unsubBillSettled();
       window.removeEventListener('app:global-refresh', handleGlobalRefresh);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(interval);
@@ -189,6 +215,21 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
       showToast(err.message || 'Failed to update stock status', 'danger');
     } finally {
       setIsStockOutSubmitting(false);
+    }
+  };
+
+  const handleConfirmCleanup = async () => {
+    if (!cleanupModalItem || isCleanupSubmitting) return;
+    setIsCleanupSubmitting(true);
+    try {
+      await api.cleanupClosedSessionOrderItem(cleanupModalItem.id);
+      showToast(`Order for "${cleanupModalItem.itemName}" removed from KDS`, 'info');
+      setCleanupModalItem(null);
+      await fetchTickets(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to remove order item', 'danger');
+    } finally {
+      setIsCleanupSubmitting(false);
     }
   };
 
@@ -309,6 +350,7 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
                     const mins = getElapsedMin(ticket.placedAt);
                     const priority = mins >= 20 ? 'urgent' : mins >= 10 ? 'warn' : 'ok';
                     const isUpdating = updatingIds.has(item.id);
+                    const isClosedSession = Boolean(item.isSessionClosed ?? ticket.isSessionClosed);
 
                     return (
                       <div
@@ -321,24 +363,53 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
                             : 'border-zinc-200 dark:border-white/10 bg-white dark:bg-[#141416]'
                         }`}
                       >
-                        <div className="flex items-center justify-between text-xs font-bold">
-                          <span className="text-zinc-800 dark:text-zinc-200">
-                            Table {ticket.tableNumber || 'N/A'} · #{String(ticket.orderNumber).padStart(2, '0')}
-                          </span>
-                          <span
-                            className={`inline-flex items-center gap-1 font-mono font-bold ${
-                              priority === 'urgent'
-                                ? 'text-rose-600 dark:text-rose-400'
-                                : priority === 'warn'
-                                ? 'text-amber-600 dark:text-amber-400'
-                                : 'text-zinc-700 dark:text-zinc-400'
-                            }`}
-                          >
-                            {priority === 'urgent' && <AlertTriangle size={12} className="text-rose-600 dark:text-rose-400 shrink-0" />}
-                            {priority === 'warn' && <AlertTriangle size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />}
-                            <Clock size={12} className="shrink-0" />
-                            <span>{formatElapsedMMSS(ticket.placedAt)}</span>
-                          </span>
+                        <div className="flex items-center justify-between text-xs font-bold gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-zinc-800 dark:text-zinc-200 truncate">
+                              Table {ticket.tableNumber || 'N/A'} · #{String(ticket.orderNumber).padStart(2, '0')}
+                            </span>
+                            {isClosedSession && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-zinc-200/90 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-300/80 dark:border-zinc-700 shrink-0">
+                                Session Closed
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span
+                              className={`inline-flex items-center gap-1 font-mono font-bold ${
+                                priority === 'urgent'
+                                  ? 'text-rose-600 dark:text-rose-400'
+                                  : priority === 'warn'
+                                  ? 'text-amber-600 dark:text-amber-400'
+                                  : 'text-zinc-700 dark:text-zinc-400'
+                              }`}
+                            >
+                              {priority === 'urgent' && <AlertTriangle size={12} className="text-rose-600 dark:text-rose-400 shrink-0" />}
+                              {priority === 'warn' && <AlertTriangle size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />}
+                              <Clock size={12} className="shrink-0" />
+                              <span>{formatElapsedMMSS(ticket.placedAt)}</span>
+                            </span>
+                            {canBump && isClosedSession && item.status === 'PLACED' && (
+                              <button
+                                type="button"
+                                disabled={isUpdating}
+                                onClick={() =>
+                                  setCleanupModalItem({
+                                    id: item.id,
+                                    itemName: item.itemName,
+                                    tableNumber: ticket.tableNumber,
+                                    orderNumber: ticket.orderNumber,
+                                    quantity: item.quantity,
+                                  })
+                                }
+                                title="Remove closed-session order"
+                                aria-label="Remove closed-session order"
+                                className="p-1 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-950/50 transition-colors cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         <div className="font-extrabold text-sm text-zinc-900 dark:text-white">
@@ -508,6 +579,72 @@ export const KitchenKDSPage: React.FC<KitchenKDSPageProps> = ({ initialSubTab = 
               >
                 {isStockOutSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
                 Confirm Stock Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Closed-Session Order Cleanup Confirmation Dialog */}
+      {cleanupModalItem && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cleanup-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
+        >
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center border border-rose-500/20">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <button
+                type="button"
+                disabled={isCleanupSubmitting}
+                onClick={() => setCleanupModalItem(null)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div>
+              <h3 id="cleanup-dialog-title" className="text-base font-black text-zinc-900 dark:text-white">
+                Clean Up Closed-Session Order?
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                The customer dining session for <strong className="text-zinc-900 dark:text-white font-bold">Table {cleanupModalItem.tableNumber} (Order #{String(cleanupModalItem.orderNumber).padStart(2, '0')})</strong> is already closed.
+              </p>
+              <div className="text-xs text-zinc-600 dark:text-zinc-300 mt-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/50 p-3.5 rounded-xl space-y-1.5">
+                <p className="text-[11px] leading-relaxed">
+                  • <strong>Item:</strong> {cleanupModalItem.quantity} × {cleanupModalItem.itemName}
+                </p>
+                <p className="text-[11px] leading-relaxed">
+                  • This pending order was never accepted and can no longer be processed since the dining session ended.
+                </p>
+                <p className="text-[11px] leading-relaxed">
+                  • Confirming will remove this order card from the KDS and release any reserved inventory back to stock.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isCleanupSubmitting}
+                onClick={() => setCleanupModalItem(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isCleanupSubmitting}
+                onClick={handleConfirmCleanup}
+                className="px-4 py-2 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {isCleanupSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Remove Order
               </button>
             </div>
           </div>

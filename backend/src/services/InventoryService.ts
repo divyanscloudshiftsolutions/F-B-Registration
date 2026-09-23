@@ -45,7 +45,17 @@ export class InventoryService {
   /**
    * Helper to safely broadcast stock and availability changes
    */
-  private notifyStockUpdated(payload: { itemId: string; isAvailable: boolean; availableStock: number; currentStock: number; name?: string; station?: string }) {
+  public notifyStockUpdated(payload: {
+    itemId: string;
+    isAvailable: boolean;
+    availableStock: number;
+    currentStock: number;
+    reservedStock?: number;
+    name?: string;
+    station?: string;
+    reason?: string;
+    stockQuantity?: number;
+  }) {
     try {
       getIO().emit(SOCKET_EVENTS.MENU_UPDATED, {
         action: 'item_availability',
@@ -53,15 +63,23 @@ export class InventoryService {
         details: {
           isAvailable: payload.isAvailable,
           availableStock: payload.availableStock,
-          currentStock: payload.currentStock,
+          currentStock: payload.currentStock ?? payload.stockQuantity,
+          stockQuantity: payload.currentStock ?? payload.stockQuantity,
+          reservedStock: payload.reservedStock,
           name: payload.name,
           station: payload.station,
+          reason: payload.reason,
         },
       });
     } catch {
       // Ignored if socket server not initialized
     }
   }
+
+  /**
+   * Public alias for notifyStockUpdated to maintain consistency across services
+   */
+  public notifyStockChanged = this.notifyStockUpdated.bind(this);
 
   /**
    * Get active reserved quantity for a menuItemId across all active customer carts
@@ -91,6 +109,7 @@ export class InventoryService {
     currentStock: number;
     reservedStock: number;
     availableStock: number;
+    availableForToken: number;
     isAvailable: boolean;
   }> {
     const item = await prisma.menuItem.findUnique({
@@ -99,19 +118,22 @@ export class InventoryService {
     });
 
     if (!item) {
-      return { currentStock: 0, reservedStock: 0, availableStock: 0, isAvailable: false };
+      return { currentStock: 0, reservedStock: 0, availableStock: 0, availableForToken: 0, isAvailable: false };
     }
 
     const currentStock = item.stockItem?.currentStock ?? 50;
-    const reservedStock = await this.getReservedQuantity(menuItemId, forTokenNumber);
-    const availableStock = Math.max(0, currentStock - reservedStock);
-    const isEffectiveAvailable = item.isAvailable && availableStock > 0;
+    const totalReserved = await this.getReservedQuantity(menuItemId);
+    const otherReserved = await this.getReservedQuantity(menuItemId, forTokenNumber);
+    const availableStock = Math.max(0, currentStock - totalReserved);
+    const availableForToken = Math.max(0, currentStock - otherReserved);
+    const isPhysicalAvailable = item.isAvailable && currentStock > 0;
 
     return {
       currentStock,
-      reservedStock,
+      reservedStock: totalReserved,
       availableStock,
-      isAvailable: isEffectiveAvailable,
+      availableForToken,
+      isAvailable: isPhysicalAvailable,
     };
   }
 
@@ -121,6 +143,7 @@ export class InventoryService {
   async reserveCartStock(tokenNumber: string, menuItemId: string, quantity: number): Promise<{
     success: boolean;
     availableStock: number;
+    availableForToken: number;
     currentStock: number;
     message?: string;
   }> {
@@ -134,12 +157,12 @@ export class InventoryService {
     });
 
     if (!item || item.isArchived) {
-      return { success: false, availableStock: 0, currentStock: 0, message: 'Item not found' };
+      return { success: false, availableStock: 0, availableForToken: 0, currentStock: 0, message: 'Item not found' };
     }
 
     // If item is manually 86'd, no reservations allowed
     if (!item.isAvailable) {
-      return { success: false, availableStock: 0, currentStock: item.stockItem?.currentStock ?? 0, message: 'Item is currently Out of Stock' };
+      return { success: false, availableStock: 0, availableForToken: 0, currentStock: item.stockItem?.currentStock ?? 0, message: 'Item is currently Out of Stock' };
     }
 
     const currentStock = item.stockItem?.currentStock ?? 50;
@@ -147,11 +170,14 @@ export class InventoryService {
     const availableForThisToken = Math.max(0, currentStock - otherReserved);
 
     if (quantity > availableForThisToken) {
+      const currentTotalReserved = await this.getReservedQuantity(menuItemId);
+      const currentAvailableForOthers = Math.max(0, currentStock - currentTotalReserved);
       return {
         success: false,
-        availableStock: availableForThisToken,
+        availableStock: currentAvailableForOthers,
+        availableForToken: availableForThisToken,
         currentStock,
-        message: `Only ${availableForThisToken} left in stock`,
+        message: availableForThisToken > 0 ? `Only ${availableForThisToken} left in stock` : 'Item is currently reserved by other customers',
       };
     }
 
@@ -175,20 +201,25 @@ export class InventoryService {
     const newTotalReserved = await this.getReservedQuantity(menuItemId);
     const newAvailableStock = Math.max(0, currentStock - newTotalReserved);
 
-    // If available stock reaches 0, broadcast live update so other users see it Out of Stock
+    // CRITICAL: isAvailable remains true as long as the physical item is active and has physical stock > 0.
+    // Temporary reservation exhaustion (newAvailableStock === 0) is communicated via availableStock: 0 and reason.
     this.notifyStockUpdated({
       itemId: menuItemId,
-      isAvailable: item.isAvailable && newAvailableStock > 0,
+      isAvailable: item.isAvailable && currentStock > 0,
       availableStock: newAvailableStock,
       currentStock,
+      reservedStock: newTotalReserved,
       name: item.name,
       station: item.station,
+      reason: newAvailableStock === 0 ? 'RESERVATION_EXHAUSTED' : 'RESERVATION_UPDATED',
     });
 
     return {
       success: true,
       availableStock: newAvailableStock,
+      availableForToken: availableForThisToken,
       currentStock,
+      reservedStock: newTotalReserved,
     };
   }
 
@@ -206,11 +237,13 @@ export class InventoryService {
     if (item) {
       this.notifyStockUpdated({
         itemId: menuItemId,
-        isAvailable: item.isAvailable && stockInfo.availableStock > 0,
+        isAvailable: item.isAvailable && stockInfo.currentStock > 0,
         availableStock: stockInfo.availableStock,
         currentStock: stockInfo.currentStock,
+        reservedStock: stockInfo.reservedStock,
         name: item.name,
         station: item.station,
+        reason: 'RESERVATION_RELEASED',
       });
     }
   }
@@ -235,11 +268,13 @@ export class InventoryService {
       if (item) {
         this.notifyStockUpdated({
           itemId: menuItemId,
-          isAvailable: item.isAvailable && stockInfo.availableStock > 0,
+          isAvailable: item.isAvailable && stockInfo.currentStock > 0,
           availableStock: stockInfo.availableStock,
           currentStock: stockInfo.currentStock,
+          reservedStock: stockInfo.reservedStock,
           name: item.name,
           station: item.station,
+          reason: 'RESERVATION_RELEASED',
         });
       }
     }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Wine, Search, Loader2, CheckCircle2, AlertCircle, RefreshCw, X, ShieldAlert } from 'lucide-react';
+import { Wine, Search, Loader2, CheckCircle2, AlertCircle, RefreshCw, X, ShieldAlert, Pencil } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { onSocketEvent } from '../../services/socket';
@@ -38,6 +38,10 @@ export const BarStockTab: React.FC = () => {
   // Stock In Modal state
   const [stockInModalItem, setStockInModalItem] = useState<FlatMenuItem | null>(null);
   const [stockInQuantity, setStockInQuantity] = useState<number>(50);
+
+  // Compact Stock Edit Modal state
+  const [editStockModalItem, setEditStockModalItem] = useState<FlatMenuItem | null>(null);
+  const [editStockQuantity, setEditStockQuantity] = useState<number>(50);
 
   const userRole = (user?.role || '').toLowerCase();
   const canControl = ['bartender', 'admin', 'manager'].includes(userRole);
@@ -156,6 +160,52 @@ export const BarStockTab: React.FC = () => {
   const handleOpenStockIn = (item: FlatMenuItem) => {
     setStockInModalItem(item);
     setStockInQuantity(item.stockQuantity && item.stockQuantity > 0 ? item.stockQuantity : 50);
+  };
+
+  const handleOpenEditStock = (item: FlatMenuItem) => {
+    setEditStockModalItem(item);
+    setEditStockQuantity(item.stockQuantity !== undefined ? item.stockQuantity : 50);
+  };
+
+  const handleConfirmEditStock = async () => {
+    if (!editStockModalItem || updatingIds.has(editStockModalItem.id)) return;
+    const itemId = editStockModalItem.id;
+    const qty = Math.max(0, Math.floor(Number(editStockQuantity) || 0));
+    const isCurrentlyAvail = editStockModalItem.isAvailable;
+    const nextAvailable = isCurrentlyAvail ? (qty > 0) : false;
+
+    setUpdatingIds((prev) => new Set(prev).add(itemId));
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === itemId
+          ? {
+              ...it,
+              isAvailable: nextAvailable,
+              stockQuantity: qty,
+              availableStock: nextAvailable ? qty : 0,
+            }
+          : it
+      )
+    );
+
+    try {
+      const res = await api.setItemAvailability(itemId, nextAvailable, qty);
+      if (res && res.success) {
+        showToast(`Stock for ${editStockModalItem.name} updated to ${qty}`, 'success');
+        setEditStockModalItem(null);
+      } else {
+        throw new Error(res?.error?.message || 'Update failed');
+      }
+    } catch (err: any) {
+      fetchBarItems(true);
+      showToast(err.message || 'Failed to update stock', 'danger');
+    } finally {
+      setUpdatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    }
   };
 
   const handleConfirmStockIn = async () => {
@@ -421,15 +471,27 @@ export const BarStockTab: React.FC = () => {
                       <span className="text-[10px] font-bold text-primary dark:text-amber-400 uppercase tracking-wider truncate">
                         {item.categoryName || 'Bar Drink'}
                       </span>
-                      {isAvailable ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 shrink-0">
-                          <CheckCircle2 size={11} /> In Stock
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/30 shrink-0">
-                          <AlertCircle size={11} /> Stock Out
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isAvailable ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 shrink-0">
+                            <CheckCircle2 size={11} /> In Stock
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/30 shrink-0">
+                            <AlertCircle size={11} /> Stock Out
+                          </span>
+                        )}
+                        {canControl && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditStock(item)}
+                            title={`Edit stock quantity for ${item.name}`}
+                            className="p-1 rounded-md text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                          >
+                            <Pencil size={11} />
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <h4 className="text-sm font-bold text-text-main truncate mt-0.5" title={item.name}>
@@ -599,6 +661,123 @@ export const BarStockTab: React.FC = () => {
                   </>
                 ) : (
                   <span>Confirm Stock In</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Compact Edit Stock Quantity Modal */}
+      {editStockModalItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-bg-surface border border-border-main dark:border-white/10 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                <Pencil size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-text-main truncate">
+                  Edit Stock: {editStockModalItem.name}
+                </h3>
+                <p className="text-xs text-text-muted mt-0.5">
+                  {editStockModalItem.isAvailable
+                    ? 'Currently Available on Customer Portal'
+                    : 'Currently Stock Out (Hidden from Customer Portal)'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditStockModalItem(null)}
+                className="p-1 rounded-lg text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-text-main">
+                  Stock Quantity
+                </label>
+                <span className="text-[11px] text-text-muted">
+                  Current: <strong className="font-mono text-text-main">{editStockModalItem.stockQuantity ?? 50}</strong>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditStockQuantity((prev) => Math.max(0, prev - 1))}
+                  className="w-10 h-10 rounded-xl border border-border-main dark:border-white/10 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-text-main font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={editStockQuantity}
+                  onChange={(e) => setEditStockQuantity(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  className="flex-1 px-3.5 py-2.5 bg-bg-surface border border-border-main dark:border-white/10 rounded-xl text-center text-base font-mono font-bold text-text-main focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  placeholder="0"
+                />
+                <button
+                  type="button"
+                  onClick={() => setEditStockQuantity((prev) => prev + 1)}
+                  className="w-10 h-10 rounded-xl border border-border-main dark:border-white/10 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-text-main font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  +
+                </button>
+              </div>
+
+              {/* Quick delta adjustment chips */}
+              <div className="flex items-center justify-center gap-1.5 pt-1">
+                {[10, 25, 50, 100].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setEditStockQuantity(preset)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition-colors cursor-pointer ${
+                      editStockQuantity === preset
+                        ? 'bg-primary/15 text-primary border-primary/30'
+                        : 'bg-black/5 dark:bg-white/5 text-text-muted hover:text-text-main border-transparent'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+
+              {!editStockModalItem.isAvailable && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20">
+                  ℹ️ This item is currently marked <strong>Stock Out</strong>. The new quantity will be saved as the preserved inventory count without exposing the item until you toggle <strong>Stock In</strong>.
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-border-main dark:border-white/5">
+              <button
+                type="button"
+                disabled={updatingIds.has(editStockModalItem.id)}
+                onClick={() => setEditStockModalItem(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer border border-border-main dark:border-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={updatingIds.has(editStockModalItem.id) || editStockQuantity < 0}
+                onClick={handleConfirmEditStock}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover shadow-sm transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {updatingIds.has(editStockModalItem.id) ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>Save Stock</span>
                 )}
               </button>
             </div>

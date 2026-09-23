@@ -93,6 +93,12 @@ export interface ServiceRequestUpdatedPayload {
   status: ServiceRequestStatus;
   assignedStaffId?: string | null;
   assignedStaffName?: string | null;
+  assignedStaffUsername?: string | null;
+  assignedStaff?: {
+    id: string;
+    fullName: string | null;
+    username: string;
+  } | null;
   acknowledgedAt?: string | null;
   completedAt?: string | null;
   updatedAt: string;

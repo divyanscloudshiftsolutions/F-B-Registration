@@ -527,12 +527,20 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const newAvailable = details.isAvailable !== undefined ? Boolean(details.isAvailable) : true;
         const newStock = details.currentStock ?? details.stockQuantity;
         const newAvailStock = details.availableStock;
+        const newReservedStock = details.reservedStock;
         const itemName = details.name || '';
         const prevStatus = availabilityMapRef.current.get(targetId);
         availabilityMapRef.current.set(targetId, newAvailable);
 
-        // Case 1: Stock Out (!newAvailable or availableStock === 0)
-        if (!newAvailable || (newAvailStock !== undefined && newAvailStock <= 0)) {
+        // Case 1: Physical Stock Out or Manual 86
+        // Only evict from cart if:
+        // a) The item was manually marked unavailable (!newAvailable), OR
+        // b) Physical currentStock is explicitly 0 (newStock !== undefined && newStock <= 0)
+        // DO NOT evict if availableStock === 0 due to active reservation while physical stock > 0!
+        const isPhysicalStockZero = newStock !== undefined && Number(newStock) <= 0;
+        const isManualStockOut = !newAvailable;
+
+        if (isManualStockOut || isPhysicalStockZero) {
           setCart((prevCart) => {
             const hasItem = prevCart.some((ci) => ci.menuItemId === targetId);
             if (hasItem) {
@@ -552,7 +560,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
 
         // Case 2: Stock In (genuine transition: prevStatus === false -> newAvailable === true)
-        if (newAvailable && prevStatus === false && (newAvailStock === undefined || newAvailStock > 0)) {
+        if (newAvailable && prevStatus === false && (newStock === undefined || Number(newStock) > 0)) {
           const displayName = itemName || 'An item';
           showCustomerNotification({
             type: 'stock_in',
@@ -563,47 +571,68 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           });
         }
 
+        let itemExists = false;
         setMenu((prevMenu) => {
           if (!Array.isArray(prevMenu)) return prevMenu;
-          return prevMenu.map((section: any) => ({
-            ...section,
-            items: (section.items || []).map((it: any) =>
-              it.id === targetId
-                ? {
+          const updated = prevMenu.map((section: any) => {
+            const newItems = (section.items || []).map((it: any) => {
+              if (it.id === targetId) {
+                itemExists = true;
+                return {
+                  ...it,
+                  isAvailable: newAvailable,
+                  stockQuantity: newStock ?? it.stockQuantity,
+                  availableStock: newAvailStock ?? it.availableStock,
+                  reservedStock: newReservedStock ?? it.reservedStock,
+                };
+              }
+              return it;
+            });
+
+            const newCategories = (section.categories || []).map((cat: any) => {
+              const newCatItems = (cat.items || []).map((it: any) => {
+                if (it.id === targetId) {
+                  itemExists = true;
+                  return {
                     ...it,
                     isAvailable: newAvailable,
                     stockQuantity: newStock ?? it.stockQuantity,
                     availableStock: newAvailStock ?? it.availableStock,
-                  }
-                : it
-            ),
-            categories: (section.categories || []).map((cat: any) => ({
-              ...cat,
-              items: (cat.items || []).map((it: any) =>
-                it.id === targetId
-                  ? {
+                    reservedStock: newReservedStock ?? it.reservedStock,
+                  };
+                }
+                return it;
+              });
+
+              const newSubcats = (cat.subcategories || []).map((sub: any) => {
+                const newSubItems = (sub.items || []).map((it: any) => {
+                  if (it.id === targetId) {
+                    itemExists = true;
+                    return {
                       ...it,
                       isAvailable: newAvailable,
                       stockQuantity: newStock ?? it.stockQuantity,
                       availableStock: newAvailStock ?? it.availableStock,
-                    }
-                  : it
-              ),
-              subcategories: (cat.subcategories || []).map((sub: any) => ({
-                ...sub,
-                items: (sub.items || []).map((it: any) =>
-                  it.id === targetId
-                    ? {
-                        ...it,
-                        isAvailable: newAvailable,
-                        stockQuantity: newStock ?? it.stockQuantity,
-                        availableStock: newAvailStock ?? it.availableStock,
-                      }
-                    : it
-                ),
-              })),
-            })),
-          }));
+                      reservedStock: newReservedStock ?? it.reservedStock,
+                    };
+                  }
+                  return it;
+                });
+                return { ...sub, items: newSubItems };
+              });
+
+              return { ...cat, items: newCatItems, subcategories: newSubcats };
+            });
+
+            return { ...section, items: newItems, categories: newCategories };
+          });
+
+          // If the product was newly stocked-in but was not present in menu (e.g. filtered on initial load), refresh full catalog
+          if (newAvailable && !itemExists) {
+            setTimeout(() => refreshMenu(), 0);
+          }
+
+          return updated;
         });
       } else {
         refreshMenu();
@@ -623,12 +652,48 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, [tokenNumber, tableNumber, tableId, refreshOrders, refreshBill, refreshMenu, handleSessionClosure]);
 
-  // Sync Cart Stock Reservations in Background
+  // Helper to find item inside menu sections tree
+  const findMenuItemInMenu = useCallback(
+    (itemId: string, menuList: any[] = menu): any | null => {
+      if (!Array.isArray(menuList)) return null;
+      for (const section of menuList) {
+        if (section.items) {
+          const it = section.items.find((i: any) => i.id === itemId);
+          if (it) return it;
+        }
+        if (section.categories) {
+          for (const cat of section.categories) {
+            if (cat.items) {
+              const it = cat.items.find((i: any) => i.id === itemId);
+              if (it) return it;
+            }
+            if (cat.subcategories) {
+              for (const sub of cat.subcategories) {
+                if (sub.items) {
+                  const it = sub.items.find((i: any) => i.id === itemId);
+                  if (it) return it;
+                }
+              }
+            }
+          }
+        }
+      }
+      return null;
+    },
+    [menu]
+  );
+
+  const reservedItemsRef = useRef<Map<string, number>>(new Map());
+
+  // Sync Cart Stock Reservations in Background with complete lifecycle tracking
   useEffect(() => {
     if (!tokenNumber) return;
 
     if (cart.length === 0) {
-      api.clearCartReservations(tokenNumber).catch(() => {});
+      if (reservedItemsRef.current.size > 0) {
+        api.clearCartReservations(tokenNumber).catch(() => {});
+        reservedItemsRef.current.clear();
+      }
       return;
     }
 
@@ -637,8 +702,65 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       itemQuantities.set(ci.menuItemId, (itemQuantities.get(ci.menuItemId) || 0) + (ci.quantity || 1));
     }
 
+    // Explicitly release reservations for items removed from cart
+    for (const [prevItemId] of reservedItemsRef.current.entries()) {
+      if (!itemQuantities.has(prevItemId)) {
+        api.releaseCartStock(tokenNumber, prevItemId).catch(() => {});
+        reservedItemsRef.current.delete(prevItemId);
+      }
+    }
+
+    // Sync current items whose quantity changed
     itemQuantities.forEach((qty, menuItemId) => {
-      api.reserveCartStock(tokenNumber, menuItemId, qty).catch(() => {});
+      const prevQty = reservedItemsRef.current.get(menuItemId);
+      if (prevQty === qty) return;
+
+      api.reserveCartStock(tokenNumber, menuItemId, qty)
+        .then((res: any) => {
+          if (res && res.success === false) {
+            const maxAvail = res.availableForToken !== undefined
+              ? Number(res.availableForToken)
+              : (res.availableStock !== undefined ? Number(res.availableStock) : 0);
+
+            // Roll back / clamp cart to actual available stock if exceeded
+            setCart((prevCart) => {
+              const currentTotal = prevCart
+                .filter((ci) => ci.menuItemId === menuItemId)
+                .reduce((sum, ci) => sum + (ci.quantity || 1), 0);
+
+              if (currentTotal > maxAvail) {
+                showCustomerNotification({
+                  type: 'stock_out_cart',
+                  message: res.message || (maxAvail > 0 ? `Only ${maxAvail} units available in stock.` : 'Item is currently reserved by other customers.'),
+                  menuItemId,
+                  durationMs: 3000,
+                });
+
+                if (maxAvail <= 0) {
+                  reservedItemsRef.current.delete(menuItemId);
+                  return prevCart.filter((ci) => ci.menuItemId !== menuItemId);
+                }
+
+                let remainingAllowed = maxAvail;
+                reservedItemsRef.current.set(menuItemId, maxAvail);
+                return prevCart
+                  .map((ci) => {
+                    if (ci.menuItemId !== menuItemId) return ci;
+                    if (remainingAllowed <= 0) return null;
+                    const itemQty = ci.quantity || 1;
+                    const clampedQty = Math.min(itemQty, remainingAllowed);
+                    remainingAllowed -= clampedQty;
+                    return { ...ci, quantity: clampedQty };
+                  })
+                  .filter(Boolean) as CartItem[];
+              }
+              return prevCart;
+            });
+          } else if (res && res.success === true) {
+            reservedItemsRef.current.set(menuItemId, qty);
+          }
+        })
+        .catch(() => {});
     });
   }, [cart, tokenNumber]);
 
@@ -664,6 +786,43 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const addToCart = (item: Omit<CartItem, 'id'>) => {
+    const itemInMenu = findMenuItemInMenu(item.menuItemId);
+    const isManualAvailable = itemInMenu?.isAvailable !== false;
+    const physicalStock = itemInMenu?.stockQuantity !== undefined ? Number(itemInMenu.stockQuantity) : 50;
+    const rawAvailable = itemInMenu?.availableStock !== undefined ? Number(itemInMenu.availableStock) : physicalStock;
+    const currentTotalInCart = cart
+      .filter((ci) => ci.menuItemId === item.menuItemId)
+      .reduce((sum, ci) => sum + (Number(ci.quantity) || 1), 0);
+
+    const maxAllowedForCustomer = isManualAvailable ? Math.min(physicalStock, rawAvailable + currentTotalInCart) : 0;
+    const qtyToAdd = Number(item.quantity) || 1;
+
+    if (!isManualAvailable || physicalStock <= 0) {
+      showCustomerNotification({
+        type: 'stock_out_cart',
+        message: `${item.name || 'Item'} is currently out of stock.`,
+        menuItemId: item.menuItemId,
+        itemName: item.name,
+        durationMs: 3000,
+      });
+      return;
+    }
+
+    if (currentTotalInCart + qtyToAdd > maxAllowedForCustomer) {
+      const allowedDelta = Math.max(0, maxAllowedForCustomer - currentTotalInCart);
+      showCustomerNotification({
+        type: 'stock_out_cart',
+        message: allowedDelta > 0
+          ? `Only ${allowedDelta} more available in stock.`
+          : `Maximum stock (${maxAllowedForCustomer}) already in your cart.`,
+        menuItemId: item.menuItemId,
+        itemName: item.name,
+        durationMs: 3000,
+      });
+      if (allowedDelta <= 0) return;
+      item = { ...item, quantity: allowedDelta };
+    }
+
     setCart((prev) => {
       const existingIndex = prev.findIndex((ci) => areCartItemsEqual(ci, item));
       if (existingIndex > -1) {
@@ -691,8 +850,33 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const updateCartQuantity = (cartItemId: string, delta: number) => {
-    setCart((prev) =>
-      prev
+    setCart((prev) => {
+      const targetItem = prev.find((ci) => ci.id === cartItemId);
+      if (!targetItem) return prev;
+
+      if (delta > 0) {
+        const itemInMenu = findMenuItemInMenu(targetItem.menuItemId);
+        const isManualAvailable = itemInMenu?.isAvailable !== false;
+        const physicalStock = itemInMenu?.stockQuantity !== undefined ? Number(itemInMenu.stockQuantity) : 50;
+        const rawAvailable = itemInMenu?.availableStock !== undefined ? Number(itemInMenu.availableStock) : physicalStock;
+        const totalCartQty = prev
+          .filter((ci) => ci.menuItemId === targetItem.menuItemId)
+          .reduce((sum, ci) => sum + (Number(ci.quantity) || 1), 0);
+        const maxAllowedForCustomer = isManualAvailable ? Math.min(physicalStock, rawAvailable + totalCartQty) : 0;
+
+        if (totalCartQty + delta > maxAllowedForCustomer) {
+          showCustomerNotification({
+            type: 'stock_out_cart',
+            message: `Cannot add more. Stock limit of ${maxAllowedForCustomer} reached.`,
+            menuItemId: targetItem.menuItemId,
+            itemName: targetItem.name,
+            durationMs: 2500,
+          });
+          return prev;
+        }
+      }
+
+      return prev
         .map((ci) => {
           if (ci.id === cartItemId) {
             const newQty = (ci.quantity || 1) + delta;
@@ -700,8 +884,8 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           }
           return ci;
         })
-        .filter(Boolean) as CartItem[]
-    );
+        .filter(Boolean) as CartItem[];
+    });
   };
 
   const removeFromCart = (cartItemId: string) => {
@@ -710,11 +894,45 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const clearCart = () => {
     setCart([]);
+    if (tokenNumber) {
+      api.clearCartReservations(tokenNumber).catch(() => {});
+      reservedItemsRef.current.clear();
+    }
     localStorage.removeItem('bar_customer_cart');
   };
 
   const cartTotal = Math.round(
-    cart.reduce((sum, item) => sum + Number(item.unitPrice || 0) * (Number(item.quantity) || 1), 0) * 100
+    cart.reduce((sum, item) => {
+      const itemInMenu = (() => {
+        if (!Array.isArray(menu)) return null;
+        for (const section of menu) {
+          if (section.items) {
+            const it = section.items.find((i: any) => i.id === item.menuItemId);
+            if (it) return it;
+          }
+          if (section.categories) {
+            for (const cat of section.categories) {
+              if (cat.items) {
+                const it = cat.items.find((i: any) => i.id === item.menuItemId);
+                if (it) return it;
+              }
+              if (cat.subcategories) {
+                for (const sub of cat.subcategories) {
+                  if (sub.items) {
+                    const it = sub.items.find((i: any) => i.id === item.menuItemId);
+                    if (it) return it;
+                  }
+                }
+              }
+            }
+          }
+        }
+        return null;
+      })();
+      const isStockOut = itemInMenu && (itemInMenu.isAvailable === false || Number(itemInMenu.stockQuantity ?? 50) <= 0);
+      if (isStockOut) return sum;
+      return sum + Number(item.unitPrice || 0) * (Number(item.quantity) || 1);
+    }, 0) * 100
   ) / 100;
   const cartCount = cart.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
 

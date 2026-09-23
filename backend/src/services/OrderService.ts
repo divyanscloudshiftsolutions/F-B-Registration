@@ -128,7 +128,7 @@ export class OrderService {
       gstAmount?: Decimal;
     }> = [];
 
-    const stockDeductions: Array<{ stockItemId: string; menuItemId: string; quantity: number; itemName: string; newStock?: number }> = [];
+    const aggregatedStockDeductions = new Map<string, { stockItemId: string; menuItemId: string; quantity: number; itemName: string; newStock?: number }>();
 
     for (const itemInput of input.items) {
       const menuItem = menuItemMap.get(itemInput.menuItemId);
@@ -147,12 +147,17 @@ export class OrderService {
 
       // Check numeric stock if tracked
       if (menuItem.stockItem && menuItem.stockItem.isActive) {
-        stockDeductions.push({
-          stockItemId: menuItem.stockItem.id,
-          menuItemId: menuItem.id,
-          quantity: qty,
-          itemName: menuItem.name,
-        });
+        const existing = aggregatedStockDeductions.get(menuItem.stockItem.id);
+        if (existing) {
+          existing.quantity += qty;
+        } else {
+          aggregatedStockDeductions.set(menuItem.stockItem.id, {
+            stockItemId: menuItem.stockItem.id,
+            menuItemId: menuItem.id,
+            quantity: qty,
+            itemName: menuItem.name,
+          });
+        }
       }
 
       let baseUnitPrice = new Decimal(menuItem.finalPrice ?? menuItem.basePrice);
@@ -245,10 +250,9 @@ export class OrderService {
     const orderNumber = existingOrdersCount + 1;
 
     // 6. Execute Transactional Order Creation with Atomic Inventory Lock
-    const zeroStockItemIds: string[] = [];
     const createdOrder = await prisma.$transaction(async (tx) => {
       // Validate and deduct stock atomically
-      for (const deduction of stockDeductions) {
+      for (const deduction of aggregatedStockDeductions.values()) {
         const stock = await tx.stockItem.findUnique({
           where: { id: deduction.stockItemId },
         });
@@ -256,12 +260,23 @@ export class OrderService {
           throw new Error(`Insufficient stock for "${deduction.itemName}". Available: ${stock?.currentStock || 0}`);
         }
 
+        // Atomic conditional decrement: guarantees no overselling even under simultaneous checkout races
+        const updateResult = await tx.stockItem.updateMany({
+          where: {
+            id: stock.id,
+            currentStock: { gte: deduction.quantity },
+          },
+          data: {
+            currentStock: { decrement: deduction.quantity },
+          },
+        });
+
+        if (updateResult.count === 0) {
+          throw new Error(`Insufficient stock for "${deduction.itemName}". Stock was claimed by a concurrent order.`);
+        }
+
         const newStock = stock.currentStock - deduction.quantity;
         deduction.newStock = newStock;
-        await tx.stockItem.update({
-          where: { id: stock.id },
-          data: { currentStock: newStock },
-        });
 
         await tx.inventoryLog.create({
           data: {
@@ -275,7 +290,6 @@ export class OrderService {
         });
 
         if (newStock === 0) {
-          zeroStockItemIds.push(deduction.menuItemId);
           await tx.menuItem.update({
             where: { id: deduction.menuItemId },
             data: { isAvailable: false },
@@ -315,30 +329,22 @@ export class OrderService {
       console.warn('[OrderService] Failed to clear cart reservations after order:', clearErr);
     }
 
-    // 8. Auto-Stock-Out cascade for items that reached 0 stock
-    for (const zeroItemId of zeroStockItemIds) {
-      try {
-        await menuService.setItemAvailability(zeroItemId, false);
-      } catch (zeroErr) {
-        console.warn(`[OrderService] Failed to execute auto stock-out for item ${zeroItemId}:`, zeroErr);
-      }
-    }
-
-    // 9. Invalidate menu cache & notify real-time stock changes for deducted items
+    // 8. Invalidate menu cache & notify real-time stock changes for deducted items
     try {
       await menuService.invalidateMenuCache();
-      for (const deduction of stockDeductions) {
-        if (!zeroStockItemIds.includes(deduction.menuItemId)) {
-          const currentStock = deduction.newStock ?? 0;
-          const reserved = await inventoryService.getReservedQuantity(deduction.menuItemId);
-          const availableStock = Math.max(0, currentStock - reserved);
-          inventoryService.notifyStockChanged({
-            itemId: deduction.menuItemId,
-            stockQuantity: currentStock,
-            availableStock,
-            isAvailable: currentStock > 0,
-          });
-        }
+      for (const deduction of aggregatedStockDeductions.values()) {
+        const currentStock = deduction.newStock ?? 0;
+        const reserved = await inventoryService.getReservedQuantity(deduction.menuItemId);
+        const availableStock = Math.max(0, currentStock - reserved);
+        inventoryService.notifyStockChanged({
+          itemId: deduction.menuItemId,
+          stockQuantity: currentStock,
+          currentStock,
+          availableStock,
+          reservedStock: reserved,
+          isAvailable: currentStock > 0,
+          reason: currentStock === 0 ? 'STOCK_EXHAUSTED' : 'ORDER_DEDUCTION',
+        });
       }
     } catch (syncErr) {
       console.warn('[OrderService] Failed to sync stock changes after order:', syncErr);
@@ -431,6 +437,13 @@ export class OrderService {
       include: {
         items: true,
         table: true,
+        handler: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
+          },
+        },
       },
     });
   }
@@ -721,16 +734,32 @@ export class OrderService {
     const now = new Date();
 
     const result = await prisma.$transaction(async (tx) => {
-      // Restore inventory stock if tracked
+      // 1. ATOMIC STATUS CHECK & TRANSITION (Guarantees exactly-once cancellation and blocks double-click / concurrent KDS accept races)
+      const updateResult = await tx.orderItem.updateMany({
+        where: {
+          id: orderItemId,
+          status: OrderStatus.PLACED,
+        },
+        data: {
+          status: OrderStatus.CANCELLED,
+        },
+      });
+
+      if (updateResult.count === 0) {
+        throw new Error('Cannot delete item: Item is no longer in pending (PLACED) status or was already processed.');
+      }
+
+      // 2. RESTORE PHYSICAL INVENTORY (Guaranteed atomic inside transaction)
+      let restoredStock = 0;
       if (item.menuItem?.stockItem && item.menuItem.stockItem.isActive) {
         const stock = await tx.stockItem.findUnique({
           where: { id: item.menuItem.stockItem.id },
         });
         if (stock) {
-          const newStock = stock.currentStock + item.quantity;
+          restoredStock = stock.currentStock + item.quantity;
           await tx.stockItem.update({
             where: { id: stock.id },
-            data: { currentStock: newStock },
+            data: { currentStock: restoredStock },
           });
 
           await tx.inventoryLog.create({
@@ -738,7 +767,7 @@ export class OrderService {
               stockItemId: stock.id,
               quantityDelta: item.quantity,
               previousStock: stock.currentStock,
-              newStock,
+              newStock: restoredStock,
               reason: 'ORDER_CANCELLATION',
               userId: null,
             },
@@ -746,20 +775,23 @@ export class OrderService {
         }
       }
 
-      // Mark order item status as CANCELLED
-      const updatedItem = await tx.orderItem.update({
-        where: { id: orderItemId },
-        data: {
-          status: OrderStatus.CANCELLED,
-        },
-      });
+      // 3. RESTORE MENU ITEM AVAILABILITY IN DATABASE
+      // When physical stock is restored above 0, mark the menu item available in DB so catalog queries see it
+      if (item.menuItemId && restoredStock > 0) {
+        await tx.menuItem.update({
+          where: { id: item.menuItemId },
+          data: { isAvailable: true },
+        });
+      }
 
-      // Recalculate parent order subtotal and overall status
+      // 4. Recalculate parent order subtotal and overall status
       const allOrderItems = await tx.orderItem.findMany({
         where: { orderId: item.orderId },
       });
 
-      const activeItems = allOrderItems.filter((i) => i.status !== OrderStatus.CANCELLED);
+      const activeItems = allOrderItems.filter(
+        (i) => i.status !== OrderStatus.CANCELLED && i.status !== OrderStatus.STOCK_OUT
+      );
       const newSubtotal = activeItems.reduce(
         (sum, i) => sum.plus(new Decimal(i.lineTotal)),
         new Decimal(0)
@@ -788,10 +820,16 @@ export class OrderService {
         },
       });
 
-      return { updatedItem, newOrderStatus, newSubtotal };
+      const updatedItem = await tx.orderItem.findUnique({ where: { id: orderItemId } });
+      return { updatedItem: updatedItem!, newOrderStatus, newSubtotal, restoredStock };
     });
 
-    // Broadcast real-time order item update
+    // 5. Invalidate menu cache
+    try {
+      await menuService.invalidateMenuCache();
+    } catch {}
+
+    // 6. Broadcast real-time order item update
     try {
       broadcastOrderItemUpdated({
         orderId: item.orderId,
@@ -815,6 +853,218 @@ export class OrderService {
       });
     } catch (broadcastErr) {
       console.warn('Real-time cancellation broadcast error:', broadcastErr);
+    }
+
+    // 7. Broadcast restored stock to all clients
+    try {
+      if (item.menuItemId) {
+        const stockInfo = await inventoryService.getAvailableStock(item.menuItemId);
+        const mItem = await prisma.menuItem.findUnique({ where: { id: item.menuItemId } });
+        if (mItem) {
+          inventoryService.notifyStockChanged({
+            itemId: item.menuItemId,
+            stockQuantity: stockInfo.currentStock,
+            currentStock: stockInfo.currentStock,
+            availableStock: stockInfo.availableStock,
+            reservedStock: stockInfo.reservedStock,
+            isAvailable: stockInfo.currentStock > 0,
+            name: mItem.name,
+            station: mItem.station,
+            reason: 'ORDER_CANCELLATION_RESTORE',
+          });
+        }
+      }
+    } catch (stockSyncErr) {
+      console.warn('Real-time stock restoration broadcast error:', stockSyncErr);
+    }
+
+    return result.updatedItem;
+  }
+
+  /**
+   * Cleanup/cancel an unaccepted (PLACED) order item from a closed dining session
+   */
+  async cleanupClosedSessionOrderItem(orderItemId: string, staffUserId?: string) {
+    const now = new Date();
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Fetch item inside transaction with necessary relations
+      const item = await tx.orderItem.findUnique({
+        where: { id: orderItemId },
+        include: {
+          order: {
+            include: {
+              token: true,
+              table: true,
+            },
+          },
+          menuItem: {
+            include: {
+              stockItem: true,
+            },
+          },
+        },
+      });
+
+      if (!item) {
+        throw new Error('Order item not found');
+      }
+
+      // 2. Strict status check: Only unaccepted (PLACED) items from closed sessions can be cleaned up
+      if (item.status !== OrderStatus.PLACED) {
+        throw new Error(`Cannot cleanup item: Only unaccepted (Placed) orders can be removed. Current status is ${item.status}.`);
+      }
+
+      // 3. Strict session check: Ensure session is actually closed/completed/ended
+      const isTokenActive = item.order?.token
+        ? (item.order.token.status === TokenStatus.ACTIVE || item.order.token.status === TokenStatus.EXTENDED)
+        : false;
+
+      if (isTokenActive) {
+        throw new Error('Cannot cleanup item: The customer dining session is still active.');
+      }
+
+      // 4. ATOMIC STATUS CHECK & TRANSITION (Guarantees exactly-once cleanup)
+      const updateResult = await tx.orderItem.updateMany({
+        where: {
+          id: orderItemId,
+          status: OrderStatus.PLACED,
+        },
+        data: {
+          status: OrderStatus.CANCELLED,
+        },
+      });
+
+      if (updateResult.count === 0) {
+        throw new Error('Cannot cleanup item: Item is no longer in pending (PLACED) status or was already processed.');
+      }
+
+      // 5. Restore inventory stock exactly once (guaranteed atomic inside transaction)
+      let restoredStock = 0;
+      if (item.menuItem?.stockItem && item.menuItem.stockItem.isActive) {
+        const stock = await tx.stockItem.findUnique({
+          where: { id: item.menuItem.stockItem.id },
+        });
+        if (stock) {
+          restoredStock = stock.currentStock + item.quantity;
+          await tx.stockItem.update({
+            where: { id: stock.id },
+            data: { currentStock: restoredStock },
+          });
+
+          await tx.inventoryLog.create({
+            data: {
+              stockItemId: stock.id,
+              quantityDelta: item.quantity,
+              previousStock: stock.currentStock,
+              newStock: restoredStock,
+              reason: 'CLOSED_SESSION_CLEANUP',
+              userId: staffUserId || null,
+            },
+          });
+        }
+      }
+
+      // 6. RESTORE MENU ITEM AVAILABILITY IN DATABASE
+      if (item.menuItemId && restoredStock > 0) {
+        await tx.menuItem.update({
+          where: { id: item.menuItemId },
+          data: { isAvailable: true },
+        });
+      }
+
+      // 7. Recalculate parent order subtotal and overall status
+      const allOrderItems = await tx.orderItem.findMany({
+        where: { orderId: item.orderId },
+      });
+
+      const activeItems = allOrderItems.filter(
+        (i) => i.status !== OrderStatus.CANCELLED && i.status !== OrderStatus.STOCK_OUT
+      );
+      const newSubtotal = activeItems.reduce(
+        (sum, i) => sum.plus(new Decimal(i.lineTotal)),
+        new Decimal(0)
+      );
+
+      let newOrderStatus = OrderStatus.PLACED;
+      if (allOrderItems.length > 0 && activeItems.length === 0) {
+        newOrderStatus = OrderStatus.CANCELLED;
+      } else if (activeItems.every((i) => i.status === OrderStatus.SERVED)) {
+        newOrderStatus = OrderStatus.SERVED;
+      } else if (activeItems.every((i) => i.status === OrderStatus.READY || i.status === OrderStatus.SERVED)) {
+        newOrderStatus = OrderStatus.READY;
+      } else if (activeItems.some((i) => i.status === OrderStatus.PREPARING || i.status === OrderStatus.READY || i.status === OrderStatus.SERVED)) {
+        newOrderStatus = OrderStatus.PREPARING;
+      } else if (activeItems.some((i) => i.status === OrderStatus.ACCEPTED)) {
+        newOrderStatus = OrderStatus.ACCEPTED;
+      } else {
+        newOrderStatus = OrderStatus.PLACED;
+      }
+
+      await tx.order.update({
+        where: { id: item.orderId },
+        data: {
+          subtotal: newSubtotal,
+          status: newOrderStatus,
+        },
+      });
+
+      const updatedItem = await tx.orderItem.findUnique({ where: { id: orderItemId } });
+      return { item, updatedItem: updatedItem!, newOrderStatus, newSubtotal, restoredStock };
+    });
+
+    // 8. Invalidate menu cache
+    try {
+      await menuService.invalidateMenuCache();
+    } catch {}
+
+    // 9. Broadcast real-time order item update
+    try {
+      broadcastOrderItemUpdated({
+        orderId: result.item.orderId,
+        orderItemId: result.item.id,
+        orderNumber: result.item.order.orderNumber,
+        tokenNumber: result.item.order.token?.tokenNumber || '',
+        tableId: result.item.order.tableId,
+        tableNumber: result.item.order.table?.tableNumber,
+        station: result.item.station,
+        itemName: result.item.itemName,
+        variantName: result.item.variantName,
+        selectedModifiers: result.item.selectedModifiers,
+        specialInstructions: result.item.specialInstructions,
+        quantity: result.item.quantity,
+        previousStatus: result.item.status,
+        status: OrderStatus.CANCELLED,
+        preparedAt: null,
+        readyAt: null,
+        servedAt: null,
+        updatedAt: now.toISOString(),
+      });
+    } catch (broadcastErr) {
+      console.warn('Real-time closed-session cleanup broadcast error:', broadcastErr);
+    }
+
+    // 10. Broadcast restored stock to all clients
+    try {
+      if (result.item.menuItemId) {
+        const stockInfo = await inventoryService.getAvailableStock(result.item.menuItemId);
+        const mItem = await prisma.menuItem.findUnique({ where: { id: result.item.menuItemId } });
+        if (mItem) {
+          inventoryService.notifyStockChanged({
+            itemId: result.item.menuItemId,
+            stockQuantity: stockInfo.currentStock,
+            currentStock: stockInfo.currentStock,
+            availableStock: stockInfo.availableStock,
+            reservedStock: stockInfo.reservedStock,
+            isAvailable: stockInfo.currentStock > 0,
+            name: mItem.name,
+            station: mItem.station,
+            reason: 'CLOSED_SESSION_CLEANUP_RESTORE',
+          });
+        }
+      }
+    } catch (stockSyncErr) {
+      console.warn('Real-time stock restoration broadcast error:', stockSyncErr);
     }
 
     return result.updatedItem;

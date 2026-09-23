@@ -1168,331 +1168,392 @@ export const MenuCatalogManager: React.FC = () => {
       )}
 
       {/* Admin Product Details View Modal */}
-      {selectedDetailItem && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="admin-product-detail-title"
-          onClick={() => setSelectedDetailItem(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in cursor-pointer"
-        >
+      {selectedDetailItem && (() => {
+        // Authoritative live inventory resolution from menu state
+        const liveDetailItem = menu.flatMap((sec) => [
+          ...(sec.items || []),
+          ...((sec.categories || []).flatMap((cat: any) => cat.items || []))
+        ]).find((it: any) => it.id === selectedDetailItem.id) || selectedDetailItem;
+
+        const stockQty = liveDetailItem.stockQuantity !== undefined
+          ? Number(liveDetailItem.stockQuantity)
+          : Number(liveDetailItem.stockItem?.currentStock ?? 50);
+
+        const availQty = liveDetailItem.availableStock !== undefined
+          ? Number(liveDetailItem.availableStock)
+          : stockQty;
+
+        const isManuallyStockedOut = liveDetailItem.isAvailable === false;
+        const isZeroStock = stockQty === 0 || availQty === 0;
+        const isOutOfStock = isManuallyStockedOut || isZeroStock;
+        const isLowStock = !isOutOfStock && availQty > 0 && availQty <= 10;
+
+        return (
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-xl max-h-[90vh] bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col cursor-default text-zinc-900 dark:text-zinc-100"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-product-detail-title"
+            onClick={() => setSelectedDetailItem(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in cursor-pointer"
           >
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0 bg-zinc-50/80 dark:bg-zinc-900/60">
-              <div className="flex items-center gap-2.5 min-w-0">
-                {selectedDetailItem.foodType && (
-                  <VegBadge type={selectedDetailItem.foodType} size="sm" />
-                )}
-                <h3 id="admin-product-detail-title" className="text-base sm:text-lg font-black text-zinc-900 dark:text-white truncate">
-                  {selectedDetailItem.name}
-                </h3>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {canManage && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-xl max-h-[90vh] bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col cursor-default text-zinc-900 dark:text-zinc-100"
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0 bg-zinc-50/80 dark:bg-zinc-900/60">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {liveDetailItem.foodType && (
+                    <VegBadge type={liveDetailItem.foodType} size="sm" />
+                  )}
+                  <h3 id="admin-product-detail-title" className="text-base sm:text-lg font-black text-zinc-900 dark:text-white truncate">
+                    {liveDetailItem.name}
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const itemToEdit = liveDetailItem;
+                        setSelectedDetailItem(null);
+                        handleOpenEditDrawer(itemToEdit);
+                      }}
+                      title="Edit Product"
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-purple-100 hover:bg-purple-200 dark:bg-[#D4AF37]/15 dark:hover:bg-[#D4AF37]/25 text-purple-700 dark:text-[#D4AF37] border border-purple-300 dark:border-[#D4AF37]/30 flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit</span>
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => {
-                      const itemToEdit = selectedDetailItem;
-                      setSelectedDetailItem(null);
-                      handleOpenEditDrawer(itemToEdit);
-                    }}
-                    title="Edit Product"
-                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-purple-100 hover:bg-purple-200 dark:bg-[#D4AF37]/15 dark:hover:bg-[#D4AF37]/25 text-purple-700 dark:text-[#D4AF37] border border-purple-300 dark:border-[#D4AF37]/30 flex items-center gap-1.5 transition-all cursor-pointer"
+                    onClick={() => setSelectedDetailItem(null)}
+                    aria-label="Close product details"
+                    className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                   >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>Edit</span>
+                    <X className="w-5 h-5" />
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setSelectedDetailItem(null)}
-                  aria-label="Close product details"
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                </div>
               </div>
-            </div>
 
-            {/* Scrollable Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-5 flex-1 text-xs">
-              {/* Product Image: Aspect-square contained container with blurred background fill */}
-              {selectedDetailItem.image || selectedDetailItem.imageUrl ? (
-                <div
-                  className="relative w-full aspect-square max-h-72 sm:max-h-80 rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center shadow-inner"
-                >
-                  <img
-                    src={formatImageUrl(selectedDetailItem.image || selectedDetailItem.imageUrl)}
-                    alt=""
-                    aria-hidden="true"
-                    className="absolute inset-0 w-full h-full object-cover blur-xl scale-125 opacity-30 pointer-events-none"
-                  />
-                  <img
-                    src={formatImageUrl(selectedDetailItem.image || selectedDetailItem.imageUrl)}
-                    alt={selectedDetailItem.name}
-                    className="relative z-10 max-h-full max-w-full object-contain p-3 drop-shadow-md"
-                  />
-                </div>
-              ) : (
-                <div className="w-full h-44 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500 gap-1.5">
-                  <span className="text-3xl select-none" role="img" aria-label="No image">🍽️</span>
-                  <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">No Image</span>
-                  <span className="text-[10px] text-zinc-400 dark:text-zinc-500">No product image uploaded</span>
-                </div>
-              )}
+              {/* Scrollable Modal Body */}
+              <div className="p-6 overflow-y-auto space-y-5 flex-1 text-xs">
+                {/* Product Image: Aspect-square contained container with blurred background fill */}
+                {liveDetailItem.image || liveDetailItem.imageUrl ? (
+                  <div
+                    className="relative w-full aspect-square max-h-72 sm:max-h-80 rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center shadow-inner"
+                  >
+                    <img
+                      src={formatImageUrl(liveDetailItem.image || liveDetailItem.imageUrl)}
+                      alt=""
+                      aria-hidden="true"
+                      className="absolute inset-0 w-full h-full object-cover blur-xl scale-125 opacity-30 pointer-events-none"
+                    />
+                    <img
+                      src={formatImageUrl(liveDetailItem.image || liveDetailItem.imageUrl)}
+                      alt={liveDetailItem.name}
+                      className="relative z-10 max-h-full max-w-full object-contain p-3 drop-shadow-md"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-full h-44 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500 gap-1.5">
+                    <span className="text-3xl select-none" role="img" aria-label="No image">🍽️</span>
+                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">No Image</span>
+                    <span className="text-[10px] text-zinc-400 dark:text-zinc-500">No product image uploaded</span>
+                  </div>
+                )}
 
-              {/* Price & Status Badges */}
-              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800/80">
-                <div>
-                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase tracking-wider font-bold block">
-                    Pricing
-                  </span>
-                  <div className="flex items-baseline gap-2 mt-0.5">
-                    <span className="text-lg sm:text-xl font-black text-purple-700 dark:text-[#D4AF37]">
-                      ₹{Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice ?? 0).toFixed(2)}
+                {/* Price & Status Badges */}
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800/80">
+                  <div>
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase tracking-wider font-bold block">
+                      Pricing
                     </span>
-                    {Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice) < Number(selectedDetailItem.basePrice ?? 0) && (
-                      <span className="text-xs text-zinc-400 line-through">
-                        ₹{Number(selectedDetailItem.basePrice).toFixed(2)}
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      <span className="text-lg sm:text-xl font-black text-purple-700 dark:text-[#D4AF37]">
+                        ₹{Number(liveDetailItem.finalPrice ?? liveDetailItem.basePrice ?? 0).toFixed(2)}
+                      </span>
+                      {Number(liveDetailItem.finalPrice ?? liveDetailItem.basePrice) < Number(liveDetailItem.basePrice ?? 0) && (
+                        <span className="text-xs text-zinc-400 line-through">
+                          ₹{Number(liveDetailItem.basePrice).toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {isOutOfStock ? (
+                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60">
+                        Out of Stock
+                      </span>
+                    ) : isLowStock ? (
+                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60">
+                        Only {availQty} left
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+                        In Stock ({availQty})
+                      </span>
+                    )}
+                    {Number(liveDetailItem.finalPrice ?? liveDetailItem.basePrice) < Number(liveDetailItem.basePrice ?? 0) && (
+                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+                        {liveDetailItem.discountMode === 'PERCENTAGE'
+                          ? `${liveDetailItem.discountValue}% OFF`
+                          : `₹${liveDetailItem.discountValue} OFF`}
+                      </span>
+                    )}
+                    {liveDetailItem.isFeatured && (
+                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60">
+                        Featured
+                      </span>
+                    )}
+                    {liveDetailItem.isPopular && (
+                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-100 dark:bg-[#D4AF37]/15 text-amber-800 dark:text-[#D4AF37] border border-amber-200 dark:border-[#D4AF37]/30">
+                        Popular
                       </span>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {selectedDetailItem.isAvailable === false ? (
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60">
-                      Out of Stock
+                {/* Description */}
+                <div>
+                  <span className="text-[11px] font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider block mb-1">
+                    Description
+                  </span>
+                  <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
+                    {liveDetailItem.description?.trim() || 'N/A'}
+                  </p>
+                </div>
+
+                {/* Administrative & Technical Specifications Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {/* Stock Quantity */}
+                  <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                      Stock Quantity
                     </span>
-                  ) : (
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
-                      In Stock
+                    <span className="text-xs font-mono font-bold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      {stockQty}
                     </span>
-                  )}
-                  {Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice) < Number(selectedDetailItem.basePrice ?? 0) && (
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
-                      {selectedDetailItem.discountMode === 'PERCENTAGE'
-                        ? `${selectedDetailItem.discountValue}% OFF`
-                        : `₹${selectedDetailItem.discountValue} OFF`}
-                    </span>
-                  )}
-                  {selectedDetailItem.isFeatured && (
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60">
-                      Featured
-                    </span>
-                  )}
-                  {selectedDetailItem.isPopular && (
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-100 dark:bg-[#D4AF37]/15 text-amber-800 dark:text-[#D4AF37] border border-amber-200 dark:border-[#D4AF37]/30">
-                      Popular
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Description */}
-              <div>
-                <span className="text-[11px] font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider block mb-1">
-                  Description
-                </span>
-                <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
-                  {selectedDetailItem.description?.trim() || 'N/A'}
-                </p>
-              </div>
-
-              {/* Administrative & Technical Specifications Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {/* Section */}
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
-                    Section
-                  </span>
-                  <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                    {selectedDetailItem.sectionSlug === 'eat'
-                      ? 'Food'
-                      : selectedDetailItem.sectionName || (selectedDetailItem.sectionSlug ? selectedDetailItem.sectionSlug.toUpperCase() : 'N/A')}
-                  </span>
-                </div>
-
-                {/* Category */}
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
-                    Category
-                  </span>
-                  <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                    {selectedDetailItem.categoryName || selectedDetailItem.category?.name || 'N/A'}
-                  </span>
-                </div>
-
-                {/* Subcategory */}
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
-                    Subcategory
-                  </span>
-                  <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                    {selectedDetailItem.subcategory?.name || selectedDetailItem.subcategoryName
-                      ? (selectedDetailItem.subcategory?.name || selectedDetailItem.subcategoryName)
-                      : selectedDetailItem.subcategoryId
-                      ? 'N/A'
-                      : 'None'}
-                  </span>
-                </div>
-
-                {/* Dietary Classification */}
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
-                    Dietary Classification
-                  </span>
-                  <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                    {selectedDetailItem.foodType
-                      ? selectedDetailItem.foodType === 'VEG'
-                        ? 'Vegetarian (Veg)'
-                        : selectedDetailItem.foodType === 'NON_VEG'
-                        ? 'Non-Vegetarian (Non-Veg)'
-                        : selectedDetailItem.foodType === 'EGG'
-                        ? 'Contains Egg'
-                        : selectedDetailItem.foodType === 'VEGAN'
-                        ? 'Vegan'
-                        : selectedDetailItem.foodType
-                      : 'N/A'}
-                  </span>
-                </div>
-
-                {/* Preparation Area / Station */}
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
-                    Preparation Area
-                  </span>
-                  <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                    {selectedDetailItem.station === 'KITCHEN'
-                      ? 'Kitchen'
-                      : selectedDetailItem.station === 'BAR'
-                      ? 'Bar'
-                      : selectedDetailItem.station === 'CASHIER'
-                      ? 'Front Desk / Cashier'
-                      : selectedDetailItem.station || 'N/A'}
-                  </span>
-                </div>
-
-                {/* Prep Time */}
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
-                    Prep Time
-                  </span>
-                  <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                    {selectedDetailItem.preparationTime !== undefined && selectedDetailItem.preparationTime !== null
-                      ? `${selectedDetailItem.preparationTime} mins`
-                      : 'N/A'}
-                  </span>
-                </div>
-
-                {/* GST Tax Tag */}
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
-                    GST Tax Tag
-                  </span>
-                  <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
-                    {selectedDetailItem.gstTaxTag?.name
-                      ? `${selectedDetailItem.gstTaxTag.name} (${selectedDetailItem.gstTaxTag.percentage}%)`
-                      : selectedDetailItem.taxRate !== undefined && selectedDetailItem.taxRate !== null
-                      ? `${selectedDetailItem.taxRate}% GST${selectedDetailItem.hsnCode ? ` (HSN: ${selectedDetailItem.hsnCode})` : ''}`
-                      : 'None'}
-                  </span>
-                </div>
-
-                {/* Allergens */}
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
-                    Allergens
-                  </span>
-                  {selectedDetailItem.allergens && selectedDetailItem.allergens.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {selectedDetailItem.allergens.map((a: string, idx: number) => (
-                        <span key={idx} className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[10px]">
-                          {a}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-zinc-400">None</span>
-                  )}
-                </div>
-
-                {/* Tags */}
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
-                    Tags
-                  </span>
-                  {selectedDetailItem.tags && selectedDetailItem.tags.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {selectedDetailItem.tags.map((t: string, idx: number) => (
-                        <span key={idx} className="px-2 py-0.5 rounded bg-purple-50 dark:bg-zinc-800 text-purple-700 dark:text-[#D4AF37] text-[10px] font-semibold">
-                          #{t}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-zinc-400">None</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Variants (if present) */}
-              <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60 space-y-1.5">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
-                  Available Variants
-                </span>
-                {selectedDetailItem.variants && selectedDetailItem.variants.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {selectedDetailItem.variants.map((v: any) => (
-                      <span
-                        key={v.id || v.name}
-                        className="px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs font-semibold border border-zinc-200 dark:border-zinc-700"
-                      >
-                        {v.name} ({Number(v.priceDelta) >= 0 ? `+₹${v.priceDelta}` : `-₹${Math.abs(Number(v.priceDelta))}`})
+                    {isManuallyStockedOut && (
+                      <span className="text-[10px] font-medium text-zinc-400 mt-0.5 block">
+                        Preserved count
                       </span>
-                    ))}
+                    )}
                   </div>
-                ) : (
-                  <span className="text-xs text-zinc-400">None</span>
-                )}
-              </div>
-            </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 px-6 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/60 flex items-center justify-between shrink-0">
-              <span className="text-[11px] text-zinc-400 font-mono">
-                ID: {selectedDetailItem.id}
-              </span>
-              <div className="flex items-center gap-2">
-                {canManage && (
+                  {/* Available Stock */}
+                  <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                      Available Stock
+                    </span>
+                    <span className={`text-xs font-mono font-bold mt-0.5 block ${
+                      isOutOfStock
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : isLowStock
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-zinc-800 dark:text-zinc-200'
+                    }`}>
+                      {isManuallyStockedOut ? '0 (Out of Stock)' : isZeroStock ? '0 (Out of Stock)' : availQty}
+                    </span>
+                    {isLowStock && (
+                      <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 mt-0.5 block">
+                        Only {availQty} left
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Section */}
+                  <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                      Section
+                    </span>
+                    <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      {liveDetailItem.sectionSlug === 'eat'
+                        ? 'Food'
+                        : liveDetailItem.sectionName || (liveDetailItem.sectionSlug ? liveDetailItem.sectionSlug.toUpperCase() : 'N/A')}
+                    </span>
+                  </div>
+
+                  {/* Category */}
+                  <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                      Category
+                    </span>
+                    <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      {liveDetailItem.categoryName || liveDetailItem.category?.name || 'N/A'}
+                    </span>
+                  </div>
+
+                  {/* Subcategory */}
+                  <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                      Subcategory
+                    </span>
+                    <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      {liveDetailItem.subcategory?.name || liveDetailItem.subcategoryName
+                        ? (liveDetailItem.subcategory?.name || liveDetailItem.subcategoryName)
+                        : liveDetailItem.subcategoryId
+                        ? 'N/A'
+                        : 'None'}
+                    </span>
+                  </div>
+
+                  {/* Dietary Classification */}
+                  <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                      Dietary Classification
+                    </span>
+                    <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      {liveDetailItem.foodType
+                        ? liveDetailItem.foodType === 'VEG'
+                          ? 'Vegetarian (Veg)'
+                          : liveDetailItem.foodType === 'NON_VEG'
+                          ? 'Non-Vegetarian (Non-Veg)'
+                          : liveDetailItem.foodType === 'EGG'
+                          ? 'Contains Egg'
+                          : liveDetailItem.foodType === 'VEGAN'
+                          ? 'Vegan'
+                          : liveDetailItem.foodType
+                        : 'N/A'}
+                    </span>
+                  </div>
+
+                  {/* Preparation Area / Station */}
+                  <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                      Preparation Area
+                    </span>
+                    <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      {liveDetailItem.station === 'KITCHEN'
+                        ? 'Kitchen'
+                        : liveDetailItem.station === 'BAR'
+                        ? 'Bar'
+                        : liveDetailItem.station === 'CASHIER'
+                        ? 'Front Desk / Cashier'
+                        : liveDetailItem.station || 'N/A'}
+                    </span>
+                  </div>
+
+                  {/* Prep Time */}
+                  <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                      Prep Time
+                    </span>
+                    <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      {liveDetailItem.preparationTime !== undefined && liveDetailItem.preparationTime !== null
+                        ? `${liveDetailItem.preparationTime} mins`
+                        : 'N/A'}
+                    </span>
+                  </div>
+
+                  {/* GST Tax Tag */}
+                  <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                      GST Tax Tag
+                    </span>
+                    <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-0.5 block">
+                      {liveDetailItem.gstTaxTag?.name
+                        ? `${liveDetailItem.gstTaxTag.name} (${liveDetailItem.gstTaxTag.percentage}%)`
+                        : liveDetailItem.taxRate !== undefined && liveDetailItem.taxRate !== null
+                        ? `${liveDetailItem.taxRate}% GST${liveDetailItem.hsnCode ? ` (HSN: ${liveDetailItem.hsnCode})` : ''}`
+                        : 'None'}
+                    </span>
+                  </div>
+
+                  {/* Allergens */}
+                  <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
+                      Allergens
+                    </span>
+                    {liveDetailItem.allergens && liveDetailItem.allergens.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {liveDetailItem.allergens.map((a: string, idx: number) => (
+                          <span key={idx} className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[10px]">
+                            {a}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-zinc-400">None</span>
+                    )}
+                  </div>
+
+                  {/* Tags */}
+                  <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
+                      Tags
+                    </span>
+                    {liveDetailItem.tags && liveDetailItem.tags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {liveDetailItem.tags.map((t: string, idx: number) => (
+                          <span key={idx} className="px-2 py-0.5 rounded bg-purple-50 dark:bg-zinc-800 text-purple-700 dark:text-[#D4AF37] text-[10px] font-semibold">
+                            #{t}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-zinc-400">None</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Variants (if present) */}
+                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60 space-y-1.5">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                    Available Variants
+                  </span>
+                  {liveDetailItem.variants && liveDetailItem.variants.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {liveDetailItem.variants.map((v: any) => (
+                        <span
+                          key={v.id || v.name}
+                          className="px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs font-semibold border border-zinc-200 dark:border-zinc-700"
+                        >
+                          {v.name} ({Number(v.priceDelta) >= 0 ? `+₹${v.priceDelta}` : `-₹${Math.abs(Number(v.priceDelta))}`})
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-zinc-400">None</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 px-6 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/60 flex items-center justify-between shrink-0">
+                <span className="text-[11px] text-zinc-400 font-mono">
+                  ID: {liveDetailItem.id}
+                </span>
+                <div className="flex items-center gap-2">
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const itemToEdit = liveDetailItem;
+                        setSelectedDetailItem(null);
+                        handleOpenEditDrawer(itemToEdit);
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit Product</span>
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => {
-                      const itemToEdit = selectedDetailItem;
-                      setSelectedDetailItem(null);
-                      handleOpenEditDrawer(itemToEdit);
-                    }}
-                    className="px-4 py-2 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                    onClick={() => setSelectedDetailItem(null)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
                   >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>Edit Product</span>
+                    Close
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setSelectedDetailItem(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
-                >
-                  Close
-                </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Delete / Archive Confirmation Dialog */}
       {deletingItem && (

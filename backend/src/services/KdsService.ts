@@ -38,6 +38,8 @@ export class KdsService {
       placedAt: string;
       notes: string | null;
       status: OrderStatus;
+      isSessionClosed: boolean;
+      tokenStatus: string | null;
       items: Array<{
         id: string;
         orderId: string;
@@ -50,6 +52,8 @@ export class KdsService {
         station: Station;
         status: OrderStatus;
         foodType: any;
+        isSessionClosed: boolean;
+        tokenStatus: string | null;
         createdAt: string;
         preparedAt: string | null;
         readyAt: string | null;
@@ -58,6 +62,12 @@ export class KdsService {
     }>();
 
     for (const item of activeItems) {
+      const isTokenActive = item.order?.token
+        ? (item.order.token.status === 'ACTIVE' || item.order.token.status === 'EXTENDED')
+        : false;
+      const isSessionClosed = item.order?.token ? !isTokenActive : false;
+      const tokenStatus = item.order?.token?.status || null;
+
       if (!ticketMap.has(item.orderId)) {
         const placedDate = item.order.placedAt || item.order.createdAt;
         ticketMap.set(item.orderId, {
@@ -67,6 +77,8 @@ export class KdsService {
           placedAt: placedDate ? placedDate.toISOString() : new Date().toISOString(),
           notes: item.order.notes,
           status: item.order.status,
+          isSessionClosed,
+          tokenStatus,
           items: [],
         });
       }
@@ -83,6 +95,8 @@ export class KdsService {
         station: item.station,
         status: item.status,
         foodType: item.foodType,
+        isSessionClosed,
+        tokenStatus,
         createdAt: item.createdAt.toISOString(),
         preparedAt: item.preparedAt ? item.preparedAt.toISOString() : null,
         readyAt: item.readyAt ? item.readyAt.toISOString() : null,
@@ -111,6 +125,13 @@ export class KdsService {
               },
             },
             token: true,
+            handler: {
+              select: {
+                id: true,
+                username: true,
+                fullName: true,
+              },
+            },
           },
         },
       },

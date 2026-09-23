@@ -432,8 +432,12 @@ const AppContent: React.FC = () => {
                   const targetId = alert.tableId || alert.tableNumber;
                   if (targetId) {
                     localStorage.setItem('bar_auto_inspect_table_id', targetId);
-                    window.dispatchEvent(new CustomEvent('bar_auto_inspect', { detail: { tableId: targetId } }));
-                    setActiveTab('tables/occupied');
+                    window.dispatchEvent(new CustomEvent('bar_auto_inspect', { detail: { tableId: targetId, tableNumber: alert.tableNumber, tokenId: alert.id } }));
+                    if (userRole === 'waiter' || userRole === 'server') {
+                      setActiveTab('waiter_tables');
+                    } else {
+                      setActiveTab('tables/occupied');
+                    }
                   }
                 }}
                 className="p-3 rounded-2xl flex items-center justify-between shadow-lg backdrop-blur-md border animate-bounce-short text-xs font-bold dark:bg-amber-500/20 bg-amber-50 border-amber-500/40 dark:text-amber-300 text-amber-700 cursor-pointer hover:opacity-90 transition-opacity"

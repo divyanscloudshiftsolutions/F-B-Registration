@@ -480,6 +480,19 @@ const CustomerAppInner: React.FC = () => {
     return list;
   }, [menu]);
 
+  // Derive live authoritative product states for currently active modals to prevent stale snapshots
+  const liveCustomizingItem = useMemo(() => {
+    if (!customizingItem) return null;
+    const match = allItems.find((i) => i.id === customizingItem.id);
+    return match ? { ...customizingItem, ...match } : customizingItem;
+  }, [customizingItem, allItems]);
+
+  const liveSelectedDetailItem = useMemo(() => {
+    if (!selectedDetailItem) return null;
+    const match = allItems.find((i) => i.id === selectedDetailItem.id);
+    return match ? { ...selectedDetailItem, ...match } : selectedDetailItem;
+  }, [selectedDetailItem, allItems]);
+
   const handleNotificationClick = (notif: any) => {
     if (notif.type === 'stock_in' && notif.menuItemId) {
       const target = allItems.find((i) => String(i.id) === String(notif.menuItemId));
@@ -539,10 +552,12 @@ const CustomerAppInner: React.FC = () => {
   // Strict Business Rule: Remaining session time <= 15 minutes (900 seconds) = Ordering blocked
   const isOrderingCutoffReached = remainingSessionSeconds !== null && remainingSessionSeconds <= 15 * 60;
 
-  // Strict Business Rule: Final bill payment completed = permanently locked
+  // Case 1: Actual Payment Flow Is Initiated (Proceed to Payment has been clicked by server)
+  const isSettlementInProgress = tableStatus === 'SETTLING';
+
+  // Final bill payment completed / session closed = permanently locked
   const isBillPaidOrSettled = Boolean(
     isSessionClosed ||
-    tableStatus === 'SETTLING' ||
     sessionData?.session?.status === 'CLOSED' ||
     sessionData?.session?.status === 'SETTLED' ||
     activeBill?.status === 'PAID' ||
@@ -550,7 +565,8 @@ const CustomerAppInner: React.FC = () => {
     activeBill?.isPaid === true
   );
 
-  const isOrderingBlocked = isOrderingCutoffReached || isBillPaidOrSettled || isSessionExpired;
+  // Unified ordering restriction: Only in Case 1 (Payment Initiated), Case 2 (<= 15m remaining), or Completed/Expired session
+  const isOrderingBlocked = isOrderingCutoffReached || isBillPaidOrSettled || isSessionExpired || isSettlementInProgress;
 
   // Map menuItemId -> total quantity in cart for instant in-card feedback
   const cartItemQuantityMap = useMemo(() => {
@@ -678,6 +694,8 @@ const CustomerAppInner: React.FC = () => {
       setCheckoutError(
         isOrderingCutoffReached
           ? 'Ordering is closed: 15 minutes or less remaining in your dining session.'
+          : isSettlementInProgress
+          ? 'Ordering is locked: Bill settlement is in progress with your server.'
           : isBillPaidOrSettled
           ? 'Ordering is closed: Bill payment has been completed for this session.'
           : 'Ordering is currently unavailable.'
@@ -700,6 +718,8 @@ const CustomerAppInner: React.FC = () => {
       setCartToast(
         isOrderingCutoffReached
           ? 'Ordering is closed (15 min or less remaining in session)'
+          : isSettlementInProgress
+          ? 'Ordering is paused (Bill settlement in progress)'
           : 'Ordering is closed for this settled session'
       );
       setTimeout(() => setCartToast(null), 3000);
@@ -739,6 +759,8 @@ const CustomerAppInner: React.FC = () => {
       setCartToast(
         isOrderingCutoffReached
           ? 'Ordering is closed (15 min or less remaining in session)'
+          : isSettlementInProgress
+          ? 'Ordering is paused (Bill settlement in progress)'
           : 'Ordering is closed for this settled session'
       );
       setTimeout(() => setCartToast(null), 3000);
@@ -766,9 +788,24 @@ const CustomerAppInner: React.FC = () => {
       setCartToast(
         isOrderingCutoffReached
           ? 'Ordering is closed (15 min or less remaining in session)'
+          : isSettlementInProgress
+          ? 'Ordering is paused (Bill settlement in progress)'
           : 'Ordering is closed for this settled session'
       );
       setTimeout(() => setCartToast(null), 3000);
+      return;
+    }
+
+    const totalInCart = cart
+      .filter((ci) => ci.menuItemId === item.id)
+      .reduce((sum, ci) => sum + (ci.quantity || 1), 0);
+    const physicalStock = item.stockQuantity !== undefined ? Number(item.stockQuantity) : 50;
+    const rawAvailable = (item as any).availableStock !== undefined ? Number((item as any).availableStock) : physicalStock;
+    const maxAllowedForCustomer = Math.min(physicalStock, rawAvailable + totalInCart);
+
+    if (totalInCart >= maxAllowedForCustomer) {
+      setCartToast(`Maximum available stock (${maxAllowedForCustomer}) already in your cart`);
+      setTimeout(() => setCartToast(null), 2500);
       return;
     }
 
@@ -1103,6 +1140,8 @@ const CustomerAppInner: React.FC = () => {
       setCartToast(
         isOrderingCutoffReached
           ? 'Ordering is closed (15 min or less remaining in session)'
+          : isSettlementInProgress
+          ? 'Ordering is paused (Bill settlement in progress)'
           : 'Ordering is closed for this settled session'
       );
       setTimeout(() => setCartToast(null), 3000);
@@ -1163,6 +1202,8 @@ const CustomerAppInner: React.FC = () => {
       setCartToast(
         isOrderingCutoffReached
           ? 'Ordering is closed (15 min or less remaining in session)'
+          : isSettlementInProgress
+          ? 'Ordering is paused (Bill settlement in progress)'
           : 'Ordering is closed for this settled session'
       );
       setTimeout(() => setCartToast(null), 3000);
@@ -1227,8 +1268,33 @@ const CustomerAppInner: React.FC = () => {
     );
   }, [activeBill, activeOrders]);
 
-  const pendingOrders = activeOrders.filter((o) => o.status !== 'SERVED' && o.status !== 'CANCELLED');
-  const completedOrders = activeOrders.filter((o) => o.status === 'SERVED' || o.status === 'CANCELLED');
+  const isPendingItem = (item: any) =>
+    item?.status !== 'CANCELLED' && item?.status !== 'STOCK_OUT' && item?.status !== 'SERVED';
+
+  const pendingOrders = useMemo(() => {
+    return activeOrders
+      .filter((o) => {
+        if (o.status === 'SERVED' || o.status === 'CANCELLED' || o.status === 'STOCK_OUT') {
+          return false;
+        }
+        const activeItems = (o.items || []).filter(isPendingItem);
+        return activeItems.length > 0;
+      })
+      .map((o) => ({
+        ...o,
+        items: (o.items || []).filter(isPendingItem),
+      }));
+  }, [activeOrders]);
+
+  const completedOrders = useMemo(() => {
+    return activeOrders.filter((o) => {
+      if (o.status === 'SERVED' || o.status === 'CANCELLED' || o.status === 'STOCK_OUT') {
+        return true;
+      }
+      const activeItems = (o.items || []).filter(isPendingItem);
+      return activeItems.length === 0 && (o.items || []).length > 0;
+    });
+  }, [activeOrders]);
 
   const getOrderStatusBadgeClass = (status: string) => {
     const norm = (status || 'PREPARING').toUpperCase();
@@ -1431,8 +1497,8 @@ const CustomerAppInner: React.FC = () => {
           </div>
         </header>
 
-        {/* Bill Status Notice */}
-        {billRequested && (
+        {/* Bill Status Notice (Informational: Staff notified) */}
+        {billRequested && !isBillPaidOrSettled && !isSettlementInProgress && (
           <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 animate-fade-in">
             <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-2.5 shadow-xs">
               <Clock className="w-4 h-4 shrink-0" />
@@ -1441,8 +1507,18 @@ const CustomerAppInner: React.FC = () => {
           </div>
         )}
 
+        {/* Settlement In Progress Notice (Proceed to Payment initiated) */}
+        {isSettlementInProgress && !isBillPaidOrSettled && (
+          <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 animate-fade-in">
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-2.5 shadow-xs">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>Bill settlement in progress with your server. Ordering is temporarily paused.</span>
+            </div>
+          </div>
+        )}
+
         {/* Ordering Cutoff Notice (15-Minute Remaining Business Rule) */}
-        {isOrderingCutoffReached && !isBillPaidOrSettled && (
+        {isOrderingCutoffReached && !isBillPaidOrSettled && !isSettlementInProgress && (
           <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 animate-fade-in">
             <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-2.5 shadow-xs">
               <Clock className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -2817,68 +2893,127 @@ const CustomerAppInner: React.FC = () => {
               <div className="md:grid md:grid-cols-12 md:gap-6 lg:gap-8 items-start space-y-4 md:space-y-0">
                 {/* Left Column: Compact Cart Items List */}
                 <div className="md:col-span-7 lg:col-span-7 xl:col-span-8 space-y-2.5 sm:space-y-3">
-                  {cart.map((c) => (
-                    <div
-                      key={c.id}
-                      className="rounded-2xl border border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B] p-3 sm:p-5 shadow-xs transition-colors"
-                    >
-                      {/* Item Top Row: Name + Badge on Left, Total Price on Right */}
-                      <div className="flex items-start justify-between gap-2.5">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <VegBadge type={c.foodType} size="sm" />
-                            <div className="font-extrabold text-sm sm:text-base text-text-primary dark:text-white leading-tight break-words">
-                              {c.name}
-                            </div>
-                          </div>
-                          {(c.variantName || (c.modifiers && c.modifiers.length > 0)) && (
-                            <div className="mt-0.5 text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 break-words">
-                              {[c.variantName, ...(c.modifiers || []).map((m: any) => m.optionName)].filter(Boolean).join(' · ')}
-                            </div>
-                          )}
-                          {c.specialInstructions && (
-                            <div className="mt-0.5 text-[11px] italic text-amber-500 break-words">"{c.specialInstructions}"</div>
-                          )}
-                        </div>
+                  {cart.map((c) => {
+                    const itemInMenu = (() => {
+                      if (!Array.isArray(menu)) return null;
+                      for (const section of menu) {
+                        if (section.items) {
+                          const it = section.items.find((i: any) => i.id === c.menuItemId);
+                          if (it) return it;
+                        }
+                        if (section.categories) {
+                          for (const cat of section.categories) {
+                            if (cat.items) {
+                              const it = cat.items.find((i: any) => i.id === c.menuItemId);
+                              if (it) return it;
+                            }
+                            if (cat.subcategories) {
+                              for (const sub of cat.subcategories) {
+                                if (sub.items) {
+                                  const it = sub.items.find((i: any) => i.id === c.menuItemId);
+                                  if (it) return it;
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      return null;
+                    })();
+                    const totalInCartForThisItem = cart
+                      .filter((ci) => ci.menuItemId === c.menuItemId)
+                      .reduce((sum, ci) => sum + (Number(ci.quantity) || 1), 0);
+                    const physicalStock = itemInMenu?.stockQuantity !== undefined ? Number(itemInMenu.stockQuantity) : 50;
+                    const isCartItemStockOut = itemInMenu ? (itemInMenu.isAvailable === false || physicalStock <= 0) : false;
+                    const isMaxReached = isCartItemStockOut || totalInCartForThisItem >= physicalStock;
 
-                        <div className="text-right shrink-0">
-                          <div className="text-sm sm:text-base font-black text-primary dark:text-[#D4AF37]">
-                            ₹{(Number(c.unitPrice || 0) * (c.quantity || 1)).toFixed(2)}
-                          </div>
-                          <div className="text-[10px] text-text-muted dark:text-zinc-400">
-                            ₹{Number(c.unitPrice || 0).toFixed(2)}/ea
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Item Bottom Row: Compact Stepper on Left, Delete Action on Right */}
-                      <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-border/60 dark:border-white/10 gap-2">
-                        {/* Stepper with compact responsive touch targets */}
-                        <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-0.5 rounded-lg border border-border/60 dark:border-white/10">
-                          <button
-                            disabled={isOrdering}
-                            onClick={() => updateCartQuantity(c.id, -1)}
-                            aria-label={c.quantity === 1 ? `Remove ${c.name} from cart` : `Decrease quantity of ${c.name}`}
-                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-md flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer text-text-primary dark:text-white"
-                          >
-                            {c.quantity === 1 ? (
-                              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                            ) : (
-                              <Minus className="w-3.5 h-3.5" />
+                    return (
+                      <div
+                        key={c.id}
+                        className={`rounded-2xl border p-3 sm:p-5 shadow-xs transition-colors ${
+                          isCartItemStockOut
+                            ? 'border-rose-300 dark:border-rose-900/40 bg-rose-50/20 dark:bg-rose-950/10'
+                            : 'border-border/80 dark:border-white/10 bg-white dark:bg-[#18181B]'
+                        }`}
+                      >
+                        {/* Item Top Row: Name + Badge on Left, Total Price on Right */}
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <VegBadge type={c.foodType} size="sm" />
+                              <div className={`font-extrabold text-sm sm:text-base leading-tight break-words ${isCartItemStockOut ? 'line-through text-text-muted dark:text-zinc-500' : 'text-text-primary dark:text-white'}`}>
+                                {c.name}
+                              </div>
+                              {isCartItemStockOut && (
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                  Stock Out
+                                </span>
+                              )}
+                            </div>
+                            {(c.variantName || (c.modifiers && c.modifiers.length > 0)) && (
+                              <div className="mt-0.5 text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 break-words">
+                                {[c.variantName, ...(c.modifiers || []).map((m: any) => m.optionName)].filter(Boolean).join(' · ')}
+                              </div>
                             )}
-                          </button>
-                          <span className="w-7 text-center font-black text-xs sm:text-sm text-primary dark:text-[#D4AF37]">
-                            {c.quantity}
-                          </span>
-                          <button
-                            disabled={isOrdering}
-                            onClick={() => updateCartQuantity(c.id, 1)}
-                            aria-label={`Increase quantity of ${c.name}`}
-                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-md flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer text-text-primary dark:text-white"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
+                            {c.specialInstructions && (
+                              <div className="mt-0.5 text-[11px] italic text-amber-500 break-words">"{c.specialInstructions}"</div>
+                            )}
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            {isCartItemStockOut ? (
+                              <div className="flex flex-col items-end">
+                                <span className="line-through text-text-muted text-[10px]">
+                                  ₹{(Number(c.unitPrice || 0) * (c.quantity || 1)).toFixed(2)}
+                                </span>
+                                <span className="text-xs sm:text-sm font-black text-rose-600 dark:text-rose-400">
+                                  Stock Out / Not Charged · ₹0.00
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="text-sm sm:text-base font-black text-primary dark:text-[#D4AF37]">
+                                ₹{(Number(c.unitPrice || 0) * (c.quantity || 1)).toFixed(2)}
+                              </div>
+                            )}
+                            <div className="text-[10px] text-text-muted dark:text-zinc-400">
+                              ₹{Number(c.unitPrice || 0).toFixed(2)}/ea
+                            </div>
+                          </div>
                         </div>
+
+                        {/* Item Bottom Row: Compact Stepper on Left, Delete Action on Right */}
+                        <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-border/60 dark:border-white/10 gap-2">
+                          {/* Stepper with compact responsive touch targets */}
+                          <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-0.5 rounded-lg border border-border/60 dark:border-white/10">
+                            <button
+                              disabled={isOrdering}
+                              onClick={() => updateCartQuantity(c.id, -1)}
+                              aria-label={c.quantity === 1 ? `Remove ${c.name} from cart` : `Decrease quantity of ${c.name}`}
+                              className="w-7 h-7 sm:w-8 sm:h-8 rounded-md flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer text-text-primary dark:text-white"
+                            >
+                              {c.quantity === 1 ? (
+                                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                              ) : (
+                                <Minus className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                            <span className="w-7 text-center font-black text-xs sm:text-sm text-primary dark:text-[#D4AF37]">
+                              {c.quantity}
+                            </span>
+                            <button
+                              disabled={isOrdering || isMaxReached}
+                              onClick={() => updateCartQuantity(c.id, 1)}
+                              title={isMaxReached ? `Only ${physicalStock} available in stock` : undefined}
+                              aria-label={`Increase quantity of ${c.name}`}
+                              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-md flex items-center justify-center transition-colors cursor-pointer text-text-primary dark:text-white ${
+                                isOrdering || isMaxReached
+                                  ? 'opacity-30 cursor-not-allowed pointer-events-none'
+                                  : 'hover:bg-black/10 dark:hover:bg-white/10'
+                              }`}
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
 
                         {/* Remove Action */}
                         <button
@@ -2892,8 +3027,9 @@ const CustomerAppInner: React.FC = () => {
                         </button>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
+              </div>
 
                 {/* Right Column: Order Summary Card */}
                 <div className="md:col-span-5 lg:col-span-5 xl:col-span-4 md:sticky md:top-24 space-y-3.5">
@@ -2920,21 +3056,17 @@ const CustomerAppInner: React.FC = () => {
                       Taxes, service charge, and applicable discounts are calculated as part of your final table bill.
                     </div>
 
-                    {isOrderingBlocked ? (
-                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-amber-700 dark:text-amber-400 animate-fade-in">
-                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    {isBillPaidOrSettled ? (
+                      <div className="p-3 rounded-xl bg-primary/10 dark:bg-[#D4AF37]/15 border border-primary/30 dark:border-[#D4AF37]/30 flex items-start gap-2 text-primary dark:text-[#D4AF37] animate-fade-in">
+                        <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
                         <div className="text-[11px] leading-relaxed">
-                          <p className="font-bold">
-                            {isBillPaidOrSettled ? 'Session Settled / Closed' : 'Ordering Closed (15-Minute Cutoff)'}
-                          </p>
+                          <p className="font-bold">Session Settled / Closed</p>
                           <p className="mt-0.5 opacity-90">
-                            {isBillPaidOrSettled
-                              ? 'Your table session has been settled. Ordering new items is disabled.'
-                              : 'Orders can only be placed when more than 15 minutes remain in the session. You may still view your bill or call the waiter.'}
+                            Your table session has been settled. Ordering new items is disabled.
                           </p>
                         </div>
                       </div>
-                    ) : tableStatus === 'SETTLING' ? (
+                    ) : isSettlementInProgress ? (
                       <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-amber-700 dark:text-amber-400 animate-fade-in">
                         <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                         <div className="text-[11px] leading-relaxed">
@@ -2944,10 +3076,20 @@ const CustomerAppInner: React.FC = () => {
                           </p>
                         </div>
                       </div>
+                    ) : isOrderingCutoffReached ? (
+                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-amber-700 dark:text-amber-400 animate-fade-in">
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div className="text-[11px] leading-relaxed">
+                          <p className="font-bold">Ordering Closed (15-Minute Cutoff)</p>
+                          <p className="mt-0.5 opacity-90">
+                            Orders can only be placed when more than 15 minutes remain in the session. You may still view your bill or call the waiter.
+                          </p>
+                        </div>
+                      </div>
                     ) : null}
 
                     <button
-                      disabled={isOrdering || cart.length === 0 || isOrderingBlocked || tableStatus === 'SETTLING'}
+                      disabled={isOrdering || cart.length === 0 || isOrderingBlocked}
                       onClick={handlePlaceOrder}
                       className="w-full h-11 sm:h-13 mt-1.5 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black disabled:opacity-50 text-white font-extrabold text-xs sm:text-sm shadow-md transition-all flex items-center justify-between px-4 sm:px-5 cursor-pointer disabled:cursor-not-allowed"
                     >
@@ -2956,10 +3098,10 @@ const CustomerAppInner: React.FC = () => {
                         <span>
                           {isBillPaidOrSettled
                             ? 'Ordering Locked (Settled)'
+                            : isSettlementInProgress
+                            ? 'Ordering Locked (Settling)'
                             : isOrderingCutoffReached
                             ? 'Ordering Closed (15m Cutoff)'
-                            : tableStatus === 'SETTLING'
-                            ? 'Ordering Locked (Settling)'
                             : isOrdering
                             ? 'Placing Order...'
                             : 'Place Order'}
@@ -3099,15 +3241,13 @@ const CustomerAppInner: React.FC = () => {
                     (acc: number, item: any) => acc + (Number(item.quantity) || 1),
                     0
                   );
-                  const orderTotalAmount = o.subtotal != null
-                    ? Number(o.subtotal)
-                    : (o.items || []).reduce(
-                        (acc: number, item: any) =>
-                          item.status === 'CANCELLED' || item.status === 'STOCK_OUT'
-                            ? acc
-                            : acc + Number(item.lineTotal || item.unitPrice * item.quantity || 0),
-                        0
-                      );
+                  const orderTotalAmount = (o.items || []).reduce(
+                    (acc: number, item: any) =>
+                      item.status === 'CANCELLED' || item.status === 'STOCK_OUT'
+                        ? acc
+                        : acc + Number(item.lineTotal != null ? item.lineTotal : item.unitPrice * item.quantity || 0),
+                    0
+                  );
 
                   return (
                     <div
@@ -3209,7 +3349,7 @@ const CustomerAppInner: React.FC = () => {
                                         ₹{Number(item.unitPrice * item.quantity).toFixed(2)}
                                       </span>
                                       <span className="font-bold text-xs text-rose-600 dark:text-rose-400">
-                                        Not charged · ₹0.00
+                                        Stock Out / Not Charged · ₹0.00
                                       </span>
                                     </div>
                                   ) : item.status === 'CANCELLED' ? (
@@ -3223,7 +3363,7 @@ const CustomerAppInner: React.FC = () => {
                                     </div>
                                   ) : (
                                     <div className="mt-0.5 font-bold text-xs sm:text-sm text-text-primary dark:text-white">
-                                      ₹{Number(item.lineTotal || item.unitPrice * item.quantity).toFixed(2)}
+                                      ₹{Number(item.lineTotal != null ? item.lineTotal : item.unitPrice * item.quantity).toFixed(2)}
                                     </div>
                                   )}
                                 </div>
@@ -3443,7 +3583,7 @@ const CustomerAppInner: React.FC = () => {
                                 <span>Order #{String(item.orderNumber || 1).padStart(2, '0')}</span>
                                 {item.variantName && <span>· {item.variantName}</span>}
                                 {item.status === 'STOCK_OUT' ? (
-                                  <span className="text-rose-600 dark:text-rose-400 font-semibold">· Not Charged (Out of stock)</span>
+                                  <span className="text-rose-600 dark:text-rose-400 font-semibold">· Stock Out / Not Charged · ₹0.00</span>
                                 ) : (
                                   <span>· @ ₹{Number(item.unitPrice).toFixed(2)}</span>
                                 )}
@@ -3451,10 +3591,15 @@ const CustomerAppInner: React.FC = () => {
                             </div>
                             <div className="font-bold shrink-0 text-right">
                               {item.status === 'STOCK_OUT' ? (
-                                <span className="text-rose-600 dark:text-rose-400 font-bold">₹0.00</span>
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <span className="line-through text-text-muted dark:text-zinc-500 font-normal text-[11px]">
+                                    ₹{Number(item.unitPrice * item.quantity).toFixed(2)}
+                                  </span>
+                                  <span className="text-rose-600 dark:text-rose-400 font-bold">₹0.00</span>
+                                </div>
                               ) : (
                                 <span className="text-text-primary dark:text-white font-bold">
-                                  ₹{Number(item.lineTotal || item.unitPrice * item.quantity).toFixed(2)}
+                                  ₹{Number(item.lineTotal != null ? item.lineTotal : item.unitPrice * item.quantity).toFixed(2)}
                                 </span>
                               )}
                             </div>
@@ -4515,7 +4660,13 @@ const CustomerAppInner: React.FC = () => {
                             : '';
                           const isServed = order.status === 'SERVED';
                           const isCancelled = order.status === 'CANCELLED';
-                          const orderSubtotal = Number(order.subtotal || order.totalAmount || 0);
+                          const orderSubtotal = (order.items && order.items.length > 0)
+                            ? order.items.reduce((sum: number, it: any) => {
+                                if (it.status === 'CANCELLED' || it.status === 'STOCK_OUT') return sum;
+                                const lineTot = it.lineTotal != null ? Number(it.lineTotal) : Number(it.price || it.unitPrice || 0) * Number(it.quantity || 1);
+                                return sum + (isNaN(lineTot) ? 0 : lineTot);
+                              }, 0)
+                            : Number(order.subtotal || order.totalAmount || 0);
 
                           return (
                             <div
@@ -4613,18 +4764,39 @@ const CustomerAppInner: React.FC = () => {
                                       </div>
 
                                       <div className="text-right shrink-0">
-                                        {isStockOut || isCancelledItem ? (
-                                          <span className="font-bold text-rose-600 dark:text-rose-400">
-                                            ₹0.00
-                                          </span>
+                                        {isStockOut ? (
+                                          <div>
+                                            <div className="flex items-center justify-end gap-1.5">
+                                              <span className="line-through text-text-muted dark:text-zinc-500 font-normal text-[11px]">
+                                                ₹{(itemPrice * itemQty).toFixed(2)}
+                                              </span>
+                                              <span className="font-bold text-rose-600 dark:text-rose-400">
+                                                ₹0.00
+                                              </span>
+                                            </div>
+                                            <div className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold">
+                                              Stock Out / Not Charged
+                                            </div>
+                                          </div>
+                                        ) : isCancelledItem ? (
+                                          <div>
+                                            <span className="font-bold text-rose-600 dark:text-rose-400">
+                                              ₹0.00
+                                            </span>
+                                            <div className="text-[10px] text-text-muted dark:text-zinc-400">
+                                              Cancelled
+                                            </div>
+                                          </div>
                                         ) : (
-                                          <span className="font-bold text-text-primary dark:text-white">
-                                            ₹{Number(item.lineTotal || itemPrice * itemQty).toFixed(2)}
-                                          </span>
+                                          <div>
+                                            <span className="font-bold text-text-primary dark:text-white">
+                                              ₹{Number(item.lineTotal != null ? item.lineTotal : itemPrice * itemQty).toFixed(2)}
+                                            </span>
+                                            <div className="text-[10px] text-text-muted dark:text-zinc-400">
+                                              @ ₹{itemPrice.toFixed(2)}
+                                            </div>
+                                          </div>
                                         )}
-                                        <div className="text-[10px] text-text-muted dark:text-zinc-400">
-                                          @ ₹{itemPrice.toFixed(2)}
-                                        </div>
                                       </div>
                                     </div>
                                   );
@@ -4890,9 +5062,14 @@ const CustomerAppInner: React.FC = () => {
 
       {/* Product Customizer Sheet */}
       <ProductCustomizer
-        item={customizingItem}
-        open={!!customizingItem}
+        item={liveCustomizingItem}
+        open={!!liveCustomizingItem}
         initialConfig={customizingInitialConfig}
+        existingCartQuantity={
+          liveCustomizingItem
+            ? cart.filter((ci) => ci.menuItemId === liveCustomizingItem.id).reduce((sum, ci) => sum + (Number(ci.quantity) || 1), 0)
+            : 0
+        }
         onClose={() => {
           setCustomizingItem(null);
           setCustomizingInitialConfig(null);
@@ -4915,6 +5092,7 @@ const CustomerAppInner: React.FC = () => {
 
       {/* 1. Customer Portal Read-Only Product Details View */}
       {selectedDetailItem && (() => {
+        const currentDetailItem = liveSelectedDetailItem || selectedDetailItem;
         const detailBackdropOpacity = isDetailClosing
           ? 0
           : isDetailDragging
@@ -4952,11 +5130,11 @@ const CustomerAppInner: React.FC = () => {
             {/* Modal Header */}
             <div className="px-5 sm:px-6 py-3.5 sm:py-4 border-b border-border/80 dark:border-white/10 flex items-center justify-between shrink-0 bg-[#F5F3FA] dark:bg-white/5">
               <div className="flex items-center gap-2.5 min-w-0">
-                {selectedDetailItem.foodType && (
-                  <VegBadge type={selectedDetailItem.foodType} size="sm" />
+                {currentDetailItem.foodType && (
+                  <VegBadge type={currentDetailItem.foodType} size="sm" />
                 )}
                 <h3 id="product-detail-title" className="text-base sm:text-lg font-black text-text-primary dark:text-white truncate">
-                  {selectedDetailItem.name}
+                  {currentDetailItem.name}
                 </h3>
               </div>
               <button
@@ -4972,26 +5150,26 @@ const CustomerAppInner: React.FC = () => {
             {/* Scrollable Modal Body */}
             <div ref={detailScrollRef} className="p-6 overflow-y-auto space-y-5 flex-1 text-xs">
               {/* Product Image Preview: Aspect-square contained container with blurred background fill */}
-              {selectedDetailItem.image || selectedDetailItem.imageUrl ? (
+              {currentDetailItem.image || currentDetailItem.imageUrl ? (
                 <div
                   onClick={() => {
-                    const imgUrl = selectedDetailItem.image || selectedDetailItem.imageUrl;
-                    setSelectedImageModal({ url: imgUrl, name: selectedDetailItem.name });
+                    const imgUrl = currentDetailItem.image || currentDetailItem.imageUrl;
+                    setSelectedImageModal({ url: imgUrl, name: currentDetailItem.name });
                   }}
                   title="Click to view full image"
                   className="relative w-full aspect-square max-h-72 sm:max-h-80 rounded-2xl overflow-hidden bg-zinc-100 dark:bg-white/5 border border-border/80 dark:border-white/10 flex items-center justify-center cursor-pointer group shadow-inner"
                 >
                   {/* Subtle blurred background fill */}
                   <img
-                    src={formatImageUrl(selectedDetailItem.image || selectedDetailItem.imageUrl)}
+                    src={formatImageUrl(currentDetailItem.image || currentDetailItem.imageUrl)}
                     alt=""
                     aria-hidden="true"
                     className="absolute inset-0 w-full h-full object-cover blur-xl scale-125 opacity-25 dark:opacity-40 pointer-events-none"
                   />
                   {/* Sharp contained foreground image */}
                   <img
-                    src={formatImageUrl(selectedDetailItem.image || selectedDetailItem.imageUrl)}
-                    alt={selectedDetailItem.name}
+                    src={formatImageUrl(currentDetailItem.image || currentDetailItem.imageUrl)}
+                    alt={currentDetailItem.name}
                     className="relative z-10 max-h-full max-w-full object-contain p-3 drop-shadow-md group-hover:scale-105 transition-transform duration-200"
                   />
                   <span className="absolute bottom-2.5 right-2.5 z-20 px-2.5 py-1 rounded-lg bg-white/90 dark:bg-black/70 text-[10px] text-text-primary dark:text-zinc-100 font-semibold backdrop-blur-md border border-border/80 dark:border-white/10 shadow-sm">
@@ -5014,18 +5192,18 @@ const CustomerAppInner: React.FC = () => {
                   </span>
                   <div className="flex items-baseline gap-2 mt-0.5">
                     <span className="text-lg sm:text-xl font-black text-primary dark:text-[#D4AF37]">
-                      ₹{Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice ?? 0).toFixed(2)}
+                      ₹{Number(currentDetailItem.finalPrice ?? currentDetailItem.basePrice ?? 0).toFixed(2)}
                     </span>
-                    {Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice) < Number(selectedDetailItem.basePrice ?? 0) && (
+                    {Number(currentDetailItem.finalPrice ?? currentDetailItem.basePrice) < Number(currentDetailItem.basePrice ?? 0) && (
                       <span className="text-xs text-text-muted dark:text-zinc-500 line-through">
-                        ₹{Number(selectedDetailItem.basePrice).toFixed(2)}
+                        ₹{Number(currentDetailItem.basePrice).toFixed(2)}
                       </span>
                     )}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {selectedDetailItem.isAvailable === false ? (
+                  {currentDetailItem.isAvailable === false ? (
                     <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-500/20 dark:border-rose-800/60">
                       Out of Stock
                     </span>
@@ -5034,19 +5212,19 @@ const CustomerAppInner: React.FC = () => {
                       In Stock
                     </span>
                   )}
-                  {Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice) < Number(selectedDetailItem.basePrice ?? 0) && (
+                  {Number(currentDetailItem.finalPrice ?? currentDetailItem.basePrice) < Number(currentDetailItem.basePrice ?? 0) && (
                     <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-500/20 dark:border-emerald-800/60">
-                      {selectedDetailItem.discountMode === 'PERCENTAGE'
-                        ? `${selectedDetailItem.discountValue}% OFF`
-                        : `₹${selectedDetailItem.discountValue} OFF`}
+                      {currentDetailItem.discountMode === 'PERCENTAGE'
+                        ? `${currentDetailItem.discountValue}% OFF`
+                        : `₹${currentDetailItem.discountValue} OFF`}
                     </span>
                   )}
-                  {selectedDetailItem.featured && (
+                  {currentDetailItem.featured && (
                     <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 dark:bg-[#D4AF37]/15 dark:text-[#E5C158] dark:border-[#D4AF37]/30">
                       Signature
                     </span>
                   )}
-                  {selectedDetailItem.popular && (
+                  {currentDetailItem.popular && (
                     <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 dark:bg-[#D4AF37]/15 dark:text-[#E5C158] dark:border-[#D4AF37]/30">
                       Popular
                     </span>
@@ -5060,7 +5238,7 @@ const CustomerAppInner: React.FC = () => {
                   Description
                 </span>
                 <p className="text-xs text-text-primary dark:text-zinc-300 leading-relaxed p-3 rounded-xl bg-[#F5F3FA] dark:bg-white/5 border border-border/80 dark:border-white/10">
-                  {selectedDetailItem.description?.trim() || 'N/A'}
+                  {currentDetailItem.description?.trim() || 'N/A'}
                 </p>
               </div>
 
@@ -5072,9 +5250,9 @@ const CustomerAppInner: React.FC = () => {
                     Section
                   </span>
                   <span className="text-xs font-semibold text-text-primary dark:text-zinc-200 mt-0.5 block">
-                    {selectedDetailItem.sectionSlug === 'eat'
+                    {currentDetailItem.sectionSlug === 'eat'
                       ? 'Food'
-                      : selectedDetailItem.sectionName || (selectedDetailItem.sectionSlug ? selectedDetailItem.sectionSlug.toUpperCase() : 'N/A')}
+                      : currentDetailItem.sectionName || (currentDetailItem.sectionSlug ? currentDetailItem.sectionSlug.toUpperCase() : 'N/A')}
                   </span>
                 </div>
 
@@ -5084,7 +5262,7 @@ const CustomerAppInner: React.FC = () => {
                     Category
                   </span>
                   <span className="text-xs font-semibold text-text-primary dark:text-zinc-200 mt-0.5 block">
-                    {selectedDetailItem.categoryName || selectedDetailItem.category?.name || 'N/A'}
+                    {currentDetailItem.categoryName || currentDetailItem.category?.name || 'N/A'}
                   </span>
                 </div>
 
@@ -5094,9 +5272,9 @@ const CustomerAppInner: React.FC = () => {
                     Subcategory
                   </span>
                   <span className="text-xs font-semibold text-text-primary dark:text-zinc-200 mt-0.5 block">
-                    {selectedDetailItem.subcategory?.name || selectedDetailItem.subcategoryName
-                      ? (selectedDetailItem.subcategory?.name || selectedDetailItem.subcategoryName)
-                      : selectedDetailItem.subcategoryId
+                    {currentDetailItem.subcategory?.name || currentDetailItem.subcategoryName
+                      ? (currentDetailItem.subcategory?.name || currentDetailItem.subcategoryName)
+                      : currentDetailItem.subcategoryId
                       ? 'N/A'
                       : 'Not applicable'}
                   </span>
@@ -5108,17 +5286,17 @@ const CustomerAppInner: React.FC = () => {
                     Dietary Classification
                   </span>
                   <span className="text-xs font-semibold text-text-primary dark:text-zinc-200 mt-0.5 block">
-                    {selectedDetailItem.foodType
-                      ? selectedDetailItem.foodType === 'VEG'
+                    {currentDetailItem.foodType
+                      ? currentDetailItem.foodType === 'VEG'
                         ? 'Vegetarian (Veg)'
-                        : selectedDetailItem.foodType === 'NON_VEG'
+                        : currentDetailItem.foodType === 'NON_VEG'
                         ? 'Non-Vegetarian (Non-Veg)'
-                        : selectedDetailItem.foodType === 'EGG'
+                        : currentDetailItem.foodType === 'EGG'
                         ? 'Contains Egg'
-                        : selectedDetailItem.foodType === 'VEGAN'
+                        : currentDetailItem.foodType === 'VEGAN'
                         ? 'Vegan'
-                        : selectedDetailItem.foodType
-                      : selectedDetailItem.sectionSlug === 'merch'
+                        : currentDetailItem.foodType
+                      : currentDetailItem.sectionSlug === 'merch'
                       ? 'Not applicable'
                       : 'N/A'}
                   </span>
@@ -5130,10 +5308,10 @@ const CustomerAppInner: React.FC = () => {
                     Prep Time
                   </span>
                   <span className="text-xs font-semibold text-text-primary dark:text-zinc-200 mt-0.5 block">
-                    {selectedDetailItem.sectionSlug === 'merch'
+                    {currentDetailItem.sectionSlug === 'merch'
                       ? 'Not applicable'
-                      : selectedDetailItem.preparationTime !== undefined && selectedDetailItem.preparationTime !== null
-                      ? `${selectedDetailItem.preparationTime} mins`
+                      : currentDetailItem.preparationTime !== undefined && currentDetailItem.preparationTime !== null
+                      ? `${currentDetailItem.preparationTime} mins`
                       : 'N/A'}
                   </span>
                 </div>
@@ -5144,10 +5322,10 @@ const CustomerAppInner: React.FC = () => {
                     Offers / Discounts
                   </span>
                   <span className="text-xs font-semibold text-text-primary dark:text-zinc-200 mt-0.5 block">
-                    {Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice) < Number(selectedDetailItem.basePrice ?? 0)
-                      ? selectedDetailItem.discountMode === 'PERCENTAGE'
-                        ? `${selectedDetailItem.discountValue}% OFF`
-                        : `₹${selectedDetailItem.discountValue} OFF`
+                    {Number(currentDetailItem.finalPrice ?? currentDetailItem.basePrice) < Number(currentDetailItem.basePrice ?? 0)
+                      ? currentDetailItem.discountMode === 'PERCENTAGE'
+                        ? `${currentDetailItem.discountValue}% OFF`
+                        : `₹${currentDetailItem.discountValue} OFF`
                       : 'Not applicable'}
                   </span>
                 </div>
@@ -5159,9 +5337,9 @@ const CustomerAppInner: React.FC = () => {
                 <span className="text-[10px] font-bold text-text-muted dark:text-zinc-500 uppercase tracking-wider block">
                   Available Variants
                 </span>
-                {selectedDetailItem.variants && selectedDetailItem.variants.length > 0 ? (
+                {currentDetailItem.variants && currentDetailItem.variants.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
-                    {selectedDetailItem.variants.map((v: any) => (
+                    {currentDetailItem.variants.map((v: any) => (
                       <span
                         key={v.id || v.name}
                         className="px-2.5 py-1 rounded-lg bg-white dark:bg-white/10 text-text-primary dark:text-zinc-200 text-xs font-semibold border border-border/60 dark:border-white/10 shadow-2xs"
@@ -5186,7 +5364,7 @@ const CustomerAppInner: React.FC = () => {
                 Close
               </button>
 
-              {selectedDetailItem.isAvailable === false ? (
+              {currentDetailItem.isAvailable === false ? (
                 <span className="px-4 py-2.5 rounded-xl text-xs font-bold border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400">
                   Out of Stock
                 </span>
@@ -5196,13 +5374,19 @@ const CustomerAppInner: React.FC = () => {
                   disabled
                   className="flex-1 max-w-[240px] py-2.5 px-4 rounded-xl bg-zinc-200 dark:bg-white/10 text-zinc-500 dark:text-zinc-400 font-extrabold text-xs transition-colors flex items-center justify-center gap-1.5 opacity-60 cursor-not-allowed"
                 >
-                  <span>{isBillPaidOrSettled ? 'Session Settled' : 'Ordering Closed (15m Cutoff)'}</span>
+                  <span>
+                    {isBillPaidOrSettled
+                      ? 'Session Settled'
+                      : isSettlementInProgress
+                      ? 'Settling Bill'
+                      : 'Ordering Closed (15m Cutoff)'}
+                  </span>
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => {
-                    const item = selectedDetailItem;
+                    const item = currentDetailItem;
                     const hasModifiers =
                       (item.variants && item.variants.length > 0) ||
                       (item.modifierGroups && item.modifierGroups.length > 0);
@@ -5217,10 +5401,10 @@ const CustomerAppInner: React.FC = () => {
                 >
                   <Plus className="w-4 h-4" />
                   <span>
-                    {(selectedDetailItem.variants && selectedDetailItem.variants.length > 0) ||
-                    (selectedDetailItem.modifierGroups && selectedDetailItem.modifierGroups.length > 0)
+                    {(currentDetailItem.variants && currentDetailItem.variants.length > 0) ||
+                    (currentDetailItem.modifierGroups && currentDetailItem.modifierGroups.length > 0)
                       ? 'Customize & Add'
-                      : `Add to Cart • ₹${Number(selectedDetailItem.finalPrice ?? selectedDetailItem.basePrice ?? 0).toFixed(0)}`}
+                      : `Add to Cart • ₹${Number(currentDetailItem.finalPrice ?? currentDetailItem.basePrice ?? 0).toFixed(0)}`}
                   </span>
                 </button>
               )}

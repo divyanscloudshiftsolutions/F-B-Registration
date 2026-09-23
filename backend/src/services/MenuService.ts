@@ -1033,9 +1033,11 @@ export class MenuService {
         action: 'item_availability',
         itemId: id,
         details: {
-          isAvailable: data.isAvailable && availableStock > 0,
+          isAvailable: data.isAvailable && currentStock > 0,
           currentStock,
+          stockQuantity: currentStock,
           availableStock,
+          reservedStock: reserved,
           station: updatedItem?.station || existing.station,
           name: updatedItem?.name || existing.name,
           affectedItemsCount: transitionedItems.length,
@@ -1212,7 +1214,9 @@ export class MenuService {
     }
 
     let transitionedItems: any[] = [];
-    const preservedStock = item.stockItem?.currentStock ?? 50;
+    const preservedStock = stockQuantity !== undefined
+      ? Math.max(0, Math.floor(Number(stockQuantity)))
+      : (item.stockItem?.currentStock ?? 50);
 
     if (!isAvailable) {
       // MANUAL STOCK OUT ACTION:
@@ -1225,6 +1229,36 @@ export class MenuService {
           where: { id: itemId },
           data: { isAvailable: false },
         });
+
+        if (stockQuantity !== undefined) {
+          if (item.stockItem) {
+            const prevStock = item.stockItem.currentStock;
+            await tx.stockItem.update({
+              where: { id: item.stockItem.id },
+              data: { currentStock: preservedStock },
+            });
+            if (preservedStock !== prevStock) {
+              await tx.inventoryLog.create({
+                data: {
+                  stockItemId: item.stockItem.id,
+                  quantityDelta: preservedStock - prevStock,
+                  previousStock: prevStock,
+                  newStock: preservedStock,
+                  reason: 'STOCK_OUT_ADJUSTMENT',
+                },
+              });
+            }
+          } else {
+            await tx.stockItem.create({
+              data: {
+                menuItemId: itemId,
+                currentStock: preservedStock,
+                lowStockThreshold: 5,
+                isActive: true,
+              },
+            });
+          }
+        }
 
         // Find strictly unaccepted PLACED items
         const pendingPlacedItems = await tx.orderItem.findMany({
@@ -1401,9 +1435,11 @@ export class MenuService {
         action: 'item_availability',
         itemId,
         details: {
-          isAvailable: shouldBeAvailable && availableStock > 0,
+          isAvailable: shouldBeAvailable,
           currentStock: newStock,
+          stockQuantity: newStock,
           availableStock,
+          reservedStock: reserved,
           station: item.station,
           name: item.name,
         },
@@ -1411,7 +1447,7 @@ export class MenuService {
 
       return {
         id: itemId,
-        isAvailable: shouldBeAvailable && availableStock > 0,
+        isAvailable: shouldBeAvailable,
         currentStock: newStock,
         availableStock,
       };
