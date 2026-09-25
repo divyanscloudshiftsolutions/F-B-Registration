@@ -344,7 +344,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         { step: '01', title: 'New Check-In', desc: 'Register Guest & Issue QR', icon: UserCheck, primary: true, onClick: () => onNavigate?.('checkin') },
         { step: '02', title: 'Occupied Tables', desc: 'Live Floor Grid & Timers', icon: CalendarRange, primary: false, onClick: () => onNavigate?.('tables/occupied') },
         { step: '03', title: 'Table Layout', desc: 'Manage Capacity & Status', icon: Grid3X3, primary: false, onClick: () => onNavigate?.('tables') },
-        { step: '04', title: 'Customer Sessions', desc: 'Guest Database & Passes', icon: Users, primary: true, onClick: () => onNavigate?.('admin', 'customers') },
+        { step: '04', title: 'Customer Sessions', desc: 'Guest Profiles & Passes', icon: Users, primary: true, onClick: () => onNavigate?.('admin', 'customers') },
       ];
     }
     if (isReceptionist) {

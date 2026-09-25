@@ -4,6 +4,16 @@ import { broadcastOrderCreated, broadcastOrderItemUpdated } from '../realtime';
 import { inventoryService } from './InventoryService';
 import { menuService } from './MenuService';
 
+const TokenStatus = {
+  PENDING_PAYMENT: 'PENDING_PAYMENT' as const,
+  ACTIVE: 'ACTIVE' as const,
+  CLOSED: 'CLOSED' as const,
+  CANCELLED: 'CANCELLED' as const,
+  EXPIRED: 'EXPIRED' as const,
+  EXTENDED: 'EXTENDED' as const,
+};
+type TokenStatus = (typeof TokenStatus)[keyof typeof TokenStatus];
+
 const prisma = new PrismaClient();
 
 export interface PlaceOrderItemInput {
@@ -46,15 +56,19 @@ export class OrderService {
     });
 
     if (!token) {
-      throw new Error(`Invalid token: Token ${input.tokenNumber} not found`);
+      throw new Error('Table session not found. Please scan your table QR code.');
     }
 
     if (token.status !== 'ACTIVE' && token.status !== 'EXTENDED') {
-      throw new Error(`Cannot place order. Token session is in ${token.status} status`);
+      throw new Error('Cannot place order. This table session is no longer active.');
     }
 
     if (!token.paymentVerified) {
       throw new Error('Cannot place order: Session payment has not been verified yet. Please complete payment at the counter.');
+    }
+
+    if (token.table?.status === 'BILL_REQUESTED') {
+      throw new Error('Ordering is locked: A bill has already been requested for this table. Please ask staff to reopen ordering.');
     }
 
     if (token.table?.status === 'SETTLING') {
@@ -63,7 +77,7 @@ export class OrderService {
 
     const tableId = input.tableId || token.tableId;
     if (!tableId || (token.tableId && input.tableId && token.tableId !== input.tableId)) {
-      throw new Error(`Table mismatch: Token does not belong to table ${input.tableId}`);
+      throw new Error('This table pass is not assigned to this table.');
     }
 
     // 2. Idempotency Check: Prevent double-click submission within 3 seconds
@@ -251,6 +265,24 @@ export class OrderService {
 
     // 6. Execute Transactional Order Creation with Atomic Inventory Lock
     const createdOrder = await prisma.$transaction(async (tx) => {
+      // Re-verify token and table status authoritatively inside transaction to prevent race conditions
+      const txToken = await tx.token.findUnique({
+        where: { id: token.id },
+        include: { table: true },
+      });
+
+      if (!txToken || (txToken.status !== 'ACTIVE' && txToken.status !== 'EXTENDED')) {
+        throw new Error('Cannot place order: Dining session is no longer active.');
+      }
+
+      if (txToken.table?.status === 'BILL_REQUESTED') {
+        throw new Error('Ordering is locked: A bill has already been requested for this table. Please ask staff to reopen ordering.');
+      }
+
+      if (txToken.table?.status === 'SETTLING') {
+        throw new Error('Ordering is locked: Bill settlement is in progress for this table.');
+      }
+
       // Validate and deduct stock atomically
       for (const deduction of aggregatedStockDeductions.values()) {
         const stock = await tx.stockItem.findUnique({
@@ -723,7 +755,7 @@ export class OrderService {
       item.order?.token?.tokenNumber !== tokenNumber &&
       item.order?.tokenId !== tokenNumber
     ) {
-      throw new Error('Unauthorized: Item does not belong to this dining session');
+      throw new Error('This item is not part of your current order.');
     }
 
     // Authoritative KDS Accept lock check
@@ -882,7 +914,8 @@ export class OrderService {
   }
 
   /**
-   * Cleanup/cancel an unaccepted (PLACED) order item from a closed dining session
+   * Cleanup/cancel an unaccepted (PLACED) order item from a closed dining session.
+   * Fully idempotent, race-safe, and restores reserved inventory exactly once.
    */
   async cleanupClosedSessionOrderItem(orderItemId: string, staffUserId?: string) {
     const now = new Date();
@@ -908,6 +941,18 @@ export class OrderService {
 
       if (!item) {
         throw new Error('Order item not found');
+      }
+
+      // Idempotency: If already CANCELLED, return existing item gracefully without re-restoring stock
+      if (item.status === OrderStatus.CANCELLED) {
+        return {
+          item,
+          updatedItem: item,
+          newOrderStatus: item.order.status,
+          newSubtotal: item.order.subtotal,
+          restoredStock: 0,
+          alreadyCancelled: true,
+        };
       }
 
       // 2. Strict status check: Only unaccepted (PLACED) items from closed sessions can be cleaned up
@@ -936,6 +981,18 @@ export class OrderService {
       });
 
       if (updateResult.count === 0) {
+        // Check if concurrent process transitioned it to CANCELLED
+        const freshItem = await tx.orderItem.findUnique({ where: { id: orderItemId } });
+        if (freshItem && freshItem.status === OrderStatus.CANCELLED) {
+          return {
+            item,
+            updatedItem: freshItem,
+            newOrderStatus: item.order.status,
+            newSubtotal: item.order.subtotal,
+            restoredStock: 0,
+            alreadyCancelled: true,
+          };
+        }
         throw new Error('Cannot cleanup item: Item is no longer in pending (PLACED) status or was already processed.');
       }
 
@@ -1010,64 +1067,125 @@ export class OrderService {
       });
 
       const updatedItem = await tx.orderItem.findUnique({ where: { id: orderItemId } });
-      return { item, updatedItem: updatedItem!, newOrderStatus, newSubtotal, restoredStock };
+      return { item, updatedItem: updatedItem!, newOrderStatus, newSubtotal, restoredStock, alreadyCancelled: false };
     });
 
-    // 8. Invalidate menu cache
-    try {
-      await menuService.invalidateMenuCache();
-    } catch {}
+    if (!result.alreadyCancelled) {
+      // 8. Invalidate menu cache
+      try {
+        await menuService.invalidateMenuCache();
+      } catch {}
 
-    // 9. Broadcast real-time order item update
-    try {
-      broadcastOrderItemUpdated({
-        orderId: result.item.orderId,
-        orderItemId: result.item.id,
-        orderNumber: result.item.order.orderNumber,
-        tokenNumber: result.item.order.token?.tokenNumber || '',
-        tableId: result.item.order.tableId,
-        tableNumber: result.item.order.table?.tableNumber,
-        station: result.item.station,
-        itemName: result.item.itemName,
-        variantName: result.item.variantName,
-        selectedModifiers: result.item.selectedModifiers,
-        specialInstructions: result.item.specialInstructions,
-        quantity: result.item.quantity,
-        previousStatus: result.item.status,
-        status: OrderStatus.CANCELLED,
-        preparedAt: null,
-        readyAt: null,
-        servedAt: null,
-        updatedAt: now.toISOString(),
-      });
-    } catch (broadcastErr) {
-      console.warn('Real-time closed-session cleanup broadcast error:', broadcastErr);
-    }
-
-    // 10. Broadcast restored stock to all clients
-    try {
-      if (result.item.menuItemId) {
-        const stockInfo = await inventoryService.getAvailableStock(result.item.menuItemId);
-        const mItem = await prisma.menuItem.findUnique({ where: { id: result.item.menuItemId } });
-        if (mItem) {
-          inventoryService.notifyStockChanged({
-            itemId: result.item.menuItemId,
-            stockQuantity: stockInfo.currentStock,
-            currentStock: stockInfo.currentStock,
-            availableStock: stockInfo.availableStock,
-            reservedStock: stockInfo.reservedStock,
-            isAvailable: stockInfo.currentStock > 0,
-            name: mItem.name,
-            station: mItem.station,
-            reason: 'CLOSED_SESSION_CLEANUP_RESTORE',
-          });
-        }
+      // 9. Broadcast real-time order item update
+      try {
+        broadcastOrderItemUpdated({
+          orderId: result.item.orderId,
+          orderItemId: result.item.id,
+          orderNumber: result.item.order.orderNumber,
+          tokenNumber: result.item.order.token?.tokenNumber || '',
+          tableId: result.item.order.tableId,
+          tableNumber: result.item.order.table?.tableNumber,
+          station: result.item.station,
+          itemName: result.item.itemName,
+          variantName: result.item.variantName,
+          selectedModifiers: result.item.selectedModifiers,
+          specialInstructions: result.item.specialInstructions,
+          quantity: result.item.quantity,
+          previousStatus: result.item.status,
+          status: OrderStatus.CANCELLED,
+          preparedAt: null,
+          readyAt: null,
+          servedAt: null,
+          updatedAt: now.toISOString(),
+        });
+      } catch (broadcastErr) {
+        console.warn('Real-time closed-session cleanup broadcast error:', broadcastErr);
       }
-    } catch (stockSyncErr) {
-      console.warn('Real-time stock restoration broadcast error:', stockSyncErr);
+
+      // 10. Broadcast restored stock to all clients
+      try {
+        if (result.item.menuItemId) {
+          const stockInfo = await inventoryService.getAvailableStock(result.item.menuItemId);
+          const mItem = await prisma.menuItem.findUnique({ where: { id: result.item.menuItemId } });
+          if (mItem) {
+            inventoryService.notifyStockChanged({
+              itemId: result.item.menuItemId,
+              stockQuantity: stockInfo.currentStock,
+              currentStock: stockInfo.currentStock,
+              availableStock: stockInfo.availableStock,
+              reservedStock: stockInfo.reservedStock,
+              isAvailable: stockInfo.currentStock > 0,
+              name: mItem.name,
+              station: mItem.station,
+              reason: 'CLOSED_SESSION_CLEANUP_RESTORE',
+            });
+          }
+        }
+      } catch (stockSyncErr) {
+        console.warn('Real-time stock restoration broadcast error:', stockSyncErr);
+      }
     }
 
     return result.updatedItem;
+  }
+
+  /**
+   * Automatically cleanup/cancel all unaccepted (PLACED) order items for a specific token
+   * when the dining session closes, expires, or is cancelled.
+   */
+  async cleanupUnacceptedOrderItemsForToken(tokenId: string, reason: string = 'SESSION_CLOSED', staffUserId?: string) {
+    const pendingItems = await prisma.orderItem.findMany({
+      where: {
+        order: { tokenId },
+        status: OrderStatus.PLACED,
+      },
+      select: { id: true },
+    });
+
+    if (pendingItems.length === 0) {
+      return [];
+    }
+
+    const cleanedItems = [];
+    for (const item of pendingItems) {
+      try {
+        const cleaned = await this.cleanupClosedSessionOrderItem(item.id, staffUserId);
+        cleanedItems.push(cleaned);
+      } catch (err: any) {
+        console.warn(`[OrderService] Auto-cleanup skipped for item ${item.id}:`, err.message);
+      }
+    }
+
+    return cleanedItems;
+  }
+
+  /**
+   * Cleanup any orphaned/stale unaccepted (PLACED) order items whose tokens are already terminal
+   * (CLOSED, EXPIRED, CANCELLED). Run during background system reconciliation.
+   */
+  async cleanupAllStaleClosedSessionOrders() {
+    const staleItems = await prisma.orderItem.findMany({
+      where: {
+        status: OrderStatus.PLACED,
+        order: {
+          token: {
+            status: {
+              in: [TokenStatus.CLOSED, TokenStatus.EXPIRED, TokenStatus.CANCELLED],
+            },
+          },
+        },
+      },
+      select: { id: true },
+      take: 50,
+    });
+
+    for (const it of staleItems) {
+      try {
+        await this.cleanupClosedSessionOrderItem(it.id, 'system_reconciler');
+      } catch (err: any) {
+        console.warn(`[OrderService] Stale item auto-cleanup error for ${it.id}:`, err.message);
+      }
+    }
   }
 }
 

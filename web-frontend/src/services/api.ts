@@ -65,21 +65,21 @@ class ApiService {
       localStorage.removeItem('bar_web_token');
       localStorage.removeItem('bar_web_user');
       if (data && data.error && data.error.code === 'AUTH_DEACTIVATED') {
-        localStorage.setItem('auth_error_msg', 'Access denied. Contact your administrator.');
+        localStorage.setItem('auth_error_msg', 'Access denied. Please contact your manager.');
       } else {
-        localStorage.setItem('auth_error_msg', data.message || (data.error && typeof data.error === 'object' ? data.error.message : data.error) || 'Session expired. Please log in again.');
+        localStorage.setItem('auth_error_msg', data.message || (data.error && typeof data.error === 'object' ? data.error.message : data.error) || 'Your session has expired. Please log in again.');
       }
       if (hadToken && !this.isRedirectingToLogin) {
         this.isRedirectingToLogin = true;
         window.location.reload();
       }
-      throw new Error(data.message || 'Session expired. Please log in again.');
+      throw new Error(data.message || 'Your session has expired. Please log in again.');
     }
 
     if (!response.ok) {
       const errMsg = data.message || 
                      (data.error && typeof data.error === 'object' ? data.error.message : data.error) || 
-                     `HTTP Error ${response.status}`;
+                     'Something went wrong. Please try again.';
       throw new Error(errMsg);
     }
 
@@ -876,6 +876,13 @@ class ApiService {
     return this.request<{ success: boolean; tableStatus: string; tableId?: string; tableNumber?: string }>('/bills/cancel-settlement', {
       method: 'POST',
       body: JSON.stringify({ tokenNumber: tokenNumberOrId }),
+    });
+  }
+
+  async reopenOrdering(tokenNumberOrTableId: string, reason?: string) {
+    return this.request<{ success: boolean; message: string; tableStatus: string; tableId?: string; tableNumber?: string }>('/bills/reopen-ordering', {
+      method: 'POST',
+      body: JSON.stringify({ tokenNumber: tokenNumberOrTableId, tableId: tokenNumberOrTableId, reason }),
     });
   }
 

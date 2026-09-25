@@ -671,7 +671,7 @@ export const TableManagement: React.FC = () => {
                                 if (activeTok) {
                                   setExtendingToken(activeTok);
                                 } else {
-                                  showToast('No active session token found for this table.', 'warning');
+                                  showToast('No active session found for this table.', 'warning');
                                 }
                               }}
                               className="py-2.5 rounded-xl bg-primary/10 hover:bg-primary/20 active:bg-primary/25 text-primary border border-primary/25 dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:border-[#D4AF37]/30 dark:hover:bg-[#D4AF37]/25 font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-1 transition-all cursor-pointer min-h-[38px]"
@@ -931,7 +931,7 @@ export const TableManagement: React.FC = () => {
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-text-muted">Token Pass:</span>
+                      <span className="text-text-muted">Table Pass:</span>
                       <span className="font-mono text-text-main font-bold text-right">{inspectingToken?.tokenNumber || inspectingTable.currentTokenId || inspectingTable.activeSession?.tokenNumber}</span>
                     </div>
                     <div className="flex justify-between items-center">
@@ -970,7 +970,7 @@ export const TableManagement: React.FC = () => {
                           if (activeTok) {
                             setExtendingToken(activeTok);
                           } else {
-                            showToast('No active session token found for this table.', 'warning');
+                            showToast('No active session found for this table.', 'warning');
                           }
                         }}
                         className="w-full py-2.5 rounded-xl bg-primary/10 hover:bg-primary/20 active:bg-primary/25 text-primary border border-primary/25 dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:border-[#D4AF37]/30 dark:hover:bg-[#D4AF37]/25 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"

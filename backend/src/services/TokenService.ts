@@ -3,6 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { normalizeEmail, normalizePhone } from '../utils/normalization';
 import redisService from './RedisService';
 import emailNotificationService from './EmailNotificationService';
+import { orderService } from './OrderService';
 import jwt from 'jsonwebtoken';
 import { logStateTransition } from './AuditLogger';
 
@@ -351,11 +352,11 @@ export class TokenService {
         FOR UPDATE
       `;
 
-      if (!tokens || tokens.length === 0) throw new Error('Token not found');
+      if (!tokens || tokens.length === 0) throw new Error('Table session not found');
       const token = tokens[0];
 
       if (token.status !== 'ACTIVE' && token.status !== 'EXPIRED' && token.status !== 'EXTENDED') {
-        throw new Error(`Cannot extend token with status: ${token.status}`);
+        throw new Error('Cannot extend a session that is no longer active.');
       }
 
       // Get place type and persons count to compute the server-side single source of truth for additionalAmount
@@ -363,7 +364,7 @@ export class TokenService {
         where: { id: token.id },
         include: { placeType: true }
       });
-      if (!tokenObj) throw new Error('Token details not found');
+      if (!tokenObj) throw new Error('Session details not found');
 
       const placeType = tokenObj.placeType;
       const additionalAmountDec = new Decimal(additionalAmount);
@@ -411,9 +412,6 @@ export class TokenService {
           },
           totalRedemptionsAllowed: {
             increment: totalAddedDrinks
-          },
-          amountPaid: {
-            increment: finalAdditionalAmount
           }
         },
         include: {
@@ -753,6 +751,22 @@ export class TokenService {
       await redisService.del('table:available:all');
       await redisService.del('tokens:active').catch(() => {});
       await redisService.del('tables:all').catch(() => {});
+
+      // Authoritative automatic cleanup: release unaccepted PLACED orders for expired tokens
+      for (const token of expiredActiveTokens) {
+        try {
+          await orderService.cleanupUnacceptedOrderItemsForToken(token.id, 'SESSION_EXPIRED', 'system_reconciler');
+        } catch (cleanupErr) {
+          console.warn('Auto-cleanup of pending orders on session expiry failed:', cleanupErr);
+        }
+      }
+    }
+
+    // 4. Reconcile any orphaned/stale unaccepted (PLACED) orders from closed/expired sessions
+    try {
+      await orderService.cleanupAllStaleClosedSessionOrders();
+    } catch (staleCleanupErr) {
+      console.warn('Auto-cleanup of stale closed session orders failed:', staleCleanupErr);
     }
   }
 
@@ -782,7 +796,7 @@ export class TokenService {
       `;
 
       if (!tokens || tokens.length === 0) {
-        throw new Error('Token not found');
+        throw new Error('Table session not found');
       }
 
       const token = tokens[0];
@@ -796,12 +810,12 @@ export class TokenService {
 
       // Prevent closing unpaid pending QR sessions
       if (token.deliveryMode === 'EMAIL_QR' && !token.paymentVerified && !force) {
-        throw new Error('Cannot close an unpaid pending QR session.');
+        throw new Error('Cannot close an unpaid pending pass.');
       }
 
       // Verify token is in a valid state to be closed
       if (token.status !== 'ACTIVE' && token.status !== 'EXTENDED' && token.status !== 'EXPIRED' && !force) {
-        throw new Error(`Cannot close token with status: ${token.status}`);
+        throw new Error('Cannot close a session that is already closed.');
       }
 
       const totalTimeUsedMinutes = Math.floor(
@@ -819,7 +833,7 @@ export class TokenService {
         }
       });
 
-      if (!fullToken) throw new Error('Token details not found');
+      if (!fullToken) throw new Error('Session details not found');
 
       const totalExtensionMinutes = fullToken.extensions.reduce((acc: number, ext: any) => acc + ext.extraMinutes, 0);
 
@@ -890,6 +904,19 @@ export class TokenService {
         }
       };
     }, { timeout: 15000 });
+
+    // Clean up any unaccepted PLACED orders for this closed token
+    try {
+      await orderService.cleanupUnacceptedOrderItemsForToken(
+        result.token.id,
+        `SESSION_CLOSED: ${closeReason}${reasonDetail ? ' - ' + reasonDetail : ''}`,
+        closedBy
+      );
+    } catch (cleanupErr) {
+      console.warn('Auto-cleanup of pending orders on session close failed:', cleanupErr);
+    }
+
+    return result;
   }
 
   async closeToken(
@@ -1130,12 +1157,12 @@ export class TokenService {
       `;
 
       if (!tokens || tokens.length === 0) {
-        throw new Error('Token not found.');
+        throw new Error('Table pass not found.');
       }
       const token = tokens[0];
 
       if (token.paymentVerified) {
-        throw new Error('Token is already activated.');
+        throw new Error('Pass is already active.');
       }
       if (token.status !== 'PENDING_PAYMENT') {
         if (token.status === 'ACTIVE' || token.status === 'EXTENDED' || token.status === 'EXPIRED') {
@@ -1143,7 +1170,7 @@ export class TokenService {
           conflictError.code = 'CONFLICT';
           throw conflictError;
         }
-        throw new Error(`Token has status '${token.status}' and cannot be activated.`);
+        throw new Error('This pass cannot be activated in its current state.');
       }
 
       // Check if this customer already has another active session (by phone or email)
@@ -1152,7 +1179,7 @@ export class TokenService {
         include: { customer: true, table: true }
       });
       if (!tokenWithCustomer || !tokenWithCustomer.customer) {
-        throw new Error('Token customer details not found.');
+        throw new Error('Customer details not found for this pass.');
       }
       
       const customerRecord = tokenWithCustomer.customer;
@@ -1204,7 +1231,7 @@ export class TokenService {
       }
 
       if (!table) {
-        throw new Error(`Table '${tableNumber || 'assigned to token'}' not found.`);
+        throw new Error('Assigned table not found.');
       }
       const tblStatus = (table.status || '').toLowerCase();
       if (tblStatus !== 'available' && tblStatus !== 'in_checkin' && table.currentTokenId !== token.id) {
@@ -1221,7 +1248,7 @@ export class TokenService {
         }
       }
       if (token.personsCount > table.capacity && !bypassCapacity) {
-        throw new Error(`Group size of ${token.personsCount} exceeds table capacity of ${table.capacity}.`);
+        throw new Error(`Too many guests for this table (Capacity: ${table.capacity}).`);
       }
 
       // Get place type config
@@ -1341,10 +1368,10 @@ export class TokenService {
         include: { customer: true }
       });
       if (!token) {
-        throw new Error('Token not found.');
+        throw new Error('Table pass not found.');
       }
       if (token.status !== TokenStatus.PENDING_PAYMENT) {
-        throw new Error(`Cannot cancel token with status: ${token.status}`);
+        throw new Error('Cannot cancel a pass that is already active or closed.');
       }
 
       const updatedToken = await tx.token.update({
@@ -1407,6 +1434,18 @@ export class TokenService {
 
       return updatedToken;
     }, { timeout: 15000 });
+
+    try {
+      await orderService.cleanupUnacceptedOrderItemsForToken(
+        result.id,
+        `CANCELLED: ${cancelReason}`,
+        cancelledBy
+      );
+    } catch (cleanupErr) {
+      console.warn('Auto-cleanup of pending orders on token cancel failed:', cleanupErr);
+    }
+
+    return result;
   }
 }
 

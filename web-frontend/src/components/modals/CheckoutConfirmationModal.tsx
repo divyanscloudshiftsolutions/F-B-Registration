@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, LogOut, Receipt, CheckCircle } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useModalKeyboard } from '../../hooks/useModalKeyboard';
+import { useRovingSelection } from '../../hooks/useRovingSelection';
 
 interface CheckoutConfirmationModalProps {
   isOpen: boolean;
@@ -29,6 +31,15 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
   const [isLoadingBill, setIsLoadingBill] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const paymentMethodsList = ['CASH', 'UPI', 'CARD'] as const;
+  const paymentRoving = useRovingSelection<'CASH' | 'CARD' | 'UPI'>({
+    items: [...paymentMethodsList],
+    selectedIndex: paymentMethodsList.indexOf(paymentMethod as any),
+    orientation: 'horizontal',
+    enabled: isOpen && !!(billData && billData.items && billData.items.length > 0),
+    onSelect: (m) => setPaymentMethod(m),
+  });
+
   useEffect(() => {
     if (!isOpen || !session) {
       setBillData(null);
@@ -44,26 +55,17 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
       })
       .catch(() => {})
       .finally(() => setIsLoadingBill(false));
+  }, [isOpen, session]);
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target && target.tagName === 'TEXTAREA') return;
-
-      if (e.key === 'Enter') {
-        if (!isSubmitting) {
-          e.preventDefault();
-          const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
-          handleSubmit(fakeEvent);
-        }
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, session, isSubmitting, closeReason, closeReasonDetail, onClose]);
+  useModalKeyboard({
+    isOpen: isOpen && !!session,
+    onConfirm: () => {
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSubmit(fakeEvent);
+    },
+    onClose,
+    isSubmitting: isSubmitting || isLoadingBill,
+  });
 
   if (!isOpen || !session) return null;
 
@@ -115,14 +117,14 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
             <div>Customer: <span className="font-bold text-text-main">{session.customerName}</span></div>
             <div>Phone: <span className="font-mono font-bold text-text-main">{session.customerPhone || 'N/A'}</span></div>
             <div>Table: <span className="font-bold text-text-main">{session.tableNumber || 'N/A'}</span></div>
-            <div>Session Token: <span className="font-mono font-bold text-text-main">{session.tokenNumber}</span></div>
+            <div>Pass Number: <span className="font-mono font-bold text-text-main">{session.tokenNumber}</span></div>
           </div>
         </div>
 
         {/* Live Bill Summary */}
         {isLoadingBill ? (
           <div className="p-3 bg-bg-primary/50 border border-border-main rounded-xl text-xs text-text-muted text-center animate-pulse">
-            Calculating authoritative bill & redemption...
+            Calculating bill summary...
           </div>
         ) : hasOrders ? (
           <div className="p-3.5 bg-bg-primary border border-purple-500/30 rounded-xl space-y-2 text-xs text-left">
@@ -179,21 +181,29 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
             {/* Payment Method Selector */}
             <div className="pt-2 border-t border-border-main">
               <label className="block text-[11px] font-semibold text-text-muted mb-1">Payment Method *</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['CASH', 'UPI', 'CARD'] as const).map((method) => (
-                  <button
-                    key={method}
-                    type="button"
-                    onClick={() => setPaymentMethod(method)}
-                    className={`py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                      paymentMethod === method
-                        ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
-                        : 'bg-bg-primary text-text-muted border-border-main hover:text-text-main'
-                    }`}
-                  >
-                    {method}
-                  </button>
-                ))}
+              <div 
+                className="grid grid-cols-3 gap-2 focus:outline-none"
+                onKeyDown={paymentRoving.handleKeyDown}
+              >
+                {(['CASH', 'UPI', 'CARD'] as const).map((method, idx) => {
+                  const itemProps = paymentRoving.getItemProps(idx);
+                  return (
+                    <button
+                      key={method}
+                      type="button"
+                      tabIndex={itemProps.tabIndex}
+                      onClick={() => setPaymentMethod(method)}
+                      onFocus={itemProps.onFocus}
+                      className={`py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                        paymentMethod === method
+                          ? 'bg-purple-600 text-white border-purple-600 shadow-sm ring-1 ring-purple-400'
+                          : 'bg-bg-primary text-text-muted border-border-main hover:text-text-main'
+                      }`}
+                    >
+                      {method}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>

@@ -668,7 +668,7 @@ export class MenuService {
       (data.discountValue !== undefined && Number(data.discountValue) !== Number(existing.discountValue));
 
     if (isPriceChangeAttempted && userRole !== 'admin') {
-      throw new Error('Forbidden: Only administrators can modify base price or discount settings');
+      throw new Error('Only administrators can modify price or discount settings.');
     }
 
     let sectionId = existing.sectionId;

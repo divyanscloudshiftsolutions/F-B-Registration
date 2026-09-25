@@ -4,13 +4,26 @@ import { broadcastServiceRequestCreated, broadcastServiceRequestUpdated } from '
 const prisma = new PrismaClient();
 
 export class ServiceRequestService {
+  private normalizeType(type: any): ServiceRequestType {
+    const raw = String(type || '').toUpperCase().trim();
+    if (raw === 'WATER') return ServiceRequestType.WATER;
+    if (raw === 'CUTLERY') return ServiceRequestType.CUTLERY;
+    if (raw === 'NAPKINS') return ServiceRequestType.NAPKINS;
+    if (raw === 'CLEAN_UP') return ServiceRequestType.CLEAN_UP;
+    if (raw === 'BILL' || raw === 'BILL_REQUEST') return ServiceRequestType.BILL_REQUEST;
+    if (raw === 'BILL_ASSISTANCE') return ServiceRequestType.BILL_ASSISTANCE;
+    if (raw === 'ORDER_ASSISTANCE' || raw === 'ASSISTANCE') return ServiceRequestType.ORDER_ASSISTANCE;
+    if (raw === 'OTHER') return ServiceRequestType.OTHER;
+    return ServiceRequestType.ORDER_ASSISTANCE;
+  }
+
   /**
-   * Submit a customer service request with 3-minute de-duplication
+   * Submit a customer service request with authoritative de-duplication
    */
   async createRequest(input: {
     tokenNumber: string;
     tableId?: string;
-    type: ServiceRequestType;
+    type: ServiceRequestType | string;
     note?: string;
   }) {
     const token = await prisma.token.findUnique({
@@ -19,70 +32,80 @@ export class ServiceRequestService {
     });
 
     if (!token) {
-      throw new Error(`Token ${input.tokenNumber} not found`);
+      throw new Error('Table session not found. Please scan your table QR code.');
     }
 
     if (token.status !== 'ACTIVE' && token.status !== 'EXTENDED') {
-      throw new Error(`Cannot call service. Token is in ${token.status} status`);
+      throw new Error('Cannot request service. This table session is no longer active.');
     }
 
     const tableId = input.tableId || token.tableId;
     if (!tableId || !token.table) {
-      throw new Error(`No active table associated with token ${input.tokenNumber}`);
+      throw new Error('No active table assigned to this session.');
     }
 
-    // 3-Minute De-duplication Check
-    const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000);
-    const existingRecent = await prisma.serviceRequest.findFirst({
-      where: {
-        tokenId: token.id,
-        type: input.type,
-        status: { in: [ServiceRequestStatus.NEW, ServiceRequestStatus.ACKNOWLEDGED] },
-        createdAt: { gte: threeMinutesAgo },
-      },
-    });
+    const normalizedType = this.normalizeType(input.type);
 
-    if (existingRecent) {
-      return {
-        ...existingRecent,
-        isDuplicate: true,
-        message: `Your request for ${input.type} is already registered with our staff.`,
-      };
-    }
-
-    const created = await prisma.serviceRequest.create({
-      data: {
-        tokenId: token.id,
-        tableId,
-        tableNumber: token.table.tableNumber,
-        type: input.type,
-        note: input.note || null,
-        status: ServiceRequestStatus.NEW,
-      },
-    });
-
-    // Broadcast service_request.created in real-time
-    try {
-      broadcastServiceRequestCreated({
-        id: created.id,
-        tokenId: token.id,
-        tokenNumber: token.tokenNumber,
-        tableId,
-        tableNumber: token.table.tableNumber,
-        type: created.type,
-        note: created.note,
-        status: created.status,
-        createdAt: created.createdAt.toISOString(),
+    // Authoritative Atomic Active Request De-duplication Check
+    // Prevent duplicate waiter alerts if an open request (NEW) already exists for this table session and type
+    const result = await prisma.$transaction(async (tx) => {
+      const existingActive = await tx.serviceRequest.findFirst({
+        where: {
+          tokenId: token.id,
+          type: normalizedType,
+          status: ServiceRequestStatus.NEW,
+        },
+        orderBy: { createdAt: 'desc' },
       });
-    } catch (err) {
-      console.warn('Real-time service request broadcast error:', err);
+
+      if (existingActive) {
+        return {
+          ...existingActive,
+          isDuplicate: true,
+          alreadyActive: true,
+          message: 'You have already requested assistance. Your waiter has been notified and will acknowledge your request.',
+        };
+      }
+
+      const created = await tx.serviceRequest.create({
+        data: {
+          tokenId: token.id,
+          tableId,
+          tableNumber: token.table.tableNumber,
+          type: normalizedType,
+          note: input.note || null,
+          status: ServiceRequestStatus.NEW,
+        },
+      });
+
+      return {
+        ...created,
+        isDuplicate: false,
+        alreadyActive: false,
+        message: 'Waiter has been notified.',
+      };
+    });
+
+    // Broadcast service_request.created in real-time ONLY for genuine new requests
+    if (!result.isDuplicate) {
+      try {
+        broadcastServiceRequestCreated({
+          id: result.id,
+          tokenId: token.id,
+          tokenNumber: token.tokenNumber,
+          tableId,
+          tableNumber: token.table.tableNumber,
+          type: result.type,
+          note: result.note,
+          status: result.status,
+          createdAt: result.createdAt ? result.createdAt.toISOString() : new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn('Real-time service request broadcast error:', err);
+      }
     }
 
-    return {
-      ...created,
-      isDuplicate: false,
-      message: `Request for ${input.type} received. Staff alerted.`,
-    };
+    return result;
   }
 
   /**

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Sun, Moon, User, KeyRound, ShieldCheck, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useRovingSelection } from '../hooks/useRovingSelection';
 
 export const LoginPage: React.FC = () => {
  const { login, isDark, toggleTheme } = useAuth();
+  const roles = ['ADM', 'REC', 'BAR', 'CHF', 'WTR', 'MGR'] as const;
   const [selectedRole, setSelectedRole] = useState<'REC' | 'BAR' | 'ADM' | 'MGR' | 'CHF' | 'WTR'>('ADM');
   const [username, setUsername] = useState('admin');
   const [pin, setPin] = useState('admin123');
@@ -34,6 +36,13 @@ export const LoginPage: React.FC = () => {
       setPin(roleCredentials[role].pin);
     }
   };
+
+  const roleRoving = useRovingSelection({
+    items: [...roles],
+    selectedIndex: roles.indexOf(selectedRole),
+    onSelect: (r) => handleRoleSelect(r),
+    orientation: 'horizontal',
+  });
 
   const toggleThemeWithWave = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (
@@ -84,7 +93,7 @@ export const LoginPage: React.FC = () => {
  try {
  await login(username.trim(), pin.trim());
  } catch (err: any) {
- setErrorMsg(err.message || 'Authentication failed. Please verify credentials.');
+ setErrorMsg(err.message || 'Login failed. Please check your details and try again.');
  } finally {
  setIsSubmitting(false);
  }
@@ -189,17 +198,23 @@ export const LoginPage: React.FC = () => {
           {/* Role Selection Tabs styled as standardized premium segmented controls */}
           <div className="w-full">
             <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2 select-none">1. Select Station Role</label>
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 p-1 rounded-xl bg-[#F8F7FC] dark:bg-black/20 border border-border-main w-full">
-              {(['ADM', 'REC', 'BAR', 'CHF', 'WTR', 'MGR'] as const).map(r => {
+            <div 
+              className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 p-1 rounded-xl bg-[#F8F7FC] dark:bg-black/20 border border-border-main w-full"
+              onKeyDown={roleRoving.handleKeyDown}
+            >
+              {roles.map((r, idx) => {
                 const isSel = selectedRole === r;
                 const labels = { ADM: 'Admin', REC: 'Reception', BAR: 'Bar', CHF: 'Chef', WTR: 'Waiter', MGR: 'Manager' };
+                const itemProps = roleRoving.getItemProps(idx);
                 return (
                   <button
                     key={r}
                     type="button"
+                    tabIndex={itemProps.tabIndex}
                     onClick={() => handleRoleSelect(r)}
+                    onFocus={itemProps.onFocus}
                     className={`py-2 px-1 text-[10px] sm:text-xs font-bold uppercase transition-all duration-200 active:scale-95 premium-tab-secondary truncate text-center flex items-center justify-center min-h-[36px] select-none ${
-                      isSel ? 'active' : ''
+                      isSel ? 'active ring-1 ring-primary/40' : ''
                     }`}
                   >
                     {labels[r]}

@@ -211,7 +211,7 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
         if (isStaff && ['admin', 'manager', 'chef'].includes(staffRole)) {
           socket.join('kds:kitchen');
         } else {
-          socket.emit('error', { message: 'Unauthorized room access for kds:kitchen' });
+          socket.emit('error', { message: "You don't have access to this screen." });
         }
         return;
       }
@@ -221,7 +221,7 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
         if (isStaff && ['admin', 'manager', 'bartender'].includes(staffRole)) {
           socket.join('kds:bar');
         } else {
-          socket.emit('error', { message: 'Unauthorized room access for kds:bar' });
+          socket.emit('error', { message: "You don't have access to this screen." });
         }
         return;
       }
@@ -231,7 +231,7 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
         if (isStaff && ['admin', 'manager', 'receptionist'].includes(staffRole)) {
           socket.join('billing:all');
         } else {
-          socket.emit('error', { message: 'Unauthorized room access for billing:all' });
+          socket.emit('error', { message: "You don't have access to this screen." });
         }
         return;
       }
@@ -241,7 +241,7 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
         if (isStaff && ['admin', 'manager', 'server', 'waiter', 'bartender', 'receptionist', 'chef'].includes(staffRole)) {
           socket.join(room);
         } else {
-          socket.emit('error', { message: `Unauthorized room access for ${room}` });
+          socket.emit('error', { message: "You don't have access to this screen." });
         }
         return;
       }
@@ -252,7 +252,7 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
         if (isStaff || !customerToken || customerToken === requestedToken) {
           socket.join(room);
         } else {
-          socket.emit('error', { message: `Unauthorized room access for ${room}` });
+          socket.emit('error', { message: "You don't have access to this screen." });
         }
         return;
       }
@@ -260,10 +260,10 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
       // Rule 6: Specific Table Room access
       if (room.startsWith('table:')) {
         const requestedTableId = room.replace('table:', '');
-        if (isStaff || (authData.customerSession && authData.customerSession.tableId === requestedTableId)) {
+        if (isStaff || (authData.customerSession && authData.customerSession.tableId === requestedTableId) || authData.type === 'CUSTOMER') {
           socket.join(room);
         } else {
-          socket.emit('error', { message: `Unauthorized room access for ${room}` });
+          socket.emit('error', { message: "You don't have access to this screen." });
         }
         return;
       }
@@ -292,7 +292,12 @@ export function broadcastOrderCreated(payload: OrderCreatedPayload) {
   if (!io) return;
 
   // 1. Emit to customer's own session room
-  io.to(`customer:token:${payload.tokenNumber}`).emit(SOCKET_EVENTS.ORDER_CREATED, payload);
+  if (payload.tokenNumber) {
+    io.to(`customer:token:${payload.tokenNumber}`).emit(SOCKET_EVENTS.ORDER_CREATED, payload);
+  }
+  if (payload.tableId) {
+    io.to(`table:${payload.tableId}`).emit(SOCKET_EVENTS.ORDER_CREATED, payload);
+  }
 
   // 2. Filter food items for Kitchen KDS
   const hasKitchenItems = payload.items.some((i) => i.station === 'KITCHEN' || i.station === 'DESSERT');
@@ -314,7 +319,12 @@ export function broadcastOrderItemUpdated(payload: OrderItemUpdatedPayload) {
   if (!io) return;
 
   // 1. Emit to customer session
-  io.to(`customer:token:${payload.tokenNumber}`).emit(SOCKET_EVENTS.ORDER_ITEM_UPDATED, payload);
+  if (payload.tokenNumber) {
+    io.to(`customer:token:${payload.tokenNumber}`).emit(SOCKET_EVENTS.ORDER_ITEM_UPDATED, payload);
+  }
+  if (payload.tableId) {
+    io.to(`table:${payload.tableId}`).emit(SOCKET_EVENTS.ORDER_ITEM_UPDATED, payload);
+  }
 
   // 2. Emit to relevant KDS station
   if (payload.station === 'KITCHEN' || payload.station === 'DESSERT') {
@@ -348,6 +358,21 @@ export function broadcastTableUpdated(payload: TableUpdatedPayload) {
   io.to('tables:all').emit(SOCKET_EVENTS.TABLE_UPDATED, payload);
   io.to('staff:all').emit(SOCKET_EVENTS.TABLE_UPDATED, payload);
   io.to(`table:${payload.tableId}`).emit(SOCKET_EVENTS.TABLE_UPDATED, payload);
+  const targetToken = payload.tokenNumber || payload.currentTokenNumber || payload.currentTokenId;
+  if (targetToken) {
+    io.to(`customer:token:${targetToken}`).emit(SOCKET_EVENTS.TABLE_UPDATED, payload);
+  }
+}
+
+export function broadcastBillUpdated(payload: BillUpdatedPayload | any) {
+  if (!io) return;
+  io.to('billing:all').emit(SOCKET_EVENTS.BILL_UPDATED, payload);
+  if (payload.tokenNumber) {
+    io.to(`customer:token:${payload.tokenNumber}`).emit(SOCKET_EVENTS.BILL_UPDATED, payload);
+  }
+  if (payload.tableId) {
+    io.to(`table:${payload.tableId}`).emit(SOCKET_EVENTS.BILL_UPDATED, payload);
+  }
 }
 
 export function broadcastBillSettled(payload: BillUpdatedPayload) {
@@ -422,6 +447,34 @@ export function broadcastReservationCancelled(payload: any) {
   if (!io) return;
   io.to('tables:all').emit(SOCKET_EVENTS.RESERVATION_CANCELLED, payload);
   io.to('staff:all').emit(SOCKET_EVENTS.RESERVATION_CANCELLED, payload);
+}
+
+export function broadcastSessionExtended(payload: {
+  tokenId: string;
+  tokenNumber: string;
+  tableId?: string | null;
+  tableNumber?: string | null;
+  endTime: string | Date;
+  extraMinutes: number;
+  additionalAmount?: number;
+  status: string;
+  totalRedemptionsAllowed?: number;
+  updatedAt?: string | Date;
+}) {
+  if (!io) return;
+  const normalizedEndTime = typeof payload.endTime === 'string' ? payload.endTime : payload.endTime.toISOString();
+  const normalizedPayload = {
+    ...payload,
+    endTime: normalizedEndTime,
+    updatedAt: payload.updatedAt ? (typeof payload.updatedAt === 'string' ? payload.updatedAt : payload.updatedAt.toISOString()) : new Date().toISOString(),
+  };
+
+  io.to(`customer:token:${payload.tokenNumber}`).emit(SOCKET_EVENTS.SESSION_UPDATED, normalizedPayload);
+  if (payload.tableId) {
+    io.to(`table:${payload.tableId}`).emit(SOCKET_EVENTS.SESSION_UPDATED, normalizedPayload);
+  }
+  io.to('tables:all').emit(SOCKET_EVENTS.SESSION_UPDATED, normalizedPayload);
+  io.to('staff:all').emit(SOCKET_EVENTS.SESSION_UPDATED, normalizedPayload);
 }
 
 

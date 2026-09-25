@@ -98,6 +98,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshAllSessions = async () => {
+    const role = user?.role ? String(user.role).toLowerCase() : '';
+    if (role !== 'admin' && role !== 'manager') return;
     try {
       const data = await deduplicate('allSessions', () => api.getAllSessions());
       setAllSessions(data);
@@ -425,6 +427,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setReservations(prev => prev.filter(r => r.id !== payload.id));
       });
 
+      const unsubscribeSessionUpdated = onSocketEvent('session.updated', (payload: any) => {
+        if (!payload || (!payload.tokenNumber && !payload.tokenId)) return;
+        if (payload.endTime) {
+          const endMs = new Date(payload.endTime).getTime();
+          const diffMs = endMs - Date.now();
+          if (diffMs > 15 * 60 * 1000) {
+            setSessionAlerts(prev => prev.filter(a => a.tokenNumber !== payload.tokenNumber && a.id !== payload.tokenId));
+          }
+        }
+        refreshTokens();
+        refreshAllSessions();
+      });
+
       // Background sync interval for background fetches (multi-user updates)
       // Checks document visibility to prevent background spam when tab is inactive
       const syncInterval = setInterval(() => {
@@ -443,6 +458,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unsubscribeReservationCreated();
         unsubscribeReservationUpdated();
         unsubscribeReservationCancelled();
+        unsubscribeSessionUpdated();
         leaveRoom('tables:all');
       };
     } else {

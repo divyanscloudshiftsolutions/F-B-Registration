@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useEnterKey } from '../hooks/useEnterKey';
 import {
   Ticket,
   Sparkles,
@@ -81,6 +82,15 @@ export const CustomerLandingPage: React.FC = () => {
     }
   }, [activeModal]);
 
+  // Primary action: Enter opens the 6-digit access code modal when on landing home
+  useEnterKey(() => {
+    setErrorMsg(null);
+    setCodeInput('');
+    setActiveModal('CODE');
+  }, {
+    enabled: activeModal === 'NONE',
+  });
+
   // Handle 6-Digit Access Code Submission
   const handleCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,7 +148,7 @@ export const CustomerLandingPage: React.FC = () => {
     e.preventDefault();
     let cleaned = tokenInput.trim();
     if (!cleaned) {
-      setErrorMsg('Please enter your Token ID.');
+      setErrorMsg('Please enter your table pass code.');
       return;
     }
     const urlMatch = cleaned.match(/(?:access\/|t\/)([A-Za-z0-9_-]+)/);
@@ -236,7 +246,7 @@ export const CustomerLandingPage: React.FC = () => {
               <div className="w-8 h-8 rounded-xl bg-primary/10 dark:bg-white/10 flex items-center justify-center text-primary dark:text-zinc-400 shrink-0">
                 <Ticket className="w-4 h-4" />
               </div>
-              <span className="text-left font-bold">Enter Table Token ID</span>
+              <span className="text-left font-bold">Enter Table Pass Code</span>
             </div>
             <ArrowRight className="w-4 h-4 text-text-muted dark:text-zinc-400 shrink-0" />
           </button>
@@ -323,14 +333,14 @@ export const CustomerLandingPage: React.FC = () => {
                 <Ticket className="w-5 h-5" />
               </div>
               <h2 className="font-black text-base leading-tight mb-1.5">
-                Table Token ID
+                Table Pass Code
               </h2>
               <p className="text-xs text-text-muted leading-relaxed font-medium">
-                Enter your Token ID (e.g. BAR-XXXXXXXX) from your receipt or email.
+                Enter your pass code (e.g. BAR-XXXXXXXX) from your receipt or message.
               </p>
             </div>
             <div className="inline-flex items-center gap-2 text-xs font-extrabold text-primary dark:text-[#D4AF37] mt-4 pt-3 border-t border-border-main dark:border-white/10">
-              <span>Enter Token ID</span>
+              <span>Enter Pass Code</span>
               <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
             </div>
           </div>
@@ -388,7 +398,7 @@ export const CustomerLandingPage: React.FC = () => {
 
             <div className="p-4 rounded-2xl bg-white/60 dark:bg-white/5 border border-border-main dark:border-white/10 text-xs text-text-muted flex items-center gap-3">
               <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-              <span>Check in at reception to receive your 6-digit access code or Table Token ID.</span>
+              <span>Check in at reception to receive your 6-digit access code or Table Pass.</span>
             </div>
           </div>
 
@@ -436,10 +446,10 @@ export const CustomerLandingPage: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="font-black text-base xl:text-lg leading-tight mb-0.5">
-                    Enter Table Token ID
+                    Enter Table Pass Code
                   </h2>
                   <p className="text-xs text-text-muted leading-relaxed font-medium">
-                    Enter the Token ID from your check-in receipt or email to view the menu.
+                    Enter the pass code from your check-in receipt or email to view the menu.
                   </p>
                 </div>
               </div>
@@ -675,16 +685,16 @@ export const CustomerLandingPage: React.FC = () => {
             </div>
 
             <h3 id="token-modal-title" className="font-extrabold text-lg sm:text-xl text-text-main dark:text-white mb-2">
-              Enter Table Token ID
+              Enter Table Pass Code
             </h3>
             <p className="text-xs sm:text-sm text-text-muted leading-relaxed mb-5">
-              Enter the Token ID (e.g. BAR-20260912-00025) from your check-in confirmation or email to access your table menu:
+              Enter the pass code (e.g. BAR-20260912-00025) from your check-in confirmation or email to access your table menu:
             </p>
 
             <form onSubmit={handleTokenSubmit} className="space-y-4">
               <div>
                 <label htmlFor="token-input" className="block text-xs sm:text-sm font-semibold text-text-muted mb-1.5 text-left">
-                  Token ID
+                  Pass Code
                 </label>
                 <input
                   id="token-input"

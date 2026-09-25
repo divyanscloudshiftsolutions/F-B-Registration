@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { VegBadge } from './VegBadge';
 import { Minus, Plus, X, Check, AlertCircle } from 'lucide-react';
+import { useModalKeyboard } from '../../hooks/useModalKeyboard';
+import { useRovingSelection } from '../../hooks/useRovingSelection';
 
 export interface CustomizerItem {
   id: string;
@@ -186,16 +188,15 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
     }
   }, [open, item, initialConfig]);
 
-  if (!open || !item) return null;
-
-  const variants = item.variants || [];
-  const modifierGroups = item.modifierGroups || [];
-  const isBarItem =
-    (item.station && item.station.toUpperCase() === 'BAR') ||
-    (item.sectionSlug && item.sectionSlug.toLowerCase() === 'bar') ||
-    item.foodType === 'BEVERAGE' ||
-    item.foodType === 'ALCOHOLIC' ||
-    item.foodType === 'NON_ALCOHOLIC';
+  const variants = item?.variants || [];
+  const modifierGroups = item?.modifierGroups || [];
+  const isBarItem = item
+    ? (item.station && item.station.toUpperCase() === 'BAR') ||
+      (item.sectionSlug && item.sectionSlug.toLowerCase() === 'bar') ||
+      item.foodType === 'BEVERAGE' ||
+      item.foodType === 'ALCOHOLIC' ||
+      item.foodType === 'NON_ALCOHOLIC'
+    : false;
 
   const selectedVariant = variants.find((v) => v.id === variantId);
 
@@ -240,7 +241,7 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
     return sum + groupSum;
   }, 0);
 
-  const effectiveBasePrice = Number(item.finalPrice ?? item.basePrice) || 0;
+  const effectiveBasePrice = item ? Number(item.finalPrice ?? item.basePrice) || 0 : 0;
   const variantDelta = selectedVariant ? Number(selectedVariant.priceDelta || 0) : 0;
   const unitPrice = Math.round((effectiveBasePrice + variantDelta + modAdditions) * 100) / 100;
   const grandTotal = Math.round((unitPrice * qty) * 100) / 100;
@@ -258,7 +259,7 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
   const maxAllowedQty = Math.max(1, effectivePurchasableForCustomer);
 
   const handleAdd = () => {
-    if (isOrderingDisabled || isPhysicalOutOfStock || isReservedOutForOthers) return;
+    if (!item || isOrderingDisabled || isPhysicalOutOfStock || isReservedOutForOthers) return;
     if (!isFormValid) {
       const names = missingRequiredGroups.map((g) => g.name).join(', ');
       setValidationError(`Please make a selection for: ${names}`);
@@ -304,6 +305,23 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
     onClose();
   };
 
+  const selectedVariantIndex = variants.findIndex((v) => v.id === variantId);
+  const variantRoving = useRovingSelection({
+    items: variants,
+    selectedIndex: selectedVariantIndex >= 0 ? selectedVariantIndex : 0,
+    orientation: 'vertical',
+    enabled: open && variants.length > 0,
+    onSelect: (v) => setVariantId(v.id),
+  });
+
+  useModalKeyboard({
+    isOpen: open && !!item,
+    onConfirm: handleAdd,
+    onClose,
+    confirmDisabled: isOrderingDisabled || isPhysicalOutOfStock || isReservedOutForOthers,
+    allowInTextarea: false, // In textarea, Enter adds newline
+  });
+
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartY.current = e.touches[0].clientY;
     touchStartScrollTop.current = scrollRef.current ? scrollRef.current.scrollTop : 0;
@@ -346,6 +364,8 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
     : isDragging
     ? Math.max(0.15, 1 - dragY / 400)
     : 1;
+
+  if (!open || !item) return null;
 
   return (
     <div
@@ -410,37 +430,45 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
               <label className="text-xs font-semibold text-text-muted uppercase tracking-wider block mb-2">
                 Choose Portion / Size
               </label>
-              <div className="space-y-2">
-                {variants.map((v) => (
-                  <button
-                    key={v.id}
-                    type="button"
-                    onClick={() => setVariantId(v.id)}
-                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-sm transition-all cursor-pointer ${
-                      variantId === v.id
-                        ? 'border-primary bg-primary/10 font-semibold text-primary dark:border-[#D4AF37] dark:bg-[#D4AF37]/15 dark:text-[#D4AF37]'
-                        : 'border-border/80 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 text-text-primary dark:text-zinc-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div
-                        className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
-                          variantId === v.id
-                            ? 'bg-primary border-primary text-white dark:bg-[#D4AF37] dark:border-[#D4AF37]'
-                            : 'border-zinc-300 dark:border-zinc-600 bg-transparent'
-                        }`}
-                      >
-                        {variantId === v.id && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-white dark:bg-black" />
-                        )}
+              <div 
+                className="space-y-2 focus:outline-none"
+                onKeyDown={variantRoving.handleKeyDown}
+              >
+                {variants.map((v, idx) => {
+                  const itemProps = variantRoving.getItemProps(idx);
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      tabIndex={itemProps.tabIndex}
+                      onClick={() => setVariantId(v.id)}
+                      onFocus={itemProps.onFocus}
+                      className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-sm transition-all cursor-pointer ${
+                        variantId === v.id
+                          ? 'border-primary bg-primary/10 font-semibold text-primary dark:border-[#D4AF37] dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] ring-1 ring-primary/40'
+                          : 'border-border/80 dark:border-white/10 hover:border-primary/40 dark:hover:border-[#D4AF37]/40 text-text-primary dark:text-zinc-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                            variantId === v.id
+                              ? 'bg-primary border-primary text-white dark:bg-[#D4AF37] dark:border-[#D4AF37]'
+                              : 'border-zinc-300 dark:border-zinc-600 bg-transparent'
+                          }`}
+                        >
+                          {variantId === v.id && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white dark:bg-black" />
+                          )}
+                        </div>
+                        <span className="truncate">{v.name}</span>
                       </div>
-                      <span className="truncate">{v.name}</span>
-                    </div>
-                    <span className="text-xs shrink-0">
-                      {Number(v.priceDelta) === 0 ? `₹${Number(item.basePrice).toFixed(2)}` : `+₹${Number(v.priceDelta).toFixed(2)}`}
-                    </span>
-                  </button>
-                ))}
+                      <span className="text-xs shrink-0">
+                        {Number(v.priceDelta) === 0 ? `₹${Number(item.basePrice).toFixed(2)}` : `+₹${Number(v.priceDelta).toFixed(2)}`}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

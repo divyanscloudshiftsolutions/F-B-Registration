@@ -628,13 +628,13 @@ export const StaffManagement: React.FC = () => {
                   Delete Staff Member?
                 </h3>
                 <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold mt-0.5">
-                  Permanent database deletion
+                  Permanent deletion
                 </p>
               </div>
             </div>
 
             <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
-              Are you sure you want to permanently delete <strong className="text-zinc-900 dark:text-white">{userToDelete.fullName}</strong> (<span className="font-mono text-[11px] font-bold">{userToDelete.username}</span>)? This action is irreversible and reflects in the database immediately.
+              Are you sure you want to permanently delete <strong className="text-zinc-900 dark:text-white">{userToDelete.fullName}</strong> (<span className="font-mono text-[11px] font-bold">{userToDelete.username}</span>)? This action cannot be undone.
             </p>
 
             <div className="flex gap-2.5 pt-2">
@@ -825,7 +825,7 @@ export const StaffManagement: React.FC = () => {
                       <div className="p-2.5 sm:p-3 rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-50/50 dark:bg-rose-950/20 space-y-2">
                         <div>
                           <p className="text-xs font-bold text-rose-700 dark:text-rose-400">Delete Staff Member</p>
-                          <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Permanently remove employee credentials and record from database</p>
+                          <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Permanently remove this employee profile and login access</p>
                         </div>
                         <button
                           type="button"

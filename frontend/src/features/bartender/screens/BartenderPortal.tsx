@@ -282,7 +282,7 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
     const found = sessions.find(s => s.tokenNumber === cleanToken && s.status === TokenStatus.ACTIVE && s.paymentVerified === true);
     if (!found) {
       setBartenderState('error');
-      setErrorMessage('Unknown card or token session closed.');
+      setErrorMessage('Unknown card or table session is closed.');
       return;
     }
 
@@ -291,7 +291,7 @@ export const BartenderPortal: React.FC<{ isActive?: boolean }> = ({ isActive = t
     if (now > new Date(found.endTime)) {
       setActiveSession(found);
       setBartenderState('error');
-      setErrorMessage('Expired session! Entitlements locked.');
+      setErrorMessage('Session has expired. Drink orders are locked.');
       return;
     }
 

@@ -25,13 +25,35 @@ export interface CartItem {
 
 export interface CustomerNotification {
   id: string;
-  type: 'stock_out_cart' | 'stock_out_order' | 'stock_in' | 'info';
+  type:
+    | 'stock_out_cart'
+    | 'stock_out_order'
+    | 'stock_in'
+    | 'info'
+    | 'order_placed'
+    | 'order_status'
+    | 'ordering_reopened'
+    | 'session_extended'
+    | 'service_request'
+    | 'bill_status';
+  title?: string;
   message: string;
   subMessage?: string;
+  severity?: 'info' | 'success' | 'warning' | 'error' | 'primary';
   menuItemId?: string;
   itemName?: string;
+  orderItemId?: string;
+  orderNumber?: string | number;
+  itemKey?: string;
+  status?: string;
+  previousStatus?: string;
   durationMs: number;
+  remainingMs?: number;
+  visibleStartedAt?: number;
   createdAt: number;
+  dedupKey?: string;
+  actionLabel?: string;
+  onAction?: () => void;
 }
 
 export interface CustomerContextType {
@@ -75,8 +97,11 @@ export interface CustomerContextType {
   isSessionClosed: boolean;
   logout: () => void;
   notifications: CustomerNotification[];
+  activeNotification: CustomerNotification | null;
+  dismissActiveNotification: () => void;
   showCustomerNotification: (notif: Omit<CustomerNotification, 'id' | 'createdAt'>) => void;
   dismissNotification: (id: string) => void;
+  dismissMatchingNotifications: (predicate: (n: CustomerNotification) => boolean) => void;
 }
 
 const defaultCustomerContext: CustomerContextType = {
@@ -120,8 +145,11 @@ const defaultCustomerContext: CustomerContextType = {
   isSessionClosed: false,
   logout: () => {},
   notifications: [],
+  activeNotification: null,
+  dismissActiveNotification: () => {},
   showCustomerNotification: () => {},
   dismissNotification: () => {},
+  dismissMatchingNotifications: () => {},
 };
 
 const CustomerContext = createContext<CustomerContextType>(defaultCustomerContext);
@@ -132,6 +160,9 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const path = window.location.pathname;
       const match = path.match(/^\/(?:customer\/access|t)\/([A-Za-z0-9_-]+)/);
       if (match) return decodeURIComponent(match[1]);
+      const params = new URLSearchParams(window.location.search);
+      const qToken = params.get('token');
+      if (qToken) return qToken;
       return localStorage.getItem('bar_active_token') || null;
     }
     return null;
@@ -188,6 +219,9 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const handleSessionClosure = useCallback(() => {
     setIsSessionClosed(true);
+    setActiveNotification(null);
+    notificationQueueRef.current = [];
+    processedEventKeysRef.current.clear();
     setCart([]);
     setActiveOrders([]);
     setOrderHistory([]);
@@ -211,6 +245,9 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       localStorage.removeItem('bar_active_table_num');
       localStorage.removeItem('bar_active_table_id');
     } catch {}
+    setActiveNotification(null);
+    notificationQueueRef.current = [];
+    processedEventKeysRef.current.clear();
     setSessionData(null);
     setSessionError(null);
     setCart([]);
@@ -232,30 +269,196 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
-  const [notifications, setNotifications] = useState<CustomerNotification[]>([]);
-  const availabilityMapRef = useRef<Map<string, boolean>>(new Map());
+  const NOTIFICATION_PROMOTION_GAP_MS = 20;
 
-  const dismissNotification = useCallback((id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  const [activeNotification, setActiveNotification] = useState<CustomerNotification | null>(null);
+  const [queuedNotifications, setQueuedNotifications] = useState<CustomerNotification[]>([]);
+  const notificationQueueRef = useRef<CustomerNotification[]>([]);
+  const activeNotifRef = useRef<CustomerNotification | null>(null);
+  const promotionGapTimerRef = useRef<any>(null);
+  const isPromotionGapActiveRef = useRef<boolean>(false);
+
+  const availabilityMapRef = useRef<Map<string, boolean>>(new Map());
+  const processedEventKeysRef = useRef<Map<string, number>>(new Map());
+  const previousTableStatusRef = useRef<string | null>(null);
+
+  // Session token change & unmount cleanup
+  useEffect(() => {
+    if (promotionGapTimerRef.current) {
+      clearTimeout(promotionGapTimerRef.current);
+      promotionGapTimerRef.current = null;
+    }
+    isPromotionGapActiveRef.current = false;
+    activeNotifRef.current = null;
+    setActiveNotification(null);
+    notificationQueueRef.current = [];
+    setQueuedNotifications([]);
+    processedEventKeysRef.current.clear();
+
+    return () => {
+      if (promotionGapTimerRef.current) {
+        clearTimeout(promotionGapTimerRef.current);
+        promotionGapTimerRef.current = null;
+      }
+    };
+  }, [tokenNumber]);
+
+  const isEventDuplicate = useCallback((dedupKey: string, cooldownMs: number = 8000): boolean => {
+    if (!dedupKey) return false;
+    const now = Date.now();
+    const lastTime = processedEventKeysRef.current.get(dedupKey);
+    if (lastTime && now - lastTime < cooldownMs) {
+      return true;
+    }
+    processedEventKeysRef.current.set(dedupKey, now);
+
+    // Prune stale keys if map exceeds 200 items
+    if (processedEventKeysRef.current.size > 200) {
+      for (const [k, time] of processedEventKeysRef.current.entries()) {
+        if (now - time > 60000) processedEventKeysRef.current.delete(k);
+      }
+    }
+    return false;
   }, []);
 
+  const dismissActiveNotification = useCallback(() => {
+    // 1. Immediately clear the dismissed active notification from the screen
+    activeNotifRef.current = null;
+    setActiveNotification(null);
+
+    // 2. Clear any pending promotion gap timer
+    if (promotionGapTimerRef.current) {
+      clearTimeout(promotionGapTimerRef.current);
+      promotionGapTimerRef.current = null;
+    }
+
+    // 3. If there are pending notifications in queue, initiate the controlled 500ms breathing gap
+    if (notificationQueueRef.current.length > 0) {
+      isPromotionGapActiveRef.current = true;
+      promotionGapTimerRef.current = setTimeout(() => {
+        isPromotionGapActiveRef.current = false;
+        promotionGapTimerRef.current = null;
+
+        if (notificationQueueRef.current.length > 0) {
+          // LIFO: pop newest notification from top of stack and initialize its fresh 3-second visible timer
+          const nextNotif = notificationQueueRef.current.shift()!;
+          const resumedNotif: CustomerNotification = {
+            ...nextNotif,
+            visibleStartedAt: Date.now(),
+            remainingMs: nextNotif.durationMs || 3000,
+          };
+          activeNotifRef.current = resumedNotif;
+          setActiveNotification(resumedNotif);
+          setQueuedNotifications([...notificationQueueRef.current]);
+        } else {
+          activeNotifRef.current = null;
+          setActiveNotification(null);
+          setQueuedNotifications([]);
+        }
+      }, NOTIFICATION_PROMOTION_GAP_MS);
+    } else {
+      isPromotionGapActiveRef.current = false;
+      setQueuedNotifications([]);
+    }
+  }, []);
+
+  const dismissNotification = useCallback((id: string) => {
+    if (!id) return;
+    if (activeNotifRef.current?.id === id) {
+      dismissActiveNotification();
+    } else {
+      notificationQueueRef.current = notificationQueueRef.current.filter((n) => n && n.id !== id);
+      setQueuedNotifications([...notificationQueueRef.current]);
+    }
+  }, [dismissActiveNotification]);
+
+  const dismissMatchingNotifications = useCallback(
+    (predicate: (n: CustomerNotification) => boolean) => {
+      if (notificationQueueRef.current.length > 0) {
+        notificationQueueRef.current = notificationQueueRef.current.filter((n) => n && !predicate(n));
+        setQueuedNotifications([...notificationQueueRef.current]);
+      }
+      if (activeNotifRef.current && predicate(activeNotifRef.current)) {
+        dismissActiveNotification();
+      }
+    },
+    [dismissActiveNotification]
+  );
+
   const showCustomerNotification = useCallback(
-    (notif: Omit<CustomerNotification, 'id' | 'createdAt'>) => {
+    (notif: Omit<CustomerNotification, 'id' | 'createdAt' | 'remainingMs'>) => {
+      if (!notif) return;
+      if (notif.dedupKey && isEventDuplicate(notif.dedupKey, 8000)) {
+        return;
+      }
       const id = `notif-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      const duration = notif.durationMs || 3000;
+      const now = Date.now();
       const fullNotif: CustomerNotification = {
         ...notif,
         id,
-        createdAt: Date.now(),
+        createdAt: now,
+        durationMs: duration,
+        remainingMs: duration,
+        visibleStartedAt: now,
       };
-      setNotifications((prev) => [
-        fullNotif,
-        ...prev.filter((p) => p.menuItemId !== notif.menuItemId).slice(0, 3),
-      ]);
-      setTimeout(() => {
-        setNotifications((prev) => prev.filter((n) => n.id !== id));
-      }, notif.durationMs || 3000);
+
+      if (!activeNotifRef.current && !isPromotionGapActiveRef.current) {
+        // No popup currently visible on screen and no breathing gap active: promote immediately as active
+        activeNotifRef.current = fullNotif;
+        setActiveNotification(fullNotif);
+        setQueuedNotifications([...notificationQueueRef.current]);
+      } else {
+        // Active popup is currently visible OR post-dismissal breathing gap is in progress:
+        // DO NOT overwrite active popup, restart its timer, or interrupt the 500ms breathing gap!
+        const currentActive = activeNotifRef.current;
+
+        // If active popup is for the EXACT SAME item and already displaying this identical status, do not queue redundant duplicate
+        if (currentActive) {
+          const isSameItemAsActive =
+            (fullNotif.orderItemId && currentActive.orderItemId === fullNotif.orderItemId) ||
+            (fullNotif.itemKey && currentActive.itemKey === fullNotif.itemKey);
+
+          if (isSameItemAsActive && currentActive.status === fullNotif.status && currentActive.type === fullNotif.type) {
+            return;
+          }
+        }
+
+        // Evict any older stale waiting notifications for the SAME order item / itemKey from the queue
+        const filteredQueue = notificationQueueRef.current.filter((n) => {
+          if (!n) return false;
+          if (fullNotif.orderItemId && n.orderItemId === fullNotif.orderItemId) return false;
+          if (fullNotif.itemKey && n.itemKey === fullNotif.itemKey) return false;
+          if (fullNotif.dedupKey && n.dedupKey === fullNotif.dedupKey) return false;
+          return true;
+        });
+
+        // Insert latest authoritative notification at FRONT of LIFO queue
+        const updatedQueue = [fullNotif, ...filteredQueue].slice(0, 10);
+        notificationQueueRef.current = updatedQueue;
+        setQueuedNotifications(updatedQueue);
+
+        // If in breathing gap and no gap timer is active for any reason, trigger promotion timer
+        if (isPromotionGapActiveRef.current && !promotionGapTimerRef.current) {
+          promotionGapTimerRef.current = setTimeout(() => {
+            isPromotionGapActiveRef.current = false;
+            promotionGapTimerRef.current = null;
+            if (notificationQueueRef.current.length > 0) {
+              const nextNotif = notificationQueueRef.current.shift()!;
+              const resumedNotif: CustomerNotification = {
+                ...nextNotif,
+                visibleStartedAt: Date.now(),
+                remainingMs: nextNotif.durationMs || 3000,
+              };
+              activeNotifRef.current = resumedNotif;
+              setActiveNotification(resumedNotif);
+              setQueuedNotifications([...notificationQueueRef.current]);
+            }
+          }, NOTIFICATION_PROMOTION_GAP_MS);
+        }
+      }
     },
-    []
+    [isEventDuplicate]
   );
 
   const refreshMenu = useCallback(async () => {
@@ -301,7 +504,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!tokenNumber) return;
     try {
       const orders = await api.getActiveOrders(tokenNumber);
-      setActiveOrders(orders);
+      setActiveOrders(Array.isArray(orders) ? orders : []);
     } catch (err) {
       console.warn('Failed to load active orders:', err);
     }
@@ -315,7 +518,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setIsHistoryLoading(true);
     try {
       const history = await api.getCustomerOrderHistory(tokenNumber);
-      setOrderHistory(history);
+      setOrderHistory(Array.isArray(history) ? history : []);
     } catch (err) {
       console.warn('Failed to load customer order history:', err);
     } finally {
@@ -445,9 +648,26 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     // Join isolated customer room
     joinRoom(`customer:token:${tokenNumber}`);
+    if (tableId) {
+      joinRoom(`table:${tableId}`);
+    }
 
     const unsubOrderCreated = onSocketEvent('order.created', (data: any) => {
       if (data && (data.tokenNumber === tokenNumber || data.tokenId === tokenNumber)) {
+        const orderNum = data.orderNumber ? `#${data.orderNumber}` : '';
+        const dedupKey = `order_created_${data.orderId || data.orderNumber || tokenNumber}`;
+        const itemsCount = Array.isArray(data.items) ? data.items.reduce((sum: number, i: any) => sum + (i.quantity || 1), 0) : 0;
+        showCustomerNotification({
+          type: 'order_placed',
+          title: `Order ${orderNum} Placed`.trim(),
+          message: itemsCount > 0
+            ? `Your order of ${itemsCount} item${itemsCount > 1 ? 's' : ''} was sent to the kitchen/bar.`
+            : 'Your order was sent to the kitchen/bar.',
+          actionLabel: 'View Order →',
+          severity: 'success',
+          durationMs: 3000,
+          dedupKey,
+        });
         refreshOrders();
         refreshOrderHistory();
         refreshBill();
@@ -455,60 +675,400 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
 
     const unsubItemUpdated = onSocketEvent('order.item.updated', (data: any) => {
-      if (data && data.status === 'STOCK_OUT' && data.previousStatus === 'PLACED') {
+      if (
+        data &&
+        (data.tokenNumber === tokenNumber ||
+          data.tokenId === tokenNumber ||
+          (tableId && (data.tableId === tableId || data.tableNumber === tableNumber)) ||
+          (sessionData && (data.tokenId === sessionData.id || data.tokenNumber === sessionData.tokenNumber)))
+      ) {
         const itemDisplayName = data.itemName || 'This item';
-        showCustomerNotification({
-          type: 'stock_out_order',
-          message: `${itemDisplayName} became unavailable and was removed from your order. You will not be charged for it.`,
-          menuItemId: data.menuItemId,
-          itemName: itemDisplayName,
-          durationMs: 3000,
-        });
+        const orderNum = data.orderNumber ? `#${data.orderNumber}` : '';
+        const status = data.status;
+        const prevStatus = data.previousStatus;
+        const itemId = data.orderItemId || data.id || 'item';
+        const itemKey = `${tokenNumber || 'session'}_${data.orderId || ''}_${itemId}`;
+        const stationLabel = data.station === 'BAR' ? 'Bar' : 'Kitchen';
+        const updatedAtSuffix = data.updatedAt ? `_${data.updatedAt}` : '';
+        const dedupKey = `item_status_${itemId}_${prevStatus || 'NONE'}_TO_${status}${updatedAtSuffix}`;
+
+        if (status === 'STOCK_OUT') {
+          showCustomerNotification({
+            type: 'stock_out_order',
+            title: 'Item Unavailable',
+            message: `${itemDisplayName} is out of stock and was removed from order ${orderNum}. You will not be charged for it.`.trim(),
+            menuItemId: data.menuItemId,
+            itemName: itemDisplayName,
+            orderItemId: itemId,
+            orderNumber: orderNum,
+            itemKey,
+            status,
+            previousStatus: prevStatus,
+            severity: 'error',
+            durationMs: 3000,
+            dedupKey,
+          });
+        } else if (status === 'CANCELLED') {
+          showCustomerNotification({
+            type: 'order_status',
+            title: 'Item Cancelled',
+            message: `${itemDisplayName} in order ${orderNum} was cancelled. You will not be charged.`.trim(),
+            menuItemId: data.menuItemId,
+            itemName: itemDisplayName,
+            orderItemId: itemId,
+            orderNumber: orderNum,
+            itemKey,
+            status,
+            previousStatus: prevStatus,
+            severity: 'error',
+            durationMs: 3000,
+            dedupKey,
+          });
+        } else if (status === 'ACCEPTED') {
+          if (prevStatus === 'PREPARING' || prevStatus === 'READY') {
+            // Revert: PREPARING -> ACCEPTED
+            const revertDedupKey = `item_status_${itemId}_REVERT_${prevStatus}_TO_ACCEPTED${updatedAtSuffix}`;
+            showCustomerNotification({
+              type: 'order_status',
+              title: `Order Updated: ${itemDisplayName}`,
+              message: `Sorry, your ${itemDisplayName} was moved back to the accepted stage and is waiting to be started again.`,
+              actionLabel: 'View Order →',
+              menuItemId: data.menuItemId,
+              itemName: itemDisplayName,
+              orderItemId: itemId,
+              orderNumber: orderNum,
+              itemKey,
+              status,
+              previousStatus: prevStatus,
+              severity: 'warning',
+              durationMs: 3000,
+              dedupKey: revertDedupKey,
+            });
+          } else if (prevStatus !== 'ACCEPTED') {
+            // Forward: PLACED -> ACCEPTED
+            showCustomerNotification({
+              type: 'order_status',
+              title: `Order ${orderNum} Accepted`.trim(),
+              message: `${itemDisplayName} was accepted by the ${stationLabel}.`,
+              actionLabel: 'View Order →',
+              menuItemId: data.menuItemId,
+              itemName: itemDisplayName,
+              orderItemId: itemId,
+              orderNumber: orderNum,
+              itemKey,
+              status,
+              previousStatus: prevStatus,
+              severity: 'info',
+              durationMs: 3000,
+              dedupKey,
+            });
+          }
+        } else if (status === 'PREPARING') {
+          if (prevStatus === 'READY' || prevStatus === 'SERVED') {
+            // Revert: READY -> PREPARING
+            const revertDedupKey = `item_status_${itemId}_REVERT_${prevStatus}_TO_PREPARING${updatedAtSuffix}`;
+            showCustomerNotification({
+              type: 'order_status',
+              title: `Order Updated: ${itemDisplayName}`,
+              message: `Sorry, your ${itemDisplayName} was moved back to preparation.`,
+              actionLabel: 'View Order →',
+              menuItemId: data.menuItemId,
+              itemName: itemDisplayName,
+              orderItemId: itemId,
+              orderNumber: orderNum,
+              itemKey,
+              status,
+              previousStatus: prevStatus,
+              severity: 'warning',
+              durationMs: 3000,
+              dedupKey: revertDedupKey,
+            });
+          } else if (prevStatus !== 'PREPARING') {
+            // Forward: ACCEPTED -> PREPARING
+            showCustomerNotification({
+              type: 'order_status',
+              title: `Preparing: ${itemDisplayName}`,
+              message: `Order ${orderNum} is now being prepared in the ${stationLabel}.`.trim(),
+              actionLabel: 'View Order →',
+              menuItemId: data.menuItemId,
+              itemName: itemDisplayName,
+              orderItemId: itemId,
+              orderNumber: orderNum,
+              itemKey,
+              status,
+              previousStatus: prevStatus,
+              severity: 'warning',
+              durationMs: 3000,
+              dedupKey,
+            });
+          }
+        } else if (status === 'READY') {
+          if (prevStatus === 'SERVED') {
+            // Revert / Undo Serve: SERVED -> READY
+            const revertDedupKey = `item_status_${itemId}_UNDO_SERVED_TO_READY${updatedAtSuffix}`;
+            showCustomerNotification({
+              type: 'order_status',
+              title: `Ready to Serve: ${itemDisplayName}`,
+              message: `Order ${orderNum} was marked back to ready.`,
+              actionLabel: 'View Order →',
+              menuItemId: data.menuItemId,
+              itemName: itemDisplayName,
+              orderItemId: itemId,
+              orderNumber: orderNum,
+              itemKey,
+              status,
+              previousStatus: prevStatus,
+              severity: 'info',
+              durationMs: 3000,
+              dedupKey: revertDedupKey,
+            });
+          } else if (prevStatus !== 'READY') {
+            // Forward: PREPARING -> READY
+            showCustomerNotification({
+              type: 'order_status',
+              title: `Ready to Serve: ${itemDisplayName}`,
+              message: `Order ${orderNum} is ready and will be served to your table shortly.`.trim(),
+              actionLabel: 'View Order →',
+              menuItemId: data.menuItemId,
+              itemName: itemDisplayName,
+              orderItemId: itemId,
+              orderNumber: orderNum,
+              itemKey,
+              status,
+              previousStatus: prevStatus,
+              severity: 'success',
+              durationMs: 3000,
+              dedupKey,
+            });
+          }
+        } else if (status === 'SERVED' && prevStatus !== 'SERVED') {
+          // Forward: READY -> SERVED
+          showCustomerNotification({
+            type: 'order_status',
+            title: `Served: ${itemDisplayName}`,
+            message: `Enjoy your ${itemDisplayName}!`,
+            menuItemId: data.menuItemId,
+            itemName: itemDisplayName,
+            orderItemId: itemId,
+            orderNumber: orderNum,
+            itemKey,
+            status,
+            previousStatus: prevStatus,
+            severity: 'primary',
+            durationMs: 3000,
+            dedupKey,
+          });
+        } else if (status === 'PLACED' && (prevStatus === 'ACCEPTED' || prevStatus === 'PREPARING' || prevStatus === 'READY')) {
+          // Revert: ACCEPTED -> PLACED
+          const revertDedupKey = `item_status_${itemId}_REVERT_${prevStatus}_TO_PLACED${updatedAtSuffix}`;
+          showCustomerNotification({
+            type: 'order_status',
+            title: `Order Waiting: ${itemDisplayName}`,
+            message: `Sorry, ${itemDisplayName} is back in the waiting queue.`,
+            actionLabel: 'View Order →',
+            menuItemId: data.menuItemId,
+            itemName: itemDisplayName,
+            orderItemId: itemId,
+            orderNumber: orderNum,
+            itemKey,
+            status,
+            previousStatus: prevStatus,
+            severity: 'warning',
+            durationMs: 3000,
+            dedupKey: revertDedupKey,
+          });
+        }
+
+        try {
+          refreshOrders();
+          refreshOrderHistory();
+          refreshBill();
+        } catch (rErr) {
+          console.warn('Silent refresh error after item update:', rErr);
+        }
       }
-      refreshOrders();
-      refreshOrderHistory();
-      refreshBill();
     });
 
     const unsubReqCreated = onSocketEvent('service_request.created', (data: any) => {
-      if (data && data.tokenNumber === tokenNumber) {
+      if (data && (data.tokenNumber === tokenNumber || data.tokenId === tokenNumber)) {
         setActiveRequests((prev) => [data, ...prev.filter((r) => r.id !== data.id)]);
       }
     });
 
     const unsubReqUpdated = onSocketEvent('service_request.updated', (data: any) => {
-      if (data) {
+      if (data && (data.tokenNumber === tokenNumber || data.tokenId === tokenNumber)) {
         if (data.status === 'COMPLETED' || data.status === 'CANCELLED') {
           setActiveRequests((prev) => prev.filter((r) => r.id !== data.id));
         } else {
           setActiveRequests((prev) =>
             prev.map((r) => (r.id === data.id ? { ...r, ...data } : r))
           );
+
+          if (data.status === 'ACKNOWLEDGED' || data.status === 'IN_PROGRESS') {
+            const staffName = data.assignedStaffName || data.assignedStaff?.fullName || data.assignedStaff?.username;
+            const dedupKey = `service_req_ack_${data.id}_${data.status}`;
+            const message = staffName && typeof staffName === 'string' && staffName.trim().length > 0 && !staffName.toLowerCase().includes('waiter')
+              ? `${staffName} has acknowledged your request and is coming to assist you.`
+              : 'Your waiter has acknowledged your request and is coming to assist you.';
+            showCustomerNotification({
+              type: 'service_request',
+              title: 'Request Acknowledged',
+              message,
+              severity: 'info',
+              durationMs: 3000,
+              dedupKey,
+            });
+          }
         }
       }
     });
 
     const unsubTableUpdated = onSocketEvent('table.updated', (data: any) => {
-      if (data && (data.id === tableId || data.tableNumber === tableNumber || data.number === tableNumber)) {
-        setTableStatus(data.status || null);
+      if (
+        data &&
+        (data.id === tableId ||
+          data.tableId === tableId ||
+          data.tableNumber === tableNumber ||
+          data.number === tableNumber ||
+          data.tokenNumber === tokenNumber ||
+          data.currentTokenNumber === tokenNumber ||
+          data.currentTokenId === tokenNumber ||
+          (sessionData && (data.tableId === sessionData.tableId || data.id === sessionData.tableId || data.currentTokenId === sessionData.id)))
+      ) {
+        const newStatus = data.status || null;
+        const prevStatus = previousTableStatusRef.current;
+        previousTableStatusRef.current = newStatus;
+
+        // Detect Reopen Ordering transition: BILL_REQUESTED -> occupied
+        if (prevStatus === 'BILL_REQUESTED' && (newStatus === 'occupied' || newStatus === 'ACTIVE')) {
+          const dedupKey = `ordering_reopened_${tokenNumber}`;
+          showCustomerNotification({
+            type: 'ordering_reopened',
+            title: 'Ordering Reopened',
+            message: 'Your waiter has reopened ordering for this session. You can now add more items.',
+            actionLabel: 'Order More →',
+            severity: 'success',
+            durationMs: 3000,
+            dedupKey,
+          });
+        } else if (prevStatus === 'occupied' && newStatus === 'BILL_REQUESTED') {
+          const dedupKey = `bill_requested_${tokenNumber}`;
+          showCustomerNotification({
+            type: 'bill_status',
+            title: 'Bill Requested',
+            message: 'A bill request was submitted for your table. Ordering is now closed.',
+            severity: 'warning',
+            durationMs: 3000,
+            dedupKey,
+          });
+        }
+
+        setTableStatus(newStatus);
+        refreshBill();
+        refreshRequests();
       }
     });
 
     const unsubBillUpdated = onSocketEvent('bill.updated', (data: any) => {
-      if (data && (data.tokenNumber === tokenNumber || data.tokenId === tokenNumber)) {
+      if (
+        data &&
+        (data.tokenNumber === tokenNumber ||
+          data.tokenId === tokenNumber ||
+          (sessionData && (data.tokenId === sessionData.id || data.tokenNumber === sessionData.tokenNumber)))
+      ) {
         if (data.status === 'PAID') {
           handleSessionClosure();
         } else {
+          if (data.status === 'REQUESTED') {
+            const prevStatus = previousTableStatusRef.current;
+            if (prevStatus === 'occupied') {
+              const dedupKey = `bill_requested_${tokenNumber}`;
+              showCustomerNotification({
+                type: 'bill_status',
+                title: 'Bill Requested',
+                message: 'A bill request was submitted for your table. Ordering is now closed.',
+                severity: 'warning',
+                durationMs: 3000,
+                dedupKey,
+              });
+            }
+            previousTableStatusRef.current = 'BILL_REQUESTED';
+            setTableStatus('BILL_REQUESTED');
+          } else if (data.status === 'DRAFT') {
+            const prevStatus = previousTableStatusRef.current;
+            if (prevStatus === 'BILL_REQUESTED') {
+              previousTableStatusRef.current = 'occupied';
+              const dedupKey = `ordering_reopened_${tokenNumber}`;
+              showCustomerNotification({
+                type: 'ordering_reopened',
+                title: 'Ordering Reopened',
+                message: 'Your waiter has reopened ordering for this session. You can now add more items.',
+                actionLabel: 'Order More →',
+                severity: 'success',
+                durationMs: 3000,
+                dedupKey,
+              });
+            }
+            setTableStatus((prev) => (prev === 'BILL_REQUESTED' ? 'occupied' : prev));
+          }
           refreshBill();
+          refreshRequests();
         }
       }
     });
 
     const unsubSessionUpdated = onSocketEvent('session.updated', (data: any) => {
-      if (data && (data.tokenNumber === tokenNumber || data.tokenId === tokenNumber)) {
+      if (
+        data &&
+        (data.tokenNumber === tokenNumber ||
+          data.tokenId === tokenNumber ||
+          (sessionData && (data.tokenId === sessionData.id || data.tokenNumber === sessionData.tokenNumber)))
+      ) {
         if (data.status === 'CLOSED' || data.status === 'CANCELLED') {
           handleSessionClosure();
         } else {
+          if (data.endTime) {
+            const newEndTimeMs = new Date(data.endTime).getTime();
+            const prevEndTimeMs = sessionData?.endTime ? new Date(sessionData.endTime).getTime() : null;
+
+            if (prevEndTimeMs && newEndTimeMs > prevEndTimeMs) {
+              // 1. Authoritative extension completed: Cleanly remove any stale/matching extension notifications from queue & screen
+              dismissMatchingNotifications((n) => n.type === 'session_extended');
+
+              const dedupKey = `session_extended_${tokenNumber}_${data.endTime}`;
+              const timeFormatted = new Date(data.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const isComp = data.isComplimentary === true || Number(data.additionalAmount || 0) === 0;
+              showCustomerNotification({
+                type: 'session_extended',
+                title: isComp ? 'Complimentary Extension' : 'Session Extended',
+                message: `Your dining session has been extended until ${timeFormatted}.`,
+                severity: 'primary',
+                durationMs: 3000,
+                dedupKey,
+              });
+            } else if (data.status === 'EXTENDED') {
+              // Ensure stale extension notifications are dismissed if extension marked without endTime diff
+              dismissMatchingNotifications((n) => n.type === 'session_extended');
+            }
+
+            setSessionData((prev: any) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                endTime: data.endTime,
+                status: data.status || prev.status,
+                totalRedemptionsAllowed: data.totalRedemptionsAllowed ?? prev.totalRedemptionsAllowed,
+                session: prev.session
+                  ? {
+                      ...prev.session,
+                      endTime: data.endTime,
+                      status: data.status || prev.session.status,
+                      totalRedemptionsAllowed: data.totalRedemptionsAllowed ?? prev.session.totalRedemptionsAllowed,
+                    }
+                  : prev.session,
+              };
+            });
+          }
           refreshBill();
         }
       }
@@ -562,12 +1122,14 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // Case 2: Stock In (genuine transition: prevStatus === false -> newAvailable === true)
         if (newAvailable && prevStatus === false && (newStock === undefined || Number(newStock) > 0)) {
           const displayName = itemName || 'An item';
+          const dedupKey = `stock_in_${targetId}_${Date.now()}`;
           showCustomerNotification({
             type: 'stock_in',
             message: `${displayName} is available again. Tap to view.`,
             menuItemId: targetId,
             itemName: displayName,
-            durationMs: 5000,
+            durationMs: 3000,
+            dedupKey,
           });
         }
 
@@ -938,7 +1500,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Authoritative Order Placement
   const placeOrder = async () => {
-    if (!tokenNumber) throw new Error('No active dining token found');
+    if (!tokenNumber) throw new Error('Your table session is no longer active.');
     if (cart.length === 0) throw new Error('Cart is empty');
     if (isSessionClosed) {
       throw new Error('Cannot place order: This dining session has concluded.');
@@ -1037,9 +1599,12 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         tableStatus,
         isSessionClosed,
         logout,
-        notifications,
+        notifications: activeNotification ? [activeNotification, ...queuedNotifications] : [],
+        activeNotification,
+        dismissActiveNotification,
         showCustomerNotification,
         dismissNotification,
+        dismissMatchingNotifications,
       }}
     >
       {children}

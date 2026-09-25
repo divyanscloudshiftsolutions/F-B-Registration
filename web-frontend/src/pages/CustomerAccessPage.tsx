@@ -77,7 +77,7 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
     if (copyTarget === 'id' && idParam) {
       copyToClipboard(idParam).then((success) => {
         if (success) {
-          showToast(`Token ID copied to clipboard: ${idParam}`, 'success');
+          showToast(`Pass code copied to clipboard: ${idParam}`, 'success');
         }
       });
       params.delete('copy');
@@ -148,7 +148,7 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
 
   const verifyAccess = useCallback(async () => {
     if (!tokenNumber) {
-      setErrorMessage('No customer access token provided. Please scan your QR code or use the link sent to your email.');
+      setErrorMessage('No table pass provided. Please scan your table QR code or use the link sent to you.');
       setAccessState('ERROR');
       return;
     }
@@ -376,7 +376,7 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
             {/* Session Info Details */}
             <div className="rounded-2xl border border-border-main dark:border-white/10 bg-bg-primary dark:bg-white/5 p-3.5 text-left mb-5 space-y-2 text-xs">
               <div className="flex justify-between items-center text-text-muted">
-                <span className="font-medium">Pass Token:</span>
+                <span className="font-medium">Pass Number:</span>
                 <span className="font-mono font-bold text-text-main dark:text-white">{tokenNumber}</span>
               </div>
               {sessionData?.customerName && (
@@ -446,7 +446,7 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
               <div className="col-span-6 flex flex-col justify-between h-full pl-2">
                 <div className="rounded-2xl border border-border-main dark:border-white/10 bg-bg-primary dark:bg-white/5 p-4 text-left mb-5 space-y-2.5 text-xs">
                   <div className="flex justify-between items-center text-text-muted">
-                    <span className="font-medium">Token Number:</span>
+                    <span className="font-medium">Pass Number:</span>
                     <span className="font-mono font-bold text-text-main dark:text-white">{tokenNumber}</span>
                   </div>
                   {sessionData?.customerName && (
@@ -522,7 +522,7 @@ export const CustomerAccessPage: React.FC<CustomerAccessPageProps> = ({ tokenPro
 
                 <div className="space-y-3 text-sm mb-6">
                   <div className="flex justify-between items-center text-text-muted">
-                    <span className="font-medium">Pass Token Number:</span>
+                    <span className="font-medium">Pass Number:</span>
                     <span className="font-mono font-bold text-text-main dark:text-white bg-bg-primary dark:bg-white/5 px-2 py-0.5 rounded">{tokenNumber}</span>
                   </div>
                   {sessionData?.customerName && (

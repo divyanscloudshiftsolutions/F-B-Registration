@@ -260,7 +260,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
  setStream(mediaStream);
  setCameraActive(true);
  } catch {
- setCameraError('Camera access unavailable. Please grant browser camera permissions or use manual token verification.');
+ setCameraError('Camera access is unavailable. Please allow camera access or enter the pass code manually.');
  setCameraActive(false);
  }
  };
@@ -552,7 +552,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
     if (!rawQuery) return;
     const query = extractTokenNumber(rawQuery);
     if (!query) {
-      showToast('Invalid QR code format. Please scan a valid pass or enter Token ID.', 'danger');
+      showToast('Invalid QR code. Please scan a valid pass or enter the pass number.', 'danger');
       return;
     }
 
@@ -563,13 +563,13 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
       const res = await api.verifyQR(query);
       if (res.success && res.token) {
         setScannedToken(res.token);
-        showToast(`Token #${res.token.tokenNumber} verified successfully!`, 'success');
+        showToast(`Pass #${res.token.tokenNumber} verified successfully!`, 'success');
         stopCamera(); // Stop camera once successfully verified
       } else {
-        showToast('Token QR verification failed.', 'danger');
+        showToast('Unable to verify pass. Please scan again.', 'danger');
       }
     } catch (err: any) {
-      showToast(err.message || 'Token verification failed. Invalid or expired token.', 'danger');
+      showToast(err.message || 'Unable to verify pass. The pass may be expired or invalid.', 'danger');
     } finally {
       setIsVerifying(false);
     }
@@ -807,7 +807,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
               </div>
               <div className="min-w-0">
                 <h3 className="text-sm sm:text-base font-bold text-text-main truncate">QR Scanner Terminal</h3>
-                <p className="text-[11px] text-text-muted truncate">Scan guest QR pass or enter token manually</p>
+                <p className="text-[11px] text-text-muted truncate">Scan guest QR pass or enter pass code manually</p>
               </div>
             </div>
 
@@ -940,7 +940,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
               {/* Token Number & Status Header */}
               <div className="p-3.5 sm:p-4 rounded-2xl bg-zinc-50 dark:bg-[#141416] border border-border-main dark:border-white/10 flex flex-row items-center justify-between gap-3">
                 <div>
-                  <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block">Token Pass</span>
+                  <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block">Table Pass</span>
                   <span className="font-mono text-xl sm:text-2xl font-black text-text-main break-all">{scannedToken.tokenNumber}</span>
                 </div>
 
@@ -1026,7 +1026,7 @@ export const BartenderPage: React.FC<BartenderPageProps> = ({ activeTab, setActi
                     <AlertTriangle size={16} className="shrink-0 mt-0.5" />
                     <div>
                       <p className="font-extrabold uppercase tracking-wider">Redemption Blocked</p>
-                      <p className="mt-0.5 text-text-muted">This token pass is no longer active (Current status: <span className="font-black text-text-main">{tokenStatus || 'UNKNOWN'}</span>). Dispensing and reverting drinks is locked.</p>
+                      <p className="mt-0.5 text-text-muted">This table pass is no longer active (Status: <span className="font-black text-text-main">{tokenStatus || 'UNKNOWN'}</span>). Dispensing and reverting drinks is locked.</p>
                     </div>
                   </div>
                 )}

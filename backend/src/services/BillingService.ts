@@ -1,7 +1,8 @@
 import { PrismaClient, BillStatus, PaymentMethod, CloseReason, ServiceRequestType, ServiceRequestStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { broadcastBillSettled, broadcastTableUpdated, broadcastTableSessionClosed, broadcastServiceRequestCreated } from '../realtime';
+import { broadcastBillSettled, broadcastBillUpdated, broadcastTableUpdated, broadcastTableSessionClosed, broadcastServiceRequestCreated, broadcastServiceRequestUpdated } from '../realtime';
 import { inventoryService } from './InventoryService';
+import { orderService } from './OrderService';
 
 const prisma = new PrismaClient();
 
@@ -15,6 +16,11 @@ export class BillingService {
       include: {
         table: true,
         customer: true,
+        placeType: true,
+        extensions: {
+          include: { approver: true },
+          orderBy: { extendedAt: 'asc' },
+        },
         orders: {
           include: {
             items: {
@@ -37,6 +43,11 @@ export class BillingService {
         include: {
           table: true,
           customer: true,
+          placeType: true,
+          extensions: {
+            include: { approver: true },
+            orderBy: { extendedAt: 'asc' },
+          },
           orders: {
             include: {
               items: {
@@ -55,7 +66,7 @@ export class BillingService {
     }
 
     if (!token) {
-      throw new Error(`Token ${tokenNumberOrId} not found`);
+      throw new Error('Table session not found');
     }
 
     // 1. Fetch Venue Configuration (Dynamic GST & Service Charge settings)
@@ -155,14 +166,39 @@ export class BillingService {
     const taxableAmount = discountedSubtotal.plus(serviceChargeTotal);
     const grossPayable = taxableAmount.plus(taxTotal);
 
-    // 3. Universal Prepaid / Reservation Credit Offset
-    // The amount collected during check-in is a PREPAID / RESERVATION CREDIT for the customer's active session.
+    // 3. Universal Prepaid / Registration Credit Offset
+    // The amount collected during initial check-in is the PREPAID / REGISTRATION CREDIT for the customer's active session.
     // It applies to the COMPLETE final consumption bill (Food + Drinks + Merchandise + Service Charge + GST).
-    const confirmedCheckInAmount = new Decimal(token.amountPaid || 0);
-    // General Formula: prepaidCreditApplied = min(confirmedCheckInAmount, grossFinalBill)
-    const prepaidCreditApplied = Decimal.min(confirmedCheckInAmount, grossPayable).toDecimalPlaces(2);
+    const initialCheckInAmount = new Decimal(token.amountPaid || 0);
 
-    // 4. Final Balance & Cash Rounding
+    // 4. Itemized Session Extensions (Each extension is an independently identifiable record)
+    const rawExtensions = (token as any).extensions || [];
+    const extensionsList = rawExtensions.map((ext: any, idx: number) => {
+      const addAmt = new Decimal(ext.additionalAmount || 0);
+      const isComplimentary = addAmt.eq(0);
+      return {
+        id: ext.id,
+        sequence: idx + 1,
+        extraMinutes: ext.extraMinutes,
+        additionalAmount: addAmt.toDecimalPlaces(2),
+        additionalAmountNumber: addAmt.toNumber(),
+        approvedBy: ext.approver?.fullName || ext.approver?.username || ext.approvedBy || 'Staff',
+        extendedAt: ext.extendedAt ? new Date(ext.extendedAt).toISOString() : new Date().toISOString(),
+        newEndTime: ext.newEndTime ? new Date(ext.newEndTime).toISOString() : new Date().toISOString(),
+        isComplimentary,
+        displayLabel: isComplimentary ? 'Complimentary' : `₹${addAmt.toFixed(2)}`,
+      };
+    });
+
+    const extensionsTotal = rawExtensions.reduce(
+      (sum: Decimal, ext: any) => sum.plus(new Decimal(ext.additionalAmount || 0)),
+      new Decimal(0)
+    ).toDecimalPlaces(2);
+
+    // General Formula: prepaidCreditApplied = min(initialCheckInAmount, grossFinalBill)
+    const prepaidCreditApplied = Decimal.min(initialCheckInAmount, grossPayable).toDecimalPlaces(2);
+
+    // 5. Final Balance & Cash Rounding
     // remainingPayable = max(0, grossFinalBill - prepaidCreditApplied)
     // There must be NO refund option, NO negative balance, and NO transferable/customer wallet balance.
     const netBeforeRounding = Decimal.max(new Decimal(0), grossPayable.minus(prepaidCreditApplied));
@@ -191,14 +227,31 @@ export class BillingService {
       grossFinalBill: grossPayable.toDecimalPlaces(2),
       grossPayable: grossPayable.toDecimalPlaces(2),
       rounding,
-      amountPaid: confirmedCheckInAmount.toDecimalPlaces(2),
-      entryFeePaid: confirmedCheckInAmount.toDecimalPlaces(2),
-      confirmedCheckInAmount: confirmedCheckInAmount.toDecimalPlaces(2),
+      initialCheckInAmount: initialCheckInAmount.toDecimalPlaces(2),
+      entryFeePaid: initialCheckInAmount.toDecimalPlaces(2),
+      confirmedCheckInAmount: initialCheckInAmount.toDecimalPlaces(2),
+      amountPaid: initialCheckInAmount.toDecimalPlaces(2),
+      extensions: extensionsList,
+      extensionsTotal,
+      extensionsCount: extensionsList.length,
       prepaidCreditApplied,
       redemptionDeduction: prepaidCreditApplied,
       grandTotal: roundedFinalPayable.toDecimalPlaces(2),
       remainingPayable: roundedFinalPayable.toDecimalPlaces(2),
-      status: token.status === 'CLOSED' ? 'PAID' : 'DRAFT',
+      status: await (async () => {
+        if (token.status === 'CLOSED') return 'PAID';
+        const activeRequestedBill = await prisma.bill.findFirst({
+          where: {
+            tokenId: token.id,
+            status: BillStatus.REQUESTED,
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (activeRequestedBill || (token.table && (token.table.status === 'BILL_REQUESTED' || token.table.status === 'SETTLING'))) {
+          return 'REQUESTED';
+        }
+        return 'DRAFT';
+      })(),
     };
   }
 
@@ -214,10 +267,10 @@ export class BillingService {
         include: { table: true },
       });
 
-      if (!token) throw new Error('Token not found');
+      if (!token) throw new Error('Table session not found');
 
       if (token.status === 'CLOSED' || token.status === 'CANCELLED') {
-        throw new Error(`Cannot request bill for a session with status ${token.status}`);
+        throw new Error('This session is not ready for billing.');
       }
 
       if (!token.tableId) {
@@ -328,7 +381,21 @@ export class BillingService {
         tableNumber: calc.tableNumber,
         status: 'BILL_REQUESTED',
         currentTokenId: result.token.id,
+        currentTokenNumber: calc.tokenNumber,
+        tokenNumber: calc.tokenNumber,
         updatedAt: new Date().toISOString(),
+      });
+
+      broadcastBillUpdated({
+        billId: result.bill.id,
+        billNumber: result.bill.billNumber,
+        tokenId: result.token.id,
+        tokenNumber: calc.tokenNumber,
+        tableId: result.token.tableId!,
+        grandTotal: Number(calc.grandTotal),
+        status: 'REQUESTED',
+        paymentMethod: '',
+        paidAt: '',
       });
 
       if (result.isNewRequest && result.serviceRequest) {
@@ -374,9 +441,9 @@ export class BillingService {
       include: { table: true },
     });
 
-    if (!token) throw new Error('Token not found');
+    if (!token) throw new Error('Table session not found');
     if (token.status === 'CLOSED' || token.status === 'CANCELLED') {
-      throw new Error(`Cannot initiate settlement for a session with status ${token.status}`);
+      throw new Error('This session cannot be settled right now.');
     }
     if (!token.tableId) {
       throw new Error('No active table assigned to this dining session');
@@ -395,6 +462,8 @@ export class BillingService {
         tableNumber: calc.tableNumber,
         status: 'SETTLING',
         currentTokenId: token.id,
+        currentTokenNumber: calc.tokenNumber,
+        tokenNumber: calc.tokenNumber,
         updatedAt: new Date().toISOString(),
       });
     } catch (err) {
@@ -421,7 +490,7 @@ export class BillingService {
       include: { table: true },
     });
 
-    if (!token) throw new Error('Token not found');
+    if (!token) throw new Error('Table session not found');
     if (token.status === 'CLOSED') {
       return { success: false, message: 'Session is already settled and closed' };
     }
@@ -453,6 +522,8 @@ export class BillingService {
         tableNumber: calc.tableNumber,
         status: targetStatus,
         currentTokenId: token.id,
+        currentTokenNumber: calc.tokenNumber,
+        tokenNumber: calc.tokenNumber,
         updatedAt: new Date().toISOString(),
       });
     } catch (err) {
@@ -464,6 +535,205 @@ export class BillingService {
       tableStatus: targetStatus,
       tableId: token.tableId,
       tableNumber: calc.tableNumber,
+    };
+  }
+
+  /**
+   * Authoritative Waiter Reopen Ordering:
+   * Reverts BILL_REQUESTED back to 'occupied', resolves active bill service requests,
+   * resets pending bill status to DRAFT to allow additional orders, and broadcasts real-time unlock.
+   */
+  async reopenOrdering(tokenNumberOrId: string, staffUserId?: string, reason?: string) {
+    // 1. Identify active session & table
+    let token = await prisma.token.findUnique({
+      where: { tokenNumber: tokenNumberOrId },
+      include: { table: true },
+    });
+
+    if (!token) {
+      token = await prisma.token.findUnique({
+        where: { id: tokenNumberOrId },
+        include: { table: true },
+      });
+    }
+
+    // Fallback: If tableId or tableNumber was passed directly
+    if (!token) {
+      const table = await prisma.table.findFirst({
+        where: {
+          OR: [
+            { id: tokenNumberOrId },
+            { tableNumber: tokenNumberOrId },
+          ],
+        },
+      });
+
+      if (table?.currentTokenId) {
+        token = await prisma.token.findUnique({
+          where: { id: table.currentTokenId },
+          include: { table: true },
+        });
+      }
+
+      if (!token && table) {
+        token = await prisma.token.findFirst({
+          where: {
+            tableId: table.id,
+            status: { in: ['ACTIVE', 'EXTENDED'] },
+          },
+          include: { table: true },
+          orderBy: { startTime: 'desc' },
+        });
+      }
+    }
+
+    if (!token) {
+      throw new Error('Active dining session or table not found.');
+    }
+
+    if (token.status === 'CLOSED' || token.status === 'CANCELLED') {
+      throw new Error('Cannot reopen ordering: This dining session is permanently closed/settled.');
+    }
+
+    if (!token.tableId) {
+      throw new Error('No active table assigned to this session.');
+    }
+
+    // 2. State & Lifecycle Validations
+    if (token.table?.status === 'SETTLING') {
+      throw new Error('Cannot reopen ordering: Bill settlement is already in progress with staff.');
+    }
+
+    if (token.table?.status !== 'BILL_REQUESTED') {
+      // Check if already occupied / open
+      if (token.table?.status === 'occupied') {
+        return {
+          success: true,
+          message: 'Ordering is already open for this table.',
+          tableStatus: 'occupied',
+          tableId: token.tableId,
+          tableNumber: token.table?.tableNumber || 'N/A',
+        };
+      }
+      throw new Error(`Table is currently "${token.table?.status || 'unknown'}" and cannot be reopened for ordering.`);
+    }
+
+    const tableId = token.tableId;
+    const tableNumber = token.table?.tableNumber || 'N/A';
+    const tokenId = token.id;
+
+    // 3. Execute Atomic Database Transition
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      // Conditional atomic table update: guarantees race safety if concurrent settlement was initiated
+      const updateResult = await tx.table.updateMany({
+        where: {
+          id: tableId,
+          status: 'BILL_REQUESTED',
+        },
+        data: {
+          status: 'occupied',
+        },
+      });
+
+      if (updateResult.count === 0) {
+        throw new Error('Failed to reopen ordering: Table state was changed concurrently.');
+      }
+
+      // Complete active BILL_REQUEST, BILL_ASSISTANCE, and ORDER_ASSISTANCE service requests for this token
+      const openRequests = await tx.serviceRequest.findMany({
+        where: {
+          tokenId: tokenId,
+          type: { in: [ServiceRequestType.BILL_REQUEST, ServiceRequestType.BILL_ASSISTANCE, ServiceRequestType.ORDER_ASSISTANCE] },
+          status: { in: [ServiceRequestStatus.NEW, ServiceRequestStatus.ACKNOWLEDGED] },
+        },
+      });
+
+      const updatedRequests: any[] = [];
+      const now = new Date();
+      for (const req of openRequests) {
+        const updated = await tx.serviceRequest.update({
+          where: { id: req.id },
+          data: {
+            status: ServiceRequestStatus.COMPLETED,
+            completedAt: now,
+            ...(staffUserId ? { assignedStaffId: staffUserId } : {}),
+          },
+        });
+        updatedRequests.push(updated);
+      }
+
+      // Reset any pending REQUESTED bill to DRAFT to allow future orders to be recalculated cleanly
+      let updatedBill: any = null;
+      const requestedBill = await tx.bill.findFirst({
+        where: {
+          tokenId: tokenId,
+          status: BillStatus.REQUESTED,
+        },
+      });
+
+      if (requestedBill) {
+        updatedBill = await tx.bill.update({
+          where: { id: requestedBill.id },
+          data: {
+            status: BillStatus.DRAFT,
+          },
+        });
+      }
+
+      return {
+        tableId,
+        tableNumber,
+        tokenNumber: token.tokenNumber,
+        updatedRequests,
+        updatedBill,
+      };
+    });
+
+    // 4. Real-time Broadcasts (Emitted strictly after transaction commits)
+    try {
+      broadcastTableUpdated({
+        tableId: transactionResult.tableId,
+        tableNumber: transactionResult.tableNumber,
+        status: 'occupied',
+        currentTokenId: tokenId,
+        currentTokenNumber: transactionResult.tokenNumber,
+        tokenNumber: transactionResult.tokenNumber,
+        updatedAt: new Date().toISOString(),
+      });
+
+      broadcastBillUpdated({
+        billId: transactionResult.updatedBill?.id || '',
+        billNumber: transactionResult.updatedBill?.billNumber || '',
+        tokenId: tokenId,
+        tokenNumber: transactionResult.tokenNumber,
+        tableId: transactionResult.tableId,
+        grandTotal: 0,
+        status: 'DRAFT',
+        paymentMethod: '',
+        paidAt: '',
+      });
+
+      for (const req of transactionResult.updatedRequests) {
+        broadcastServiceRequestUpdated({
+          id: req.id,
+          tokenId: tokenId,
+          tokenNumber: transactionResult.tokenNumber,
+          tableId: transactionResult.tableId,
+          tableNumber: transactionResult.tableNumber,
+          type: req.type,
+          status: req.status,
+        });
+      }
+    } catch (broadcastErr) {
+      console.warn('[BillingService] Failed to broadcast reopen ordering events:', broadcastErr);
+    }
+
+    return {
+      success: true,
+      message: 'Ordering reopened successfully. The customer can now place additional orders.',
+      tableStatus: 'occupied',
+      tableId: transactionResult.tableId,
+      tableNumber: transactionResult.tableNumber,
     };
   }
 
@@ -669,6 +939,11 @@ export class BillingService {
         // Free any lingering cart reservations for this settled session
         if (calc.tokenNumber) {
           inventoryService.clearSessionCartReservations(calc.tokenNumber).catch(() => {});
+        }
+
+        // Clean up any stray unaccepted PLACED orders for this settled token
+        if (calc.tokenId) {
+          orderService.cleanupUnacceptedOrderItemsForToken(calc.tokenId, 'BILL_SETTLED', input.settledByStaffId).catch(() => {});
         }
       } catch (err) {
         console.warn('Real-time bill settlement broadcast error:', err);

@@ -281,3 +281,21 @@
 {"timestamp":"2026-09-23T17:04:55.075Z","tokenNumber":"BAR-20260923-00001","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +30 mins","initiatedBy":"db703d2c-7fa3-487a-9774-2442ee051c74"}
 {"timestamp":"2026-09-23T17:31:21.498Z","tokenNumber":"BAR-20260923-00002","oldStatus":"PENDING_PAYMENT","newStatus":"ACTIVE","reason":"receptionist activation","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
 {"timestamp":"2026-09-23T18:21:18.822Z","tokenNumber":"BAR-20260923-00001","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +20 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-25T05:55:06.810Z","tokenNumber":"BAR-20260923-00001","oldStatus":"EXTENDED","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-25T05:55:06.823Z","tokenNumber":"BAR-20260923-00002","oldStatus":"ACTIVE","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-25T06:24:30.250Z","tokenNumber":"BAR-20260925-00001","oldStatus":"PENDING_PAYMENT","newStatus":"ACTIVE","reason":"receptionist activation","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-25T07:02:13.517Z","tokenNumber":"BAR-20260925-00001","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +20 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-25T08:30:24.283Z","tokenNumber":"BAR-20260925-00001","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +25 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-25T08:41:36.221Z","tokenNumber":"BAR-20260925-00001","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +60 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-25T08:50:24.069Z","tokenNumber":"BAR-20260925-00001","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +20 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-25T10:15:15.496Z","tokenNumber":"BAR-20260925-00001","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +60 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-25T11:14:59.708Z","tokenNumber":"BAR-20260925-00001","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +30 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-25T11:44:51.099Z","tokenNumber":"BAR-20260925-00001","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +30 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-25T12:29:36.551Z","tokenNumber":"BAR-20260925-00001","oldStatus":"EXTENDED","newStatus":"EXPIRED","reason":"chronological auto-expiration","initiatedBy":"system_reconciler"}
+{"timestamp":"2026-09-25T14:41:07.988Z","tokenNumber":"BAR-20260925-00002","oldStatus":"PENDING_PAYMENT","newStatus":"ACTIVE","reason":"receptionist activation","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-25T15:07:17.374Z","tokenNumber":"BAR-20260925-00002","oldStatus":"ACTIVE","newStatus":"EXTENDED","reason":"extended by +10 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-25T15:07:51.383Z","tokenNumber":"BAR-20260925-00002","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +10 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}
+{"timestamp":"2026-09-25T16:46:15.548Z","tokenNumber":"BAR-20260925-00002","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +20 mins","initiatedBy":"db703d2c-7fa3-487a-9774-2442ee051c74"}
+{"timestamp":"2026-09-25T17:06:36.106Z","tokenNumber":"BAR-20260925-00002","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +20 mins","initiatedBy":"db703d2c-7fa3-487a-9774-2442ee051c74"}
+{"timestamp":"2026-09-25T17:33:54.605Z","tokenNumber":"BAR-20260925-00002","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +10 mins","initiatedBy":"db703d2c-7fa3-487a-9774-2442ee051c74"}
+{"timestamp":"2026-09-25T17:38:54.792Z","tokenNumber":"BAR-20260925-00002","oldStatus":"EXTENDED","newStatus":"EXTENDED","reason":"extended by +10 mins","initiatedBy":"9b2f8e62-4704-4ffe-a75b-2d53c856b50d"}

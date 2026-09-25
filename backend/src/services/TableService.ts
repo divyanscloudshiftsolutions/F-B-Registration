@@ -144,7 +144,7 @@ export class TableService {
 
       if (!table) throw new Error('Table not found');
       if (table.currentTokenId && table.currentTokenId !== tokenId) {
-        throw new Error('Token does not match current table assignment');
+        throw new Error('This pass is not assigned to this table.');
       }
 
       // Update occupancy log with vacated time

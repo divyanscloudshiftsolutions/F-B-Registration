@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Clock, X, Mail } from 'lucide-react';
+import { Clock, X, Mail, Gift } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import type { Token } from '../../types';
@@ -158,8 +158,8 @@ export const ExtendSessionModal: React.FC<ExtendSessionModalProps> = ({
 
   return (
     <>
-      <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4 animate-fadeIn">
-        <div className="bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
+      <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
+        <div className="bg-bg-surface border border-border-main rounded-2xl sm:rounded-3xl p-4 sm:p-6 w-full max-w-md max-h-[92vh] overflow-y-auto space-y-3.5 sm:space-y-4 relative text-text-main animate-fadeIn custom-scrollbar">
           <button 
             onClick={onClose}
             className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
@@ -432,26 +432,61 @@ export const ExtendSessionModal: React.FC<ExtendSessionModalProps> = ({
 
       {showExtendPaymentConfirm && (
         <div className="fixed inset-0 z-[110] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
-            <h3 className="text-base font-black uppercase tracking-wider text-primary">Confirm Extension Payment?</h3>
-            <p className="text-xs text-text-muted">
-              Payment has been collected. Do you want to confirm the session extension?
-            </p>
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={executeExtend}
-                className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
-              >
-                YES — Confirm Extension
-              </button>
-              <button
-                onClick={() => setShowExtendPaymentConfirm(false)}
-                className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card border border-border-main text-xs font-bold text-text-muted hover:text-text-main cursor-pointer"
-              >
-                NO — Cancel
-              </button>
+          {extensionPaymentMethod === 'COMPLIMENTARY' ? (
+            <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                  <Gift size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black uppercase tracking-wider text-primary">Confirm Complimentary Extension</h3>
+                  <p className="text-[11px] text-text-muted">No payment required</p>
+                </div>
+              </div>
+              <p className="text-xs text-text-muted leading-relaxed">
+                This session extension is being provided as <span className="font-semibold text-text-main">complimentary (free of charge)</span>. No payment will be collected from the guest. Are you sure you want to proceed?
+              </p>
+              <div className="flex flex-col-reverse sm:flex-row gap-2.5 sm:gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExtendPaymentConfirm(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card border border-border-main text-xs font-bold text-text-muted hover:text-text-main cursor-pointer"
+                >
+                  NO — Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={executeExtend}
+                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  YES — Confirm Complimentary
+                </button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
+              <h3 className="text-base font-black uppercase tracking-wider text-primary">Confirm Extension Payment?</h3>
+              <p className="text-xs text-text-muted">
+                Payment has been collected. Do you want to confirm the session extension?
+              </p>
+              <div className="flex flex-col-reverse sm:flex-row gap-2.5 sm:gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExtendPaymentConfirm(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card border border-border-main text-xs font-bold text-text-muted hover:text-text-main cursor-pointer"
+                >
+                  NO — Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={executeExtend}
+                  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  YES — Confirm Extension
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </>

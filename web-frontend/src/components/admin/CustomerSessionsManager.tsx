@@ -72,8 +72,9 @@ export const CustomerSessionsManager: React.FC = () => {
     0
   ) || 0;
   const historyInitialAmount = viewingHistoryToken
-    ? Number(viewingHistoryToken.amountPaid || 0) - historyExtensionsTotal
+    ? Number(viewingHistoryToken.initialCheckInAmount ?? viewingHistoryToken.amountPaid ?? 0)
     : 0;
+  const historyTotalPaid = historyInitialAmount + historyExtensionsTotal;
 
   // Counts for each status tab
   const getStatusCount = (statusId: string) => {
@@ -461,7 +462,7 @@ export const CustomerSessionsManager: React.FC = () => {
               <div className="p-4 bg-bg-primary rounded-xl border border-border-main space-y-2 text-xs">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <div>
-                    <span className="text-text-muted block">Token Number</span>
+                    <span className="text-text-muted block">Pass Number</span>
                     <span className="font-mono font-bold text-text-main text-sm">{viewingHistoryToken.tokenNumber}</span>
                   </div>
                   <div>
@@ -496,7 +497,7 @@ export const CustomerSessionsManager: React.FC = () => {
                     <span className="font-semibold text-text-main">{viewingHistoryToken.personsCount} Guests</span>
                   </div>
                   <div>
-                    <span className="text-text-muted block">Initial Cover Charge</span>
+                    <span className="text-text-muted block">Initial Check-in Amount</span>
                     <span className="font-bold text-text-main">₹{Number(historyInitialAmount).toLocaleString('en-IN')}</span>
                   </div>
                   <div>
@@ -504,8 +505,8 @@ export const CustomerSessionsManager: React.FC = () => {
                     <span className="font-bold text-text-main">₹{Number(historyExtensionsTotal).toLocaleString('en-IN')}</span>
                   </div>
                   <div>
-                    <span className="text-text-muted block">Total Amount Paid</span>
-                    <span className="font-bold text-text-main">₹{Number(viewingHistoryToken.amountPaid || 0).toLocaleString('en-IN')}</span>
+                    <span className="text-text-muted block">Total Paid (Entry+Ext)</span>
+                    <span className="font-bold text-text-main">₹{Number(historyTotalPaid).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
                 <div className="border-t border-border-main/50 pt-2 grid grid-cols-2 gap-3 text-[11px] text-text-muted font-semibold">
@@ -521,18 +522,28 @@ export const CustomerSessionsManager: React.FC = () => {
                   <div className="text-xs text-text-muted italic bg-bg-primary/30 p-3 rounded-xl border border-border-main/50 text-center">No extensions recorded for this session.</div>
                 ) : (
                   <div className="space-y-2">
-                    {viewingHistoryToken.extensions.map((ext: any, idx: number) => (
-                      <div key={idx} className="p-3 bg-bg-primary rounded-xl border border-border-main text-xs flex flex-col sm:flex-row justify-between gap-2">
-                        <div>
-                          <div className="font-semibold text-text-main">Extension: <span className="text-primary">+{ext.extraMinutes} mins</span> | Amount Paid: <span className="font-bold text-text-main">₹{Number(ext.additionalAmount).toLocaleString('en-IN')}</span></div>
-                          <div className="text-[11px] text-text-muted mt-0.5 font-semibold">Payment Method: <span className="text-text-main uppercase">{ext.paymentMethod || 'CASH'}</span></div>
+                    {viewingHistoryToken.extensions.map((ext: any, idx: number) => {
+                      const isComp = Number(ext.additionalAmount || 0) === 0;
+                      return (
+                        <div key={idx} className="p-3 bg-bg-primary rounded-xl border border-border-main text-xs flex flex-col sm:flex-row justify-between gap-2">
+                          <div>
+                            <div className="font-semibold text-text-main">
+                              Extension #{ext.sequence || idx + 1}: <span className="text-primary">+{ext.extraMinutes} mins</span> | Amount Paid:{' '}
+                              {isComp ? (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">Complimentary</span>
+                              ) : (
+                                <span className="font-bold text-text-main">₹{Number(ext.additionalAmount).toLocaleString('en-IN')}</span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-text-muted mt-0.5 font-semibold">Payment Method: <span className="text-text-main uppercase">{ext.paymentMethod || (isComp ? 'COMPLIMENTARY' : 'CASH')}</span></div>
+                          </div>
+                          <div className="text-right text-[11px] text-text-muted shrink-0 self-end sm:self-center">
+                            <div>Time: <span className="text-text-main font-semibold">{new Date(ext.extendedAt).toLocaleString()}</span></div>
+                            <div>Approved By: <span className="text-text-main font-semibold">{ext.approvedBy}</span></div>
+                          </div>
                         </div>
-                        <div className="text-right text-[11px] text-text-muted shrink-0 self-end sm:self-center">
-                          <div>Time: <span className="text-text-main font-semibold">{new Date(ext.extendedAt).toLocaleString()}</span></div>
-                          <div>Approved By: <span className="text-text-main font-semibold">{ext.approvedBy}</span></div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useModalKeyboard } from '../../hooks/useModalKeyboard';
 
 interface CancelReservationModalProps {
   isOpen: boolean;
@@ -30,28 +31,15 @@ export const CancelReservationModal: React.FC<CancelReservationModalProps> = ({
   const [closureReasonOption, setClosureReasonOption] = useState('Customer Vacated Early');
   const [closureCustomExplanation, setClosureCustomExplanation] = useState('');
 
-  useEffect(() => {
-    if (!isOpen || !reservation) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target && target.tagName === 'TEXTAREA') return;
-
-      if (e.key === 'Enter') {
-        if (!isSubmittingCancel) {
-          e.preventDefault();
-          const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
-          handleFormSubmit(fakeEvent);
-        }
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, reservation, isSubmittingCancel, closureReasonOption, closureCustomExplanation, onClose]);
+  useModalKeyboard({
+    isOpen: isOpen && !!reservation,
+    onConfirm: () => {
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleFormSubmit(fakeEvent);
+    },
+    onClose,
+    isSubmitting: isSubmittingCancel,
+  });
 
   if (!isOpen || !reservation) return null;
 
@@ -124,7 +112,7 @@ export const CancelReservationModal: React.FC<CancelReservationModalProps> = ({
               </div>
               {reservation.tokenNumber && (
                 <div className="flex justify-between">
-                  <span className="text-text-muted">Session Token:</span>
+                  <span className="text-text-muted">Pass Number:</span>
                   <span className="font-mono text-text-main font-bold">
                     {reservation.tokenNumber}
                   </span>

@@ -175,6 +175,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
  const renderNavButton = (id: string, label: string, Icon: any, allowedRoles: string[]) => {
     if (!hasRole(allowedRoles)) return null;
     const isActive = activeTab === id 
+      || (id === 'tables/layout' && activeTab.startsWith('tables'))
       || (id === 'waiter' && activeTab.startsWith('waiter'))
       || (id === 'kds' && (activeTab === 'kds' || activeTab.startsWith('kds')));
    
@@ -311,6 +312,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   {/* Admin / Manager: Dashboard */}
   {renderNavButton('dashboard', 'Dashboard', LayoutDashboard, [UserRole.ADMIN, UserRole.MANAGER])}
   
+  {/* Waiter / Server: 1. Dashboard */}
+  {userRoleLower === 'waiter' || userRoleLower === 'server' ? (
+    renderNavButton('waiter', 'Dashboard', LayoutDashboard, [UserRole.WAITER, UserRole.SERVER])
+  ) : null}
+
   {/* Receptionist / Manager / Admin: Reception Check-In */}
   {renderNavButton('checkin', 'Reception', UserCheck, [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST])}
   
@@ -323,10 +329,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   {/* Kitchen Display System: Kitchen KDS */}
   {renderNavButton('kds', 'Kitchen KDS', ChefHat, [UserRole.ADMIN, UserRole.MANAGER, UserRole.CHEF])}
   
-  {/* Waiter / Server / Manager / Admin: Waiter Dashboard */}
-  {renderNavButton('waiter', 'Waiter Dashboard', UtensilsCrossed, [UserRole.ADMIN, UserRole.MANAGER, UserRole.WAITER, UserRole.SERVER])}
+  {/* Waiter / Server: 2. Tables */}
+  {renderNavButton('tables/layout', 'Tables', Grid3X3, [UserRole.WAITER, UserRole.SERVER])}
   
-  {/* All Staff: Attendance */}
+  {/* Admin / Manager: Waiter Dashboard */}
+  {userRoleLower !== 'waiter' && userRoleLower !== 'server' ? (
+    renderNavButton('waiter', 'Waiter Dashboard', UtensilsCrossed, [UserRole.ADMIN, UserRole.MANAGER])
+  ) : null}
+  
+  {/* All Staff / Waiter: 3. Attendance */}
   {renderNavButton('quick_attendance', 'Attendance', Camera, [UserRole.ADMIN, UserRole.MANAGER, UserRole.RECEPTIONIST, UserRole.BARTENDER, UserRole.WAITER, UserRole.SERVER, UserRole.CHEF])}
   
   {/* Admin / Manager only: System Administration */}

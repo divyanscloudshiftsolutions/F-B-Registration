@@ -24,6 +24,9 @@ import { api } from '../services/api';
 import type { Token, Table } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import { useRovingSelection } from '../hooks/useRovingSelection';
+import { useModalKeyboard } from '../hooks/useModalKeyboard';
+import { useEnterKey } from '../hooks/useEnterKey';
 import jsQR from 'jsqr';
 import { extractTokenNumber } from '../utils/tokenExtractor';
 
@@ -1201,7 +1204,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
             tableId: selectedTableId || null
           });
         } catch (err: any) {
-          showToast(err.message || 'Failed to sync reservation details to database.', 'danger');
+          showToast(err.message || 'Unable to save reservation details. Please try again.', 'danger');
           return;
         }
       }
@@ -1574,24 +1577,24 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
 
     try {
       if (!cleanCode) {
-        throw new Error('Invalid QR code format. The QR code or Token ID is invalid.');
+        throw new Error('Invalid QR code. Please scan a valid pass or enter the pass number.');
       }
 
       const res = await api.verifyCheckInQR(cleanCode);
       if (!res || !res.success || !res.token) {
-        throw new Error('Invalid QR code. Token verification failed.');
+        throw new Error('Unable to verify pass. Please scan again.');
       }
 
       // Check if this Token ID / session is expired
       const tokenStatus = (res.token.status || '').toUpperCase();
       const isTokenExpired = tokenStatus === 'EXPIRED' || (res.token.expiresAt && new Date(res.token.expiresAt).getTime() < Date.now());
       if (isTokenExpired) {
-        throw new Error('This Token ID is expired. Please generate or scan an active pass.');
+        throw new Error('This pass is expired. Please generate or scan an active pass.');
       }
 
       setQrVerificationSuccess(true);
       setActivePendingToken(res.token); // Store scanned pending token
-      showToast(`Token #${res.token.tokenNumber} verified successfully!`, 'success');
+      showToast(`Pass #${res.token.tokenNumber} verified successfully!`, 'success');
       
       // Populate inputs if verified pre-registered session returned
       const returnedName = res.token.customer?.name || (res.token as any).customerName;
@@ -1721,7 +1724,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
           await api.assignReservation(reservationId).catch(() => {});
           setReservationId('');
         }
-        showToast(`Guest ${customerName} checked in successfully! Token: ${res.token.tokenNumber}`, 'success');
+        showToast(`Guest ${customerName} checked in successfully! Pass: ${res.token.tokenNumber}`, 'success');
         refreshTokens();
         refreshTables();
         refreshReservations();
@@ -1776,7 +1779,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
     refreshTokens();
   };
 
- // Filter available tables by place category & seating capacity compatibility matching React Native
+  // Filter available tables by place category & seating capacity compatibility matching React Native
   const compatibleAvailableTables = tables
     .filter(t => {
       const isAvailable = t.status === 'available' || t.id === selectedTableId;
@@ -1787,6 +1790,30 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
       return isAvailable && isCapacitySuitable && matchesCategory;
     })
     .sort((a, b) => a.capacity - b.capacity);
+
+  const selectedTableIndex = compatibleAvailableTables.findIndex(t => t.id === selectedTableId);
+
+  const tableRoving = useRovingSelection<Table>({
+    items: compatibleAvailableTables,
+    selectedIndex: selectedTableIndex >= 0 ? selectedTableIndex : 0,
+    orientation: 'both',
+    columns: 4,
+    enabled: stage === 2 && !showStopCheckInConfirmModal && !showCapacityWarning,
+    onSelect: (tb) => {
+      handleTableSelect(tb);
+    },
+  });
+
+  const paymentModes = ['CASH', 'UPI'] as const;
+  const paymentRoving = useRovingSelection<'CASH' | 'UPI'>({
+    items: [...paymentModes],
+    selectedIndex: paymentModes.indexOf(paymentMode),
+    orientation: 'horizontal',
+    enabled: stage === 4 && !showPaymentCollectedConfirm,
+    onSelect: (pm) => {
+      setPaymentMode(pm);
+    },
+  });
 
   // Keyboard listener for Incomplete Check-In Draft Prompt
   useEffect(() => {
@@ -2393,18 +2420,24 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
  {compatibleAvailableTables.length === 0 ? (
  <p className="text-xs text-text-muted py-3">No available tables with capacity for {personsCountNum} guests in this zone. You may proceed without table assignment.</p>
  ) : (
- <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
- {compatibleAvailableTables.map(tb => {
+ <div 
+   className="grid grid-cols-2 md:grid-cols-4 gap-3 focus:outline-none"
+   onKeyDown={tableRoving.handleKeyDown}
+ >
+ {compatibleAvailableTables.map((tb, idx) => {
  const isSel = selectedTableId === tb.id;
+ const itemProps = tableRoving.getItemProps(idx);
  return (
  <button
  key={tb.id}
  type="button"
+ tabIndex={itemProps.tabIndex}
  disabled={isTableValidating}
  onClick={() => handleTableSelect(tb)}
+ onFocus={itemProps.onFocus}
  className={`p-3.5 sm:p-4 rounded-2xl border text-left transition-all cursor-pointer relative flex flex-col justify-between gap-3 group ${
  isSel
- ? 'bg-emerald-500/15 border-emerald-500 shadow-sm shadow-emerald-500/10 ring-1 ring-emerald-500/30'
+ ? 'bg-emerald-500/15 border-emerald-500 shadow-sm shadow-emerald-500/10 ring-2 ring-emerald-500/40'
  : 'bg-bg-surface hover:bg-bg-card border-border-main hover:border-primary/40 shadow-xs'
  } ${isTableValidating ? 'opacity-60 cursor-wait' : ''}`}
  >
@@ -2492,7 +2525,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
  </div>
  <div>
  <h3 className="text-lg font-bold text-text-main">Stage 3: Guest QR Verification</h3>
- <p className="text-xs text-text-muted">Scan pre-registration QR code or enter token number manually</p>
+ <p className="text-xs text-text-muted">Scan pre-registration QR code or enter pass number manually</p>
  </div>
  </div>
 
@@ -2569,7 +2602,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
 
  {/* Manual Input Fallback */}
  <div className="space-y-2.5">
- <label className="block text-xs font-semibold text-text-muted">Or Input Token Number Manually</label>
+ <label className="block text-xs font-semibold text-text-muted">Or Input Pass Number Manually</label>
  <div className="flex flex-col sm:flex-row gap-2.5">
  <input
  type="text"
@@ -2588,7 +2621,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
  onClick={() => handleVerifyQR(qrCodeInput)}
  className="px-6 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider disabled:opacity-40 transition-all cursor-pointer w-full sm:w-auto"
  >
- {isVerifyingQr ? 'Verifying...' : 'Verify Token'}
+ {isVerifyingQr ? 'Verifying...' : 'Verify Pass'}
  </button>
  </div>
 
@@ -2602,7 +2635,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
  {qrVerificationSuccess && (
  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2.5 flex items-center gap-1.5 text-[11px] dark:text-emerald-400 text-emerald-700">
  <CheckCircle2 size={14} className="shrink-0" />
- <span>Token verified! Member details populated successfully.</span>
+ <span>Pass verified! Member details loaded successfully.</span>
  </div>
  )}
  </div>
@@ -2657,13 +2690,18 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
 
  <div>
  <label className="block text-xs font-semibold text-text-muted mb-2">Payment Method</label>
- <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+ <div 
+   className="grid grid-cols-1 sm:grid-cols-2 gap-4 focus:outline-none"
+   onKeyDown={paymentRoving.handleKeyDown}
+ >
  <button
  type="button"
+ tabIndex={paymentRoving.getItemProps(0).tabIndex}
  onClick={() => setPaymentMode('CASH')}
+ onFocus={paymentRoving.getItemProps(0).onFocus}
  className={`py-3.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
  paymentMode === 'CASH'
- ? 'dark:bg-[#D4AF37] bg-primary dark:text-black text-white dark:border-[#D4AF37] border-primary font-black '
+ ? 'dark:bg-[#D4AF37] bg-primary dark:text-black text-white dark:border-[#D4AF37] border-primary font-black ring-2 ring-primary/40'
  : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
  }`}
  >
@@ -2671,10 +2709,12 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
  </button>
  <button
  type="button"
+ tabIndex={paymentRoving.getItemProps(1).tabIndex}
  onClick={() => setPaymentMode('UPI')}
+ onFocus={paymentRoving.getItemProps(1).onFocus}
  className={`py-3.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
  paymentMode === 'UPI'
- ? 'dark:bg-[#D4AF37] bg-primary dark:text-black text-white dark:border-[#D4AF37] border-primary font-black '
+ ? 'dark:bg-[#D4AF37] bg-primary dark:text-black text-white dark:border-[#D4AF37] border-primary font-black ring-2 ring-primary/40'
  : 'bg-bg-primary text-text-muted border-border-main hover:bg-bg-card'
  }`}
  >
@@ -2737,7 +2777,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
 
  <div className="glass-panel p-6 rounded-2xl border border-border-main text-left space-y-3 font-mono text-xs max-w-md mx-auto">
   <div className="flex justify-between items-center border-b border-border-main pb-2">
-  <span className="text-text-muted">Token Number:</span>
+  <span className="text-text-muted">Pass Number:</span>
   <div className="flex items-center gap-2">
   <span className="font-bold text-text-main font-mono">{createdToken.tokenNumber}</span>
   <button
@@ -2747,7 +2787,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
         const success = await copyToClipboard(createdToken.tokenNumber);
         if (success) {
           setCopiedToken(true);
-          showToast('Token ID copied to clipboard!', 'success');
+          showToast('Pass code copied to clipboard!', 'success');
           setTimeout(() => setCopiedToken(false), 2000);
         } else {
           showToast('Could not copy automatically. Please select text to copy.', 'error');
@@ -2755,7 +2795,7 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
       }
     }}
     className="p-1 px-2 rounded-lg bg-bg-primary hover:bg-bg-card border border-border-main text-text-muted hover:text-text-main flex items-center gap-1 text-[10px] font-bold transition-all cursor-pointer"
-    title="Click to copy Token ID"
+    title="Click to copy Pass Number"
   >
     {copiedToken ? (
       <>

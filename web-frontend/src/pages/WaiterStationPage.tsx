@@ -40,9 +40,21 @@ import { VegBadge } from '../components/customer/VegBadge';
 import { useServedUndo } from '../services/servedUndoManager';
 import { useData } from '../context/DataContext';
 import { ExtendSessionModal } from '../components/modals/ExtendSessionModal';
+import { useEnterKey } from '../hooks/useEnterKey';
+import { useModalKeyboard } from '../hooks/useModalKeyboard';
+import { useRovingSelection } from '../hooks/useRovingSelection';
 import type { Token } from '../types';
 
 export type WaiterTab = 'overview' | 'tables' | 'requests' | 'ready' | 'bills';
+
+const formatPassNumber = (token?: string | null): string => {
+  if (!token) return '';
+  const cleaned = String(token).trim();
+  if (cleaned.length > 12) {
+    return `#${cleaned.slice(-6).toUpperCase()}`;
+  }
+  return cleaned;
+};
 
 interface WaiterStationPageProps {
   initialTab?: WaiterTab;
@@ -102,6 +114,8 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   const [billsSearchQuery, setBillsSearchQuery] = useState<string>('');
   const [settlementStep, setSettlementStep] = useState<'review' | 'payment'>('review');
   const [showPaymentConfirmationAlert, setShowPaymentConfirmationAlert] = useState<boolean>(false);
+  const [reopenConfirmTable, setReopenConfirmTable] = useState<any | null>(null);
+  const [isReopeningOrdering, setIsReopeningOrdering] = useState<boolean>(false);
 
   // Table-Wise Waiter Service & Ready State
   const [readyStationFilter, setReadyStationFilter] = useState<'ALL' | 'KITCHEN' | 'BAR'>('ALL');
@@ -1038,6 +1052,45 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
     setShowPaymentConfirmationAlert(false);
   };
 
+  const handleOpenReopenConfirm = (table: any, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setReopenConfirmTable(table);
+  };
+
+  const handleConfirmReopenOrdering = async () => {
+    if (!reopenConfirmTable || isReopeningOrdering) return;
+    const targetTable = reopenConfirmTable;
+    const lookup =
+      targetTable.currentTokenId ||
+      targetTable.id ||
+      targetTable.tokenNumber ||
+      targetTable.activeSession?.tokenNumber;
+
+    if (!lookup) {
+      alert('Unable to identify active session for this table.');
+      return;
+    }
+
+    setIsReopeningOrdering(true);
+    try {
+      const res = await api.reopenOrdering(lookup);
+      if (res && res.success) {
+        setReopenConfirmTable(null);
+        setIsBillDetailsOpen(false);
+        setSelectedBillTable(null);
+        await Promise.all([
+          fetchTables(true),
+          fetchActiveBills(false),
+          fetchRequests(true),
+        ]);
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Failed to reopen ordering for table.');
+    } finally {
+      setIsReopeningOrdering(false);
+    }
+  };
+
   const handleServeItemInline = async (orderItemId: string) => {
     if (updatingItemIds.has(orderItemId)) return;
     setUpdatingItemIds((prev) => new Set(prev).add(orderItemId));
@@ -1119,6 +1172,59 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       setIsSettlingBill(false);
     }
   };
+
+  const waiterPaymentMethods = ['CASH', 'UPI'] as const;
+  const waiterPaymentRoving = useRovingSelection<'CASH' | 'UPI'>({
+    items: [...waiterPaymentMethods],
+    selectedIndex: waiterPaymentMethods.indexOf(selectedPaymentMethod),
+    orientation: 'horizontal',
+    enabled: isBillDetailsOpen && settlementStep === 'payment' && !showPaymentConfirmationAlert,
+    onSelect: (pm) => setSelectedPaymentMethod(pm),
+  });
+
+  // Modal keyboard for payment confirmation alert
+  useModalKeyboard({
+    isOpen: showPaymentConfirmationAlert,
+    onConfirm: handleConfirmPayment,
+    onClose: () => setShowPaymentConfirmationAlert(false),
+    isSubmitting: isSettlingBill,
+  });
+
+  // Modal keyboard for reopen ordering confirmation modal (Enter Concept)
+  useModalKeyboard({
+    isOpen: !!reopenConfirmTable,
+    onConfirm: handleConfirmReopenOrdering,
+    onClose: () => {
+      if (!isReopeningOrdering) setReopenConfirmTable(null);
+    },
+    isSubmitting: isReopeningOrdering,
+  });
+
+  // Global escape handling for service and reservation modals
+  useEffect(() => {
+    const handleModalEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showPaymentConfirmationAlert) return; // Handled by useModalKeyboard
+        if (isBillDetailsOpen) {
+          e.preventDefault();
+          if (settlementStep === 'payment') {
+            handleBackToReview();
+          } else {
+            handleCloseBillModal();
+          }
+        } else if (selectedServiceTable) {
+          e.preventDefault();
+          setSelectedServiceTable(null);
+        } else if (isReservationModalOpen) {
+          e.preventDefault();
+          setIsReservationModalOpen(false);
+          setSelectedReservationTable(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleModalEscape);
+    return () => window.removeEventListener('keydown', handleModalEscape);
+  }, [showPaymentConfirmationAlert, isBillDetailsOpen, settlementStep, selectedServiceTable, isReservationModalOpen]);
 
   // Flattened Menu Items for Assisted Order Modal (Memoized)
   const allMenuItems = useMemo(() => {
@@ -1319,27 +1425,15 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
   }, [reservedTables, sortedBillingTables]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden dark:bg-[#111114] bg-[#F5F3FA] p-4 lg:p-6 space-y-4">
-      {/* Top Header & Tab Navigation */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-200 dark:border-white/10 pb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl lg:text-2xl font-black text-zinc-900 dark:text-white tracking-tight">
-              Waiter Dashboard
-            </h1>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary dark:bg-amber-500/15 dark:border-amber-500/20 dark:text-amber-400">
-              {user?.fullName || 'Staff'}
-            </span>
-          </div>
-          <p className="text-xs text-zinc-500 dark:text-text-muted mt-0.5">Floor occupancy, service requests, ready pickup queue, and table-side orders</p>
-        </div>
-
+    <div className="flex flex-col min-h-full h-full overflow-y-auto md:overflow-hidden dark:bg-[#111114] bg-[#F5F3FA] p-3 sm:p-4 lg:p-6 space-y-3.5 sm:space-y-4">
+      {/* Top Tab Navigation */}
+      <div className="border-b border-zinc-200 dark:border-white/10 pb-3 sm:pb-3.5">
         {/* Tab Buttons */}
-        <div className="flex items-center gap-1.5 p-1 rounded-2xl dark:bg-[#18181A] bg-white border border-zinc-300 dark:border-white/10 shadow-xs self-start sm:self-auto overflow-x-auto max-w-full">
+        <div className="flex items-center gap-1.5 p-1 rounded-2xl dark:bg-[#18181A] bg-white border border-zinc-300 dark:border-white/10 shadow-xs self-stretch sm:self-start overflow-x-auto max-w-full">
           <button
             type="button"
             onClick={() => setActiveTab('overview')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap ${
               activeTab === 'overview'
                 ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-extrabold shadow-xs'
                 : 'text-zinc-600 dark:text-text-muted hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5'
@@ -1352,7 +1446,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           <button
             type="button"
             onClick={() => setActiveTab('requests')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer relative ${
+            className={`flex items-center gap-1.5 min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap relative ${
               activeTab === 'requests'
                 ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-extrabold shadow-xs'
                 : 'text-zinc-600 dark:text-text-muted hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5'
@@ -1365,7 +1459,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           <button
             type="button"
             onClick={() => setActiveTab('ready')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer relative ${
+            className={`flex items-center gap-1.5 min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap relative ${
               activeTab === 'ready'
                 ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-extrabold shadow-xs'
                 : 'text-zinc-600 dark:text-text-muted hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5'
@@ -1378,7 +1472,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           <button
             type="button"
             onClick={() => setActiveTab('tables')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap ${
               activeTab === 'tables'
                 ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-extrabold shadow-xs'
                 : 'text-zinc-600 dark:text-text-muted hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5'
@@ -1391,7 +1485,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           <button
             type="button"
             onClick={() => setActiveTab('bills')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 min-h-[38px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 whitespace-nowrap ${
               activeTab === 'bills'
                 ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black font-extrabold shadow-xs'
                 : 'text-zinc-600 dark:text-text-muted hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5'
@@ -1414,12 +1508,12 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       {/* 1. OVERVIEW TAB (3-Section Operational Architecture)                 */}
       {/* ==================================================================== */}
       {activeTab === 'overview' && (
-        <div className="space-y-5 animate-fade-in overflow-y-auto pr-0.5">
+        <div className="space-y-4 sm:space-y-5 animate-fade-in overflow-y-auto pr-0.5">
           {/* ================================================================= */}
           {/* SECTION 1: REQUESTS — FIRST PRIORITY                              */}
           {/* ================================================================= */}
           <section
-            className={`rounded-2xl border p-4 sm:p-5 transition-all shadow-xs ${
+            className={`rounded-2xl border p-3.5 sm:p-4 lg:p-5 transition-all shadow-xs ${
               openRequests.length > 0
                 ? 'border-amber-400 dark:border-amber-500/50 bg-amber-50/20 dark:bg-amber-950/10 ring-1 ring-amber-400/20'
                 : 'border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A]'
@@ -1474,68 +1568,98 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {openRequests.map((req) => (
-                  <div
-                    key={req.id}
-                    className="p-3.5 rounded-xl border border-amber-300/60 dark:border-amber-500/30 bg-white dark:bg-[#141416] flex items-center justify-between gap-3 shadow-xs"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-sm text-zinc-900 dark:text-white">
-                          Table {req.tableNumber || req.table?.tableNumber || '-'}
-                        </span>
-                        <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50">
-                          {formatRequestType(req.type)}
-                        </span>
-                      </div>
-                      {req.note && <p className="text-xs text-zinc-600 dark:text-zinc-300 mt-1 italic truncate">"{req.note}"</p>}
-                      
-                      {/* Waiter Ownership / Responsibility Tag */}
-                      {req.status === 'ACKNOWLEDGED' && (
-                        <div className="mt-1 flex items-center gap-1.5 text-[11px] font-bold text-primary dark:text-purple-300">
-                          <User className="w-3 h-3 shrink-0" />
-                          <span className="truncate">
-                            {isCurrentUserStaff(req.assignedStaff || req.assignedStaffName)
-                              ? `Assigned to You (${user?.fullName || user?.username})`
-                              : `Handled by ${getStaffDisplayName(req.assignedStaff || req.assignedStaffName)}`}
+                {openRequests.map((req) => {
+                  const reqTable =
+                    (tables || []).find(
+                      (t) =>
+                        (req.tableId && (t.id === req.tableId || t._id === req.tableId)) ||
+                        (req.tableNumber && (t.tableNumber === req.tableNumber || t.number === req.tableNumber)) ||
+                        (req.tokenNumber && (t.currentTokenId === req.tokenNumber || t.activeSession?.tokenNumber === req.tokenNumber))
+                    ) || req.table || (req.tableId ? { id: req.tableId, tableNumber: req.tableNumber, currentTokenId: req.tokenNumber, status: 'BILL_REQUESTED' } : null);
+
+                  const isReqTableBillRequested =
+                    reqTable?.status === 'BILL_REQUESTED' ||
+                    reqTable?.isBillRequested ||
+                    req.type === 'BILL_REQUEST' ||
+                    (req.type === 'ORDER_ASSISTANCE' && (reqTable?.status === 'BILL_REQUESTED' || (req.note && req.note.toLowerCase().includes('reopen'))));
+
+                  return (
+                    <div
+                      key={req.id}
+                      className="p-3.5 sm:p-4 rounded-xl border border-amber-300/60 dark:border-amber-500/30 bg-white dark:bg-[#141416] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-black text-sm text-zinc-900 dark:text-white">
+                            Table {req.tableNumber || req.table?.tableNumber || '-'}
+                          </span>
+                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50">
+                            {formatRequestType(req.type)}
                           </span>
                         </div>
-                      )}
+                        {req.note && <p className="text-xs text-zinc-600 dark:text-zinc-300 mt-1 italic truncate">"{req.note}"</p>}
+                        
+                        {/* Waiter Ownership / Responsibility Tag */}
+                        {req.status === 'ACKNOWLEDGED' && (
+                          <div className="mt-1 flex items-center gap-1.5 text-[11px] font-bold text-primary dark:text-purple-300">
+                            <User className="w-3 h-3 shrink-0" />
+                            <span className="truncate">
+                              {isCurrentUserStaff(req.assignedStaff || req.assignedStaffName)
+                                ? `Assigned to You (${user?.fullName || user?.username})`
+                                : `Handled by ${getStaffDisplayName(req.assignedStaff || req.assignedStaffName)}`}
+                            </span>
+                          </div>
+                        )}
 
-                      <div className="text-[10px] text-zinc-500 dark:text-text-muted mt-1 flex items-center gap-1 font-medium">
-                        <Clock className="w-3 h-3" />
-                        <span>{getRelativeWaitTime(req.createdAt)}</span>
-                        <span className="text-zinc-400 dark:text-zinc-500 font-normal">
-                          ({new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
-                        </span>
+                        <div className="text-[10px] text-zinc-500 dark:text-text-muted mt-1 flex items-center gap-1 font-medium">
+                          <Clock className="w-3 h-3" />
+                          <span>{getRelativeWaitTime(req.createdAt)}</span>
+                          <span className="text-zinc-400 dark:text-zinc-500 font-normal">
+                            ({new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 flex items-center gap-2 sm:gap-1.5 flex-wrap sm:flex-nowrap justify-end w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-amber-200/50 dark:border-amber-900/30">
+                        {isReqTableBillRequested && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (reqTable) handleOpenReopenConfirm(reqTable, e);
+                            }}
+                            className="flex-1 sm:flex-none min-h-[40px] px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1 shrink-0"
+                            title="Reopen Ordering for Table"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Reopen</span>
+                          </button>
+                        )}
+                        {req.status === 'NEW' ? (
+                          <button
+                            type="button"
+                            disabled={updatingRequestIds.has(req.id)}
+                            onClick={() => handleUpdateReqStatus(req.id, 'ACKNOWLEDGED')}
+                            className="flex-1 sm:flex-none min-h-[40px] px-3.5 py-2 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-950/60 dark:hover:bg-amber-900/80 dark:text-amber-300 font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 border border-amber-300 dark:border-amber-800/60"
+                          >
+                            {updatingRequestIds.has(req.id) ? <Loader2 size={13} className="animate-spin" /> : null}
+                            <span>{updatingRequestIds.has(req.id) ? 'Updating...' : 'Acknowledge'}</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={updatingRequestIds.has(req.id)}
+                            onClick={() => handleUpdateReqStatus(req.id, 'COMPLETED')}
+                            className="flex-1 sm:flex-none min-h-[40px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                          >
+                            {updatingRequestIds.has(req.id) ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                            <span>{updatingRequestIds.has(req.id) ? 'Updating...' : 'Mark Done'}</span>
+                          </button>
+                        )}
                       </div>
                     </div>
-
-                    <div className="shrink-0 flex items-center gap-1.5">
-                      {req.status === 'NEW' ? (
-                        <button
-                          type="button"
-                          disabled={updatingRequestIds.has(req.id)}
-                          onClick={() => handleUpdateReqStatus(req.id, 'ACKNOWLEDGED')}
-                          className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                        >
-                          {updatingRequestIds.has(req.id) ? <Loader2 size={13} className="animate-spin" /> : null}
-                          <span>{updatingRequestIds.has(req.id) ? 'Updating...' : 'Acknowledge'}</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={updatingRequestIds.has(req.id)}
-                          onClick={() => handleUpdateReqStatus(req.id, 'COMPLETED')}
-                          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                        >
-                          {updatingRequestIds.has(req.id) ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                          <span>{updatingRequestIds.has(req.id) ? 'Updating...' : 'Mark Done'}</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
@@ -1543,9 +1667,9 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           {/* ================================================================= */}
           {/* SECTION 2: READY TO SERVE + ACTIVE TABLES (Secondary Ops Row)     */}
           {/* ================================================================= */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
             {/* Panel 2A: Ready to Serve (Kitchen Food & Bar Drinks) */}
-            <section className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-4 sm:p-5 shadow-xs flex flex-col min-h-[300px]">
+            <section className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-3.5 sm:p-4 lg:p-5 shadow-xs flex flex-col min-h-[260px] sm:min-h-[300px]">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-3 border-b border-zinc-200/80 dark:border-white/10 gap-2">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 text-primary dark:bg-[#D4AF37]/15 dark:border-[#D4AF37]/20 dark:text-[#D4AF37] flex items-center justify-center shrink-0">
@@ -1577,7 +1701,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   <p className="text-[11px] text-zinc-500 dark:text-text-muted mt-0.5">Plated food at Kitchen Pass and poured drinks at Bar Counter will appear here.</p>
                 </div>
               ) : (
-                <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+                <div className="space-y-2.5 max-h-72 sm:max-h-80 md:max-h-96 overflow-y-auto pr-1">
                   {readyTables.map((tbl) => (
                     <div
                       key={tbl.tableKey}
@@ -1613,7 +1737,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                           e.stopPropagation();
                           handleServeFromOverview(tbl);
                         }}
-                        className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        className="min-h-[40px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
                       >
                         <ChefHat className="w-3.5 h-3.5" />
                         <span>Serve</span>
@@ -1625,7 +1749,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
             </section>
 
             {/* Panel 2B: Active Tables */}
-            <section className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-4 sm:p-5 shadow-xs flex flex-col min-h-[300px]">
+            <section className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-3.5 sm:p-4 lg:p-5 shadow-xs flex flex-col min-h-[260px] sm:min-h-[300px]">
               <div className="flex items-center justify-between pb-3 mb-3 border-b border-zinc-200/80 dark:border-white/10">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-white/10 text-zinc-700 dark:text-zinc-200 flex items-center justify-center shrink-0">
@@ -1650,7 +1774,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   <p className="text-[11px] text-zinc-500 dark:text-text-muted mt-0.5">Floor tables will populate here as guests are seated.</p>
                 </div>
               ) : (
-                <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+                <div className="space-y-2.5 max-h-72 sm:max-h-80 md:max-h-96 overflow-y-auto pr-1">
                   {activeTables.map((table) => {
                     const isBillReq = table.status === 'BILL_REQUESTED' || table.isBillRequested;
                     const placeTypeName = table.placeType?.name || (typeof table.placeType === 'string' ? table.placeType : table.categoryName);
@@ -1661,13 +1785,13 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       <div
                         key={table.id}
                         onClick={() => setSelectedTable(table)}
-                        className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-colors cursor-pointer shadow-2xs ${
+                        className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 transition-colors cursor-pointer shadow-2xs ${
                           isBillReq
                             ? 'border-amber-400 dark:border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20 hover:border-amber-500'
                             : 'border-zinc-200 dark:border-white/10 bg-white dark:bg-[#141416] hover:border-primary/40 dark:hover:border-[#D4AF37]/40'
                         }`}
                       >
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-black text-sm text-zinc-900 dark:text-white">
                               Table {table.tableNumber || table.number || '-'}
@@ -1699,14 +1823,32 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1.5 shrink-0 justify-end w-full sm:w-auto pt-1 sm:pt-0 border-t sm:border-t-0 border-zinc-100 dark:border-white/5">
+                          <button
+                            type="button"
+                            disabled={!isBillReq}
+                            onClick={(e) => {
+                              if (isBillReq) {
+                                handleOpenReopenConfirm(table, e);
+                              }
+                            }}
+                            className={`flex-1 sm:flex-none min-h-[36px] px-2.5 py-1.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1 shadow-xs active:scale-95 transition-all border ${
+                              isBillReq
+                                ? 'bg-amber-500 hover:bg-amber-400 text-zinc-950 border-amber-400 cursor-pointer'
+                                : 'bg-zinc-100 dark:bg-white/5 text-zinc-400 dark:text-zinc-600 border-zinc-200/60 dark:border-white/5 cursor-not-allowed opacity-50'
+                            }`}
+                            title={isBillReq ? 'Reopen Ordering for Table' : 'Ordering is already open'}
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Reopen</span>
+                          </button>
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleOpenExtendModal(table);
                             }}
-                            className="px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 dark:bg-white/10 dark:hover:bg-white/20 dark:text-zinc-200 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 transition-all border border-zinc-200 dark:border-white/10"
+                            className="flex-1 sm:flex-none min-h-[36px] px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 dark:bg-white/10 dark:hover:bg-white/20 dark:text-zinc-200 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer shadow-xs active:scale-95 transition-all border border-zinc-200 dark:border-white/10"
                             title="Extend Session Time"
                           >
                             <Clock className="w-3.5 h-3.5" />
@@ -1718,7 +1860,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                               e.stopPropagation();
                               handleOpenAssistedOrdering(table);
                             }}
-                            className="w-8 h-8 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] text-white dark:text-black flex items-center justify-center cursor-pointer shadow-xs active:scale-95 transition-all shrink-0"
+                            className="min-h-[36px] min-w-[36px] w-9 h-9 sm:w-8 sm:h-8 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] text-white dark:text-black flex items-center justify-center cursor-pointer shadow-xs active:scale-95 transition-all shrink-0"
                             title="Take Table Order"
                           >
                             <Plus className="w-4 h-4" />
@@ -1735,7 +1877,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           {/* ================================================================= */}
           {/* SECTION 3: BILLS & PAYMENT REQUESTS (Third Area)                  */}
           {/* ================================================================= */}
-          <section className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-4 sm:p-5 shadow-xs">
+          <section className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-3.5 sm:p-4 lg:p-5 shadow-xs">
             <div className="flex items-center justify-between pb-3 mb-3 border-b border-zinc-200/80 dark:border-white/10">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 dark:bg-indigo-950/50 dark:border-indigo-800/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
@@ -1764,24 +1906,35 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                 {billRequestedTables.map((t) => (
                   <div
                     key={t.id}
-                    className="p-3.5 rounded-xl border border-indigo-500/30 dark:bg-[#141416] bg-indigo-50/20 flex items-center justify-between gap-3 shadow-2xs"
+                    className="p-3.5 sm:p-4 rounded-xl border border-indigo-500/30 dark:bg-[#141416] bg-indigo-50/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
                   >
                     <div>
                       <div className="font-black text-sm text-zinc-900 dark:text-white">
                         Table {t.tableNumber || t.number || '-'}
                       </div>
-                      <div className="text-xs text-zinc-500 dark:text-text-muted mt-0.5 font-medium">
-                        Token: {t.currentTokenId || t.activeSession?.tokenNumber || '-'}
+                      <div className="text-xs text-zinc-500 dark:text-text-muted mt-0.5 font-medium" title={t.currentTokenId || t.activeSession?.tokenNumber || ''}>
+                        Pass: {formatPassNumber(t.currentTokenId || t.activeSession?.tokenNumber) || '—'}
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleOpenBillModal(t)}
-                      className="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer shrink-0"
-                    >
-                      View Details
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-indigo-100 dark:border-white/5">
+                      <button
+                        type="button"
+                        onClick={(e) => handleOpenReopenConfirm(t, e)}
+                        className="flex-1 sm:flex-none min-h-[38px] px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs flex items-center justify-center gap-1 cursor-pointer shadow-xs active:scale-95 transition-all shrink-0"
+                        title="Reopen Ordering for Table"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reopen</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenBillModal(t)}
+                        className="flex-1 sm:flex-none min-h-[38px] px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center shrink-0"
+                      >
+                        View Details
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1792,208 +1945,72 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
 
       {/* ==================================================================== */}
-      {/* 2. FLOOR TABLES TAB — LEFT / RIGHT SPLIT: RESERVATIONS & BILLS       */}
+      {/* 2. FLOOR TABLES TAB — ACTIVE DINING TABLES & BILLS                    */}
       {/* ==================================================================== */}
       {activeTab === 'tables' && (
-        <div className="flex-1 overflow-y-auto animate-fade-in pr-0.5">
+        <div className="flex-1 overflow-y-auto animate-fade-in pr-0.5 space-y-4">
           {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-5 items-start">
-              {/* Left Column: Reservations Skeleton */}
-              <div className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-4 sm:p-5 shadow-xs space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80 dark:border-white/10">
-                  <div className="h-6 w-36 bg-zinc-200 dark:bg-white/10 rounded-md animate-pulse" />
-                  <div className="h-5 w-8 bg-zinc-200 dark:bg-white/10 rounded-full animate-pulse" />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[1, 2, 3, 4].map((n) => (
-                    <div
-                      key={n}
-                      className="p-3 sm:p-4 rounded-2xl border border-zinc-200 dark:border-white/10 dark:bg-[#141416] bg-zinc-50/50 animate-pulse flex flex-col justify-between min-h-[140px] shadow-xs"
-                    >
-                      <div className="space-y-1.5">
-                        <div className="h-5 w-14 bg-zinc-200 dark:bg-white/10 rounded-md" />
-                        <div className="h-3 w-20 bg-zinc-100 dark:bg-white/5 rounded-md" />
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-white/5 flex items-center justify-between">
-                        <div className="h-3 w-16 bg-zinc-100 dark:bg-white/5 rounded-md" />
-                        <div className="h-8 w-8 bg-zinc-200 dark:bg-white/10 rounded-xl" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+            <div className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-4 sm:p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80 dark:border-white/10">
+                <div className="h-6 w-32 bg-zinc-200 dark:bg-white/10 rounded-md animate-pulse" />
+                <div className="h-5 w-12 bg-zinc-200 dark:bg-white/10 rounded-full animate-pulse" />
               </div>
-
-              {/* Right Column: Bills Skeleton */}
-              <div className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-4 sm:p-5 shadow-xs space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80 dark:border-white/10">
-                  <div className="h-6 w-28 bg-zinc-200 dark:bg-white/10 rounded-md animate-pulse" />
-                  <div className="h-5 w-8 bg-zinc-200 dark:bg-white/10 rounded-full animate-pulse" />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[1, 2, 3, 4].map((n) => (
-                    <div
-                      key={n}
-                      className="p-3 sm:p-4 rounded-2xl border border-zinc-200 dark:border-white/10 dark:bg-[#141416] bg-zinc-50/50 animate-pulse flex flex-col justify-between min-h-[140px] shadow-xs"
-                    >
-                      <div className="space-y-1.5">
-                        <div className="h-5 w-14 bg-zinc-200 dark:bg-white/10 rounded-md" />
-                        <div className="h-3 w-18 bg-zinc-100 dark:bg-white/5 rounded-md" />
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-white/5 flex items-center justify-between">
-                        <div className="h-3 w-16 bg-zinc-100 dark:bg-white/5 rounded-md" />
-                        <div className="h-8 w-8 bg-zinc-200 dark:bg-white/10 rounded-xl" />
-                      </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                  <div
+                    key={n}
+                    className="p-3 sm:p-4 rounded-2xl border border-zinc-200 dark:border-white/10 dark:bg-[#141416] bg-zinc-50/50 animate-pulse flex flex-col justify-between min-h-[140px] shadow-xs"
+                  >
+                    <div className="space-y-1.5">
+                      <div className="h-5 w-14 bg-zinc-200 dark:bg-white/10 rounded-md" />
+                      <div className="h-3 w-20 bg-zinc-100 dark:bg-white/5 rounded-md" />
                     </div>
-                  ))}
-                </div>
+                    <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-white/5 flex items-center justify-between">
+                      <div className="h-3 w-16 bg-zinc-100 dark:bg-white/5 rounded-md" />
+                      <div className="h-8 w-8 bg-zinc-200 dark:bg-white/10 rounded-xl" />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-5 items-start">
-              {/* ============================================================= */}
-              {/* LEFT COLUMN: RESERVATIONS                                     */}
-              {/* ============================================================= */}
-              <section className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-4 sm:p-5 shadow-xs space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80 dark:border-white/10">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                      <CalendarCheck className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white tracking-tight">
-                          Reservations
-                        </h2>
-                        <span className="text-xs px-2 py-0.5 rounded-full font-extrabold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50">
-                          {reservedTables.length}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                        Reserved dining tables and bookings
-                      </p>
-                    </div>
+            <section className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-3.5 sm:p-4 lg:p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80 dark:border-white/10">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-primary/10 dark:bg-[#D4AF37]/15 text-primary dark:text-[#D4AF37] flex items-center justify-center shrink-0">
+                    <Receipt className="w-4 h-4" />
                   </div>
-                </div>
-
-                {reservedTables.length === 0 ? (
-                  <div className="py-12 px-4 text-center border border-dashed border-zinc-300 dark:border-white/15 rounded-xl bg-zinc-50/70 dark:bg-[#141416]/50">
-                    <CalendarCheck className="w-8 h-8 mx-auto text-zinc-400 dark:text-zinc-500 mb-2" />
-                    <h4 className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-white">No Reserved Tables</h4>
-                    <p className="text-[11px] text-zinc-500 dark:text-text-muted mt-0.5">
-                      There are currently no active reservations on the floor.
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white tracking-tight">
+                        Active Tables &amp; Bills
+                      </h2>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-extrabold bg-zinc-100 dark:bg-white/10 text-zinc-700 dark:text-zinc-300 border border-zinc-300 dark:border-white/10">
+                        {sortedBillingTables.length}
+                      </span>
+                      {billRequestedTables.length > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-extrabold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800/50">
+                          {billRequestedTables.length} Bill Requested
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                      Active dining sessions, table occupancy and bill settlement status
                     </p>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {reservedTables.map((table) => {
-                      const res = getReservationForTable(table.id);
-                      const guestName = res?.customerName || (table as any).reservationGuestName || '';
-                      const guestPhone = res?.phoneNumber;
-                      const guestsCount = res?.personsCount || table.capacity;
-
-                      return (
-                        <div
-                          key={table.id}
-                          onClick={() => {
-                            setSelectedReservationTable(table);
-                            setIsReservationModalOpen(true);
-                          }}
-                          className="p-3 sm:p-3.5 rounded-2xl border border-blue-200/80 dark:border-blue-900/40 bg-blue-50/20 dark:bg-[#141416] hover:border-blue-400 dark:hover:border-blue-600 transition-all cursor-pointer flex flex-col justify-between min-h-[140px] shadow-xs"
-                        >
-                          <div className="flex items-start justify-between gap-1.5">
-                            <div className="min-w-0 flex-1">
-                              <span className="font-black text-lg text-zinc-900 dark:text-white truncate block">
-                                Table {table.tableNumber || table.number || '-'}
-                              </span>
-                              {guestName && (
-                                <div className="font-bold text-xs text-zinc-800 dark:text-zinc-200 mt-0.5 truncate">
-                                  {guestName}
-                                </div>
-                              )}
-                            </div>
-                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full shrink-0 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50">
-                              Reserved
-                            </span>
-                          </div>
-
-                          <div className="mt-2 space-y-1 text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
-                            {guestsCount ? (
-                              <div className="flex items-center gap-1.5">
-                                <Users className="w-3.5 h-3.5 shrink-0" />
-                                <span>{guestsCount} Guests</span>
-                              </div>
-                            ) : null}
-                            {guestPhone && (
-                              <div className="flex items-center gap-1.5 truncate">
-                                <Phone className="w-3.5 h-3.5 shrink-0" />
-                                <span className="truncate">{guestPhone}</span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-white/5 flex items-center justify-between text-[11px] gap-2">
-                            <span className="text-zinc-500 dark:text-zinc-400 truncate font-medium">
-                              {table.placeType?.name || (typeof table.placeType === 'string' ? table.placeType : table.section || '')}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedReservationTable(table);
-                                setIsReservationModalOpen(true);
-                              }}
-                              className="px-2.5 py-1 rounded-lg text-xs font-bold text-primary dark:text-[#D4AF37] hover:bg-primary/10 dark:hover:bg-[#D4AF37]/10 transition-colors shrink-0"
-                            >
-                              Details
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-
-              {/* ============================================================= */}
-              {/* RIGHT COLUMN: BILLS                                           */}
-              {/* ============================================================= */}
-              <section className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] p-4 sm:p-5 shadow-xs space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-zinc-200/80 dark:border-white/10">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                      <Receipt className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white tracking-tight">
-                          Bills
-                        </h2>
-                        <span className="text-xs px-2 py-0.5 rounded-full font-extrabold bg-zinc-100 dark:bg-white/10 text-zinc-700 dark:text-zinc-300 border border-zinc-300 dark:border-white/10">
-                          {sortedBillingTables.length}
-                        </span>
-                        {billRequestedTables.length > 0 && (
-                          <span className="text-xs px-2 py-0.5 rounded-full font-extrabold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800/50">
-                            {billRequestedTables.length} Bill Requested
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                        Active dining sessions and settlement requests
-                      </p>
-                    </div>
-                  </div>
                 </div>
+              </div>
 
-                {sortedBillingTables.length === 0 ? (
-                  <div className="py-12 px-4 text-center border border-dashed border-zinc-300 dark:border-white/15 rounded-xl bg-zinc-50/70 dark:bg-[#141416]/50">
-                    <Receipt className="w-8 h-8 mx-auto text-zinc-400 dark:text-zinc-500 mb-2" />
-                    <h4 className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-white">No Active Bills</h4>
-                    <p className="text-[11px] text-zinc-500 dark:text-text-muted mt-0.5">
-                      There are currently no active dining sessions or bill requests on the floor.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {sortedBillingTables.length === 0 ? (
+                <div className="py-12 px-4 text-center border border-dashed border-zinc-300 dark:border-white/15 rounded-xl bg-zinc-50/70 dark:bg-[#141416]/50">
+                  <Receipt className="w-8 h-8 mx-auto text-zinc-400 dark:text-zinc-500 mb-2" />
+                  <h4 className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-white">No Active Tables</h4>
+                  <p className="text-[11px] text-zinc-500 dark:text-text-muted mt-0.5">
+                    There are currently no active dining sessions or bill requests on the floor.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-3.5">
                     {sortedBillingTables.map((table) => {
                       const isBillReq = table.status === 'BILL_REQUESTED' || table.isBillRequested;
                       const statusStyles = getTableStatusClasses(table.status);
@@ -2005,9 +2022,9 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                         <div
                           key={table.id}
                           onClick={() => handleOpenBillModal(table)}
-                          className={`p-3 sm:p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between min-h-[140px] shadow-xs ${
+                          className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between min-h-[140px] shadow-xs ${
                             isBillReq
-                              ? 'border-amber-400 dark:border-amber-500/50 bg-amber-50/40 dark:bg-amber-950/20 hover:border-amber-500 ring-1 ring-amber-400/30'
+                              ? 'border-amber-400/60 dark:border-amber-500/40 bg-amber-50/25 dark:bg-amber-950/15 hover:border-amber-500'
                               : 'border-zinc-200 dark:border-white/10 bg-zinc-50/40 dark:bg-[#141416] hover:border-primary/50 dark:hover:border-[#D4AF37]/50'
                           }`}
                         >
@@ -2017,7 +2034,9 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                 Table {table.tableNumber || table.number || '-'}
                               </span>
                               <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5 font-medium truncate flex items-center gap-1.5 flex-wrap">
-                                <span>{table.currentTokenId ? `Token: ${table.currentTokenId}` : (table.capacity ? `Cap: ${table.capacity} guests` : '')}</span>
+                                <span title={table.currentTokenId || undefined}>
+                                  {table.currentTokenId ? `Pass: ${formatPassNumber(table.currentTokenId)}` : (table.capacity ? `Cap: ${table.capacity} guests` : '')}
+                                </span>
                                 {remainingMins !== null && (
                                   <span
                                     className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black ${
@@ -2039,18 +2058,36 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                             </span>
                           </div>
 
-                          <div className="mt-3 pt-2 border-t border-zinc-100 dark:border-white/5 flex items-center justify-between text-[11px] gap-2">
-                            <span className="text-zinc-500 dark:text-zinc-400 truncate font-medium max-w-[80px]">
+                          <div className="mt-3 pt-2.5 border-t border-zinc-100 dark:border-white/5 flex flex-col sm:flex-row sm:items-center justify-between text-[11px] gap-2">
+                            <span className="text-zinc-500 dark:text-zinc-400 truncate font-medium max-w-full sm:max-w-[100px]">
                               {table.placeType?.name || (typeof table.placeType === 'string' ? table.placeType : table.section || '')}
                             </span>
-                            <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="grid grid-cols-3 sm:flex items-center gap-1.5 shrink-0 w-full sm:w-auto">
+                              <button
+                                type="button"
+                                disabled={!isBillReq}
+                                onClick={(e) => {
+                                  if (isBillReq) {
+                                    handleOpenReopenConfirm(table, e);
+                                  }
+                                }}
+                                className={`min-h-[36px] px-2 py-1.5 rounded-xl font-extrabold text-[11px] shadow-xs active:scale-95 transition-all shrink-0 flex items-center justify-center gap-1 border ${
+                                  isBillReq
+                                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-950/60 dark:hover:bg-amber-900/80 dark:text-amber-300 border-amber-300 dark:border-amber-800/60 cursor-pointer'
+                                    : 'bg-zinc-100 dark:bg-white/5 text-zinc-400 dark:text-zinc-600 border-zinc-200/60 dark:border-white/5 cursor-not-allowed opacity-50'
+                                }`}
+                                title={isBillReq ? 'Reopen Ordering for Table' : 'Ordering is already open'}
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Reopen</span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleOpenExtendModal(table);
                                 }}
-                                className="px-2.5 py-1.5 rounded-xl font-extrabold text-[11px] shadow-xs active:scale-95 transition-all shrink-0 cursor-pointer bg-zinc-100 hover:bg-zinc-200 text-zinc-800 dark:bg-white/10 dark:hover:bg-white/20 dark:text-zinc-200 flex items-center gap-1 border border-zinc-200 dark:border-white/10"
+                                className="min-h-[36px] px-2 py-1.5 rounded-xl font-extrabold text-[11px] shadow-xs active:scale-95 transition-all shrink-0 cursor-pointer bg-zinc-100 hover:bg-zinc-200 text-zinc-800 dark:bg-white/10 dark:hover:bg-white/20 dark:text-zinc-200 flex items-center justify-center gap-1 border border-zinc-200 dark:border-white/10"
                                 title="Extend Session Time"
                               >
                                 <Clock className="w-3.5 h-3.5" />
@@ -2062,7 +2099,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                   e.stopPropagation();
                                   handleOpenBillModal(table);
                                 }}
-                                className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] shadow-xs active:scale-95 transition-all shrink-0 cursor-pointer ${
+                                className={`min-h-[36px] px-2.5 py-1.5 rounded-xl font-extrabold text-[11px] shadow-xs active:scale-95 transition-all shrink-0 cursor-pointer flex items-center justify-center ${
                                   isBillReq
                                     ? 'bg-amber-500 hover:bg-amber-400 text-zinc-950'
                                     : 'bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black'
@@ -2079,22 +2116,21 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   </div>
                 )}
               </section>
-            </div>
           )}
         </div>
       )}
 
       {/* ==================================================================== */}
-      {/* 3. REQUESTS TAB                                                      */}
+      {/* 3. REQUESTS TAB — High-Density Mobile/Tablet Operational Interface    */}
       {/* ==================================================================== */}
       {activeTab === 'requests' && (
-        <div className="flex-1 overflow-y-auto space-y-4 animate-fade-in">
+        <div className="flex-1 overflow-y-auto space-y-3 sm:space-y-4 animate-fade-in pr-0.5">
           {isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-3.5">
               {[1, 2, 3, 4, 5, 6].map((n) => (
                 <div
                   key={n}
-                  className="p-4 rounded-2xl border border-zinc-200 dark:border-white/10 dark:bg-[#18181A] bg-white animate-pulse space-y-3 shadow-xs"
+                  className="p-3.5 sm:p-4 rounded-2xl border border-zinc-200 dark:border-white/10 dark:bg-[#18181A] bg-white animate-pulse space-y-2.5 shadow-2xs"
                 >
                   <div className="flex items-center justify-between">
                     <div className="h-5 w-24 bg-zinc-200 dark:bg-white/10 rounded-md" />
@@ -2102,19 +2138,33 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   </div>
                   <div className="h-4 w-28 bg-zinc-100 dark:bg-white/5 rounded-md" />
                   <div className="h-4 w-36 bg-zinc-100 dark:bg-white/5 rounded-md" />
-                  <div className="h-11 w-full bg-zinc-200 dark:bg-white/10 rounded-xl mt-3" />
+                  <div className="h-10 w-full bg-zinc-200 dark:bg-white/10 rounded-xl mt-2" />
                 </div>
               ))}
             </div>
           ) : openRequests.length === 0 ? (
             <div className="py-10 px-4 sm:py-16 text-center border border-dashed border-zinc-300 dark:border-white/15 rounded-2xl bg-zinc-50/70 dark:bg-[#141416]/50">
-              <BellRing className="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
+              <BellRing className="w-10 h-10 sm:w-12 sm:h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-2.5" />
               <h3 className="font-bold text-sm text-zinc-900 dark:text-white">No Pending Service Requests</h3>
-              <p className="text-xs text-zinc-500 dark:text-text-muted mt-1">Guest calls for water, cutlery, and cleanup will appear here in real time.</p>
+              <p className="text-xs text-zinc-500 dark:text-text-muted mt-1 max-w-sm mx-auto">Guest calls for water, cutlery, assistance, and cleanup will appear here in real time.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-3.5">
               {openRequests.map((req) => {
+                const reqTable =
+                  (tables || []).find(
+                    (t) =>
+                      (req.tableId && (t.id === req.tableId || t._id === req.tableId)) ||
+                      (req.tableNumber && (t.tableNumber === req.tableNumber || t.number === req.tableNumber)) ||
+                      (req.tokenNumber && (t.currentTokenId === req.tokenNumber || t.activeSession?.tokenNumber === req.tokenNumber))
+                  ) || req.table || (req.tableId ? { id: req.tableId, tableNumber: req.tableNumber, currentTokenId: req.tokenNumber, status: 'BILL_REQUESTED' } : null);
+
+                const isReqTableBillRequested =
+                  reqTable?.status === 'BILL_REQUESTED' ||
+                  reqTable?.isBillRequested ||
+                  req.type === 'BILL_REQUEST' ||
+                  (req.type === 'ORDER_ASSISTANCE' && (reqTable?.status === 'BILL_REQUESTED' || (req.note && req.note.toLowerCase().includes('reopen'))));
+
                 const waitMins = getWaitMinutes(req.createdAt);
                 const waitTimeColor =
                   waitMins >= 15
@@ -2126,55 +2176,53 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                 return (
                   <div
                     key={req.id}
-                    className="p-4 rounded-2xl border border-zinc-200 dark:border-white/10 dark:bg-[#18181A] bg-white flex flex-col justify-between transition-all shadow-xs"
+                    className="p-3.5 sm:p-4 rounded-2xl border border-zinc-200/90 dark:border-white/10 dark:bg-[#18181A] bg-white flex flex-col justify-between transition-all shadow-2xs hover:shadow-xs"
                   >
                     <div>
-                      {/* Top Header Row: Table Number + Status Badge */}
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-black text-base text-zinc-900 dark:text-white tracking-tight">
-                          Table {req.tableNumber || req.table?.tableNumber || 'C5'}
-                        </span>
+                      {/* Top Header Row: Table Pill + Request Type + Live Status Pill */}
+                      <div className="flex items-center justify-between gap-2 pb-2 border-b border-zinc-100 dark:border-white/5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-black text-xs sm:text-sm px-2.5 py-1 rounded-xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 tracking-tight shadow-2xs">
+                            Table {req.tableNumber || req.table?.tableNumber || '-'}
+                          </span>
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-lg bg-primary/10 text-primary border border-primary/20 dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:border-[#D4AF37]/30">
+                            {formatRequestType(req.type)}
+                          </span>
+                        </div>
+
                         {req.status === 'NEW' ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 shrink-0">
                             <span className="relative flex h-1.5 w-1.5">
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
                             </span>
-                            New
+                            <span>New</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30">
-                            Acknowledged
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30 shrink-0">
+                            <span>Acked</span>
                           </span>
                         )}
                       </div>
 
-                      {/* Request Type Badge */}
-                      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:border-[#D4AF37]/30">
-                          {formatRequestType(req.type)}
-                        </span>
-                      </div>
+                      {/* Middle Body: Guest Note + Staff Ownership + Waiting Timer */}
+                      <div className="space-y-2 my-2.5">
+                        {/* Guest Note (if present) */}
+                        {req.note && (
+                          <div className="pl-2.5 pr-2 py-1.5 rounded-r-xl border-l-2 border-amber-400 dark:border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 text-xs text-zinc-700 dark:text-zinc-300 italic">
+                            "{req.note}"
+                          </div>
+                        )}
 
-                      {/* Guest Note (if present) */}
-                      {req.note && (
-                        <p className="text-xs text-zinc-600 dark:text-zinc-300 mt-2 italic line-clamp-2">
-                          "{req.note}"
-                        </p>
-                      )}
-
-                      {/* Waiter Ownership / Handled By Banner */}
-                      {req.status === 'ACKNOWLEDGED' && (
-                        <div className="mt-2.5 p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/40 flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-6 h-6 rounded-full bg-primary/10 dark:bg-primary/25 text-primary dark:text-purple-300 flex items-center justify-center shrink-0">
-                              <User className="w-3.5 h-3.5" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-zinc-900 dark:text-white truncate">
+                        {/* Waiter Ownership / Handled By Banner */}
+                        {req.status === 'ACKNOWLEDGED' && (
+                          <div className="px-2.5 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/40 flex items-center justify-between gap-2 text-xs">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <User className="w-3.5 h-3.5 text-primary dark:text-purple-300 shrink-0" />
+                              <p className="font-bold text-zinc-900 dark:text-white truncate text-[11px]">
                                 {isCurrentUserStaff(req.assignedStaff || req.assignedStaffName) ? (
                                   <span className="text-primary dark:text-purple-300 font-extrabold">
-                                    Assigned to You ({user?.fullName || user?.username})
+                                    Assigned to You
                                   </span>
                                 ) : (
                                   <span>
@@ -2183,28 +2231,64 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                 )}
                               </p>
                             </div>
+                            {req.acknowledgedAt && (
+                              <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 shrink-0">
+                                {getRelativeWaitTime(req.acknowledgedAt)}
+                              </span>
+                            )}
                           </div>
-                          {req.acknowledgedAt && (
-                            <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 shrink-0">
-                              {getRelativeWaitTime(req.acknowledgedAt)}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                        )}
 
-                      {/* Waiting Time & Creation Timestamp with Visual Escalation */}
-                      <div className={`text-xs mt-2.5 flex items-center gap-1.5 ${waitTimeColor}`}>
-                        <Clock className="w-3.5 h-3.5 shrink-0" />
-                        <span className="font-bold tracking-tight">{getRelativeWaitTime(req.createdAt)}</span>
-                        <span className="text-zinc-400 dark:text-zinc-500 font-normal text-[11px]">
-                          ({new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
-                        </span>
+                        {/* Waiting Time & Creation Timestamp with Visual Escalation */}
+                        <div className={`text-xs flex items-center gap-1.5 ${waitTimeColor}`}>
+                          <Clock className="w-3.5 h-3.5 shrink-0" />
+                          <span className="font-bold tracking-tight">{getRelativeWaitTime(req.createdAt)}</span>
+                          <span className="text-zinc-400 dark:text-zinc-500 font-normal text-[11px]">
+                            ({new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Action Button Row with Height 44px (h-11) and WCAG AA Amber Contrast */}
-                    <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-white/5">
-                      {req.status === 'NEW' ? (
+                    {/* Action Button Row with 44px (h-11) Touch Target */}
+                    <div className="pt-2 border-t border-zinc-100 dark:border-white/5">
+                      {isReqTableBillRequested ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (reqTable) handleOpenReopenConfirm(reqTable, e);
+                            }}
+                            className="h-11 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                            title="Reopen Ordering for Table"
+                          >
+                            <RotateCcw size={14} />
+                            <span>Reopen</span>
+                          </button>
+                          {req.status === 'NEW' ? (
+                            <button
+                              type="button"
+                              disabled={updatingRequestIds.has(req.id)}
+                              onClick={() => handleUpdateReqStatus(req.id, 'ACKNOWLEDGED')}
+                              className="h-11 px-3 rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 dark:bg-white/10 dark:hover:bg-white/20 dark:text-zinc-200 font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                            >
+                              {updatingRequestIds.has(req.id) ? <Loader2 size={13} className="animate-spin" /> : null}
+                              <span>{updatingRequestIds.has(req.id) ? 'Updating...' : 'Acknowledge'}</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={updatingRequestIds.has(req.id)}
+                              onClick={() => handleUpdateReqStatus(req.id, 'COMPLETED')}
+                              className="h-11 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                            >
+                              {updatingRequestIds.has(req.id) ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                              <span>Mark Done</span>
+                            </button>
+                          )}
+                        </div>
+                      ) : req.status === 'NEW' ? (
                         <button
                           type="button"
                           disabled={updatingRequestIds.has(req.id)}
@@ -2260,27 +2344,27 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
       {/* 4. READY QUEUE TAB (TABLE-WISE ARCHITECTURE - KITCHEN & BAR CHANNELS) */}
       {/* ==================================================================== */}
       {activeTab === 'ready' && (
-        <div className="flex-1 overflow-y-auto space-y-4 animate-fade-in">
+        <div className="flex-1 overflow-y-auto space-y-3 sm:space-y-4 animate-fade-in pr-0.5">
           {/* Station Filter Switcher */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-[#18181A] border border-zinc-200 dark:border-white/10 shadow-xs">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-2xl bg-white dark:bg-[#18181A] border border-zinc-200/90 dark:border-white/10 shadow-2xs">
+            <div className="flex items-center gap-2 px-1">
+              <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                 Filter Station:
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 overflow-x-auto">
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-100 dark:bg-white/5 border border-zinc-200/80 dark:border-white/10 overflow-x-auto max-w-full no-scrollbar">
               <button
                 type="button"
                 onClick={() => setReadyStationFilter('ALL')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                   readyStationFilter === 'ALL'
-                    ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs'
+                    ? 'bg-primary text-white shadow-2xs'
                     : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                 }`}
               >
                 <span>All Ready</span>
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-black/15 dark:bg-black/20">
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-black/15 dark:bg-white/20">
                   {readyItems.length}
                 </span>
               </button>
@@ -2288,15 +2372,15 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
               <button
                 type="button"
                 onClick={() => setReadyStationFilter('KITCHEN')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                   readyStationFilter === 'KITCHEN'
-                    ? 'bg-amber-500 text-zinc-950 font-black shadow-xs'
+                    ? 'bg-amber-500 text-zinc-950 shadow-2xs'
                     : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                 }`}
               >
                 <Utensils className="w-3.5 h-3.5" />
                 <span>Kitchen Food</span>
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-black/15 dark:bg-black/20">
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-black/15 dark:bg-black/20">
                   {kitchenReadyItems.length}
                 </span>
               </button>
@@ -2304,15 +2388,15 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
               <button
                 type="button"
                 onClick={() => setReadyStationFilter('BAR')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                   readyStationFilter === 'BAR'
-                    ? 'bg-blue-600 text-white font-black shadow-xs'
+                    ? 'bg-blue-600 text-white shadow-2xs'
                     : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                 }`}
               >
                 <Wine className="w-3.5 h-3.5" />
                 <span>Bar Drinks</span>
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-black/15 dark:bg-black/20">
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-black/15 dark:bg-white/20">
                   {barReadyItems.length}
                 </span>
               </button>
@@ -2320,11 +2404,11 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           </div>
 
           {isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-3.5">
               {[1, 2, 3, 4, 5, 6].map((n) => (
                 <div
                   key={n}
-                  className="p-4 rounded-2xl border border-zinc-200 dark:border-white/10 dark:bg-[#18181A] bg-white animate-pulse space-y-3 shadow-xs"
+                  className="p-4 rounded-2xl border border-zinc-200/90 dark:border-white/10 dark:bg-[#18181A] bg-white animate-pulse space-y-3 shadow-2xs"
                 >
                   <div className="flex items-center justify-between">
                     <div className="h-5 w-24 bg-zinc-200 dark:bg-white/10 rounded-md" />
@@ -2339,9 +2423,9 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
           ) : displayedReadyTables.length === 0 ? (
             <div className="py-10 px-4 sm:py-16 text-center border border-dashed border-zinc-300 dark:border-white/15 rounded-2xl bg-zinc-50/70 dark:bg-[#141416]/50">
               {readyStationFilter === 'BAR' ? (
-                <Wine className="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
+                <Wine className="w-10 h-10 mx-auto text-zinc-400 dark:text-zinc-500 mb-2.5" />
               ) : (
-                <ChefHat className="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
+                <ChefHat className="w-10 h-10 mx-auto text-zinc-400 dark:text-zinc-500 mb-2.5" />
               )}
               <h3 className="font-bold text-sm text-zinc-900 dark:text-white">
                 {readyStationFilter === 'KITCHEN'
@@ -2359,7 +2443,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-3.5">
               {displayedReadyTables.map((tbl) => {
                 const waitMins = tbl.earliestReadyAt ? getWaitMinutes(tbl.earliestReadyAt) : 0;
                 const waitTimeColor =
@@ -2377,32 +2461,23 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   <div
                     key={tbl.tableKey}
                     onClick={() => handleOpenTableService(tbl)}
-                    className="p-5 rounded-2xl border border-emerald-300/80 dark:border-emerald-500/30 bg-white dark:bg-[#18181A] hover:border-emerald-500 dark:hover:border-emerald-400/60 transition-all shadow-xs hover:shadow-md cursor-pointer flex flex-col justify-between group"
+                    className="p-3.5 sm:p-4 rounded-2xl border border-zinc-200/90 dark:border-white/10 bg-white dark:bg-[#18181A] hover:border-primary/40 dark:hover:border-primary/50 transition-all shadow-2xs hover:shadow-xs cursor-pointer flex flex-col justify-between group"
                   >
                     <div>
-                      {/* Top Header: Table Number + Ready Count Badge */}
+                      {/* Top Header: Table Identity + Ready Count Badge */}
                       <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black text-base shrink-0 group-hover:scale-105 transition-transform">
-                            {hasBar && !hasKitchen ? (
-                              <Wine className="w-5 h-5" />
-                            ) : (
-                              <Utensils className="w-5 h-5" />
-                            )}
-                          </div>
-                          <div>
-                            <h3 className="font-black text-lg text-zinc-900 dark:text-white tracking-tight">
-                              Table {tbl.tableNumber}
-                            </h3>
-                            {tbl.placeType && (
-                              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                                {tbl.placeType}
-                              </p>
-                            )}
-                          </div>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-950 font-black text-xs tracking-wide shadow-2xs">
+                            Table {tbl.tableNumber}
+                          </span>
+                          {tbl.placeType && (
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-white/5 text-zinc-600 dark:text-zinc-400">
+                              {tbl.placeType}
+                            </span>
+                          )}
                         </div>
 
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60 shadow-xs">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60 shadow-2xs">
                           <span className="relative flex h-2 w-2">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -2414,30 +2489,30 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       {/* Station & Pickup Location Badges */}
                       <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
                         {hasKitchen && (
-                          <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-800/60 flex items-center gap-1.5">
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md border bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-800/60 flex items-center gap-1">
                             <Utensils className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                            <span>Kitchen Pass ({tbl.kitchenCount} Food)</span>
+                            <span>Kitchen Pass ({tbl.kitchenCount})</span>
                           </span>
                         )}
 
                         {hasBar && (
-                          <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border bg-blue-50 dark:bg-blue-950/60 text-blue-900 dark:text-blue-300 border-blue-300 dark:border-blue-800/60 flex items-center gap-1.5">
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md border bg-blue-50 dark:bg-blue-950/60 text-blue-900 dark:text-blue-300 border-blue-300 dark:border-blue-800/60 flex items-center gap-1">
                             <Wine className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                            <span>Bar Counter ({tbl.barCount} Drinks)</span>
+                            <span>Bar Counter ({tbl.barCount})</span>
                           </span>
                         )}
 
                         {isMixed && (
-                          <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/50 text-primary dark:text-primary-light border border-purple-200 dark:border-purple-800/50">
+                          <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/50 text-primary dark:text-primary-light border border-purple-200 dark:border-purple-800/50">
                             Mixed Order
                           </span>
                         )}
                       </div>
 
                       {/* Ready Items Preview Summary */}
-                      <div className="mt-3 space-y-1.5 border-t border-zinc-100 dark:border-white/5 pt-2.5">
+                      <div className="mt-2.5 space-y-1.5 border-t border-zinc-100 dark:border-white/5 pt-2">
                         {tbl.readyItems.slice(0, 3).map((item) => (
-                          <div key={item.id} className="flex items-center gap-2 text-xs text-zinc-800 dark:text-zinc-200">
+                          <div key={item.id} className="flex items-center gap-1.5 text-xs text-zinc-800 dark:text-zinc-200">
                             <VegBadge type={item.foodType} size="sm" />
                             <span className="font-bold truncate">
                               {item.quantity} × {item.itemName || item.name}
@@ -2477,7 +2552,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                         const uniqueHandlers = Array.from(handlerMap.values());
                         if (uniqueHandlers.length === 0) return null;
                         return (
-                          <div className="mt-2.5 pt-2 border-t border-zinc-100 dark:border-white/5 flex items-center gap-1.5 text-[11px] font-semibold text-primary dark:text-purple-300">
+                          <div className="mt-2 pt-1.5 border-t border-zinc-100 dark:border-white/5 flex items-center gap-1.5 text-[11px] font-semibold text-primary dark:text-purple-300">
                             <User className="w-3 h-3 shrink-0" />
                             <span className="truncate">
                               Ordered by: {uniqueHandlers.map((h: any) => getStaffDisplayName(h)).join(', ')}
@@ -2488,7 +2563,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
                       {/* Elapsed Ready Time */}
                       {tbl.earliestReadyAt && (
-                        <div className={`text-xs mt-2 pt-2 border-t border-zinc-100 dark:border-white/5 flex items-center gap-1.5 ${waitTimeColor}`}>
+                        <div className={`text-xs mt-2 pt-1.5 border-t border-zinc-100 dark:border-white/5 flex items-center gap-1.5 ${waitTimeColor}`}>
                           <Clock className="w-3.5 h-3.5 shrink-0" />
                           <span className="font-bold tracking-tight">Ready {getRelativeWaitTime(tbl.earliestReadyAt)}</span>
                           <span className="text-zinc-400 dark:text-zinc-500 font-normal text-[11px]">
@@ -2499,14 +2574,14 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                     </div>
 
                     {/* Action Button */}
-                    <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-white/5">
+                    <div className="mt-3.5 pt-2.5 border-t border-zinc-100 dark:border-white/5">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleOpenTableService(tbl);
                         }}
-                        className="w-full h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2"
+                        className="w-full h-11 px-4 rounded-xl bg-primary hover:bg-primary-hover text-white font-black text-xs shadow-2xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2"
                       >
                         <ChefHat className="w-4 h-4" />
                         <span>View Table Service ({tbl.readyCount})</span>
@@ -2572,11 +2647,11 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
               <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
                 {/* Sub-tab Navigation */}
-                <div className="flex items-center gap-1 p-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10">
+                <div className="flex items-center gap-1 p-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 overflow-x-auto max-w-full">
                   <button
                     type="button"
                     onClick={() => handleSetBillsSubTab('active')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                       billsSubTab === 'active'
                         ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-black'
                         : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
@@ -2598,7 +2673,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   <button
                     type="button"
                     onClick={() => handleSetBillsSubTab('history')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                       billsSubTab === 'history'
                         ? 'bg-primary text-white dark:bg-[#D4AF37] dark:text-black shadow-xs font-black'
                         : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
@@ -2624,7 +2699,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                   onClick={fetchBillsData}
                   disabled={isBillsLoading}
                   title="Refresh bills data"
-                  className="p-2 rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] hover:bg-zinc-100 dark:hover:bg-white/5 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer disabled:opacity-50"
+                  className="min-h-[38px] min-w-[38px] p-2 rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] hover:bg-zinc-100 dark:hover:bg-white/5 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center shrink-0"
                 >
                   <RotateCw className={`w-4 h-4 ${isBillsLoading ? 'animate-spin' : ''}`} />
                 </button>
@@ -2632,51 +2707,51 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
             </div>
 
             {/* Operational Summary Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="p-3.5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                  <Receipt className="w-5 h-5" />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+              <div className="p-3 sm:p-3.5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-2.5 sm:gap-3">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <Receipt className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
-                <div>
-                  <div className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] sm:text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider truncate">
                     Active Requests
                   </div>
-                  <div className="text-xl font-black text-zinc-900 dark:text-white">
+                  <div className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white">
                     {activeBills.length}
                   </div>
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                  <CheckCircle2 className="w-5 h-5" />
+              <div className="p-3 sm:p-3.5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-2.5 sm:gap-3">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
-                <div>
-                  <div className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] sm:text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider truncate">
                     Ready to Settle
                   </div>
-                  <div className="text-xl font-black text-emerald-600 dark:text-emerald-400">
+                  <div className="text-lg sm:text-xl font-black text-emerald-600 dark:text-emerald-400">
                     {readyToSettleCount}
                   </div>
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-3">
+              <div className="p-3 sm:p-3.5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-2.5 sm:gap-3">
                 <div
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 ${
                     inPrepCount > 0
                       ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
                       : 'bg-zinc-100 dark:bg-white/5 text-zinc-400'
                   }`}
                 >
-                  <AlertTriangle className="w-5 h-5" />
+                  <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
-                <div>
-                  <div className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] sm:text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider truncate">
                     Items in Prep
                   </div>
                   <div
-                    className={`text-xl font-black ${
+                    className={`text-lg sm:text-xl font-black ${
                       inPrepCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-900 dark:text-white'
                     }`}
                   >
@@ -2685,15 +2760,15 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 dark:bg-[#D4AF37]/15 text-primary dark:text-[#D4AF37] flex items-center justify-center shrink-0">
-                  <History className="w-5 h-5" />
+              <div className="p-3 sm:p-3.5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center gap-2.5 sm:gap-3">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary/10 dark:bg-[#D4AF37]/15 text-primary dark:text-[#D4AF37] flex items-center justify-center shrink-0">
+                  <History className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
-                <div>
-                  <div className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] sm:text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider truncate">
                     Settled Today
                   </div>
-                  <div className="text-xl font-black text-zinc-900 dark:text-white flex items-baseline gap-1.5">
+                  <div className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white flex items-baseline gap-1.5 truncate">
                     <span>{settledSummary.completedTodayCount}</span>
                     <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
                       · ₹{Number(settledSummary.completedTodayRevenue).toFixed(0)}
@@ -2732,7 +2807,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
             {billsSubTab === 'active' && (
               <div className="space-y-3">
                 {filteredActiveBills.length === 0 ? (
-                  <div className="p-16 text-center border border-dashed border-zinc-300 dark:border-white/15 rounded-3xl bg-zinc-50/70 dark:bg-[#141416]/50">
+                  <div className="p-10 sm:p-16 text-center border border-dashed border-zinc-300 dark:border-white/15 rounded-3xl bg-zinc-50/70 dark:bg-[#141416]/50">
                     <Receipt className="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
                     <h3 className="font-bold text-sm text-zinc-900 dark:text-white">
                       {billsSearchQuery ? 'No Matching Active Bill Requests' : 'No Pending Bill Requests'}
@@ -2789,7 +2864,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                             {/* Session & Guest Info */}
                             <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
                               <div>
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Token</span>
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Pass</span>
                                 <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200 truncate block">
                                   {b.tokenNumber || '—'}
                                 </span>
@@ -2819,7 +2894,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                           </div>
 
                           {/* Card Footer: Financials & Action */}
-                          <div className="pt-3 border-t border-zinc-100 dark:border-white/5 flex items-center justify-between gap-2">
+                          <div className="pt-3 border-t border-zinc-100 dark:border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2">
                             <div>
                               <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Total Payable</div>
                               <div className="font-mono font-black text-base text-zinc-900 dark:text-white">
@@ -2833,7 +2908,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                 e.stopPropagation();
                                 handleOpenBillModal(b);
                               }}
-                              className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-black text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center gap-1.5"
+                              className="w-full sm:w-auto min-h-[40px] px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-black text-xs shadow-xs active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
                             >
                               <span>Review Bill</span>
                               <ArrowRight className="w-3.5 h-3.5" />
@@ -3098,7 +3173,7 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                       </span>
                     </div>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                      Token: <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{tokenNum}</span>
+                      Pass: <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{tokenNum}</span>
                       {selectedBillTable.placeType?.name || selectedBillTable.placeType ? ` · ${selectedBillTable.placeType?.name || selectedBillTable.placeType}` : ''}
                     </p>
                   </div>
@@ -3275,19 +3350,29 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                     {/* Financial Summary */}
                     {(() => {
                       const subtotal = Number(bill.grossSubtotal || bill.subtotal || 0);
-                      const checkInAmountPaid = Number(
+                      const initialCheckInAmount = Number(
+                        bill.initialCheckInAmount ??
                         bill.amountPaid ??
                         bill.confirmedCheckInAmount ??
                         bill.entryFeePaid ??
+                        selectedBillModalTable?.initialCheckInAmount ??
                         selectedBillModalTable?.amountPaid ??
+                        selectedBillModalTable?.session?.initialCheckInAmount ??
                         selectedBillModalTable?.session?.amountPaid ??
                         0
                       );
                       const checkInPayment = Number(
                         bill.prepaidCreditApplied ??
                         bill.redemptionDeduction ??
-                        (checkInAmountPaid > 0 ? Math.min(checkInAmountPaid, subtotal) : 0)
+                        (initialCheckInAmount > 0 ? Math.min(initialCheckInAmount, subtotal) : 0)
                       );
+                      const extensions: any[] = Array.isArray(bill.extensions)
+                        ? bill.extensions
+                        : Array.isArray(selectedBillModalTable?.extensions)
+                        ? selectedBillModalTable.extensions
+                        : Array.isArray(selectedBillModalTable?.session?.extensions)
+                        ? selectedBillModalTable.session.extensions
+                        : [];
                       const balanceBeforeCharges = Math.max(0, subtotal - checkInPayment);
                       const serviceCharge = Number(bill.serviceChargeTotal || bill.serviceCharge || 0);
                       const taxTotal = Number(bill.taxTotal || (Number(bill.cgst || 0) + Number(bill.sgst || 0)) || 0);
@@ -3304,12 +3389,12 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                             </span>
                           </div>
 
-                          {/* 2. Check-in Amount Paid & Deduction */}
-                          {checkInAmountPaid > 0 && (
+                          {/* 2. Initial Check-in Amount Paid & Deduction */}
+                          {initialCheckInAmount > 0 && (
                             <>
                               <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
-                                <span>Check-in Amount Paid</span>
-                                <span className="font-mono font-semibold">₹{checkInAmountPaid.toFixed(2)}</span>
+                                <span>Initial Check-in Amount Paid</span>
+                                <span className="font-mono font-semibold">₹{initialCheckInAmount.toFixed(2)}</span>
                               </div>
                               <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
                                 <span>Less Check-in Payment</span>
@@ -3320,6 +3405,31 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                                 <span className="font-mono">₹{balanceBeforeCharges.toFixed(2)}</span>
                               </div>
                             </>
+                          )}
+
+                          {/* 3. Itemized Session Extensions */}
+                          {extensions.length > 0 && (
+                            <div className="pt-2 pb-1 border-t border-zinc-200 dark:border-white/10 space-y-1.5">
+                              <div className="flex justify-between text-[10px] font-black uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                                <span>Session Extensions ({extensions.length})</span>
+                                <span>Status</span>
+                              </div>
+                              <div className="space-y-1">
+                                {extensions.map((ext: any, idx: number) => {
+                                  const isComplimentary = ext.isComplimentary || Number(ext.additionalAmount || 0) === 0;
+                                  return (
+                                    <div key={ext.id || idx} className="flex justify-between text-xs text-zinc-600 dark:text-zinc-400">
+                                      <span className="font-semibold text-zinc-900 dark:text-white">
+                                        Extension #{ext.sequence || idx + 1} (+{ext.extraMinutes} min)
+                                      </span>
+                                      <span className={isComplimentary ? 'font-bold text-emerald-600 dark:text-emerald-400' : 'font-mono font-semibold text-zinc-900 dark:text-white'}>
+                                        {isComplimentary ? 'Complimentary' : `₹${Number(ext.additionalAmount).toFixed(2)} (Paid)`}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           )}
 
                           {/* 4. Service Charge */}
@@ -3402,10 +3512,15 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
                         Choose Payment Method
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2.5">
+                      <div 
+                        className="grid grid-cols-2 gap-2.5 focus:outline-none"
+                        onKeyDown={waiterPaymentRoving.handleKeyDown}
+                      >
                         <button
                           type="button"
+                          tabIndex={waiterPaymentRoving.getItemProps(0).tabIndex}
                           onClick={() => setSelectedPaymentMethod('CASH')}
+                          onFocus={waiterPaymentRoving.getItemProps(0).onFocus}
                           className={`p-3.5 rounded-2xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
                             selectedPaymentMethod === 'CASH'
                               ? 'border-primary dark:border-[#D4AF37] bg-primary/10 dark:bg-[#D4AF37]/15 ring-2 ring-primary/30 dark:ring-[#D4AF37]/30'
@@ -3429,7 +3544,9 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
                         <button
                           type="button"
+                          tabIndex={waiterPaymentRoving.getItemProps(1).tabIndex}
                           onClick={() => setSelectedPaymentMethod('UPI')}
+                          onFocus={waiterPaymentRoving.getItemProps(1).onFocus}
                           className={`p-3.5 rounded-2xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
                             selectedPaymentMethod === 'UPI'
                               ? 'border-primary dark:border-[#D4AF37] bg-primary/10 dark:bg-[#D4AF37]/15 ring-2 ring-primary/30 dark:ring-[#D4AF37]/30'
@@ -3502,14 +3619,31 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
 
               {/* Modal Footer Actions */}
               <div className="p-4 sm:p-5 border-t border-zinc-200 dark:border-white/10 bg-zinc-50/70 dark:bg-[#141416]/50 flex items-center justify-between gap-2.5">
-                <button
-                  type="button"
-                  onClick={handleCloseBillModal}
-                  disabled={isSettlingBill || isInitiatingSettlement}
-                  className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-white/15 bg-white dark:bg-[#18181A] text-zinc-700 dark:text-zinc-300 font-extrabold text-xs hover:bg-zinc-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  Close
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseBillModal}
+                    disabled={isSettlingBill || isInitiatingSettlement}
+                    className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-white/15 bg-white dark:bg-[#18181A] text-zinc-700 dark:text-zinc-300 font-extrabold text-xs hover:bg-zinc-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    Close
+                  </button>
+
+                  {settlementStep === 'review' && (selectedBillTable?.status === 'BILL_REQUESTED' || (selectedBillTable as any)?.isBillReq || (bill as any)?.status === 'REQUESTED') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const tableToReopen = selectedBillTable;
+                        handleCloseBillModal();
+                        handleOpenReopenConfirm(tableToReopen);
+                      }}
+                      className="px-4 py-2.5 rounded-xl border border-amber-500/40 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 font-extrabold text-xs hover:bg-amber-100 dark:hover:bg-amber-900/40 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reopen Ordering</span>
+                    </button>
+                  )}
+                </div>
 
                 {settlementStep === 'review' ? (() => {
                   const unservedCount = (bill.items || []).filter(
@@ -4282,6 +4416,80 @@ export const WaiterStationPage: React.FC<WaiterStationPageProps> = ({ initialTab
             fetchTables(true);
           }}
         />
+      )}
+
+      {/* ==================================================================== */}
+      {/* 8. REOPEN ORDERING CONFIRMATION MODAL                                 */}
+      {/* ==================================================================== */}
+      {reopenConfirmTable && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reopen-ordering-title"
+          onClick={() => {
+            if (!isReopeningOrdering) setReopenConfirmTable(null);
+          }}
+        >
+          <div
+            className="w-full max-w-sm sm:max-w-md rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-[#18181B] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 sm:p-6 space-y-4">
+              <div className="flex items-start gap-3.5">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-amber-500/15 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                  <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 id="reopen-ordering-title" className="text-base font-black text-zinc-900 dark:text-white leading-tight">
+                    Reopen Ordering for Table {reopenConfirmTable.tableNumber || reopenConfirmTable.number || 'Table'}?
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Active Session: <span className="font-mono font-bold text-zinc-700 dark:text-zinc-300">{reopenConfirmTable.currentTokenId || reopenConfirmTable.activeSession?.tokenNumber || 'Active'}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/[0.03] space-y-1.5 text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                <p>
+                  This will unlock the customer portal, allowing guests to add items and place new orders.
+                </p>
+                <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                  Existing orders and bill history remain saved. Any active bill requests will be cleared.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setReopenConfirmTable(null)}
+                  disabled={isReopeningOrdering}
+                  className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-white/15 bg-white dark:bg-[#18181A] text-zinc-700 dark:text-zinc-300 font-extrabold text-xs hover:bg-zinc-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmReopenOrdering}
+                  disabled={isReopeningOrdering}
+                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white dark:bg-[#D4AF37] dark:hover:bg-[#E5C158] dark:text-black font-black text-xs shadow-sm active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isReopeningOrdering ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Reopening...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Reopen</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -133,7 +133,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 
   const isProduction = process.env.NODE_ENV === 'production';
-  const errorMessage = isProduction ? 'Internal server error occurred' : (err.message || 'Internal server error occurred');
+  const errorMessage = isProduction ? 'Something went wrong. Please try again.' : (err.message || 'Something went wrong. Please try again.');
 
   res.status(500).json({
     success: false,

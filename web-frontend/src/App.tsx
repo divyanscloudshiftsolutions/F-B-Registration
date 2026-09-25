@@ -34,7 +34,7 @@ const getDefaultTabForRole = (role?: string): { tab: string; path: string } => {
   if (r === 'receptionist') return { tab: 'checkin', path: '/checkin' };
   if (r === 'bartender') return { tab: 'bartender/kds', path: '/bartender/kds' };
   if (r === 'chef') return { tab: 'kds_kitchen', path: '/kds/kitchen' };
-  if (r === 'waiter' || r === 'server') return { tab: 'waiter_tables', path: '/waiter' };
+  if (r === 'waiter' || r === 'server') return { tab: 'waiter_overview', path: '/waiter/overview' };
   return { tab: 'dashboard', path: '/dashboard' };
 };
 
@@ -52,11 +52,12 @@ const getTabFromPathname = (pathname: string): string => {
   if (pathname === '/bartender/checkins') return 'bartender/checkins';
   if (pathname === '/bartender/scan') return 'bartender/scan';
   if (pathname.startsWith('/bartender')) return 'bartender/kds';
-  if (pathname === '/waiter/tables') return 'waiter_tables';
+  if (pathname === '/waiter/overview') return 'waiter_overview';
   if (pathname === '/waiter/requests') return 'waiter_requests';
   if (pathname === '/waiter/ready') return 'waiter_ready';
+  if (pathname === '/waiter/tables') return 'waiter_tables';
   if (pathname === '/waiter/bills') return 'waiter_bills';
-  if (pathname === '/waiter' || pathname.startsWith('/waiter') || pathname.startsWith('/staff')) return 'waiter_tables';
+  if (pathname === '/waiter' || pathname.startsWith('/waiter') || pathname.startsWith('/staff')) return 'waiter_overview';
   if (pathname === '/quick_attendance' || pathname === '/attendance') return 'quick_attendance';
   if (pathname === '/kds/kitchen' || pathname === '/kds_kitchen' || pathname === '/kds') return 'kds_kitchen';
   if (pathname === '/dashboard' || pathname === '/') return 'dashboard';
@@ -89,11 +90,13 @@ const AppContent: React.FC = () => {
         : tab === 'bartender/checkins' ? '/bartender/checkins'
         : tab === 'bartender/scan' ? '/bartender/scan'
         : tab === 'quick_attendance' ? '/quick_attendance'
-        : tab === 'waiter_tables' ? '/waiter/tables'
+        : tab === 'waiter_overview' ? '/waiter/overview'
         : tab === 'waiter_requests' ? '/waiter/requests'
         : tab === 'waiter_ready' ? '/waiter/ready'
+        : tab === 'waiter_tables' ? '/waiter/tables'
         : tab === 'waiter_bills' ? '/waiter/bills'
-        : tab.startsWith('waiter') ? '/waiter'
+        : tab === 'waiter' ? '/waiter/overview'
+        : tab.startsWith('waiter') ? '/waiter/overview'
         : tab === 'tables/reservations' ? '/tables/reservations'
         : tab.startsWith('tables') ? '/tables/layout'
         : tab.startsWith('bartender') ? '/bartender/kds'
@@ -214,7 +217,7 @@ const AppContent: React.FC = () => {
 
     // 4. Customer App Inside Routes (e.g. /customer/home, /customer/cart, /customer/eat, etc.)
     if (pathname.startsWith('/customer/')) {
-      const activeToken = localStorage.getItem('bar_active_token');
+      const activeToken = localStorage.getItem('bar_active_token') || new URLSearchParams(window.location.search).get('token');
       if (activeToken) {
         return <CustomerAccessPage tokenProp={activeToken} />;
       }
@@ -255,6 +258,15 @@ const AppContent: React.FC = () => {
     // Dedicated Waiter / Server View
     if (userRole === 'waiter' || userRole === 'server') {
       if (activeTab === 'quick_attendance') return <QuickAttendanceWebPage />;
+      if (activeTab.startsWith('tables')) {
+        return (
+          <TablesPage 
+            onNavigateToCheckIn={() => {}} 
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+          />
+        );
+      }
       const sub = activeTab.replace('waiter_', '').replace('waiter', '') as any;
       const waiterTab = ['overview', 'tables', 'requests', 'ready', 'bills'].includes(sub) ? sub : 'overview';
       return <WaiterStationPage initialTab={waiterTab} onTabChange={(tab) => setActiveTab(`waiter_${tab}`)} />;

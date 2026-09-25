@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Grid3X3, X, CheckCircle2, Users, ArrowRight, Search, UserPlus, AlertTriangle, Clock, Lock, Mail, User, Phone, Filter, RefreshCw, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Table, Token } from '../types';
@@ -87,6 +87,7 @@ export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, act
 
   const tables = realTables;
   const tokens = realTokens;
+  const isWaiter = user?.role?.toLowerCase() === 'waiter' || user?.role?.toLowerCase() === 'server';
  const [placeZone, setPlaceZoneState] = useState<'STANDING_BAR' | 'PREMIUM_LOUNGE'>(() => {
  return (localStorage.getItem('bar_web_tables_zone') as 'STANDING_BAR' | 'PREMIUM_LOUNGE') || 'STANDING_BAR';
  });
@@ -100,20 +101,26 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
  // Compute actual filter based on the activeTab route
  const filter = activeTab === 'tables/reservations' 
-   ? 'reserved' 
+   ? 'reservations' 
    : activeTab === 'tables/occupied' 
    ? 'occupied' 
+   : activeTab === 'tables/available'
+   ? 'available'
    : layoutFilter;
 
  const setFilter = (val: string) => {
- if (val === 'reserved') {
- setActiveTab('tables/reservations');
- } else if (val === 'occupied') {
- setActiveTab('tables/occupied');
- } else {
- setLayoutFilter(val);
- setActiveTab('tables/layout');
- }
+   if (val === 'reservations' || val === 'reserved') {
+     setActiveTab('tables/reservations');
+   } else if (val === 'occupied') {
+     setLayoutFilter('occupied');
+     setActiveTab('tables/occupied');
+   } else if (val === 'available') {
+     setLayoutFilter('available');
+     setActiveTab('tables/available');
+   } else {
+     setLayoutFilter('all');
+     setActiveTab('tables/layout');
+   }
  };
 
  // Assign Modal State
@@ -613,8 +620,15 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
   // Reservation Tab Search and Filter States
   const [reservationSearchQuery, setReservationSearchQuery] = useState('');
+  const [reservationZoneFilter, setReservationZoneFilter] = useState<'all' | 'premium' | 'standard'>('all');
   const [reservationUserFilter, setReservationUserFilter] = useState<'all' | 'mine' | 'others'>('all');
   const [reservationCapacityFilter, setReservationCapacityFilter] = useState<number | 'all'>('all');
+
+  const isResPremium = useCallback((res: any) => {
+    if (!res) return false;
+    const p = String(res.placeTypeId || (res.table ? res.table.placeTypeId || res.table.categoryName || res.table.tableNumber : '') || '').toUpperCase();
+    return p.includes('PREMIUM') || p.includes('LOUNGE') || (res.table?.tableNumber && res.table.tableNumber.startsWith('L-'));
+  }, []);
 
   const getReservedByName = (res: any) => {
     if (res.user) {
@@ -685,12 +699,16 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     const q = reservationSearchQuery.trim().toLowerCase();
 
     return pending.filter((res: any) => {
-      // 1. User Filter ('all' | 'mine' | 'others')
+      // 1. Zone Filter ('all' | 'premium' | 'standard')
+      if (reservationZoneFilter === 'premium' && !isResPremium(res)) return false;
+      if (reservationZoneFilter === 'standard' && isResPremium(res)) return false;
+
+      // 2. User Filter ('all' | 'mine' | 'others')
       const isMine = res.userId === user?.id;
       if (reservationUserFilter === 'mine' && !isMine) return false;
       if (reservationUserFilter === 'others' && isMine) return false;
 
-      // 2. Capacity Filter
+      // 3. Capacity Filter
       if (reservationCapacityFilter !== 'all') {
         const tableCap = res.table?.capacity;
         const guestCount = res.personsCount;
@@ -699,7 +717,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
         }
       }
 
-      // 3. Search Query (Customer Name, Reserving Staff Name, Phone Number, Email ID, Table Number, Capacity/Headcount)
+      // 4. Search Query (Customer Name, Reserving Staff Name, Phone Number, Email ID, Table Number, Capacity/Headcount)
       if (q) {
         const customerName = (res.customerName || '').toLowerCase();
         const reservingUserName = (res.user?.fullName || res.user?.username || '').toLowerCase();
@@ -723,7 +741,15 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
       return true;
     });
-  }, [realReservations, reservationSearchQuery, reservationUserFilter, reservationCapacityFilter, user]);
+  }, [realReservations, reservationSearchQuery, reservationUserFilter, reservationZoneFilter, reservationCapacityFilter, user, isResPremium]);
+
+  const premiumReservationsCount = useMemo(() => {
+    return realReservations.filter((r: any) => r.status === 'PENDING' && isResPremium(r)).length;
+  }, [realReservations, isResPremium]);
+
+  const standardReservationsCount = useMemo(() => {
+    return realReservations.filter((r: any) => r.status === 'PENDING' && !isResPremium(r)).length;
+  }, [realReservations, isResPremium]);
 
   const myReservationsCount = useMemo(() => {
     return realReservations.filter((r: any) => r.status === 'PENDING' && r.userId === user?.id).length;
@@ -866,7 +892,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  });
 
  const filteredTables = zoneFilteredTables.filter(t => {
-    if (filter === 'reserved') {
+    if (filter === 'reserved' || filter === 'reservations') {
       return t.status === 'reserved' || t.status === 'in_checkin';
     } else if (filter === 'available') {
       return t.status === 'available';
@@ -881,7 +907,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     if (!closingTableSession) return;
     const token = tokens.find(tk => tk.tableId === closingTableSession.id || (tk.table && tk.table.id === closingTableSession.id));
     if (!token) {
-      showToast('No active token session found for this table.', 'danger');
+      showToast('No active session found for this table.', 'danger');
       return;
     }
 
@@ -1246,15 +1272,60 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  return (
  <div className="space-y-6 text-text-main">
  
-  {/* Non-Overlapping Structured Control Toolbar - Only for Floor Plan Layout */}
-  {activeTab !== 'tables/reservations' && (
-    <div className="dark:bg-transparent glass-panel border border-border-main border-x-0 border-t-0 rounded-none p-0 pb-4 mb-6 space-y-4">
-      {/* Tier 1: Primary Zone Switcher Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pt-3 pb-4 border-b border-border-main w-full">
-        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto px-4">
+  {/* Non-Overlapping Structured Control Toolbar - ALWAYS VISIBLE across all views including Reservations */}
+  <div className="dark:bg-transparent glass-panel border border-border-main border-x-0 border-t-0 rounded-none p-0 pb-4 mb-6 space-y-4">
+    {/* Tier 1: Main Table Status Tabs (All, Occupied, Available, Reservations) */}
+    <div className="flex items-center justify-between gap-3 w-full px-4 pt-3">
+      <div className="flex flex-nowrap overflow-x-auto custom-scrollbar items-center gap-2 flex-1 sm:flex-initial pb-1 sm:pb-0">
+        <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Status:</span>
+        {[
+          { id: 'all', label: 'All' },
+          { id: 'available', label: 'Available' },
+          { id: 'occupied', label: 'Occupied' },
+          { id: 'reservations', label: 'Reservations' },
+        ].map((tabItem) => {
+          const isTabActive =
+            filter === tabItem.id ||
+            (tabItem.id === 'reservations' &&
+              (filter === 'reservations' || filter === 'reserved' || activeTab === 'tables/reservations'));
+          return (
+            <button
+              key={tabItem.id}
+              onClick={() => setFilter(tabItem.id)}
+              className={`px-3 sm:px-3.5 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-secondary shrink-0 cursor-pointer ${
+                isTabActive ? 'active' : ''
+              }`}
+            >
+              {tabItem.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="text-xs font-bold text-text-muted w-full sm:w-auto text-left sm:text-right flex items-center justify-between sm:block">
+        {!isWaiter && activeTab === 'tables/reservations' ? (
+          <>
+            <span>Active Reservations:</span>{' '}
+            <span className="text-text-main font-mono text-sm sm:text-xs">
+              {realReservations.filter((r: any) => r.status === 'PENDING').length}
+            </span>
+          </>
+        ) : (
+          <>
+            <span>Total Tables:</span>{' '}
+            <span className="text-text-main font-mono text-sm sm:text-xs">{filteredTables.length}</span>
+          </>
+        )}
+      </div>
+    </div>
+
+    {/* Tier 2: Primary Zone Switcher Tabs (Only for Floor Plan Layout views and for Waiter) */}
+    {(!isWaiter ? activeTab !== 'tables/reservations' : true) && (
+      <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-border-main/50 w-full px-4">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <button
             onClick={() => setPlaceZone('STANDING_BAR')}
-            className={`w-full sm:w-auto px-4 py-2.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 ${
+            className={`w-full sm:w-auto px-4 py-2.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 cursor-pointer ${
               placeZone === 'STANDING_BAR' ? 'active' : ''
             }`}
           >
@@ -1263,41 +1334,19 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
           <button
             onClick={() => setPlaceZone('PREMIUM_LOUNGE')}
-            className={`w-full sm:w-auto px-4 py-2.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 ${
+            className={`w-full sm:w-auto px-4 py-2.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 cursor-pointer ${
               placeZone === 'PREMIUM_LOUNGE' ? 'active' : ''
             }`}
           >
             Premium Zone (Lounge)
           </button>
         </div>
-
-        <div className="text-xs font-bold text-text-muted w-full sm:w-auto text-left sm:text-right flex items-center justify-between sm:block px-4">
-          <span>Total Tables:</span> <span className="text-text-main font-mono text-sm sm:text-xs">{filteredTables.length}</span>
-        </div>
       </div>
-
-      {/* Tier 2: Secondary Status Filters & Refresh Action */}
-      <div className="flex items-center justify-between gap-3 w-full px-4">
-        <div className="flex flex-nowrap overflow-x-auto custom-scrollbar items-center gap-2 flex-1 sm:flex-initial pb-1 sm:pb-0">
-          <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Status Filter:</span>
-          {['all', 'available', 'occupied', 'reserved'].map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 sm:px-3.5 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-secondary shrink-0 ${
-                filter === f ? 'active' : ''
-              }`}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  )}
+    )}
+  </div>
 
   {/* Active Reservations View */}
-  {activeTab === 'tables/reservations' ? (
+  {!isWaiter && activeTab === 'tables/reservations' ? (
     <div className="space-y-6">
       {/* Reservation Search & Filter Toolbar */}
       <div className="p-4 sm:p-5 rounded-3xl dark:rounded-xl border dark:border-white/10 dark:bg-[#1C1C1E] bg-bg-surface space-y-4">
@@ -1342,56 +1391,96 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               </select>
             </div>
 
-            <button
-              onClick={() => {
-                setActiveTab('tables/all');
-                setFilter('available');
-              }}
-              className="px-4 py-2.5 rounded-xl primary-btn text-xs font-bold whitespace-nowrap flex items-center gap-1.5 cursor-pointer shrink-0"
-            >
-              <UserPlus size={14} />
-              <span>+ Reserve Table</span>
-            </button>
+            {!isWaiter && (
+              <button
+                onClick={() => {
+                  setActiveTab('tables/all');
+                  setFilter('available');
+                }}
+                className="px-4 py-2.5 rounded-xl primary-btn text-xs font-bold whitespace-nowrap flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <UserPlus size={14} />
+                <span>+ Reserve Table</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Quick Filter Segmented Pills */}
-        <div className="flex items-center justify-between gap-2 pt-2 border-t border-border-main/50 flex-wrap">
-          <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 sm:pb-0">
-            <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Filter By:</span>
-            <button
-              onClick={() => setReservationUserFilter('all')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                reservationUserFilter === 'all'
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
-              }`}
-            >
-              All Reservations ({realReservations.filter((r: any) => r.status === 'PENDING').length})
-            </button>
-            <button
-              onClick={() => setReservationUserFilter('mine')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                reservationUserFilter === 'mine'
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
-              }`}
-            >
-              My Reservations ({myReservationsCount})
-            </button>
-            <button
-              onClick={() => setReservationUserFilter('others')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                reservationUserFilter === 'others'
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
-              }`}
-            >
-              Other Staff ({otherReservationsCount})
-            </button>
+        {/* Quick Filter Segmented Pills (Zone & Staff Filters) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-border-main/50">
+          <div className="flex items-center gap-3 overflow-x-auto custom-scrollbar pb-1 sm:pb-0 flex-wrap">
+            {/* Zone Filter (Premium / Standard / All) */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Zone:</span>
+              <button
+                onClick={() => setReservationZoneFilter('all')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  reservationZoneFilter === 'all'
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
+                }`}
+              >
+                All Zones
+              </button>
+              <button
+                onClick={() => setReservationZoneFilter('premium')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  reservationZoneFilter === 'premium'
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
+                }`}
+              >
+                Premium ({premiumReservationsCount})
+              </button>
+              <button
+                onClick={() => setReservationZoneFilter('standard')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  reservationZoneFilter === 'standard'
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
+                }`}
+              >
+                Standard ({standardReservationsCount})
+              </button>
+            </div>
+
+            {/* Staff Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Staff:</span>
+              <button
+                onClick={() => setReservationUserFilter('all')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  reservationUserFilter === 'all'
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
+                }`}
+              >
+                All ({realReservations.filter((r: any) => r.status === 'PENDING').length})
+              </button>
+              <button
+                onClick={() => setReservationUserFilter('mine')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  reservationUserFilter === 'mine'
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
+                }`}
+              >
+                Mine ({myReservationsCount})
+              </button>
+              <button
+                onClick={() => setReservationUserFilter('others')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  reservationUserFilter === 'others'
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
+                }`}
+              >
+                Others ({otherReservationsCount})
+              </button>
+            </div>
           </div>
 
-          <div className="text-xs text-text-muted font-medium">
+          <div className="text-xs text-text-muted font-medium shrink-0">
             Showing <span className="font-bold text-text-main">{filteredReservations.length}</span> matching
           </div>
         </div>
@@ -1403,14 +1492,15 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
       ) : filteredReservations.length === 0 ? (
         <div className="glass-panel p-12 rounded-3xl border border-border-main text-center space-y-3">
           <p className="text-text-muted text-sm">
-            {reservationSearchQuery || reservationUserFilter !== 'all' || reservationCapacityFilter !== 'all'
+            {reservationSearchQuery || reservationUserFilter !== 'all' || reservationZoneFilter !== 'all' || reservationCapacityFilter !== 'all'
               ? 'No reservations match your search or filter criteria.'
               : 'No active reservations found.'}
           </p>
-          {(reservationSearchQuery || reservationUserFilter !== 'all' || reservationCapacityFilter !== 'all') && (
+          {(reservationSearchQuery || reservationUserFilter !== 'all' || reservationZoneFilter !== 'all' || reservationCapacityFilter !== 'all') && (
             <button
               onClick={() => {
                 setReservationSearchQuery('');
+                setReservationZoneFilter('all');
                 setReservationUserFilter('all');
                 setReservationCapacityFilter('all');
               }}
@@ -1512,36 +1602,47 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
                 {/* Actions */}
                 <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => handleAssignReservation(res)}
-                    disabled={assignDisabled}
-                    title={assignTooltip}
-                    className={`flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 ${
-                      assignDisabled ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
-                    }`}
-                  >
-                    {assignDisabled && !isOwner ? (
-                      <>
-                        <Lock size={13} /> Check-In Locked
-                      </>
-                    ) : (
-                      <>
-                        <UserPlus size={14} /> Check-In / Assign
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setCancellingReservation(res)}
-                    disabled={cancelDisabled}
-                    title={cancelTooltip}
-                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
-                      cancelDisabled
-                        ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40'
-                        : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-300 active:bg-red-500/20 dark:active:bg-red-500/30 dark:text-red-400 text-red-600 border border-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer'
-                    }`}
-                  >
-                    Cancel
-                  </button>
+                  {isWaiter ? (
+                    <button
+                      disabled
+                      className="w-full py-2.5 rounded-xl bg-bg-primary text-text-muted border border-border-main text-xs font-bold text-center cursor-not-allowed opacity-60"
+                    >
+                      View Only (Server Role)
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleAssignReservation(res)}
+                        disabled={assignDisabled}
+                        title={assignTooltip}
+                        className={`flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 ${
+                          assignDisabled ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
+                        }`}
+                      >
+                        {assignDisabled && !isOwner ? (
+                          <>
+                            <Lock size={13} /> Check-In Locked
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus size={14} /> Check-In / Assign
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setCancellingReservation(res)}
+                        disabled={cancelDisabled}
+                        title={cancelTooltip}
+                        className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
+                          cancelDisabled
+                            ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40'
+                            : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-300 active:bg-red-500/20 dark:active:bg-red-500/30 dark:text-red-400 text-red-600 border border-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer'
+                        }`}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -1552,9 +1653,17 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   ) : isLoading && filteredTables.length === 0 ? (
   <div className="py-20 text-center text-text-muted text-sm">Loading floor layout & seat maps...</div>
   ) : filteredTables.length === 0 ? (
-  <div className="glass-panel p-12 rounded-3xl border border-border-main text-center space-y-3">
-  <p className="text-text-muted text-sm">No tables match your filter parameters.</p>
-  </div>
+    <div className="glass-panel p-12 rounded-3xl border border-border-main text-center space-y-3">
+      <p className="text-text-muted text-sm">
+        {filter === 'reservations' || filter === 'reserved'
+          ? 'No reserved tables in this zone.'
+          : filter === 'occupied'
+          ? 'No occupied tables in this zone.'
+          : filter === 'available'
+          ? 'No available tables in this zone.'
+          : 'No tables match your filter parameters.'}
+      </p>
+    </div>
   ) : (
  <div className="space-y-8">
  {Array.from(new Set(filteredTables.map(tb => tb.capacity || 4)))
@@ -1681,6 +1790,25 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
       </>
     )}
   </div>
+ ) : tb.status === 'reserved' ? (
+  (() => {
+    const res = realReservations.find((r: any) => r.tableId === tb.id && r.status === 'PENDING');
+    const resOwner = res ? getReservedByName(res) : (tb.reservedByName || tb.reservedBy || 'Staff');
+    return (
+      <div className="space-y-1 border-t border-border-main/40 pt-1 text-text-muted">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="font-semibold truncate max-w-[140px]">👤 {res?.customerName || tb.customerName || 'Guest'}</span>
+          <span className="font-mono text-text-main font-bold">{res?.personsCount ? `${res.personsCount} Guests` : `${capacity} Seats`}</span>
+        </div>
+        <div className="flex items-center justify-between text-[10px] text-text-muted/80">
+          <span>Reserved by:</span>
+          <span className="font-semibold text-text-main truncate max-w-[150px]" title={resOwner}>
+            {resOwner}
+          </span>
+        </div>
+      </div>
+    );
+  })()
  ) : (
  <div className="text-[10px] text-text-muted border-t border-border-main/30 pt-1 flex justify-between">
  <span>Rate Allowance:</span>
@@ -1710,74 +1838,98 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
         In Check-In
       </button>
     ) : tb.status === 'reserved' ? (
-      (() => {
-        const res = realReservations.find((r: any) => r.tableId === tb.id && r.status === 'PENDING');
-        const isMine = res && res.userId === user?.id;
-        const isPrivileged = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
-        const isOwner = !res || !res.userId || isMine || isPrivileged;
-        const resOwner = res ? getReservedByName(res) : 'Staff';
-        return (
-          <>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCheckInReservedTable(tb);
-              }}
-              disabled={!isOwner}
-              title={!isOwner ? `This table was reserved by ${resOwner}. Only ${resOwner} or an Admin can check in this table.` : undefined}
-              className={`flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 ${
-                !isOwner ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
-              }`}
-            >
-              {!isOwner ? (
-                <>
-                  <Lock size={13} /> Locked
-                </>
-              ) : (
-                <>
-                  <UserPlus size={14} /> Check-In
-                </>
-              )}
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCancelClick(tb);
-              }}
-              disabled={!isOwner}
-              title={!isOwner ? `This reservation was created by ${resOwner}. Only ${resOwner} or an Admin can cancel it.` : undefined}
-              className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
-                !isOwner 
-                  ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40' 
-                  : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-300 active:bg-red-500/20 dark:active:bg-red-500/30 dark:text-red-400 text-red-600 border border-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer'
-              }`}
-            >
-              Cancel
-            </button>
-          </>
-        );
-      })()
+      isWaiter ? (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setInspectingTable(tb);
+          }}
+          className="w-full py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 dark:hover:bg-amber-500/20 dark:text-amber-300 text-amber-700 text-xs font-bold border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+        >
+          <Search size={14} /> Inspect Details
+        </button>
+      ) : (
+        (() => {
+          const res = realReservations.find((r: any) => r.tableId === tb.id && r.status === 'PENDING');
+          const isMine = res && res.userId === user?.id;
+          const isPrivileged = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+          const isOwner = !res || !res.userId || isMine || isPrivileged;
+          const resOwner = res ? getReservedByName(res) : 'Staff';
+          return (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCheckInReservedTable(tb);
+                }}
+                disabled={!isOwner}
+                title={!isOwner ? `This table was reserved by ${resOwner}. Only ${resOwner} or an Admin can check in this table.` : undefined}
+                className={`flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 ${
+                  !isOwner ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
+                }`}
+              >
+                {!isOwner ? (
+                  <>
+                    <Lock size={13} /> Locked
+                  </>
+                ) : (
+                  <>
+                    <UserPlus size={14} /> Check-In
+                  </>
+                )}
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCancelClick(tb);
+                }}
+                disabled={!isOwner}
+                title={!isOwner ? `This reservation was created by ${resOwner}. Only ${resOwner} or an Admin can cancel it.` : undefined}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
+                  !isOwner 
+                    ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40' 
+                    : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-300 active:bg-red-500/20 dark:active:bg-red-500/30 dark:text-red-400 text-red-600 border border-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer'
+                }`}
+              >
+                Cancel
+              </button>
+            </>
+          );
+        })()
+      )
     ) : tb.status === 'available' ? (
-      <>
+      isWaiter ? (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            handleAssignClick(tb);
+            setInspectingTable(tb);
           }}
-          className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+          className="w-full py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card border border-border-main text-text-muted hover:text-text-main transition-all cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold"
         >
-          <UserPlus size={14} /> Assign
+          <Search size={14} /> Inspect
         </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleReserveClick(tb);
-          }}
-          className="flex-1 py-2.5 rounded-xl text-xs font-bold border border-primary text-primary hover:bg-primary/5 transition-all cursor-pointer text-center"
-        >
-          Reserve
-        </button>
-      </>
+      ) : (
+        <>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleAssignClick(tb);
+            }}
+            className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <UserPlus size={14} /> Assign
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleReserveClick(tb);
+            }}
+            className="flex-1 py-2.5 rounded-xl text-xs font-bold border border-primary text-primary hover:bg-primary/5 transition-all cursor-pointer text-center"
+          >
+            Reserve
+          </button>
+        </>
+      )
     ) : (
       <button
         onClick={(e) => {
@@ -1912,7 +2064,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-text-muted">Token Pass:</span>
+                  <span className="text-text-muted">Table Pass:</span>
                   <span className="font-mono text-text-main font-bold text-right">{inspectingToken?.tokenNumber || inspectingTable.currentTokenId || inspectingTable.activeSession?.tokenNumber}</span>
                 </div>
                 <div className="flex justify-between items-center">
@@ -1996,24 +2148,36 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
           {/* Action Buttons (Footer) */}
           <div className="pt-4 border-t border-border-main dark:border-white/10 flex flex-col gap-2.5 shrink-0">
             {inspectingTable.status === 'occupied' ? (
-              <div className="flex flex-row gap-2">
-                <button
-                  type="button"
-                  onClick={() => setClosingTableSession(inspectingTable)}
-                  className="flex-1 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 text-red-700 dark:text-red-400 font-bold text-xs border border-red-500/30 transition-all text-center cursor-pointer"
-                >
-                  Checkout
-                </button>
+              isWaiter ? (
                 <button 
                   type="button"
                   onClick={() => {
                     setExtendingTable(inspectingTable);
                   }}
-                  className="flex-1 py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/25 text-purple-700 dark:text-purple-400 border border-purple-500/30 font-bold text-xs transition-all cursor-pointer"
+                  className="w-full py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/25 text-purple-700 dark:text-purple-400 border border-purple-500/30 font-bold text-xs transition-all cursor-pointer"
                 >
                   Extend Session
                 </button>
-              </div>
+              ) : (
+                <div className="flex flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setClosingTableSession(inspectingTable)}
+                    className="flex-1 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 text-red-700 dark:text-red-400 font-bold text-xs border border-red-500/30 transition-all text-center cursor-pointer"
+                  >
+                    Checkout
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setExtendingTable(inspectingTable);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 active:bg-purple-500/25 text-purple-700 dark:text-purple-400 border border-purple-500/30 font-bold text-xs transition-all cursor-pointer"
+                  >
+                    Extend Session
+                  </button>
+                </div>
+              )
             ) : inspectingTable.status === 'in_checkin' ? (
               <button
                 type="button"
@@ -2022,7 +2186,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               >
                 In Check-In (Locked)
               </button>
-            ) : (
+            ) : isWaiter ? null : (
               (() => {
                 const res = realReservations.find((r: any) => r.tableId === inspectingTable.id && r.status === 'PENDING');
                 const isMine = res && res.userId === user?.id;

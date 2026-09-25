@@ -109,6 +109,8 @@ export interface TableUpdatedPayload {
   tableNumber: string;
   status: string;
   currentTokenId?: string | null;
+  currentTokenNumber?: string | null;
+  tokenNumber?: string | null;
   occupiedSince?: string | null;
   occupiedBy?: string | null;
   occupiedByName?: string | null;

@@ -21,6 +21,7 @@ import {
   broadcastReservationCreated,
   broadcastReservationUpdated,
   broadcastReservationCancelled,
+  broadcastSessionExtended,
 } from './realtime';
 
 const TokenStatus = {
@@ -168,9 +169,9 @@ export const authenticate = async (req: AuthenticatedRequest, res: Response, nex
       console.warn(`External token validation failed/timed out: ${extErr.message}`);
     }
 
-    return res.status(401).json({ success: false, error: { code: 'AUTH_002', message: 'Invalid or expired token' } });
+    return res.status(401).json({ success: false, error: { code: 'AUTH_002', message: 'Your session has expired. Please log in again.' } });
   } else {
-    res.status(401).json({ success: false, error: { code: 'AUTH_003', message: 'Authorization header missing' } });
+    res.status(401).json({ success: false, error: { code: 'AUTH_003', message: 'Your session has expired. Please log in again.' } });
   }
 };
 
@@ -179,7 +180,7 @@ export const authorize = (allowedRoles: string[]) => {
     const userRole = (req.user?.role || '').toLowerCase();
     const normalizedAllowed = allowedRoles.map(r => r.toLowerCase());
     if (!req.user || !normalizedAllowed.includes(userRole)) {
-      return res.status(403).json({ success: false, error: { code: 'AUTH_004', message: 'Access denied: insufficient permissions' } });
+      return res.status(403).json({ success: false, error: { code: 'AUTH_004', message: "You don't have permission to do this." } });
     }
     next();
   };
@@ -219,7 +220,7 @@ router.post('/attendance/quick', upload.single('file'), async (req: Request, res
     if (!kioskToken) {
       return res.status(503).json({
         success: false,
-        error: { message: 'Quick Attendance service is not configured on backend. Missing FACEMARK_BEARER_TOKEN.' }
+        error: { message: 'Attendance service is temporarily unavailable. Please try again later.' }
       });
     }
 
@@ -286,11 +287,11 @@ router.post('/attendance/quick', upload.single('file'), async (req: Request, res
       if (statusCode === 404 && rawDetail.toLowerCase().includes('face not recognized')) {
         userFriendlyMessage = 'Unable to recognize your face. Please look at the camera clearly and try again.';
       } else if (statusCode === 404 && rawDetail.toLowerCase().includes('employee not found')) {
-        userFriendlyMessage = 'Employee record not found on attendance server.';
+        userFriendlyMessage = 'Employee record not found.';
       } else if (statusCode === 401 || statusCode === 403) {
-        userFriendlyMessage = 'Kiosk authentication token is invalid or unauthorized.';
+        userFriendlyMessage = 'Kiosk access is temporarily unavailable. Please try again.';
       } else if (statusCode === 409) {
-        userFriendlyMessage = 'Attendance registration is currently locked for this payroll period.';
+        userFriendlyMessage = 'Attendance registration is currently locked for this period.';
       } else if (statusCode >= 500) {
         userFriendlyMessage = 'Face verification service is temporarily unavailable. Please try again.';
       }
@@ -2109,7 +2110,7 @@ router.put('/tables/:id', authenticate, authorize(['admin']), async (req: Reques
 });
 
 // Update Table Status (Authenticated)
-router.patch('/tables/:id/status', authenticate, async (req: Request, res: Response) => {
+router.patch('/tables/:id/status', authenticate, authorize(['admin', 'manager']), async (req: Request, res: Response) => {
   const { id } = req.params;
   const { status } = req.body;
 
@@ -2231,7 +2232,7 @@ router.patch('/tables/:id/status', authenticate, async (req: Request, res: Respo
 });
 
 // Lock Table for Check-In (Authenticated)
-router.post('/tables/:id/lock', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/tables/:id/lock', authenticate, authorize(['receptionist', 'admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
 
   if (!isValidUUID(id)) {
@@ -2354,7 +2355,7 @@ router.post('/tables/:id/lock', authenticate, async (req: AuthenticatedRequest, 
 });
 
 // Unlock Table/Release Check-In (Authenticated)
-router.post('/tables/:id/unlock', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/tables/:id/unlock', authenticate, authorize(['receptionist', 'admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
 
   if (!isValidUUID(id)) {
@@ -3831,7 +3832,7 @@ router.get('/reservations', authenticate, async (req: AuthenticatedRequest, res:
   }
 });
 
-router.post('/reservations', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/reservations', authenticate, authorize(['receptionist', 'admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
   const { customerName, phoneNumber, email, personsCount, tableId } = req.body;
   const userId = req.user?.id;
 
@@ -4036,7 +4037,7 @@ router.post('/reservations', authenticate, async (req: AuthenticatedRequest, res
   }
 });
 
-router.post('/reservations/:id/cancel', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/reservations/:id/cancel', authenticate, authorize(['receptionist', 'admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const userId = req.user?.id;
   const isAdmin = req.user?.role?.toLowerCase() === 'admin';
@@ -4143,7 +4144,7 @@ router.post('/reservations/:id/cancel', authenticate, async (req: AuthenticatedR
   }
 });
 
-router.put('/reservations/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+router.put('/reservations/:id', authenticate, authorize(['receptionist', 'admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { customerName, phoneNumber, email, personsCount, tableId, bypassCapacity } = req.body;
   const userId = req.user?.id;
@@ -4398,7 +4399,7 @@ router.put('/reservations/:id', authenticate, async (req: AuthenticatedRequest, 
   }
 });
 
-router.post('/reservations/:id/assign', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/reservations/:id/assign', authenticate, authorize(['receptionist', 'admin', 'manager']), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const userId = req.user?.id;
   const isAdmin = req.user?.role?.toLowerCase() === 'admin';
@@ -5177,6 +5178,24 @@ const extendSessionHandler = async (req: AuthenticatedRequest, res: Response) =>
       }
     }
 
+    // Authoritative Real-Time Session Extension Broadcast
+    try {
+      broadcastSessionExtended({
+        tokenId: updated.id,
+        tokenNumber: updated.tokenNumber,
+        tableId: updated.tableId,
+        tableNumber: updated.table?.tableNumber || null,
+        endTime: updated.endTime.toISOString(),
+        extraMinutes: finalMinutes,
+        additionalAmount: parseFloat(finalAmount.toString()),
+        status: updated.status,
+        totalRedemptionsAllowed: updated.totalRedemptionsAllowed,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (socketErr) {
+      console.warn('Realtime session extension broadcast error:', socketErr);
+    }
+
     // Format output for compatibility
     const responseData = {
       message: 'Session extended successfully',
@@ -5689,6 +5708,10 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
         customer: true,
         table: true,
         placeType: true,
+        extensions: {
+          include: { approver: true },
+          orderBy: { extendedAt: 'asc' },
+        },
       },
     });
 
@@ -5707,6 +5730,10 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
           customer: true,
           table: true,
           placeType: true,
+          extensions: {
+            include: { approver: true },
+            orderBy: { extendedAt: 'asc' },
+          },
         },
       });
     }
@@ -5722,6 +5749,10 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
             customer: true,
             table: true,
             placeType: true,
+            extensions: {
+              include: { approver: true },
+              orderBy: { extendedAt: 'asc' },
+            },
           },
           orderBy: { issuedAt: 'desc' },
           take: 30,
@@ -5766,6 +5797,16 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
         customerName: token.customer.name,
         tableNumber: token.table?.tableNumber || null,
         amountPaid: Number(token.amountPaid || 0),
+        initialCheckInAmount: Number(token.amountPaid || 0),
+        extensions: (token.extensions || []).map((ext: any, idx: number) => ({
+          id: ext.id,
+          sequence: idx + 1,
+          extraMinutes: ext.extraMinutes,
+          additionalAmount: Number(ext.additionalAmount || 0),
+          isComplimentary: Number(ext.additionalAmount || 0) === 0,
+          approvedBy: ext.approver?.fullName || ext.approver?.username || ext.approvedBy || 'Staff',
+          extendedAt: ext.extendedAt ? new Date(ext.extendedAt).toISOString() : new Date().toISOString(),
+        })),
         bill: bill ? {
           billNumber: bill.billNumber,
           foodSubtotal: Number(bill.foodSubtotal),
@@ -5784,6 +5825,7 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
           amountPaid: Number(token.amountPaid || 0),
           entryFeePaid: Number(token.amountPaid || 0),
           confirmedCheckInAmount: Number(token.amountPaid || 0),
+          initialCheckInAmount: Number(token.amountPaid || 0),
           prepaidCreditApplied: Number(token.amountPaid || 0),
           redemptionDeduction: Number(token.amountPaid || 0),
           orders: bill.orders.map(o => ({
@@ -5822,11 +5864,28 @@ router.get('/customer/access/:tokenNumber', async (req: Request, res: Response) 
         email: token.customer.email,
         tableNumber: token.table?.tableNumber || null,
         tableId: token.tableId,
+        tableStatus: token.table?.status || null,
+        table: token.table ? {
+          id: token.table.id,
+          number: token.table.tableNumber,
+          tableNumber: token.table.tableNumber,
+          status: token.table.status,
+        } : null,
         placeType: token.placeType.name,
         personsCount: token.personsCount,
         startTime: token.startTime.toISOString(),
         endTime: token.endTime.toISOString(),
         amountPaid: Number(token.amountPaid),
+        initialCheckInAmount: Number(token.amountPaid),
+        extensions: (token.extensions || []).map((ext: any, idx: number) => ({
+          id: ext.id,
+          sequence: idx + 1,
+          extraMinutes: ext.extraMinutes,
+          additionalAmount: Number(ext.additionalAmount || 0),
+          isComplimentary: Number(ext.additionalAmount || 0) === 0,
+          approvedBy: ext.approver?.fullName || ext.approver?.username || ext.approvedBy || 'Staff',
+          extendedAt: ext.extendedAt ? new Date(ext.extendedAt).toISOString() : new Date().toISOString(),
+        })),
         paymentVerified: true,
         totalRedemptionsAllowed: token.totalRedemptionsAllowed,
         redemptionsUsed: token.redemptionsUsed,
@@ -6005,6 +6064,7 @@ router.post('/customer/recover', async (req: Request, res: Response) => {
         email: targetToken.customer.email,
         tableNumber: targetToken.table?.tableNumber || null,
         tableId: targetToken.tableId,
+        tableStatus: targetToken.table?.status || null,
         placeType: targetToken.placeType.name,
         personsCount: targetToken.personsCount,
         startTime: targetToken.startTime.toISOString(),
@@ -7552,6 +7612,22 @@ router.post('/bills/cancel-settlement', authenticate, authorize(['admin', 'manag
       return res.status(400).json({ success: false, error: { message: 'tokenNumber or tokenId is required' } });
     }
     const result = await billingService.cancelSettlement(lookup);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/bills/reopen-ordering (Authoritative waiter reopen ordering for table)
+router.post('/bills/reopen-ordering', authenticate, authorize(['admin', 'manager', 'waiter', 'server', 'receptionist']), async (req: Request, res: Response) => {
+  try {
+    const { tokenNumber, tokenId, tableId, reason } = req.body;
+    const lookup = tokenNumber || tokenId || tableId;
+    if (!lookup) {
+      return res.status(400).json({ success: false, error: { message: 'tokenNumber, tokenId, or tableId is required' } });
+    }
+    const staffId = (req as any).user?.id;
+    const result = await billingService.reopenOrdering(lookup, staffId, reason);
     return res.json(result);
   } catch (err: any) {
     return res.status(400).json({ success: false, error: { message: err.message } });

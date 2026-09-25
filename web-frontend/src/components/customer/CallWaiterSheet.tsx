@@ -158,10 +158,10 @@ export const CallWaiterSheet: React.FC<CallWaiterSheetProps> = ({
         note,
       });
 
-      if (created.isDuplicate) {
+      if (created.isDuplicate || created.alreadyActive) {
         setFeedback({
           type: 'info',
-          message: created.message || `Your request for ${type} is already registered with our staff.`,
+          message: created.message || `You have already requested assistance. Your waiter has been notified and will acknowledge your request.`,
         });
       } else {
         setFeedback({

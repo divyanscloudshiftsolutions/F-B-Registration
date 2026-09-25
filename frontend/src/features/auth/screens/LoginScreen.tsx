@@ -91,7 +91,7 @@ export const LoginScreen: React.FC = () => {
     try {
       const success = await login(employeeId, enteredPin);
       if (!success) {
-        setErrorMsg('Authentication failed. Incorrect ID or PIN.');
+        setErrorMsg('Login failed. Incorrect ID or PIN.');
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'An error occurred during login.');

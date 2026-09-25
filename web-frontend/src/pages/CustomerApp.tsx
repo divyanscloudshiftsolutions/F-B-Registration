@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { CustomerProvider, useCustomer } from '../context/CustomerContext';
+import { api } from '../services/api';
 import { VegBadge } from '../components/customer/VegBadge';
 import { MenuItemCard } from '../components/customer/MenuItemCard';
 import { ProductCustomizer, type CustomizerItem, type ProductCustomizerInitialConfig } from '../components/customer/ProductCustomizer';
@@ -8,6 +9,7 @@ import { formatImageUrl } from '../utils/imageUrl';
 import {
   Home as HomeIcon,
   PhoneCall,
+  BellRing,
   RotateCcw,
   ClipboardList,
   Receipt,
@@ -50,6 +52,7 @@ import {
   Timer,
   ChevronRight,
   Ban,
+  Info,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -126,6 +129,364 @@ const CustomerSessionTimer: React.FC<{ endTime?: string | null; startTime?: stri
   );
 };
 
+// Live Floating Notification Popup with preserved remaining visible lifecycle, fluid horizontal swipe-to-dismiss & smooth exits
+const CustomerLiveNotificationPopup: React.FC<{
+  notification: any;
+  onDismiss: () => void;
+  onActionClick?: (notif: any) => void;
+}> = ({ notification, onDismiss, onActionClick }) => {
+  const [isExiting, setIsExiting] = useState<boolean>(false);
+  const [exitDirection, setExitDirection] = useState<'left' | 'right'>('right');
+  const [dragOffsetX, setDragOffsetX] = useState<number>(0);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isSnappingBack, setIsSnappingBack] = useState<boolean>(false);
+
+  const pointerStartRef = useRef<{ x: number; y: number; startTime: number; pointerId?: number } | null>(null);
+  const hasDraggedRef = useRef<boolean>(false);
+  const dismissTimerRef = useRef<any>(null);
+  const exitTimerRef = useRef<any>(null);
+  const snapBackTimerRef = useRef<any>(null);
+  const isDismissingRef = useRef<boolean>(false);
+
+  // Single Authoritative Dismissal Path (Guarded against double-dismiss or race conditions)
+  const triggerDismiss = useCallback((dir: 'left' | 'right' = 'right') => {
+    if (isDismissingRef.current) return;
+    isDismissingRef.current = true;
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    if (snapBackTimerRef.current) clearTimeout(snapBackTimerRef.current);
+
+    setExitDirection(dir);
+    setIsDragging(false);
+    setIsSnappingBack(false);
+    setIsExiting(true);
+
+    if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+    exitTimerRef.current = setTimeout(() => {
+      onDismiss();
+    }, 200); // 200ms animation completion before handoff
+  }, [onDismiss]);
+
+  // Preserved Remaining Visibility Timer: Runs for the exact remainingMs (or durationMs)
+  useEffect(() => {
+    if (!notification || !notification.id) return;
+    setIsExiting(false);
+    setDragOffsetX(0);
+    setIsDragging(false);
+    setIsSnappingBack(false);
+    isDismissingRef.current = false;
+    hasDraggedRef.current = false;
+
+    const timeoutDuration =
+      Number(notification.remainingMs) > 0
+        ? Number(notification.remainingMs)
+        : Number(notification.durationMs) > 0
+        ? Number(notification.durationMs)
+        : 3000;
+
+    dismissTimerRef.current = setTimeout(() => {
+      triggerDismiss('right'); // Automatic expiration defaults to smooth Left → Right slide exit
+    }, timeoutDuration);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        const target = e.target as HTMLElement;
+        const isTextInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+        if (!isTextInput) {
+          e.preventDefault();
+          triggerDismiss('right');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+      if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+      if (snapBackTimerRef.current) clearTimeout(snapBackTimerRef.current);
+    };
+  }, [notification?.id, notification?.remainingMs, triggerDismiss]);
+
+  // Early return guard if notification is not present
+  if (!notification) return null;
+
+  // Unified Gesture Handlers (Pointer & Touch with Pointer Capture)
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDismissingRef.current || e.button !== 0) return;
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    if (snapBackTimerRef.current) clearTimeout(snapBackTimerRef.current);
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore in environments where setPointerCapture is unsupported
+    }
+
+    pointerStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      startTime: Date.now(),
+      pointerId: e.pointerId,
+    };
+    hasDraggedRef.current = false;
+    setIsSnappingBack(false);
+    setIsDragging(true);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointerStartRef.current || isDismissingRef.current) return;
+    const dx = e.clientX - pointerStartRef.current.x;
+    const dy = e.clientY - pointerStartRef.current.y;
+
+    // Distinguish intentional horizontal swipe from vertical scroll jitter
+    if (!hasDraggedRef.current && Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) {
+      hasDraggedRef.current = true;
+    }
+
+    if (hasDraggedRef.current) {
+      setDragOffsetX(dx);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointerStartRef.current || isDismissingRef.current) return;
+
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Ignore
+    }
+
+    const currentOffset = dragOffsetX;
+    const wasDragged = hasDraggedRef.current;
+    const gestureElapsed = Date.now() - pointerStartRef.current.startTime;
+    pointerStartRef.current = null;
+
+    if (wasDragged && currentOffset > 45) {
+      // Swiped Left → Right
+      triggerDismiss('right');
+    } else if (wasDragged && currentOffset < -45) {
+      // Swiped Right → Left
+      triggerDismiss('left');
+    } else {
+      // Snap back smoothly & resume remaining timer
+      setIsDragging(false);
+      setIsSnappingBack(true);
+      setDragOffsetX(0);
+
+      snapBackTimerRef.current = setTimeout(() => {
+        setIsSnappingBack(false);
+      }, 200);
+
+      const currentRemaining =
+        Number(notification.remainingMs) > 0
+          ? Number(notification.remainingMs)
+          : Number(notification.durationMs) > 0
+          ? Number(notification.durationMs)
+          : 3000;
+      const newRemaining = Math.max(500, currentRemaining - gestureElapsed);
+      dismissTimerRef.current = setTimeout(() => {
+        triggerDismiss('right');
+      }, newRemaining);
+    }
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointerStartRef.current || isDismissingRef.current) return;
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Ignore
+    }
+    pointerStartRef.current = null;
+    setIsDragging(false);
+    setIsSnappingBack(true);
+    setDragOffsetX(0);
+    snapBackTimerRef.current = setTimeout(() => {
+      setIsSnappingBack(false);
+    }, 200);
+  };
+
+  const severity =
+    notification.severity ||
+    (notification.type === 'stock_out_cart' || notification.type === 'stock_out_order'
+      ? 'error'
+      : notification.type === 'ordering_reopened' || notification.type === 'order_placed' || notification.type === 'stock_in'
+      ? 'success'
+      : notification.type === 'session_extended'
+      ? 'primary'
+      : notification.type === 'service_request'
+      ? 'info'
+      : 'info');
+
+  const renderIcon = () => {
+    switch (notification.type) {
+      case 'order_placed':
+        return <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
+      case 'ordering_reopened':
+        return <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
+      case 'order_status':
+        if (severity === 'warning') return <Flame className="w-4 h-4 text-amber-600 dark:text-amber-400" />;
+        if (severity === 'success') return <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
+        if (severity === 'primary') return <Sparkles className="w-4 h-4 text-primary dark:text-[#D4AF37]" />;
+        if (severity === 'info') return <CheckCircle2 className="w-4 h-4 text-sky-600 dark:text-sky-400" />;
+        return <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" />;
+      case 'session_extended':
+        return <Clock className="w-4 h-4 text-primary dark:text-[#D4AF37]" />;
+      case 'service_request':
+        return <BellRing className="w-4 h-4 text-sky-600 dark:text-sky-400" />;
+      case 'stock_in':
+        return <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
+      case 'stock_out_cart':
+      case 'stock_out_order':
+        return <Ban className="w-4 h-4 text-rose-600 dark:text-rose-400" />;
+      default:
+        return <Sparkles className="w-4 h-4 text-primary dark:text-[#D4AF37]" />;
+    }
+  };
+
+  const getPillBg = () => {
+    switch (severity) {
+      case 'success':
+        return 'bg-emerald-500/15 border-emerald-500/30';
+      case 'warning':
+        return 'bg-amber-500/15 border-amber-500/30';
+      case 'error':
+        return 'bg-rose-500/15 border-rose-500/30';
+      case 'primary':
+        return 'bg-primary/15 border-primary/30 dark:bg-[#D4AF37]/15 dark:border-[#D4AF37]/30';
+      case 'info':
+      default:
+        return 'bg-sky-500/15 border-sky-500/30';
+    }
+  };
+
+  const getBorderAccent = () => {
+    switch (severity) {
+      case 'success':
+        return 'border-emerald-500/40 shadow-emerald-500/10';
+      case 'warning':
+        return 'border-amber-500/40 shadow-amber-500/10';
+      case 'error':
+        return 'border-rose-500/40 shadow-rose-500/10';
+      case 'primary':
+        return 'border-primary/40 dark:border-[#D4AF37]/40 shadow-primary/10';
+      case 'info':
+      default:
+        return 'border-sky-500/40 shadow-sky-500/10';
+    }
+  };
+
+  // Continuous GPU-accelerated Transform & Transition Style
+  const getDynamicStyle = (): React.CSSProperties => {
+    if (isExiting) {
+      const exitTranslateX = exitDirection === 'left' ? '-115%' : '115%';
+      return {
+        transform: `translate3d(${exitTranslateX}, 0, 0)`,
+        opacity: 0,
+        transition: 'transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1), opacity 180ms ease-out',
+        willChange: 'transform, opacity',
+        pointerEvents: 'none',
+      };
+    }
+
+    if (isDragging) {
+      const opacity = Math.max(0.25, 1 - Math.abs(dragOffsetX) / 280);
+      return {
+        transform: `translate3d(${dragOffsetX}px, 0, 0)`,
+        opacity,
+        transition: 'none',
+        willChange: 'transform, opacity',
+      };
+    }
+
+    if (isSnappingBack) {
+      return {
+        transform: 'translate3d(0, 0, 0)',
+        opacity: 1,
+        transition: 'transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1), opacity 200ms ease-out',
+        willChange: 'transform, opacity',
+      };
+    }
+
+    return {
+      transform: 'translate3d(0, 0, 0)',
+      opacity: 1,
+      willChange: 'transform, opacity',
+    };
+  };
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      style={getDynamicStyle()}
+      onClick={() => {
+        if (hasDraggedRef.current) return;
+        if (onActionClick) onActionClick(notification);
+        else triggerDismiss('right');
+      }}
+      className={`pointer-events-auto max-w-md w-full px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-2xl shadow-xl backdrop-blur-md bg-white/95 dark:bg-[#18181B]/95 text-text-primary dark:text-white border ${getBorderAccent()} cursor-pointer hover:opacity-95 select-none touch-pan-y ${
+        !isExiting && !isDragging && !isSnappingBack
+          ? 'animate-in fade-in slide-in-from-top-2 duration-200'
+          : ''
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2.5 sm:gap-3">
+        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+          <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 border ${getPillBg()}`}>
+            {renderIcon()}
+          </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            {notification.title && (
+              <h5 className="text-[12px] sm:text-[13px] font-black text-text-primary dark:text-white leading-tight tracking-tight">
+                {notification.title}
+              </h5>
+            )}
+            <p className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-300 leading-snug mt-0.5">
+              {notification.message}
+            </p>
+            {notification.subMessage && (
+              <p className="text-[10px] text-text-muted dark:text-zinc-400 mt-0.5">
+                {notification.subMessage}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+          {notification.actionLabel && (
+            <span className="text-[10px] sm:text-[10.5px] font-extrabold px-2 sm:px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:border-[#D4AF37]/30 flex items-center gap-0.5 shadow-2xs">
+              {notification.actionLabel}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerDismiss('right');
+            }}
+            className="p-1 rounded-lg text-text-muted hover:text-text-primary dark:text-zinc-400 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
+            title="Dismiss notification"
+            aria-label="Dismiss notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const CustomerAppInner: React.FC = () => {
   const { isDark, toggleTheme } = useAuth();
 
@@ -194,6 +555,7 @@ const CustomerAppInner: React.FC = () => {
     refreshOrderHistory,
     activeRequests,
     setActiveRequests,
+    refreshRequests,
     tableId,
     activeBill,
     billError,
@@ -213,6 +575,8 @@ const CustomerAppInner: React.FC = () => {
     refreshSession,
     tableStatus,
     notifications,
+    activeNotification,
+    dismissActiveNotification,
     dismissNotification,
   } = useCustomer();
 
@@ -337,6 +701,11 @@ const CustomerAppInner: React.FC = () => {
   const [customizingInitialConfig, setCustomizingInitialConfig] = useState<any | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const [billRequested, setBillRequested] = useState<boolean>(false);
+  const [isConfirmBillModalOpen, setIsConfirmBillModalOpen] = useState<boolean>(false);
+  const [isOrderingClosedModalOpen, setIsOrderingClosedModalOpen] = useState<boolean>(false);
+  const [isWaiterAlreadyNotifiedModalOpen, setIsWaiterAlreadyNotifiedModalOpen] = useState<boolean>(false);
+  const [isCallingWaiterForReopen, setIsCallingWaiterForReopen] = useState<boolean>(false);
+  const [isRequestingBill, setIsRequestingBill] = useState<boolean>(false);
   const [orderSuccessToast, setOrderSuccessToast] = useState<string | null>(null);
   const [activeOrdersSubTab, setActiveOrdersSubTab] = useState<'pending' | 'done'>('pending');
   const [copiedToken, setCopiedToken] = useState<boolean>(false);
@@ -344,6 +713,76 @@ const CustomerAppInner: React.FC = () => {
   const [cancellingItemId, setCancellingItemId] = useState<string | null>(null);
   const [itemToDelete, setItemToDelete] = useState<{ id: string; name: string } | null>(null);
   const [selectedHistorySession, setSelectedHistorySession] = useState<any | null>(null);
+
+  // Authoritative bill requested indicator
+  const isBillRequested =
+    tableStatus === 'BILL_REQUESTED' ||
+    (activeBill?.status === 'REQUESTED' && !isSessionClosed) ||
+    billRequested;
+
+  // Call Waiter handler from Ordering Closed Dialog
+  const handleCallWaiterForReopen = async () => {
+    if (!tokenNumber || isCallingWaiterForReopen) return;
+    setIsCallingWaiterForReopen(true);
+    try {
+      const created = await api.createServiceRequest({
+        tokenNumber,
+        tableId: tableId || undefined,
+        type: 'ORDER_ASSISTANCE',
+        note: 'Customer wants to order additional items after requesting a bill and needs waiter assistance to reopen ordering',
+      });
+      setIsOrderingClosedModalOpen(false);
+      if (created?.isDuplicate || created?.alreadyActive) {
+        setIsWaiterAlreadyNotifiedModalOpen(true);
+      } else {
+        setOrderSuccessToast('Waiter has been notified. A waiter will come to your table shortly.');
+        setTimeout(() => setOrderSuccessToast(null), 4000);
+      }
+      try {
+        await refreshRequests();
+      } catch (rErr) {
+        console.warn('Silent refreshRequests error:', rErr);
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Failed to alert waiter. Please try again.');
+    } finally {
+      setIsCallingWaiterForReopen(false);
+    }
+  };
+
+  // Request Bill handler (Triggers Confirmation Dialog First)
+  const handleRequestBill = () => {
+    if (isRequestingBill || isBillRequested) return;
+    setIsConfirmBillModalOpen(true);
+  };
+
+  const handleConfirmRequestBill = async () => {
+    if (isRequestingBill || isBillRequested) return;
+    setIsRequestingBill(true);
+    try {
+      await requestBill();
+      setBillRequested(true);
+      setIsConfirmBillModalOpen(false);
+      setOrderSuccessToast('Bill request sent! A waiter has been alerted.');
+      setTimeout(() => setOrderSuccessToast(null), 4000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to request bill from waiter.');
+    } finally {
+      setIsRequestingBill(false);
+    }
+  };
+
+  // Table Status transition listener for real-time Reopen Ordering toast
+  const prevTableStatusRef = useRef<string | null>(tableStatus);
+  useEffect(() => {
+    if (prevTableStatusRef.current === 'BILL_REQUESTED' && tableStatus === 'occupied') {
+      setOrderSuccessToast('Ordering Reopened — Your waiter has reopened ordering for your table.');
+      setTimeout(() => setOrderSuccessToast(null), 4500);
+      setIsOrderingClosedModalOpen(false);
+      setBillRequested(false);
+    }
+    prevTableStatusRef.current = tableStatus;
+  }, [tableStatus]);
 
   const handleDeleteOrderItem = (orderItemId: string, itemName: string) => {
     if (cancellingItemId) return;
@@ -401,7 +840,14 @@ const CustomerAppInner: React.FC = () => {
 
   // Isolate background scroll when modal or bottom sheet is open
   useEffect(() => {
-    const isModalOpen = isCallWaiterOpen || isLogoutModalOpen || !!customizingItem || !!selectedImageModal || !!selectedDetailItem;
+    const isModalOpen =
+      isCallWaiterOpen ||
+      isLogoutModalOpen ||
+      isConfirmBillModalOpen ||
+      isOrderingClosedModalOpen ||
+      !!customizingItem ||
+      !!selectedImageModal ||
+      !!selectedDetailItem;
     if (isModalOpen) {
       const prevOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
@@ -409,13 +855,27 @@ const CustomerAppInner: React.FC = () => {
         document.body.style.overflow = prevOverflow;
       };
     }
-  }, [isCallWaiterOpen, isLogoutModalOpen, customizingItem, selectedImageModal, selectedDetailItem]);
+  }, [
+    isCallWaiterOpen,
+    isLogoutModalOpen,
+    isConfirmBillModalOpen,
+    isOrderingClosedModalOpen,
+    customizingItem,
+    selectedImageModal,
+    selectedDetailItem,
+  ]);
 
-  // Global Escape key listener for active modal overlays
+  // Global Keyboard listener for active modal overlays (Enter Concept & Escape cancel)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (isLogoutModalOpen) {
+        if (isConfirmBillModalOpen) {
+          setIsConfirmBillModalOpen(false);
+        } else if (isOrderingClosedModalOpen) {
+          setIsOrderingClosedModalOpen(false);
+        } else if (isWaiterAlreadyNotifiedModalOpen) {
+          setIsWaiterAlreadyNotifiedModalOpen(false);
+        } else if (isLogoutModalOpen) {
           setIsLogoutModalOpen(false);
         } else if (selectedImageModal) {
           setSelectedImageModal(null);
@@ -427,11 +887,37 @@ const CustomerAppInner: React.FC = () => {
         } else if (isCallWaiterOpen) {
           setIsCallWaiterOpen(false);
         }
+      } else if (e.key === 'Enter') {
+        const target = e.target as HTMLElement;
+        const isTextInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+        if (!isTextInput) {
+          if (isWaiterAlreadyNotifiedModalOpen) {
+            e.preventDefault();
+            setIsWaiterAlreadyNotifiedModalOpen(false);
+          } else if (isConfirmBillModalOpen && !isRequestingBill) {
+            e.preventDefault();
+            handleConfirmRequestBill();
+          } else if (isOrderingClosedModalOpen && !isCallingWaiterForReopen) {
+            e.preventDefault();
+            handleCallWaiterForReopen();
+          }
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLogoutModalOpen, selectedImageModal, selectedDetailItem, customizingItem, isCallWaiterOpen]);
+  }, [
+    isConfirmBillModalOpen,
+    isOrderingClosedModalOpen,
+    isWaiterAlreadyNotifiedModalOpen,
+    isRequestingBill,
+    isCallingWaiterForReopen,
+    isLogoutModalOpen,
+    selectedImageModal,
+    selectedDetailItem,
+    customizingItem,
+    isCallWaiterOpen,
+  ]);
 
   // Flatten all menu items (including subcategories and unassigned items)
   const allItems: any[] = useMemo(() => {
@@ -494,6 +980,7 @@ const CustomerAppInner: React.FC = () => {
   }, [selectedDetailItem, allItems]);
 
   const handleNotificationClick = (notif: any) => {
+    if (!notif) return;
     if (notif.type === 'stock_in' && notif.menuItemId) {
       const target = allItems.find((i) => String(i.id) === String(notif.menuItemId));
       if (target) {
@@ -513,7 +1000,25 @@ const CustomerAppInner: React.FC = () => {
 
         setSelectedDetailItem(target);
       }
-      dismissNotification(notif.id);
+      dismissActiveNotification();
+    } else if (notif.type === 'order_placed' || notif.type === 'order_status') {
+      setActiveTab('orders');
+      dismissActiveNotification();
+    } else if (notif.type === 'ordering_reopened') {
+      setActiveTab('eat');
+      dismissActiveNotification();
+    } else if (notif.type === 'bill_status') {
+      setActiveTab('bill');
+      dismissActiveNotification();
+    } else {
+      if (notif.onAction && typeof notif.onAction === 'function') {
+        try {
+          notif.onAction();
+        } catch (actErr) {
+          console.warn('Notification onAction execution failed:', actErr);
+        }
+      }
+      dismissActiveNotification();
     }
   };
 
@@ -565,8 +1070,13 @@ const CustomerAppInner: React.FC = () => {
     activeBill?.isPaid === true
   );
 
-  // Unified ordering restriction: Only in Case 1 (Payment Initiated), Case 2 (<= 15m remaining), or Completed/Expired session
-  const isOrderingBlocked = isOrderingCutoffReached || isBillPaidOrSettled || isSessionExpired || isSettlementInProgress;
+  // Unified ordering restriction: Only allowed if active session, not paid, not settling, >15m remaining, not bill requested
+  const isOrderingBlocked =
+    isOrderingCutoffReached ||
+    isBillPaidOrSettled ||
+    isSessionExpired ||
+    isSettlementInProgress ||
+    isBillRequested;
 
   // Map menuItemId -> total quantity in cart for instant in-card feedback
   const cartItemQuantityMap = useMemo(() => {
@@ -690,6 +1200,10 @@ const CustomerAppInner: React.FC = () => {
   // Order Placement
   const handlePlaceOrder = async () => {
     setCheckoutError(null);
+    if (isBillRequested) {
+      setIsOrderingClosedModalOpen(true);
+      return;
+    }
     if (isOrderingBlocked) {
       setCheckoutError(
         isOrderingCutoffReached
@@ -714,6 +1228,10 @@ const CustomerAppInner: React.FC = () => {
 
   // Unified handler to open Product Customizer with prefilled latest configuration
   const handleOpenCustomizer = (item: CustomizerItem, customConfig?: ProductCustomizerInitialConfig | null) => {
+    if (isBillRequested) {
+      setIsOrderingClosedModalOpen(true);
+      return;
+    }
     if (isOrderingBlocked) {
       setCartToast(
         isOrderingCutoffReached
@@ -755,6 +1273,10 @@ const CustomerAppInner: React.FC = () => {
 
   // Direct Add handler with immediate feedback
   const handleDirectAdd = (item: CustomizerItem) => {
+    if (isBillRequested) {
+      setIsOrderingClosedModalOpen(true);
+      return;
+    }
     if (isOrderingBlocked) {
       setCartToast(
         isOrderingCutoffReached
@@ -784,6 +1306,10 @@ const CustomerAppInner: React.FC = () => {
 
   // Card increment handler
   const handleCardIncrement = (item: CustomizerItem) => {
+    if (isBillRequested) {
+      setIsOrderingClosedModalOpen(true);
+      return;
+    }
     if (isOrderingBlocked) {
       setCartToast(
         isOrderingCutoffReached
@@ -833,23 +1359,6 @@ const CustomerAppInner: React.FC = () => {
     if (matchingCartItems.length > 0) {
       const targetItem = matchingCartItems[matchingCartItems.length - 1];
       updateCartQuantity(targetItem.id, -1);
-    }
-  };
-
-  // Request Bill handler
-  const [isRequestingBill, setIsRequestingBill] = useState<boolean>(false);
-  const handleRequestBill = async () => {
-    if (isRequestingBill || billRequested) return;
-    setIsRequestingBill(true);
-    try {
-      await requestBill();
-      setBillRequested(true);
-      setOrderSuccessToast('Bill request sent! A waiter has been alerted.');
-      setTimeout(() => setOrderSuccessToast(null), 4000);
-    } catch (err: any) {
-      alert(err.message || 'Failed to request bill from waiter.');
-    } finally {
-      setIsRequestingBill(false);
     }
   };
 
@@ -1372,8 +1881,8 @@ const CustomerAppInner: React.FC = () => {
                     {tab.badge !== undefined && tab.badge > 0 && (
                       <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
                         activeTab === tab.id
-                          ? 'bg-white text-primary dark:bg-black dark:text-[#D4AF37]'
-                          : 'bg-primary/20 text-primary dark:bg-[#D4AF37]/20 dark:text-[#D4AF37]'
+                          ? 'bg-[#D4AF37] text-zinc-950 dark:bg-purple-600 dark:text-white'
+                          : 'bg-[#D4AF37] text-zinc-950 dark:bg-purple-600 dark:text-white'
                       }`}>
                         {tab.badge}
                       </span>
@@ -1395,9 +1904,11 @@ const CustomerAppInner: React.FC = () => {
                   <PhoneCall className="w-3.5 h-3.5 text-primary dark:text-[#D4AF37]" />
                   <span>Call Waiter</span>
                   {activeRequests.length > 0 && (
-                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 dark:bg-[#7C3AED] opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-600 dark:bg-[#7C3AED]" />
+                    <span className="absolute -top-1 -right-1 flex items-center justify-center pointer-events-none">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#D4AF37] dark:bg-purple-500 opacity-75" />
+                      <span className="relative min-w-[18px] h-[18px] px-1 rounded-full bg-[#D4AF37] text-zinc-950 dark:bg-purple-600 dark:text-white text-[10px] font-black border-2 border-white dark:border-[#18181B] flex items-center justify-center shadow-md select-none">
+                        {activeRequests.length}
+                      </span>
                     </span>
                   )}
                 </button>
@@ -1419,7 +1930,7 @@ const CustomerAppInner: React.FC = () => {
                     </span>
                   )}
                   {cartCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-primary dark:bg-[#D4AF37] text-white dark:text-black text-[10px] font-black flex items-center justify-center shadow-xs">
+                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#D4AF37] text-zinc-950 dark:bg-purple-600 dark:text-white text-[10px] font-black flex items-center justify-center shadow-xs">
                       {cartCount}
                     </span>
                   )}
@@ -1672,7 +2183,7 @@ const CustomerAppInner: React.FC = () => {
                     View All →
                   </button>
                 </div>
-                <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-3.5 lg:gap-4 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
+                <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 items-stretch gap-3 sm:gap-3.5 lg:gap-4 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
                   {featuredItems.map((i) => (
                     <div key={i.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
                       <MenuItemCard
@@ -1680,6 +2191,7 @@ const CustomerAppInner: React.FC = () => {
                         variant="home"
                         cartQuantity={cartItemQuantityMap[i.id] || 0}
                         isOrderingDisabled={isOrderingBlocked}
+                        onOrderingBlockedClick={() => setIsOrderingClosedModalOpen(true)}
                         onOpenCustomizer={handleOpenCustomizer}
                         onDirectAdd={handleDirectAdd}
                         onIncrement={handleCardIncrement}
@@ -1706,7 +2218,7 @@ const CustomerAppInner: React.FC = () => {
                     View All →
                   </button>
                 </div>
-                <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-3.5 lg:gap-4 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
+                <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 items-stretch gap-3 sm:gap-3.5 lg:gap-4 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
                   {popularItems.map((i) => (
                     <div key={i.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
                       <MenuItemCard
@@ -1714,6 +2226,7 @@ const CustomerAppInner: React.FC = () => {
                         variant="home"
                         cartQuantity={cartItemQuantityMap[i.id] || 0}
                         isOrderingDisabled={isOrderingBlocked}
+                        onOrderingBlockedClick={() => setIsOrderingClosedModalOpen(true)}
                         onOpenCustomizer={handleOpenCustomizer}
                         onDirectAdd={handleDirectAdd}
                         onIncrement={handleCardIncrement}
@@ -1740,7 +2253,7 @@ const CustomerAppInner: React.FC = () => {
                     View Bar →
                   </button>
                 </div>
-                <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-3.5 lg:gap-4 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
+                <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 items-stretch gap-3 sm:gap-3.5 lg:gap-4 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
                   {drinkHighlights.map((i) => (
                     <div key={i.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
                       <MenuItemCard
@@ -1748,6 +2261,7 @@ const CustomerAppInner: React.FC = () => {
                         variant="home"
                         cartQuantity={cartItemQuantityMap[i.id] || 0}
                         isOrderingDisabled={isOrderingBlocked}
+                        onOrderingBlockedClick={() => setIsOrderingClosedModalOpen(true)}
                         onOpenCustomizer={handleOpenCustomizer}
                         onDirectAdd={handleDirectAdd}
                         onIncrement={handleCardIncrement}
@@ -1772,7 +2286,7 @@ const CustomerAppInner: React.FC = () => {
                     View All →
                   </button>
                 </div>
-                <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-3.5 lg:gap-4 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
+                <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 items-stretch gap-3 sm:gap-3.5 lg:gap-4 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain -mx-3.5 sm:-mx-6 px-3.5 sm:px-6 md:mx-0 md:px-0 pb-2 pt-0.5 snap-x snap-mandatory scroll-smooth">
                   {dessertItems.map((i) => (
                     <div key={i.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
                       <MenuItemCard
@@ -1780,6 +2294,7 @@ const CustomerAppInner: React.FC = () => {
                         variant="home"
                         cartQuantity={cartItemQuantityMap[i.id] || 0}
                         isOrderingDisabled={isOrderingBlocked}
+                        onOrderingBlockedClick={() => setIsOrderingClosedModalOpen(true)}
                         onOpenCustomizer={handleOpenCustomizer}
                         onDirectAdd={handleDirectAdd}
                         onIncrement={handleCardIncrement}
@@ -2137,7 +2652,7 @@ const CustomerAppInner: React.FC = () => {
                                       </button>
                                     </div>
                                   ) : (
-                                    <div className={`p-2.5 sm:p-3.5 flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3 lg:gap-3.5 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain snap-x snap-mandatory scroll-smooth pb-2 pt-0.5 ${
+                                    <div className={`p-2.5 sm:p-3.5 flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 items-stretch gap-2.5 sm:gap-3 lg:gap-3.5 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain snap-x snap-mandatory scroll-smooth pb-2 pt-0.5 ${
                                       availableSubcategories.length === 0 ? 'border-t border-border/40 dark:border-white/5' : ''
                                     }`}>
                                       {displayedItems.map((item) => (
@@ -2146,6 +2661,7 @@ const CustomerAppInner: React.FC = () => {
                                             item={item}
                                             cartQuantity={cartItemQuantityMap[item.id] || 0}
                                             isOrderingDisabled={isOrderingBlocked}
+                                            onOrderingBlockedClick={() => setIsOrderingClosedModalOpen(true)}
                                             onOpenCustomizer={handleOpenCustomizer}
                                             onDirectAdd={handleDirectAdd}
                                             onIncrement={handleCardIncrement}
@@ -2191,13 +2707,14 @@ const CustomerAppInner: React.FC = () => {
                               </button>
 
                               {isExpanded && (
-                                <div className="p-2.5 sm:p-3.5 flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3 lg:gap-3.5 border-t border-border/40 dark:border-white/5 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain snap-x snap-mandatory scroll-smooth pb-2 pt-0.5">
+                                <div className="p-2.5 sm:p-3.5 flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 items-stretch gap-2.5 sm:gap-3 lg:gap-3.5 border-t border-border/40 dark:border-white/5 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain snap-x snap-mandatory scroll-smooth pb-2 pt-0.5">
                                   {unassignedEatItems.map((item) => (
                                     <div key={item.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
                                       <MenuItemCard
                                         item={item}
                                         cartQuantity={cartItemQuantityMap[item.id] || 0}
                                         isOrderingDisabled={isOrderingBlocked}
+                                        onOrderingBlockedClick={() => setIsOrderingClosedModalOpen(true)}
                                         onOpenCustomizer={handleOpenCustomizer}
                                         onDirectAdd={handleDirectAdd}
                                         onIncrement={handleCardIncrement}
@@ -2530,7 +3047,7 @@ const CustomerAppInner: React.FC = () => {
                                         </button>
                                       </div>
                                     ) : (
-                                        <div className={`p-2.5 sm:p-3.5 flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3 lg:gap-3.5 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain snap-x snap-mandatory scroll-smooth pb-2 pt-0.5 ${
+                                        <div className={`p-2.5 sm:p-3.5 flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 items-stretch gap-2.5 sm:gap-3 lg:gap-3.5 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain snap-x snap-mandatory scroll-smooth pb-2 pt-0.5 ${
                                           availableSubcategories.length === 0 ? 'border-t border-border/40 dark:border-white/5' : ''
                                         }`}>
                                           {displayedItems.map((item) => (
@@ -2539,6 +3056,7 @@ const CustomerAppInner: React.FC = () => {
                                                 item={item}
                                                 cartQuantity={cartItemQuantityMap[item.id] || 0}
                                                 isOrderingDisabled={isOrderingBlocked}
+                                                onOrderingBlockedClick={() => setIsOrderingClosedModalOpen(true)}
                                                 onOpenCustomizer={handleOpenCustomizer}
                                                 onDirectAdd={handleDirectAdd}
                                                 onIncrement={handleCardIncrement}
@@ -2584,13 +3102,14 @@ const CustomerAppInner: React.FC = () => {
                                 </button>
 
                                 {isExpanded && (
-                                  <div className="p-2.5 sm:p-3.5 flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3 lg:gap-3.5 border-t border-border/40 dark:border-white/5 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain snap-x snap-mandatory scroll-smooth pb-2 pt-0.5">
+                                  <div className="p-2.5 sm:p-3.5 flex md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 items-stretch gap-2.5 sm:gap-3 lg:gap-3.5 border-t border-border/40 dark:border-white/5 overflow-x-auto md:overflow-visible no-scrollbar overscroll-x-contain snap-x snap-mandatory scroll-smooth pb-2 pt-0.5">
                                     {unassignedDrinkItems.map((item) => (
                                       <div key={item.id} className="w-[124px] xs:w-[132px] sm:w-[140px] shrink-0 md:w-auto snap-start h-full flex">
                                         <MenuItemCard
                                           item={item}
                                           cartQuantity={cartItemQuantityMap[item.id] || 0}
                                           isOrderingDisabled={isOrderingBlocked}
+                                          onOrderingBlockedClick={() => setIsOrderingClosedModalOpen(true)}
                                           onOpenCustomizer={handleOpenCustomizer}
                                           onDirectAdd={handleDirectAdd}
                                           onIncrement={handleCardIncrement}
@@ -2685,13 +3204,14 @@ const CustomerAppInner: React.FC = () => {
               }
 
               return (
-                <div className="grid grid-cols-2 sm:grid-cols-3 sm:landscape:grid-cols-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3.5 lg:gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 sm:landscape:grid-cols-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 items-stretch gap-2.5 sm:gap-3.5 lg:gap-4">
                   {merchItems.map((item) => (
                     <MenuItemCard
                       key={item.id}
                       item={item}
                       cartQuantity={cartItemQuantityMap[item.id] || 0}
                       isOrderingDisabled={isOrderingBlocked}
+                      onOrderingBlockedClick={() => setIsOrderingClosedModalOpen(true)}
                       onOpenCustomizer={handleOpenCustomizer}
                       onDirectAdd={handleDirectAdd}
                       onIncrement={handleCardIncrement}
@@ -2731,7 +3251,7 @@ const CustomerAppInner: React.FC = () => {
               )}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 sm:landscape:grid-cols-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3.5 lg:gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 sm:landscape:grid-cols-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 items-stretch gap-2.5 sm:gap-3.5 lg:gap-4">
               {allItems
                 .filter((i) => {
                   if (!searchQuery.trim()) return true;
@@ -2781,6 +3301,7 @@ const CustomerAppInner: React.FC = () => {
                     item={item}
                     cartQuantity={cartItemQuantityMap[item.id] || 0}
                     isOrderingDisabled={isOrderingBlocked}
+                    onOrderingBlockedClick={() => setIsOrderingClosedModalOpen(true)}
                     onOpenCustomizer={handleOpenCustomizer}
                     onDirectAdd={handleDirectAdd}
                     onIncrement={handleCardIncrement}
@@ -3424,25 +3945,50 @@ const CustomerAppInner: React.FC = () => {
           const drinkSub = Number(activeBill?.drinkSubtotal || 0);
           const merchSub = Number(activeBill?.merchandiseSubtotal || 0);
           const grossSubtotal = Number(activeBill?.grossSubtotal ?? activeBill?.subtotal ?? (foodSub + drinkSub + merchSub));
-          const checkInAmountPaid = Number(
+          const initialCheckInAmount = Number(
+            activeBill?.initialCheckInAmount ??
             activeBill?.amountPaid ??
             activeBill?.confirmedCheckInAmount ??
             activeBill?.entryFeePaid ??
+            sessionData?.initialCheckInAmount ??
             sessionData?.amountPaid ??
+            sessionData?.session?.initialCheckInAmount ??
             sessionData?.session?.amountPaid ??
             0
           );
           const checkInPayment = Number(
             activeBill?.prepaidCreditApplied ??
             activeBill?.redemptionDeduction ??
-            (checkInAmountPaid > 0 ? Math.min(checkInAmountPaid, grossSubtotal) : 0)
+            (initialCheckInAmount > 0 ? Math.min(initialCheckInAmount, grossSubtotal) : 0)
           );
+          const extensions: any[] = Array.isArray(activeBill?.extensions)
+            ? activeBill.extensions
+            : Array.isArray(sessionData?.extensions)
+            ? sessionData.extensions
+            : [];
+          const paidExtensionsTotal = extensions.reduce((sum: number, ext: any) => {
+            const isComplimentary = ext.isComplimentary === true || Number(ext.additionalAmount || 0) === 0;
+            return isComplimentary ? sum : sum + Number(ext.additionalAmount || 0);
+          }, 0);
+          const totalPrepaidSessionAmount = initialCheckInAmount + paidExtensionsTotal;
           const discountTotal = Number(activeBill?.discountTotal || 0);
           const balanceBeforeCharges = Math.max(0, grossSubtotal - discountTotal - checkInPayment);
           const serviceCharge = Number(activeBill?.serviceChargeTotal ?? activeBill?.serviceCharge ?? 0);
           const taxTotal = Number(activeBill?.taxTotal ?? activeBill?.gst ?? 0);
           const rounding = Number(activeBill?.rounding || 0);
           const grandTotal = Number(activeBill?.grandTotal || 0);
+
+          // Non-Refundable Notice Condition:
+          // 1. Customer has actual billable items placed (food/drink/merchandise)
+          // 2. Applicable prepaid session amount exists (initial check-in paid or paid extensions)
+          // 3. Final payable is ₹0 (all charges fully covered by prepaid session credit)
+          // 4. Consumed amount is strictly lower than total prepaid session amount
+          const hasPlacedOrders = billableItems.length > 0 && grossSubtotal > 0;
+          const showNonRefundableCreditNotice =
+            hasPlacedOrders &&
+            totalPrepaidSessionAmount > 0 &&
+            grandTotal === 0 &&
+            grossSubtotal < totalPrepaidSessionAmount;
 
           return (
             <div className="space-y-6 animate-fade-in pb-8">
@@ -3680,12 +4226,12 @@ const CustomerAppInner: React.FC = () => {
                         </div>
                       )}
 
-                      {/* 2. Check-in Amount Paid & Deduction */}
-                      {checkInAmountPaid > 0 && (
+                      {/* 2. Initial Check-in Amount Paid & Deduction */}
+                      {initialCheckInAmount > 0 && (
                         <>
                           <div className="flex justify-between text-text-muted dark:text-zinc-400">
-                            <span>Check-in Amount Paid:</span>
-                            <span className="font-mono text-text-primary dark:text-white">₹{checkInAmountPaid.toFixed(2)}</span>
+                            <span>Initial Check-in Amount Paid:</span>
+                            <span className="font-mono text-text-primary dark:text-white">₹{initialCheckInAmount.toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
                             <span>Less Check-in Payment:</span>
@@ -3699,7 +4245,47 @@ const CustomerAppInner: React.FC = () => {
                         </>
                       )}
 
-                      {/* 4. Service Charge */}
+                      {/* 4. Individually Itemized Session Extensions */}
+                      {extensions.length > 0 && (
+                        <div className="pt-2 pb-1 border-t border-border/60 dark:border-white/10 space-y-1.5">
+                          <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-text-muted dark:text-zinc-400">
+                            <span>Session Extensions ({extensions.length})</span>
+                            <span>Status</span>
+                          </div>
+                          <div className="space-y-1">
+                            {extensions.map((ext: any, idx: number) => {
+                              const isComplimentary = ext.isComplimentary || Number(ext.additionalAmount || 0) === 0;
+                              return (
+                                <div key={ext.id || idx} className="flex justify-between text-xs text-text-muted dark:text-zinc-400">
+                                  <span className="font-semibold text-text-primary dark:text-white">
+                                    Extension #{ext.sequence || idx + 1} (+{ext.extraMinutes} min)
+                                  </span>
+                                  <span className={isComplimentary ? 'font-bold text-emerald-600 dark:text-emerald-400' : 'font-mono font-semibold text-text-primary dark:text-white'}>
+                                    {isComplimentary ? 'Complimentary' : `₹${Number(ext.additionalAmount).toFixed(2)} (Paid)`}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Prepaid Session Credit Informational Notice (Conditional) */}
+                      {showNonRefundableCreditNotice && (
+                        <div className="my-1.5 p-3 rounded-xl bg-primary/5 dark:bg-[#D4AF37]/10 border border-primary/20 dark:border-[#D4AF37]/30 flex items-start gap-2.5 text-left">
+                          <Info className="w-4 h-4 text-primary dark:text-[#D4AF37] shrink-0 mt-0.5" />
+                          <div className="space-y-0.5 min-w-0 flex-1">
+                            <h5 className="text-[11px] sm:text-xs font-bold text-text-primary dark:text-white leading-tight">
+                              Prepaid Session Credit Notice
+                            </h5>
+                            <p className="text-[10.5px] sm:text-[11px] text-text-muted dark:text-zinc-400 leading-relaxed font-normal">
+                              Your initial check-in payment and applicable paid session extensions have been applied toward your table charges. Any unconsumed balance from these prepayments is non-refundable as per house policy.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 5. Service Charge */}
                       {serviceCharge > 0 && (
                         <div className="flex justify-between text-text-muted dark:text-zinc-400">
                           <span>Service Charge (5%)</span>
@@ -3709,7 +4295,7 @@ const CustomerAppInner: React.FC = () => {
                         </div>
                       )}
 
-                      {/* 5. GST */}
+                      {/* 6. GST */}
                       {taxTotal > 0 && (
                         <div className="flex justify-between text-text-muted dark:text-zinc-400">
                           <span>GST / Taxes (5%)</span>
@@ -3726,7 +4312,7 @@ const CustomerAppInner: React.FC = () => {
                         </div>
                       )}
 
-                      {/* 6. Final Amount Payable */}
+                      {/* 7. Final Amount Payable */}
                       <div className="pt-2 border-t border-border/60 dark:border-white/10 flex justify-between items-baseline">
                         <span className="font-bold text-sm text-text-primary dark:text-white">Final Amount Payable</span>
                         <span className="font-black text-base text-primary dark:text-[#D4AF37]">
@@ -3736,7 +4322,7 @@ const CustomerAppInner: React.FC = () => {
 
                       <button
                         onClick={handleRequestBill}
-                        disabled={isRequestingBill || billRequested || billableItems.length === 0}
+                        disabled={isRequestingBill || isBillRequested || billableItems.length === 0}
                         className="w-full mt-3 py-3.5 rounded-xl bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black text-white font-black text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isRequestingBill ? (
@@ -3744,7 +4330,7 @@ const CustomerAppInner: React.FC = () => {
                         ) : (
                           <Receipt className="w-4 h-4" />
                         )}
-                        <span>{billRequested ? 'Staff Notified (Requested)' : isRequestingBill ? 'Requesting...' : 'Request Bill from Waiter'}</span>
+                        <span>{isBillRequested ? 'Staff Notified (Requested)' : isRequestingBill ? 'Requesting...' : 'Request Bill from Waiter'}</span>
                       </button>
                     </div>
                   </div>
@@ -4163,7 +4749,7 @@ const CustomerAppInner: React.FC = () => {
                           </div>
 
                           <div className="flex items-center justify-between py-1.5 border-b border-border/40 dark:border-white/5">
-                            <span className="text-text-muted dark:text-zinc-400">Session Token</span>
+                            <span className="text-text-muted dark:text-zinc-400">Pass Number</span>
                             <div className="flex items-center gap-2">
                               <span className="font-mono font-semibold text-primary dark:text-[#D4AF37]">
                                 {tokenNumber || sessionData?.tokenNumber || '—'}
@@ -4479,7 +5065,7 @@ const CustomerAppInner: React.FC = () => {
                         Showing {sessionHistory.length} {sessionHistory.length === 1 ? 'dining session' : 'dining sessions'}
                         {orderHistory.length > sessionHistory.length && ` (${orderHistory.length} orders total)`}
                       </span>
-                      <span className="text-[11px]">Saved in database · Sorted newest first</span>
+                      <span className="text-[11px]">Saved · Sorted newest first</span>
                     </div>
 
                     <div className="space-y-3.5">
@@ -4893,7 +5479,7 @@ const CustomerAppInner: React.FC = () => {
             {/* Cart Icon with badge count */}
             <div className="relative shrink-0">
               <ShoppingCart className="w-4.5 h-4.5 stroke-[2.2]" />
-              <span className="absolute -top-2 -right-2 min-w-[17px] h-[17px] px-0.5 rounded-full bg-white dark:bg-black text-primary dark:text-[#D4AF37] text-[9.5px] font-black flex items-center justify-center shadow-xs border border-primary/20 dark:border-white/20">
+              <span className="absolute -top-2 -right-2 min-w-[17px] h-[17px] px-0.5 rounded-full bg-[#D4AF37] text-zinc-950 dark:bg-purple-600 dark:text-white text-[9.5px] font-black flex items-center justify-center shadow-xs border border-white dark:border-[#18181B]">
                 {cartCount}
               </span>
             </div>
@@ -4950,8 +5536,11 @@ const CustomerAppInner: React.FC = () => {
             >
               <PhoneCall className="w-6 h-6 sm:w-7 sm:h-7 stroke-[2.2] group-hover:rotate-12 transition-transform duration-200" />
               {activeRequests.length > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-[#D4AF37] text-zinc-950 dark:bg-purple-600 dark:text-white text-[10px] font-black border-2 border-white dark:border-[#18181B] flex items-center justify-center shadow-md select-none">
-                  {activeRequests.length}
+                <span className="absolute -top-1 -right-1 flex items-center justify-center pointer-events-none">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#D4AF37] dark:bg-purple-500 opacity-75" />
+                  <span className="relative min-w-[20px] h-5 px-1 rounded-full bg-[#D4AF37] text-zinc-950 dark:bg-purple-600 dark:text-white text-[10px] font-black border-2 border-white dark:border-[#18181B] flex items-center justify-center shadow-md select-none">
+                    {activeRequests.length}
+                  </span>
                 </span>
               )}
             </button>
@@ -4973,7 +5562,7 @@ const CustomerAppInner: React.FC = () => {
             <div className="relative">
               <ClipboardList className="w-4.5 h-4.5 shrink-0" />
               {pendingOrders.length > 0 && (
-                <span className="absolute -top-1.5 -right-2.5 w-4 h-4 rounded-full bg-primary dark:bg-[#D4AF37] text-white dark:text-black text-[8px] font-black flex items-center justify-center shadow-xs">
+                <span className="absolute -top-1.5 -right-2.5 w-4 h-4 rounded-full bg-[#D4AF37] text-zinc-950 dark:bg-purple-600 dark:text-white text-[8px] font-black flex items-center justify-center shadow-xs">
                   {pendingOrders.length}
                 </span>
               )}
@@ -4997,66 +5586,54 @@ const CustomerAppInner: React.FC = () => {
         </div>
       </nav>
 
-      {/* Global Real-Time Customer Stock & Status Notifications */}
-      {notifications.length > 0 && (
-        <aside aria-label="Customer real-time notifications" className="fixed top-3 inset-x-0 z-[60] flex flex-col items-center pointer-events-none px-3 space-y-2">
-          {notifications.map((notif) => {
-            const isStockIn = notif.type === 'stock_in';
+      {/* Global Real-Time Customer Live Notification Stack (Immediate LIFO, Visual Stack, Preserved Timer & Horizontal Swipe Dismiss) */}
+      {notifications && notifications.length > 0 && activeNotification && (
+        <aside
+          aria-label="Customer real-time live notification stack"
+          className="fixed top-3 inset-x-0 z-[70] flex flex-col items-center pointer-events-none px-3"
+        >
+          <div className="relative w-full max-w-md flex flex-col items-center">
+            {/* Background stacked cards (up to 2 cards layered behind active card for compact, premium layered feel) */}
+            {notifications.slice(1, 3).map((stackedNotif, index) => {
+              const depth = index + 1;
+              const translateYClass = depth === 1 ? '-translate-y-2' : '-translate-y-3.5';
+              const scaleClass = depth === 1 ? 'scale-[0.96]' : 'scale-[0.92]';
+              const opacityClass = depth === 1 ? 'opacity-60' : 'opacity-35';
+              const zIndex = 60 - depth * 10;
 
-            return (
-              <div
-                key={notif.id}
-                onClick={() => isStockIn && handleNotificationClick(notif)}
-                className={`pointer-events-auto max-w-md w-full animate-fade-in flex items-center justify-between gap-2.5 sm:gap-3 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-2xl shadow-xl backdrop-blur-md transition-all ${
-                  isStockIn
-                    ? 'cursor-pointer bg-white/95 dark:bg-[#18181B]/95 text-zinc-900 dark:text-white border-2 border-emerald-500/35 dark:border-emerald-500/40 hover:border-emerald-500/60 dark:hover:border-emerald-400/60 active:scale-[0.99] shadow-emerald-500/10'
-                    : 'bg-zinc-900/95 dark:bg-black/95 text-white border border-rose-500/30 shadow-2xl'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div
-                    className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${
-                      isStockIn
-                        ? 'bg-emerald-500/15 text-emerald-600 dark:bg-emerald-500/25 dark:text-emerald-400 border border-emerald-500/20 shadow-2xs'
-                        : 'bg-rose-500/20 text-rose-400'
-                    }`}
-                  >
-                    {isStockIn ? <Sparkles className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className={`text-xs font-semibold leading-snug ${
-                      isStockIn ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-100'
-                    }`}>
-                      {notif.message}
-                    </p>
+              return (
+                <div
+                  key={stackedNotif.id}
+                  style={{ zIndex }}
+                  className={`absolute top-0 w-full px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-2xl shadow-md backdrop-blur-md bg-white/95 dark:bg-[#18181B]/95 border border-border/80 dark:border-white/10 select-none pointer-events-none transition-all duration-300 ease-out ${translateYClass} ${scaleClass} ${opacityClass}`}
+                >
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-black/5 dark:bg-white/5 border border-border/60 dark:border-white/10 shrink-0 flex items-center justify-center">
+                      <Sparkles className="w-3.5 h-3.5 text-primary dark:text-[#D4AF37]" />
+                    </div>
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <h5 className="text-[12px] sm:text-[13px] font-bold text-text-primary dark:text-white leading-tight truncate">
+                        {stackedNotif.title || stackedNotif.message}
+                      </h5>
+                      <p className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-400 leading-snug truncate mt-0.5">
+                        {stackedNotif.message}
+                      </p>
+                    </div>
                   </div>
                 </div>
+              );
+            })}
 
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {isStockIn && (
-                    <span className="text-[10.5px] font-extrabold px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:border-[#D4AF37]/30 flex items-center gap-0.5 shadow-2xs">
-                      View →
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      dismissNotification(notif.id);
-                    }}
-                    className={`p-1 rounded-lg transition-colors cursor-pointer ${
-                      isStockIn
-                        ? 'text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/10'
-                        : 'text-zinc-400 hover:text-white hover:bg-white/10'
-                    }`}
-                    title="Dismiss"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+            {/* Foreground Active Notification Card */}
+            <div className="relative w-full z-[70]">
+              <CustomerLiveNotificationPopup
+                key={activeNotification.id}
+                notification={activeNotification}
+                onDismiss={dismissActiveNotification}
+                onActionClick={handleNotificationClick}
+              />
+            </div>
+          </div>
         </aside>
       )}
 
@@ -5368,6 +5945,18 @@ const CustomerAppInner: React.FC = () => {
                 <span className="px-4 py-2.5 rounded-xl text-xs font-bold border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400">
                   Out of Stock
                 </span>
+              ) : isBillRequested ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDetailItem(null);
+                    setIsOrderingClosedModalOpen(true);
+                  }}
+                  className="flex-1 max-w-[240px] py-2.5 px-4 rounded-xl bg-amber-500/20 text-amber-800 dark:text-amber-300 font-extrabold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-amber-500/30 hover:bg-amber-500/30"
+                >
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span>Ordering Closed (Bill Requested)</span>
+                </button>
               ) : isOrderingBlocked ? (
                 <button
                   type="button"
@@ -5566,6 +6155,167 @@ const CustomerAppInner: React.FC = () => {
                 ) : (
                   <span>Remove Item</span>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Bill Request Confirmation Dialog */}
+      {isConfirmBillModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-bill-dialog-title"
+          onClick={() => !isRequestingBill && setIsConfirmBillModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 dark:bg-black/80 backdrop-blur-sm animate-fade-in cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-sm sm:max-w-md rounded-3xl bg-white dark:bg-[#18181B] border border-primary/30 dark:border-[#D4AF37]/50 shadow-2xl p-6 sm:p-7 space-y-5 text-center cursor-default animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-primary/10 dark:bg-[#D4AF37]/15 text-primary dark:text-[#D4AF37] border border-primary/20 dark:border-[#D4AF37]/30 flex items-center justify-center mx-auto shadow-xs">
+              <Receipt className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 id="confirm-bill-dialog-title" className="text-lg sm:text-xl font-black text-text-primary dark:text-white tracking-tight">
+                Request Bill from Waiter?
+              </h3>
+              <p className="text-xs sm:text-sm text-text-muted dark:text-zinc-400 leading-relaxed max-w-xs mx-auto">
+                Requesting the bill will pause ordering for this table. Once requested, you will not be able to add new items unless a waiter reopens ordering for your table.
+              </p>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
+                Please request the bill only after you have finished ordering.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isRequestingBill}
+                onClick={() => setIsConfirmBillModalOpen(false)}
+                className="flex-1 py-3 px-4 rounded-xl text-xs font-bold text-text-primary dark:text-zinc-200 bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 border border-border/80 dark:border-white/10 transition-all cursor-pointer disabled:opacity-50"
+              >
+                Keep Ordering
+              </button>
+              <button
+                type="button"
+                disabled={isRequestingBill}
+                onClick={handleConfirmRequestBill}
+                className="flex-1 py-3 px-4 rounded-xl text-xs font-extrabold text-white bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black shadow-md shadow-primary/20 dark:shadow-[#D4AF37]/20 transition-all active:scale-95 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {isRequestingBill ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Requesting...</span>
+                  </>
+                ) : (
+                  <span>Yes, Request Bill</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Ordering is Currently Closed Dialog with Call Waiter Action */}
+      {isOrderingClosedModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ordering-closed-dialog-title"
+          onClick={() => !isCallingWaiterForReopen && setIsOrderingClosedModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 dark:bg-black/80 backdrop-blur-sm animate-fade-in cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-sm sm:max-w-md rounded-3xl bg-white dark:bg-[#18181B] border border-amber-400/40 dark:border-amber-500/40 shadow-2xl p-6 sm:p-7 space-y-5 text-center cursor-default animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto shadow-xs">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 id="ordering-closed-dialog-title" className="text-lg sm:text-xl font-black text-text-primary dark:text-white tracking-tight">
+                Ordering is Currently Closed
+              </h3>
+              <p className="text-xs sm:text-sm text-text-muted dark:text-zinc-400 leading-relaxed max-w-xs mx-auto">
+                You have already requested a bill for this table, so additional orders are currently unavailable.
+              </p>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
+                If you would like to order more food or drinks, please call your waiter and ask them to reopen ordering for your table.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isCallingWaiterForReopen}
+                onClick={() => setIsOrderingClosedModalOpen(false)}
+                className="flex-1 py-3 px-4 rounded-xl text-xs font-bold text-text-primary dark:text-zinc-200 bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 border border-border/80 dark:border-white/10 transition-all cursor-pointer disabled:opacity-50"
+              >
+                Back to Menu
+              </button>
+              <button
+                type="button"
+                disabled={isCallingWaiterForReopen}
+                onClick={handleCallWaiterForReopen}
+                className="flex-1 py-3 px-4 rounded-xl text-xs font-extrabold text-white bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black shadow-md shadow-primary/20 dark:shadow-[#D4AF37]/20 transition-all active:scale-95 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {isCallingWaiterForReopen ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Calling Waiter...</span>
+                  </>
+                ) : (
+                  <>
+                    <PhoneCall className="w-4 h-4" />
+                    <span>Call Waiter</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Waiter Already Notified / Deduplication Modal */}
+      {isWaiterAlreadyNotifiedModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="waiter-already-notified-title"
+          onClick={() => setIsWaiterAlreadyNotifiedModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 dark:bg-black/80 backdrop-blur-sm animate-fade-in cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-sm sm:max-w-md rounded-3xl bg-white dark:bg-[#18181B] border border-amber-400/40 dark:border-amber-500/40 shadow-2xl p-6 sm:p-7 space-y-5 text-center cursor-default animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto shadow-xs">
+              <BellRing className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 id="waiter-already-notified-title" className="text-lg sm:text-xl font-black text-text-primary dark:text-white tracking-tight">
+                Waiter Already Notified
+              </h3>
+              <p className="text-xs sm:text-sm text-text-muted dark:text-zinc-400 leading-relaxed max-w-xs mx-auto font-medium">
+                You have already requested assistance. Your waiter has been notified and will acknowledge your request.
+              </p>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                Our floor staff has received your table call. Another request is not being created. Please wait for the waiter to arrive at your table.
+              </p>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setIsWaiterAlreadyNotifiedModalOpen(false)}
+                className="w-full py-3 px-4 rounded-xl text-xs font-extrabold text-white bg-primary hover:bg-primary-hover dark:bg-[#D4AF37] dark:hover:bg-[#c49f30] dark:text-black shadow-md shadow-primary/20 dark:shadow-[#D4AF37]/20 transition-all active:scale-95 cursor-pointer flex items-center justify-center"
+              >
+                Understood
               </button>
             </div>
           </div>
