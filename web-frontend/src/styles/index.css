@@ -1265,3 +1265,49 @@ html:not(.dark) .premium-btn-primary .nav-icon-badge {
   scrollbar-width: none !important;
 }
 
+/* Mobile Drawer Slide Animations */
+@keyframes mobileDrawerSlideDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0.7;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes mobileDrawerSlideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0.7;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes mobileDrawerExitDown {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+.animate-mobile-drawer-down {
+  animation: mobileDrawerSlideDown 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-mobile-drawer-up {
+  animation: mobileDrawerSlideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-mobile-drawer-exit {
+  animation: mobileDrawerExitDown 0.25s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+

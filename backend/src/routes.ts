@@ -2365,9 +2365,13 @@ router.post('/tables/:id/unlock', authenticate, authorize(['receptionist', 'admi
   const userId = req.user?.id || 'receptionist';
   const isAdmin = req.user?.role?.toLowerCase() === 'admin';
   const isManager = req.user?.role?.toLowerCase() === 'manager';
+  const isReleasedByAdmin = isAdmin || isManager;
 
   try {
-    const updatedTable = await prisma.$transaction(async (tx) => {
+    let previousLockedByUserId: string | null = null;
+    let previousLockedByName: string | null = null;
+
+    const updatedResult = await prisma.$transaction(async (tx) => {
       const table = await tx.table.findUnique({
         where: { id }
       });
@@ -2387,11 +2391,26 @@ router.post('/tables/:id/unlock', authenticate, authorize(['receptionist', 'admi
       let originalStatus = 'available';
 
       if (lockDataStr) {
-        const lockData = JSON.parse(lockDataStr);
-        if (lockData.lockedBy !== userId && !isAdmin && !isManager) {
-          throw new Error('You do not own the lock on this table.');
+        try {
+          const lockData = JSON.parse(lockDataStr);
+          previousLockedByUserId = lockData.lockedByUserId || lockData.lockedBy || null;
+          previousLockedByName = lockData.lockedByName || null;
+
+          if (lockData.lockedBy !== userId && lockData.lockedByUserId !== userId && !isAdmin && !isManager) {
+            const customErr = new Error('You cannot release this table because it is locked by another staff member.') as any;
+            customErr.statusCode = 403;
+            customErr.code = 'FORBIDDEN_NOT_OWNER';
+            throw customErr;
+          }
+          originalStatus = lockData.originalStatus || 'available';
+        } catch (e: any) {
+          if (e.code === 'FORBIDDEN_NOT_OWNER' || e.message.includes('cannot release') || e.message.includes('do not own')) throw e;
         }
-        originalStatus = lockData.originalStatus || 'available';
+      } else if (!isAdmin && !isManager) {
+        const customErr = new Error('You cannot release this table because you do not have an active lock on it.') as any;
+        customErr.statusCode = 403;
+        customErr.code = 'FORBIDDEN_NOT_OWNER';
+        throw customErr;
       }
 
       // Revert status to originalStatus
@@ -2412,6 +2431,25 @@ router.post('/tables/:id/unlock', authenticate, authorize(['receptionist', 'admi
       // Delete lock metadata from Redis
       await redisService.del(lockKey);
 
+      // Terminate any active pending tokens tied to this table so that stale check-in cannot complete
+      const pendingTokens = await tx.token.findMany({
+        where: {
+          tableId: id,
+          status: TokenStatus.PENDING_PAYMENT
+        }
+      });
+      for (const pt of pendingTokens) {
+        await tx.token.update({
+          where: { id: pt.id },
+          data: {
+            status: TokenStatus.CANCELLED,
+            cancelledAt: new Date(),
+            cancelledBy: userId,
+            cancelReason: CancelReason.USER_CANCELLED
+          }
+        });
+      }
+
       // Revert status to finalStatus
       const updated = await tx.table.update({
         where: { id },
@@ -2419,8 +2457,33 @@ router.post('/tables/:id/unlock', authenticate, authorize(['receptionist', 'admi
         include: { placeType: true }
       });
 
-      return updated;
+      return { updated, pendingTokens };
     });
+
+    const updatedTable = updatedResult.updated;
+    const cancelledPendingTokens = updatedResult.pendingTokens;
+
+    // Clean up Redis caches for cancelled pending tokens
+    if (cancelledPendingTokens && cancelledPendingTokens.length > 0) {
+      for (const pt of cancelledPendingTokens) {
+        await redisService.del(`token:${pt.tokenNumber}`).catch(() => {});
+        await redisService.del(`pending-customer:${pt.tokenNumber}`).catch(() => {});
+      }
+    }
+
+    // Clean up in-progress phone and email claim keys in Redis for previous holder
+    if (previousLockedByUserId) {
+      const pPhone = await redisService.get(`checkin:user:${previousLockedByUserId}:phone`);
+      if (pPhone) {
+        await redisService.del(`checkin:active:phone:${pPhone}`).catch(() => {});
+        await redisService.del(`checkin:user:${previousLockedByUserId}:phone`).catch(() => {});
+      }
+      const pEmail = await redisService.get(`checkin:user:${previousLockedByUserId}:email`);
+      if (pEmail) {
+        await redisService.del(`checkin:active:email:${pEmail}`).catch(() => {});
+        await redisService.del(`checkin:user:${previousLockedByUserId}:email`).catch(() => {});
+      }
+    }
 
     await redisService.del(`table:available:${updatedTable.placeTypeId}`);
     await redisService.del('table:available:all');
@@ -2456,6 +2519,10 @@ router.post('/tables/:id/unlock', authenticate, authorize(['receptionist', 'admi
         reservedBy,
         reservedByName,
         reservedByUserId,
+        releasedByAdmin: isReleasedByAdmin,
+        previousLockedByUserId,
+        previousLockedByName,
+        eventId: `release:${updatedTable.id}:${Date.now()}`,
         updatedAt: new Date().toISOString(),
       });
     } catch (e) {}
@@ -2919,20 +2986,27 @@ router.post('/check-in/pre-payment-validate', authenticate, async (req: Authenti
       if (tblStatus === 'in_checkin') {
         const lockKey = `table:lock:${tableId}`;
         const lockStr = await redisService.get(lockKey);
-        if (lockStr) {
-          try {
-            const lockData = JSON.parse(lockStr);
-            if (lockData.lockedBy && lockData.lockedBy !== userId && !isAdmin && !isManager) {
-              return res.status(409).json({
-                success: false,
-                valid: false,
-                conflictType: 'TABLE',
-                message: 'The selected table is currently locked by another receptionist. Please select another table.',
-                redirectStage: 2
-              });
-            }
-          } catch (e) {}
+        if (!lockStr) {
+          return res.status(409).json({
+            success: false,
+            valid: false,
+            conflictType: 'TABLE',
+            message: 'The administrator has released the table you were checking in.',
+            redirectStage: 1
+          });
         }
+        try {
+          const lockData = JSON.parse(lockStr);
+          if (lockData.lockedBy && lockData.lockedBy !== userId && lockData.lockedByUserId !== userId && !isAdmin && !isManager) {
+            return res.status(409).json({
+              success: false,
+              valid: false,
+              conflictType: 'TABLE',
+              message: 'The selected table is currently locked by another receptionist. Please select another table.',
+              redirectStage: 2
+            });
+          }
+        } catch (e) {}
       }
     }
 
@@ -3037,13 +3111,42 @@ const checkInHandler = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(400).json({ success: false, error: { code: 'VAL_009', message: 'Invalid seating or table selection. Please verify and try again.' } });
     }
 
-    // Find table to check capacity
+    // Find table to check capacity and lock status
     const tableObj = await prisma.table.findUnique({ where: { id: finalTableId } });
     if (!tableObj) {
       return res.status(400).json({ success: false, error: { code: 'TABLE_ERR', message: 'Selected table was not found. Please select a valid table.' } });
     }
     if (finalPersonsCount > tableObj.capacity) {
       return res.status(400).json({ success: false, error: { code: 'TABLE_ERR', message: `Group size of ${finalPersonsCount} exceeds table capacity of ${tableObj.capacity}.` } });
+    }
+
+    const tblStatus = (tableObj.status || '').toLowerCase();
+    if (tblStatus === 'occupied') {
+      return res.status(409).json({ success: false, error: { code: 'TABLE_OCCUPIED', message: 'The selected table is already occupied. Please select another table.' } });
+    }
+    if (tblStatus === 'in_checkin') {
+      const lockKey = `table:lock:${finalTableId}`;
+      const lockStr = await redisService.get(lockKey);
+      let hasValidLock = false;
+      const staffRole = (req.user?.role?.name || req.user?.role || '').toLowerCase();
+      const isStaffAdmin = staffRole === 'admin' || staffRole === 'manager';
+      if (lockStr) {
+        try {
+          const lockData = JSON.parse(lockStr);
+          if (lockData.lockedBy === (req.user?.id || 'receptionist') || lockData.lockedByUserId === (req.user?.id || 'receptionist') || isStaffAdmin) {
+            hasValidLock = true;
+          }
+        } catch (e) {}
+      }
+      if (!hasValidLock && !isStaffAdmin) {
+        return res.status(409).json({
+          success: false,
+          error: {
+            code: 'TABLE_LOCK_LOST',
+            message: 'The administrator has released the table you were checking in.'
+          }
+        });
+      }
     }
 
     // Find place type config
@@ -3385,6 +3488,41 @@ const checkInPendingHandler = async (req: AuthenticatedRequest, res: Response) =
             });
           }
         } catch (e) {}
+      }
+    }
+
+    if (tableId) {
+      const table = await prisma.table.findUnique({ where: { id: tableId } });
+      if (!table) {
+        return res.status(404).json({ success: false, error: { code: 'TABLE_NOT_FOUND', message: 'Selected table was not found. Please select an available table.' } });
+      }
+      const tblStatus = (table.status || '').toLowerCase();
+      if (tblStatus === 'occupied') {
+        return res.status(409).json({ success: false, error: { code: 'TABLE_OCCUPIED', message: 'The selected table is already occupied. Please select another table.' } });
+      }
+      if (tblStatus === 'in_checkin') {
+        const lockKey = `table:lock:${tableId}`;
+        const lockStr = await redisService.get(lockKey);
+        let hasValidLock = false;
+        const staffRole = (req.user?.role?.name || req.user?.role || '').toLowerCase();
+        const isStaffAdmin = staffRole === 'admin' || staffRole === 'manager';
+        if (lockStr) {
+          try {
+            const lockData = JSON.parse(lockStr);
+            if (lockData.lockedBy === currentUserId || lockData.lockedByUserId === currentUserId || isStaffAdmin) {
+              hasValidLock = true;
+            }
+          } catch (e) {}
+        }
+        if (!hasValidLock && !isStaffAdmin) {
+          return res.status(409).json({
+            success: false,
+            error: {
+              code: 'TABLE_LOCK_LOST',
+              message: 'The administrator has released the table you were checking in.'
+            }
+          });
+        }
       }
     }
 

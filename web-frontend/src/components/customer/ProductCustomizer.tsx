@@ -351,7 +351,7 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
         setIsDragging(false);
         setIsClosing(false);
         onClose();
-      }, 200);
+      }, 280);
     } else {
       setDragY(0);
       setIsDragging(false);
@@ -374,9 +374,9 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
       onClick={onClose}
       style={{
         opacity: backdropOpacity,
-        transition: isDragging ? 'none' : 'opacity 0.22s ease-out',
+        transition: isDragging ? 'none' : 'opacity 0.28s cubic-bezier(0.32, 0.72, 0, 1)',
       }}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 dark:bg-black/80 backdrop-blur-xs p-0 sm:p-4 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 dark:bg-black/80 backdrop-blur-xs p-0 sm:p-4 overscroll-contain"
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -385,7 +385,9 @@ export const ProductCustomizer: React.FC<ProductCustomizerProps> = ({
         onTouchEnd={handleTouchEnd}
         style={{
           transform: isDragging ? `translateY(${dragY}px)` : isClosing ? 'translateY(100%)' : 'translateY(0)',
-          transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+          transition: isDragging ? 'none' : 'transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)',
+          touchAction: 'pan-y',
+          overscrollBehavior: 'contain',
         }}
         className="w-full max-w-lg rounded-t-3xl sm:rounded-2xl bg-white dark:bg-[#18181B] border border-border/80 dark:border-white/10 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col will-change-transform"
       >

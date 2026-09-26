@@ -215,6 +215,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Automatically trigger parallel background load once user logs in
   useEffect(() => {
     if (user) {
+      // Reconcile and auto-release any unconfirmed temporary table floor dialog lock on initial load/refresh
+      const pendingLockStr = sessionStorage.getItem('bar_floor_dialog_lock');
+      if (pendingLockStr) {
+        try {
+          const parsed = JSON.parse(pendingLockStr);
+          if (parsed.tableId) {
+            api.unlockTable(parsed.tableId).catch(() => {});
+          }
+        } catch (e) {
+          console.warn('[DataContext] Error parsing pending dialog lock on mount:', e);
+        } finally {
+          sessionStorage.removeItem('bar_floor_dialog_lock');
+        }
+      }
+
       refreshAll();
 
       // 1-second interval to update remaining time, trigger expiry alerts, play sound, and handle cleanup
@@ -310,11 +325,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!payload || (!payload.tableId && !payload.tableNumber)) return;
         setTables(prevTables => prevTables.map(t => {
           if (t.id === payload.tableId || t.tableNumber === payload.tableNumber) {
-            const nextStatus = (payload.status || t.status).toUpperCase();
-            const isAvailable = nextStatus === 'AVAILABLE';
+            const nextStatus = (payload.status || t.status || '').toLowerCase();
+            const isAvailable = nextStatus === 'available';
             return {
               ...t,
-              status: nextStatus,
+              status: nextStatus as any,
               lockedBy: isAvailable ? null : (payload.lockedBy !== undefined ? payload.lockedBy : t.lockedBy),
               lockedByName: isAvailable ? null : (payload.lockedByName !== undefined ? payload.lockedByName : t.lockedByName),
               lockedByUserId: isAvailable ? null : (payload.lockedByUserId !== undefined ? payload.lockedByUserId : t.lockedByUserId),

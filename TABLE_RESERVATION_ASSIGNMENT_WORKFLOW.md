@@ -41,9 +41,9 @@ graph TD
 3. **No Premature Table Locking**: Starting an Assign flow does not prematurely lock the table in Redis/PostgreSQL. A table is marked **LOCKED (`in_checkin`)** only when a genuine active/pending Check-In process selects/protects that table during the Check-In workflow.
 4. **Direct Navigation to Check-In Stage 1**: Confirming the Assign modal immediately opens **Check-In Page → Guest Check-In Details / Stage 1** pre-loaded with customer details and table selection.
 5. **Stage 1 Editability**: In Stage 1, customer name, phone number, email, and headcount remain fully editable.
-6. **Resume / Stop Decision Isolation**:
-   - **Resume Check-In**: Previous Check-In continues exactly where it was left. The new Assign attempt is completely discarded with zero leftover reservation or table lock.
-   - **Stop Check-In**: Previous Check-In is completely terminated and cleaned up. New Assign details are preserved and pre-filled on Stage 1.
+6. **Resume / Stop Decision Isolation & Table Lock Resolution**:
+   - **Resume Check-In**: Previous Check-In (e.g. Table L-08) continues exactly where it was left with its lock intact. The newly selected temporary table lock (e.g. Table L-05) is automatically and authoritatively released via `POST /api/tables/:id/unlock?forceAvailable=true`, making L-05 immediately available across the system without leftover locks.
+   - **Stop Check-In**: Previous Check-In (e.g. Table L-08) is completely terminated and its table lock is authoritatively released via `POST /api/check-in/stop` or `POST /api/tables/:id/unlock`. The newly selected table (e.g. Table L-05) remains locked (`in_checkin`) and becomes the active Check-In table, with its details pre-filled and editable on Stage 1.
 
 ---
 
@@ -183,6 +183,25 @@ Table switching must be executed as an atomic sequence of API operations to prev
 2. **Redis Lock Cleanup**: When the old table is unlocked, its corresponding Redis key `table:lock:${oldId}` must be deleted immediately.
 3. **UI Synchronization**: A background refresh must trigger on the client to update the floor layout instantly.
 
+### 8.1 Active Check-In Draft Switching (Interrupted Check-In vs. New Table Selection)
+
+When a staff user is in the middle of an incomplete check-in draft (e.g. Table **L-08** locked in `in_checkin` status) and subsequently navigates to the Tables Floor plan or Assign flow to select another table (e.g. Table **L-05**):
+
+* **Temporary Dual-Lock Phase**: Table **L-05** becomes temporarily locked (`in_checkin`) to protect it from other staff members while the user is presented with the authoritative decision modal on the Check-In page.
+* **Case 1 — Resume Check-In (e.g. Resume L-08)**:
+  * **L-08** remains locked (`in_checkin`) and continues as the active check-in table.
+  * The wizard restores the exact customer details, headcounts, place type, and stage where L-08 was left off.
+  * **L-05** is automatically and authoritatively released via `POST /api/tables/:id/unlock?forceAvailable=true`.
+  * **L-05** immediately returns to `available` across PostgreSQL, Redis, and all connected terminals via WebSocket `table.updated`.
+  * **L-08** is strictly **NOT** released.
+* **Case 2 — Stop Check-In → Yes (e.g. Stop L-08 and Switch to L-05)**:
+  * The user chooses **Stop Check-In**, confirms on the modal (*"Are you sure you want to stop the check-in for Table L-08?"*), and clicks **YES — Stop Check-In**.
+  * **L-08** check-in is authoritatively terminated and released via `POST /api/check-in/stop` or `POST /api/tables/:id/unlock`.
+  * **L-08** immediately returns to `available` (or `reserved` if an independent pending reservation exists).
+  * **L-05** remains actively locked (`in_checkin`) under the authenticated staff user and is promoted as the active Check-In table.
+  * The Check-In wizard opens Stage 1 (Guest Details) pre-filled with L-05 and its customer details, ready for check-in.
+  * The old L-08 draft (`bar_incomplete_checkin`) is permanently purged from `localStorage`.
+
 ---
 
 ## 9. Concurrency
@@ -308,11 +327,17 @@ The session token and its authorized QR code must progress through distinct, non
 
 ### B. Unlock Table
 * **Endpoint**: `POST /api/tables/:id/unlock`
-* **Request Body**: `{"forceAvailable": boolean}` (optional)
-* **Validations**: Table status must be `in_checkin`.
-* **Database Updates**: Reverts table status to `reserved` (if pending reservation exists) or `available`.
-* **Redis Updates**: Deletes `table:lock:${id}` key.
+* **Request Body / Query**: `{"forceAvailable": boolean}` (optional) / `?forceAvailable=true`
+* **Validations**:
+  * Table `id` must be a valid UUID.
+  * Table status must be `in_checkin`.
+  * **Owner Authorization Check**: Inspects Redis lock key `table:lock:${id}` (`lockedBy` / `lockedByUserId`). If requesting user is NOT the owner and is NOT an Administrator/Manager, request is rejected with HTTP `403 FORBIDDEN_NOT_OWNER` (*"You cannot release this table because it is locked by another staff member."*).
+  * Administrator and Manager have global authority to bypass ownership checks and release any locked table.
+* **Database Updates**: Reverts table status to `available` (or `reserved` if active pending reservation exists, unless `forceAvailable=true`).
+* **Redis Updates**: Deletes `table:lock:${id}` key and invalidates `tables:all` / `table:available:all`.
+* **Realtime Broadcast**: Emits `table.updated` with status `available` (or `reserved`) and nullified lock owner fields. If released by admin, emits `releasedByAdmin: true` and `previousLockedByUserId` to authoritatively reset the affected receptionist's in-progress check-in.
 * **Success Response**: `{ success: true, table: Table }` (Status `200`)
+* **Error Response**: `{ success: false, error: { code: "FORBIDDEN_NOT_OWNER" | "VAL_UUID" | "LOCK_ERR", message: string } }` (Status `403` / `400`)
 
 ### C. Stop / Terminate Check-In
 * **Endpoint**: `POST /api/check-in/stop`
@@ -355,15 +380,37 @@ To prevent database corruption, the following integrity constraints must be main
 
 ## 17. UI State / Button Rules
 
-Depending on the table status, the action buttons in the seating layout and inspect drawers must update dynamically:
+Depending on the table status and staff ownership, the action buttons in the seating layout and inspect drawers update dynamically:
 
-| Table Status | Assign Button | Reserve Button | Check-In Button | Cancel Button | Change Table | Close Session | Extend |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`available`** | Enabled | Enabled | Enabled | Hidden | Hidden | Hidden | Hidden |
-| **`reserved`** | Disabled | Disabled | Enabled (Owner) | Enabled (Owner)| Hidden | Hidden | Hidden |
-| **`in_checkin`**| Disabled | Disabled | Disabled | Hidden | Enabled | Hidden | Hidden |
-| **`occupied`** | Disabled | Disabled | Disabled | Hidden | Hidden | Enabled | Enabled |
-| **`maintenance`**| Disabled | Disabled | Disabled | Hidden | Hidden | Hidden | Hidden |
+| Table Status | Assign Button | Reserve Button | Check-In Button | Cancel Button | Resume Check-In | Release Lock | Close Session | Extend |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **`available`** | Enabled | Enabled | Enabled | Hidden | Hidden | Hidden | Hidden | Hidden |
+| **`reserved`** | Disabled | Disabled | Enabled (Owner) | Enabled (Owner/Admin)| Hidden | Hidden | Hidden | Hidden |
+| **`in_checkin`** (Owner) | Disabled | Disabled | Disabled | Hidden | Enabled | Enabled | Hidden | Hidden |
+| **`in_checkin`** (Admin/Mgr) | Disabled | Disabled | Disabled | Hidden | Disabled | Enabled (Global) | Hidden | Hidden |
+| **`in_checkin`** (Non-Owner) | Disabled | Disabled | Disabled (In Check-In)| Hidden | Disabled | Hidden | Hidden | Hidden |
+| **`occupied`** | Disabled | Disabled | Disabled | Hidden | Hidden | Hidden | Enabled | Enabled |
+| **`maintenance`**| Disabled | Disabled | Disabled | Hidden | Hidden | Enabled (Admin)| Hidden | Hidden |
+
+### Table Card Lock Ownership & Role Display (`in_checkin` state):
+When a table is locked in the `in_checkin` state, the table card on the floor layout displays the locking staff member's full name and abbreviated role:
+- **Format**: `Locked by: {Staff Full Name} · {ShortRole}` (e.g. `Locked by: Sanjay K · Rep`, `Locked by: Admin User · Admin`)
+- **Role Abbreviation Mapping**:
+  - `Receptionist` → `Rep`
+  - `Administrator` / `Admin` → `Admin`
+  - `Manager` → `Mgr`
+  - `Waiter` → `Waiter`
+  - `Bartender` → `Bar`
+  - `Chef` / `Kitchen` → `Chef`
+
+### Actions on `in_checkin` Table Cards:
+1. **Lock Owner Staff**:
+   - **Resume Check-In**: Immediately navigates to `/check-in` restoring the active check-in session for that table.
+   - **Release**: Opens a confirmation modal (`Are you sure you want to release this table lock?`). Upon confirmation, calls `POST /api/tables/:id/unlock?forceAvailable=true` to authoritatively clear the Redis lock and reset the table status to `available` (or `reserved` if a pending reservation exists).
+2. **Non-Owner Staff**:
+   - Displays a disabled **In Check-In** button with a lock badge. Other staff cannot unlock, resume, or reassign another user's locked table.
+3. **Administrator & Manager Role**:
+   - Displays the **Release** button to allow supervisory release of abandoned or stuck locks across the entire floor layout.
 
 ---
 
@@ -435,8 +482,8 @@ stateDiagram-v2
 
 ## 20. Authoritative Workflow & State Transition Rules
 
-1. **Resume Path**: Previous Check-In continues exactly where it was left (exact stage, exact entered data, valid table/token state). The new Assign attempt disappears completely with zero leftover state, no temporary reservation created, and no locked tables.
-2. **Stop Path**: Previous Check-In is completely terminated and cleaned up in database/Redis (customer details removed from active state, phone/email reusable, table released to `available`). The new Assign details are preserved and pre-filled on **Guest Check-In Details (Stage 1)** as editable fields.
+1. **Resume Path**: Previous Check-In (e.g. Table L-08) continues exactly where it was left (exact stage, exact entered data, valid table/token state, lock preserved). The newly selected temporary table lock (e.g. Table L-05) created by the interrupted Assign action is automatically and authoritatively released via `POST /api/tables/:id/unlock?forceAvailable=true`, making L-05 immediately available across the system with zero leftover locks.
+2. **Stop Path**: Previous Check-In (e.g. Table L-08) is completely terminated and cleaned up in PostgreSQL/Redis via `POST /api/check-in/stop`, releasing L-08 to `available`. The newly selected table (e.g. Table L-05) remains locked (`in_checkin`) and becomes the active Check-In table, pre-filling customer details on **Guest Check-In Details (Stage 1)** as fully editable fields.
 3. **Explicit Reservation Only**: A table/customer appears on the Reservations page **only** after the user explicitly performs the dedicated **Reservation** action. Entering Assign details or encountering Resume/Stop prompts does **never** create a reservation record.
 4. **Explicit Cancellation Only**: A valid reservation is cancelled **only** through the explicit **Cancel Reservation** operation and confirmation. Unrelated navigation, check-in starts, or stops do not affect independent valid reservations.
 5. **Table Lock Authoritativeness**: A table is marked **LOCKED (`in_checkin`)** only when a genuine, active pending Check-In process currently owns/protects that table in the backend/Redis state.
@@ -1107,3 +1154,72 @@ sequenceDiagram
    - Upon background data refresh or reservation state transition, validation caches (`validatedPhone`, `validatedEmail`) are automatically invalidated and re-evaluated via background API requests with zero full-page reloads (`window.location.reload()`).
 4. **Immediate Recovery for Character-by-Character Input**:
    - Typing or modifying digits in the phone or email fields immediately triggers debounced re-validation against the live backend state, ensuring that after a reservation is cancelled, entering the customer's phone/email returns `VALID` without requiring manual page reloads.
+
+---
+
+### Test Case 17: Active Check-In Table-Lock Switching, Owner Authorization, and Floor Attribution
+
+#### A. Objective
+Verify atomic table-lock switching between an existing in-progress check-in draft (e.g. Table L-08) and a newly initiated assignment target (e.g. Table L-05). Ensure that selecting **Resume Check-In** keeps L-08 locked and authoritatively releases L-05 via `POST /api/tables/:id/unlock?forceAvailable=true`, while selecting **Stop Check-In → Yes** stops L-08 via `POST /api/check-in/stop` (releasing L-08) and activates L-05 on Stage 1. Furthermore, verify that table cards render the locking staff's full name and short role (`Locked by: Sanjay K · Rep`), and unauthorized non-owner unlock attempts are strictly rejected with `403 FORBIDDEN_NOT_OWNER`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Staff as User A (Receptionist - Sanjay K)
+    actor OtherStaff as User B (Receptionist - Anita R)
+    actor Admin as Admin / Manager
+    participant Backend as Backend API & PostgreSQL
+    participant Redis as Redis Cache
+    participant WebSocket as WebSocket Broadcast
+
+    Note over Staff,Redis: Phase 1: Active Check-In Draft on L-08
+    Staff->>Backend: Start Check-In on Table L-08
+    Backend->>Redis: Set table:lock:L-08 (lockedBy: User A, role: Receptionist)
+    Backend->>WebSocket: Broadcast table:updated (L-08, in_checkin, lockedByName: 'Sanjay K', lockedByRole: 'Receptionist')
+
+    Note over Staff,Redis: Phase 2: Staff navigates to Tables and Assigns L-05
+    Staff->>Backend: Assign Table L-05 (Fill customer details)
+    Backend->>Redis: Set table:lock:L-05 (lockedBy: User A)
+    Backend->>WebSocket: Broadcast table:updated (L-05, in_checkin)
+
+    Note over Staff,Redis: Phase 3: Decision Prompt (Resume vs Stop)
+    alt User chooses Resume Check-In
+        Staff->>Backend: Resume L-08 Check-In
+        Staff->>Backend: Unlock L-05 (POST /api/tables/L-05/unlock?forceAvailable=true)
+        Backend->>Redis: Del table:lock:L-05
+        Backend->>Backend: Reset L-05 status = 'available'
+        Backend->>WebSocket: Broadcast table:unlocked / table:updated (L-05, available)
+        Note over Staff: L-08 remains locked & active in Check-In Wizard; L-05 available for all
+    else User chooses Stop Check-In -> Confirm Yes
+        Staff->>Backend: Stop Check-In (POST /api/check-in/stop for L-08)
+        Backend->>Redis: Del table:lock:L-08
+        Backend->>Backend: Reset L-08 status = 'available'
+        Backend->>WebSocket: Broadcast table:unlocked (L-08, available)
+        Note over Staff: L-05 remains locked & becomes active check-in on Stage 1
+    end
+
+    Note over OtherStaff,Admin: Phase 4: Non-Owner & Admin Authorization Checks
+    OtherStaff->>Backend: Attempt Unlock L-08 (POST /api/tables/L-08/unlock)
+    Backend-->>OtherStaff: 403 Forbidden (FORBIDDEN_NOT_OWNER)
+    Admin->>Backend: Admin Unlock L-08 (POST /api/tables/L-08/unlock)
+    Backend->>Redis: Del table:lock:L-08 (Global Admin Authority)
+    Backend->>WebSocket: Broadcast table:unlocked (L-08, available)
+    Backend-->>Admin: 200 OK (Table unlocked)
+```
+
+#### B. Architectural Rules & Authorization Matrix:
+1. **Authoritative Lock Attribution**:
+   - Redis table lock records store metadata: `{ lockedBy: userId, lockedByUserId: userId, lockedByName: userName, lockedByRole: role, originalStatus: 'available' | 'reserved', lockedAt: timestamp }`.
+   - The floor layout renders: `Locked by: {lockedByName} · {ShortRole}` with exact short role mapping (`Rep`, `Admin`, `Mgr`, `Waiter`, `Bar`, `Chef`).
+2. **Owner-Based Unlock Authorization**:
+   - `POST /api/tables/:id/unlock` verifies caller identity:
+     ```typescript
+     if (lock && lock.lockedBy !== req.user.id && req.user.role !== 'Admin' && req.user.role !== 'Manager') {
+       return res.status(403).json({ success: false, error: 'FORBIDDEN_NOT_OWNER', message: 'You cannot unlock a table locked by another staff member.' });
+     }
+     ```
+   - Regular non-owner staff receive `403 Forbidden` with `FORBIDDEN_NOT_OWNER`.
+   - Administrators and Managers possess supervisory global release override.
+3. **Clean Dual-Lock Resolution**:
+   - **Resume Flow**: Prior draft table (L-08) lock is retained; new target table (L-05) lock is released via `POST /api/tables/:id/unlock?forceAvailable=true`.
+   - **Stop Flow**: Prior draft table (L-08) lock is released via `POST /api/check-in/stop`; new target table (L-05) lock is retained as active check-in.

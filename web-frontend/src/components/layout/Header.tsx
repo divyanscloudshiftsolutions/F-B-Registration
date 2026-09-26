@@ -3,14 +3,15 @@ import { Bell, Moon, Sun, RefreshCw, Trash2, LogOut, CheckSquare } from 'lucide-
 import { useAuth } from '../../context/AuthContext';
 
 interface HeaderProps {
- title: string;
- onSidebarToggle?: () => void;
- isSidebarCollapsed?: boolean;
- onRefresh?: () => void;
- isRefreshing?: boolean;
+  title: string;
+  mobileTitle?: string;
+  onSidebarToggle?: () => void;
+  isSidebarCollapsed?: boolean;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ title, onSidebarToggle, onRefresh, isRefreshing }) => {
+export const Header: React.FC<HeaderProps> = ({ title, mobileTitle, onSidebarToggle, onRefresh, isRefreshing }) => {
  const { 
  isDark, 
  toggleTheme, 
@@ -129,7 +130,16 @@ export const Header: React.FC<HeaderProps> = ({ title, onSidebarToggle, onRefres
           </button>
         )}
         <div className="min-w-0">
-          <h2 className="text-base sm:text-xl md:text-2xl font-black text-text-primary dark:text-white tracking-wider uppercase leading-none truncate">{title}</h2>
+          <h2 className="text-sm sm:text-xl md:text-2xl font-black text-text-primary dark:text-white tracking-wider uppercase leading-none truncate">
+            {mobileTitle ? (
+              <>
+                <span className="sm:hidden">{mobileTitle}</span>
+                <span className="hidden sm:inline">{title}</span>
+              </>
+            ) : (
+              title
+            )}
+          </h2>
           <p className="text-[9px] sm:text-[10px] text-text-muted font-bold mt-1 sm:mt-1.5 uppercase tracking-widest truncate">Pegs N Bottles</p>
         </div>
       </div>
@@ -196,12 +206,12 @@ export const Header: React.FC<HeaderProps> = ({ title, onSidebarToggle, onRefres
                   </div>
                 ) : (
                   notifications.map(notif => (
-                    <div key={notif.id} className="p-3.5 sm:p-4 bg-bg-secondary-surface dark:bg-black/10 hover:bg-bg-hover transition-all text-xs space-y-1 border-b border-border/30 last:border-b-0">
+                    <div key={notif.id} className="p-3.5 sm:p-4 bg-bg-secondary-surface dark:bg-black/10 hover:bg-bg-hover transition-all text-xs space-y-1 border-b border-border/30 last:border-b-0 select-text group">
                       <div className="flex justify-between items-start gap-2">
-                        <p className="font-bold text-text-primary text-[11px]">{notif.title}</p>
-                        <span className="text-[9px] text-text-muted font-mono">{notif.timestamp}</span>
+                        <p className="font-bold text-text-primary text-[11px] select-text cursor-text">{notif.title}</p>
+                        <span className="text-[9px] text-text-muted font-mono shrink-0 select-none">{notif.timestamp}</span>
                       </div>
-                      <p className="text-[10px] text-text-muted leading-relaxed">{notif.message}</p>
+                      <p className="text-[10px] text-text-muted leading-relaxed select-text cursor-text">{notif.message}</p>
                     </div>
                   ))
                 )}

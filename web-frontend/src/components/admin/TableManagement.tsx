@@ -8,6 +8,35 @@ import { TableDiagram } from '../TableDiagram';
 import { SeatingRow } from '../SeatingRow';
 import { ExtendSessionModal } from '../modals/ExtendSessionModal';
 
+const isPremiumTable = (tb: Table | any): boolean => {
+  if (!tb) return false;
+  const cat = String(
+    tb.categoryName ||
+    (typeof tb.placeType === 'object' ? tb.placeType?.name : (typeof tb.placeType === 'string' ? tb.placeType : '')) ||
+    ''
+  ).toUpperCase();
+  if (cat.includes('PREMIUM') || cat.includes('LOUNGE') || cat.includes('VIP')) return true;
+  const num = String(tb.tableNumber || tb.number || '').toUpperCase();
+  if (num.startsWith('L-') || num.startsWith('L') || num.startsWith('VIP') || num.startsWith('V-')) return true;
+  return false;
+};
+
+const isStandardTable = (tb: Table | any): boolean => {
+  return !isPremiumTable(tb);
+};
+
+const formatShortRole = (role?: string | null): string => {
+  if (!role) return 'Staff';
+  const r = role.toLowerCase();
+  if (r === 'receptionist') return 'Rep';
+  if (r === 'admin' || r === 'administrator') return 'Admin';
+  if (r === 'manager') return 'Mgr';
+  if (r === 'waiter' || r === 'server') return 'Waiter';
+  if (r === 'bartender') return 'Bar';
+  if (r === 'chef') return 'Chef';
+  return role;
+};
+
 export const TableManagement: React.FC = () => {
   const { user, showToast, isDark } = useAuth();
   const isAdmin = user?.role?.toLowerCase() === 'admin';
@@ -203,14 +232,16 @@ export const TableManagement: React.FC = () => {
 
   const filteredTables = tables
   .filter(tb => {
-    const p = (tb.placeTypeId || tb.categoryName || tb.tableNumber || '').toUpperCase();
     if (selectedPlace === 'STANDING_BAR') {
-      return p.includes('STANDING') || p.includes('BAR') || tb.tableNumber.startsWith('S-');
+      return isStandardTable(tb);
     }
-    return p.includes('PREMIUM') || p.includes('LOUNGE') || tb.tableNumber.startsWith('L-');
+    return isPremiumTable(tb);
   })
   .filter(tb => {
     if (filter === 'all') return true;
+    if (filter === 'locked') {
+      return tb.status === 'in_checkin' || (Boolean(tb.lockedBy || tb.lockedByUserId || tb.lockedByName) && tb.status !== 'occupied');
+    }
     return tb.status === filter;
   });
 
@@ -454,7 +485,7 @@ export const TableManagement: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between gap-4 w-full px-4">
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 w-full sm:w-auto block mb-1 sm:mb-0">Status Filter:</span>
-            {['all', 'available', 'occupied', 'reserved'].map(f => (
+            {['all', 'available', 'locked', 'occupied', 'reserved'].map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -553,7 +584,7 @@ export const TableManagement: React.FC = () => {
                     <div
                       key={tb.id}
                       onClick={() => setInspectingTable(tb)}
-                      className={`w-full max-w-[320px] mx-auto shrink-0 p-3 rounded-2xl border transition-all relative overflow-hidden flex flex-col justify-between gap-3 bg-white dark:bg-[#18181A] shadow-xs cursor-pointer ${
+                      className={`w-[245px] sm:w-[290px] shrink-0 snap-start p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl dark:rounded-xl border transition-all relative overflow-hidden flex flex-col justify-between gap-3 bg-white dark:bg-[#18181A] shadow-xs cursor-pointer ${
                         inspectingTable?.id === tb.id
                           ? 'border-primary dark:border-[#D4AF37] ring-1 ring-primary/30 dark:ring-[#D4AF37]/30'
                           : isFull
@@ -639,6 +670,19 @@ export const TableManagement: React.FC = () => {
                                 </span>
                               </div>
                             )}
+                          </div>
+                        ) : tb.status === 'in_checkin' ? (
+                          <div className="space-y-1 border-t border-border-main/40 pt-1 text-text-muted">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-semibold text-amber-600 dark:text-amber-400">🔒 Active Lock</span>
+                              <span className="font-mono text-text-main font-bold">{capacity} Seats</span>
+                            </div>
+                            <div className="flex items-center justify-between text-[9.5px] text-text-muted/80">
+                              <span>Locked by:</span>
+                              <span className="font-bold text-text-primary truncate max-w-[140px]" title={`${tb.lockedByName || tb.lockedBy || 'Staff'} · ${formatShortRole(tb.lockedByRole)}`}>
+                                {tb.lockedByName || tb.lockedBy || 'Staff'} · {formatShortRole(tb.lockedByRole)}
+                              </span>
+                            </div>
                           </div>
                         ) : (
                           <div className="text-[10px] text-text-muted border-t border-border-main/30 pt-1 flex justify-between">

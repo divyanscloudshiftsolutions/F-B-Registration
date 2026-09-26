@@ -27,6 +27,7 @@ import { useData } from '../context/DataContext';
 import { useRovingSelection } from '../hooks/useRovingSelection';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { useEnterKey } from '../hooks/useEnterKey';
+import { onSocketEvent } from '../services/socket';
 import jsQR from 'jsqr';
 import { extractTokenNumber } from '../utils/tokenExtractor';
 
@@ -49,15 +50,32 @@ const copyToClipboard = async (text: string): Promise<boolean> => {
     textArea.select();
     const successful = document.execCommand('copy');
     document.body.removeChild(textArea);
-    return successful;
   } catch {
     return false;
   }
 };
 
+const isPremiumTable = (tb: Table | any): boolean => {
+  if (!tb) return false;
+  const cat = String(
+    tb.categoryName ||
+    (typeof tb.placeType === 'object' ? tb.placeType?.name : (typeof tb.placeType === 'string' ? tb.placeType : '')) ||
+    ''
+  ).toUpperCase();
+  if (cat.includes('PREMIUM') || cat.includes('LOUNGE') || cat.includes('VIP')) return true;
+  const num = String(tb.tableNumber || tb.number || '').toUpperCase();
+  if (num.startsWith('L-') || num.startsWith('L') || num.startsWith('VIP') || num.startsWith('V-')) return true;
+  return false;
+};
+
+const isStandardTable = (tb: Table | any): boolean => {
+  return !isPremiumTable(tb);
+};
+
 export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ onNavigate }) => {
-  const { showToast, preselectedTable, setPreselectedTable } = useAuth();
+  const { user, showToast, preselectedTable, setPreselectedTable } = useAuth();
   const { tables, rates, tokens: activeTokens, reservations, refreshTables, refreshTokens, refreshReservations } = useData();
+  const processedReleaseEventsRef = useRef<Set<string>>(new Set());
   const [stage, setStage] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [reservationId, setReservationId] = useState('');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -217,6 +235,85 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
     }
   }, [tables, showContinuePrompt]);
 
+  // Real-time listener for Admin Forced Table Release vs Active Table Lock
+  useEffect(() => {
+    const unsubscribe = onSocketEvent('table.updated', (payload: any) => {
+      if (!payload || !payload.tableId) return;
+      if (payload.releasedByAdmin) {
+        const isAffectingCurrentSelection = selectedTableId && payload.tableId === selectedTableId;
+        const isAffectingCurrentUser = payload.previousLockedByUserId && user?.id && payload.previousLockedByUserId === user.id;
+
+        if (isAffectingCurrentSelection || isAffectingCurrentUser) {
+          const eventKey = payload.eventId || `release:${payload.tableId}:${payload.updatedAt || ''}`;
+          if (processedReleaseEventsRef.current.has(eventKey)) {
+            return;
+          }
+          processedReleaseEventsRef.current.add(eventKey);
+
+          // 1. Stop any active camera/stream tracks
+          if (activeStreamRef.current) {
+            activeStreamRef.current.getTracks().forEach(track => track.stop());
+            activeStreamRef.current = null;
+          }
+          if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            setStream(null);
+          }
+          setCameraActive(false);
+
+          // 2. Invalidate all local check-in drafts and targets
+          localStorage.removeItem('bar_incomplete_checkin');
+          localStorage.removeItem('bar_checkin_assign_target');
+          localStorage.removeItem('bar_checkin_original_status');
+          localStorage.removeItem('bar_checkin_just_assigned');
+
+          // 3. Reset entire active check-in state
+          setSelectedTableId('');
+          setOriginalTableStatus('');
+          setPreselectedTable(null);
+          setPhoneNumber('');
+          setCustomerName('');
+          setEmail('');
+          setPersonsCount(2);
+          setSelectedPlaceTypeId('standing_bar');
+          setReservationId('');
+          setActivePendingToken(null);
+          setCreatedToken(null);
+          setQrCodeInput('');
+          setShowContinuePrompt(false);
+          setShowStopCheckInConfirmModal(false);
+          setShowPaymentCollectedConfirm(false);
+          setShowCapacityWarning(false);
+          setShowQrErrorModal(false);
+          setIsSubmitting(false);
+          setIsVerifyingQr(false);
+          setIsSendingQr(false);
+          setPhoneValidationStatus('IDLE');
+          setEmailValidationStatus('IDLE');
+          setPhoneConflict(false);
+          setEmailConflict(false);
+          setPhoneConflictDetail(null);
+          setEmailConflictDetail(null);
+
+          // 4. Immediately return to the Receptionist's first/main page
+          setStage(1);
+
+          // 5. Show non-blocking notification exactly once
+          showToast('The administrator has released the table you were checking in.', 'danger');
+
+          // 6. Refresh data
+          refreshTables();
+          refreshTokens();
+          refreshReservations();
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [selectedTableId, stage, user, stream, showToast, refreshTables, refreshTokens, refreshReservations, setPreselectedTable]);
+
   const handleStopCheckInWithConfirmation = (action: () => void) => {
     setOnConfirmStop(() => action);
     setShowStopCheckInConfirmModal(true);
@@ -246,18 +343,28 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showStopCheckInConfirmModal]);
 
-  const renderStopCheckInConfirmModal = showStopCheckInConfirmModal && (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-sm space-y-6 text-center shadow-2xl animate-fadeIn text-text-main">
-        <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mx-auto">
-          <AlertTriangle size={24} />
-        </div>
-        <div className="space-y-2">
-          <h3 className="text-base font-black uppercase tracking-wider text-red-500">Stop Check-In?</h3>
-          <p className="text-xs text-text-muted leading-relaxed">
-            Are you sure you want to stop this Check-In?
-          </p>
-        </div>
+  const renderStopCheckInConfirmModal = showStopCheckInConfirmModal && (() => {
+    let draftTableNum = '';
+    try {
+      const saved = localStorage.getItem('bar_incomplete_checkin');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        draftTableNum = parsed.tableNumber || (parsed.selectedTableId ? (tables.find(t => t.id === parsed.selectedTableId)?.tableNumber || '') : '');
+      }
+    } catch {}
+
+    return (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div className="bg-bg-surface border border-border-main rounded-3xl p-6 w-full max-w-sm space-y-6 text-center shadow-2xl animate-fadeIn text-text-main">
+          <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mx-auto">
+            <AlertTriangle size={24} />
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-base font-black uppercase tracking-wider text-red-500">Stop Check-In?</h3>
+            <p className="text-xs text-text-muted leading-relaxed">
+              Are you sure you want to stop the check-in{draftTableNum ? ` for Table ${draftTableNum}` : ''}?
+            </p>
+          </div>
         <div className="flex flex-col sm:flex-row gap-3 pt-2">
           <button
             autoFocus
@@ -286,7 +393,8 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
         </div>
       </div>
     </div>
-  );
+    );
+  })();
 
   const renderQrErrorModal = showQrErrorModal && (
     <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
@@ -726,6 +834,8 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
 
   const handleContinueCheckIn = async () => {
     const savedStr = localStorage.getItem('bar_incomplete_checkin');
+    const savedTargetStr = localStorage.getItem('bar_checkin_assign_target');
+
     let state: any = null;
     if (savedStr) {
       try {
@@ -735,8 +845,26 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
       }
     }
 
+    let savedTarget: any = null;
+    if (savedTargetStr) {
+      try {
+        savedTarget = JSON.parse(savedTargetStr);
+      } catch (e) {
+        console.error("Failed to parse assign target in resume", e);
+      }
+    }
+
+    // Case 1 — Resume Check-In: Release newly selected temporary table lock (e.g. L-05) so it becomes available immediately
+    if (savedTarget && savedTarget.tableId && (!state || savedTarget.tableId !== state.selectedTableId)) {
+      try {
+        await api.unlockTable(savedTarget.tableId, true);
+      } catch (err) {
+        console.warn('Failed to release temporary target table lock on resume:', err);
+      }
+    }
+
     if (state) {
-      // CORE MANDATORY RULE: Restore EXACT entered values and EXACT UI state without assumptions or inference
+      // Restore EXACT entered values and EXACT UI state without assumptions or inference
       const restoredPhone = state.phoneNumber || '';
       const restoredName = state.customerName || '';
       const restoredEmail = state.email || '';
@@ -758,14 +886,17 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
       setQrVerificationSuccess(state.qrVerificationSuccess || false);
       setPaymentMode(state.paymentMode || 'CASH');
 
-      // CORE RULE — RESUME MUST RESTORE THE EXACT LAST STATE:
-      // Always restore the exact saved stage (1, 2, 3, 4, 5) directly without inference or heuristics.
+      // Always restore the exact saved stage (1, 2, 3, 4, 5) directly
       const exactStage: 1 | 2 | 3 | 4 | 5 = (state.stage >= 1 && state.stage <= 5) ? (Number(state.stage) as 1 | 2 | 3 | 4 | 5) : 1;
       setStage(exactStage);
+
+      const draftTbl = tables.find(t => t.id === restoredTableId)?.tableNumber || state.tableNumber;
+      if (savedTarget?.tableNumber) {
+        showToast(`Resumed check-in for Table ${draftTbl || 'draft'}. Released temporary lock on Table ${savedTarget.tableNumber}.`, 'info');
+      }
     }
 
     // Clean up assign target keys so they don't overwrite the resumed draft on future actions
-    // (The newly assigned reservation remains isolated and authoritative in PostgreSQL)
     localStorage.removeItem('bar_checkin_assign_target');
     localStorage.removeItem('bar_checkin_original_status');
     localStorage.removeItem('bar_checkin_just_assigned');
@@ -1009,8 +1140,8 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
   const isCapacityOk = typeof personsCount === 'number' && personsCount > 0 && personsCount <= maxCapacity;
 
   // Zone specific max capacities
-  const standardTables = tables.filter(t => t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-'));
-  const premiumTables = tables.filter(t => t.placeTypeId === 'PREMIUM_LOUNGE' || t.tableNumber.startsWith('L-'));
+  const standardTables = tables.filter(t => isStandardTable(t));
+  const premiumTables = tables.filter(t => isPremiumTable(t));
   const standardMaxCapacity = standardTables.length > 0 ? Math.max(...standardTables.map(t => t.capacity)) : 6;
   const premiumMaxCapacity = premiumTables.length > 0 ? Math.max(...premiumTables.map(t => t.capacity)) : 20;
 
@@ -1654,6 +1785,15 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
         refreshTokens();
 
         if (preValidation.redirectStage === 1) {
+          localStorage.removeItem('bar_incomplete_checkin');
+          localStorage.removeItem('bar_checkin_assign_target');
+          localStorage.removeItem('bar_checkin_original_status');
+          localStorage.removeItem('bar_checkin_just_assigned');
+          setSelectedTableId('');
+          setOriginalTableStatus('');
+          setPreselectedTable(null);
+          setActivePendingToken(null);
+          setCreatedToken(null);
           setStage(1);
         } else if (preValidation.redirectStage === 2) {
           setSelectedTableId('');
@@ -1785,8 +1925,8 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
       const isAvailable = t.status === 'available' || t.id === selectedTableId;
       const isCapacitySuitable = typeof personsCount === 'number' && t.capacity >= personsCount;
       const matchesCategory = selectedPlaceTypeId === premiumId
-        ? (t.placeTypeId === 'PREMIUM_LOUNGE' || t.tableNumber.startsWith('L-'))
-        : (t.placeTypeId === 'STANDING_BAR' || t.tableNumber.startsWith('S-') || !t.tableNumber.startsWith('L-'));
+        ? isPremiumTable(t)
+        : isStandardTable(t);
       return isAvailable && isCapacitySuitable && matchesCategory;
     })
     .sort((a, b) => a.capacity - b.capacity);
@@ -1944,6 +2084,28 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
   ]);
 
   if (showContinuePrompt) {
+    const savedTargetRaw = localStorage.getItem('bar_checkin_assign_target');
+    let hasTarget = false;
+    let targetTblNum = '';
+    if (savedTargetRaw) {
+      try {
+        const parsed = JSON.parse(savedTargetRaw);
+        if (parsed.tableId) {
+          hasTarget = true;
+          targetTblNum = parsed.tableNumber || '';
+        }
+      } catch (e) {}
+    }
+
+    const savedDraftRaw = localStorage.getItem('bar_incomplete_checkin');
+    let draftTblNum = '';
+    if (savedDraftRaw) {
+      try {
+        const parsed = JSON.parse(savedDraftRaw);
+        draftTblNum = parsed.tableNumber || (parsed.selectedTableId ? (tables.find(t => t.id === parsed.selectedTableId)?.tableNumber || '') : '');
+      } catch (e) {}
+    }
+
     return (
       <>
         <div className="max-w-md mx-auto my-12">
@@ -1954,21 +2116,27 @@ export const CheckInPage: React.FC<{ onNavigate?: (tab: string) => void }> = ({ 
             <div className="space-y-2">
               <h2 className="text-xl font-bold text-text-main">Incomplete Check-In Found</h2>
               <p className="text-sm text-text-muted">
-                An incomplete check-in session for a customer is currently saved. Would you like to resume it?
+                {hasTarget
+                  ? `An incomplete check-in draft ${draftTblNum ? `for Table ${draftTblNum} ` : ''}is currently saved. Choose whether to resume Table ${draftTblNum || 'draft'} or stop it to proceed with Table ${targetTblNum}.`
+                  : `An incomplete check-in session for a customer is currently saved. Would you like to resume it?`}
               </p>
             </div>
             <div className="flex flex-col gap-3 pt-2">
               <button
                 onClick={handleContinueCheckIn}
-                className="w-full py-3.5 rounded-xl bg-primary text-white font-bold text-sm shadow-lg shadow-primary/20 hover:brightness-110 active:scale-[0.98] transition-all"
+                className="w-full py-3.5 rounded-xl bg-primary text-white font-bold text-sm shadow-lg shadow-primary/20 hover:brightness-110 active:scale-[0.98] transition-all cursor-pointer"
               >
-                Resume Check-In
+                Resume Check-In{draftTblNum ? ` (${draftTblNum})` : ''}
               </button>
               <button
                 onClick={() => handleStopCheckInWithConfirmation(handleAbandonCheckIn)}
-                className="w-full py-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 font-bold text-sm hover:bg-red-500/20 active:scale-[0.98] transition-all"
+                className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${
+                  hasTarget
+                    ? 'bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 active:scale-[0.98]'
+                    : 'bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 active:scale-[0.98]'
+                }`}
               >
-                STOP CHECK-IN
+                {hasTarget ? `Stop Check-In (Start ${targetTblNum || 'New Table'})` : 'Stop Check-In'}
               </button>
             </div>
           </div>

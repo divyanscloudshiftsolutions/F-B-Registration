@@ -124,6 +124,10 @@ export interface TableUpdatedPayload {
   reservedBy?: string | null;
   reservedByName?: string | null;
   reservedByUserId?: string | null;
+  releasedByAdmin?: boolean;
+  previousLockedByUserId?: string | null;
+  previousLockedByName?: string | null;
+  eventId?: string;
   updatedAt: string;
 }
 

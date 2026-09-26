@@ -211,8 +211,9 @@ const CustomerLiveNotificationPopup: React.FC<{
   // Early return guard if notification is not present
   if (!notification) return null;
 
-  // Unified Gesture Handlers (Pointer & Touch with Pointer Capture)
+  // Unified Gesture Handlers (Touch devices only so mouse can select text freely)
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'touch') return;
     if (isDismissingRef.current || e.button !== 0) return;
     if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
     if (snapBackTimerRef.current) clearTimeout(snapBackTimerRef.current);
@@ -235,6 +236,7 @@ const CustomerLiveNotificationPopup: React.FC<{
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'touch') return;
     if (!pointerStartRef.current || isDismissingRef.current) return;
     const dx = e.clientX - pointerStartRef.current.x;
     const dy = e.clientY - pointerStartRef.current.y;
@@ -250,6 +252,7 @@ const CustomerLiveNotificationPopup: React.FC<{
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'touch') return;
     if (!pointerStartRef.current || isDismissingRef.current) return;
 
     try {
@@ -295,6 +298,7 @@ const CustomerLiveNotificationPopup: React.FC<{
   };
 
   const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'touch') return;
     if (!pointerStartRef.current || isDismissingRef.current) return;
     try {
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -432,38 +436,41 @@ const CustomerLiveNotificationPopup: React.FC<{
       style={getDynamicStyle()}
       onClick={() => {
         if (hasDraggedRef.current) return;
+        if (typeof window !== 'undefined' && window.getSelection && (window.getSelection()?.toString() || '').trim().length > 0) {
+          return;
+        }
         if (onActionClick) onActionClick(notification);
         else triggerDismiss('right');
       }}
-      className={`pointer-events-auto max-w-md w-full px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-2xl shadow-xl backdrop-blur-md bg-white/95 dark:bg-[#18181B]/95 text-text-primary dark:text-white border ${getBorderAccent()} cursor-pointer hover:opacity-95 select-none touch-pan-y ${
+      className={`pointer-events-auto max-w-md w-full px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-2xl shadow-xl backdrop-blur-md bg-white/95 dark:bg-[#18181B]/95 text-text-primary dark:text-white border ${getBorderAccent()} select-text touch-pan-y ${
         !isExiting && !isDragging && !isSnappingBack
           ? 'animate-in fade-in slide-in-from-top-2 duration-200'
           : ''
       }`}
     >
       <div className="flex items-start justify-between gap-2.5 sm:gap-3">
-        <div className="flex items-start gap-2.5 min-w-0 flex-1">
-          <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 border ${getPillBg()}`}>
+        <div className="flex items-start gap-2.5 min-w-0 flex-1 select-text">
+          <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 border select-none ${getPillBg()}`}>
             {renderIcon()}
           </div>
-          <div className="min-w-0 flex-1 pt-0.5">
+          <div className="min-w-0 flex-1 pt-0.5 select-text">
             {notification.title && (
-              <h5 className="text-[12px] sm:text-[13px] font-black text-text-primary dark:text-white leading-tight tracking-tight">
+              <h5 className="text-[12px] sm:text-[13px] font-black text-text-primary dark:text-white leading-tight tracking-tight select-text cursor-text">
                 {notification.title}
               </h5>
             )}
-            <p className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-300 leading-snug mt-0.5">
+            <p className="text-[11px] sm:text-xs text-text-muted dark:text-zinc-300 leading-snug mt-0.5 select-text cursor-text">
               {notification.message}
             </p>
             {notification.subMessage && (
-              <p className="text-[10px] text-text-muted dark:text-zinc-400 mt-0.5">
+              <p className="text-[10px] text-text-muted dark:text-zinc-400 mt-0.5 select-text cursor-text">
                 {notification.subMessage}
               </p>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+        <div className="flex items-center gap-1.5 shrink-0 pt-0.5 select-none">
           {notification.actionLabel && (
             <span className="text-[10px] sm:text-[10.5px] font-extrabold px-2 sm:px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 dark:bg-[#D4AF37]/15 dark:text-[#D4AF37] dark:border-[#D4AF37]/30 flex items-center gap-0.5 shadow-2xs">
               {notification.actionLabel}

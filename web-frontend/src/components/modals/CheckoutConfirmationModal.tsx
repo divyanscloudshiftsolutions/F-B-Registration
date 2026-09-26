@@ -99,17 +99,17 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
   const hasOrders = billData && billData.items && billData.items.length > 0;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/75 flex items-center justify-center p-4">
-      <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-[100] bg-black/75 flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-bg-surface border border-border-main rounded-2xl sm:rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-3.5 sm:space-y-4 relative text-text-main animate-fadeIn max-h-[92vh] overflow-y-auto custom-scrollbar">
         <button 
           onClick={onClose}
-          className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer"
+          className="absolute top-3.5 sm:top-4 right-3.5 sm:right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
         >
-          <X size={18} />
+          <X size={16} />
         </button>
 
-        <div className="flex items-center gap-2 text-text-main font-bold text-sm">
-          <LogOut size={18} className="text-red-500" /> Checkout & Table Turnover
+        <div className="flex items-center gap-2 text-text-main font-bold text-xs sm:text-sm pr-8">
+          <LogOut size={16} className="text-red-500" /> Checkout & Table Turnover
         </div>
 
         <div className="space-y-2">
@@ -250,18 +250,18 @@ export const CheckoutConfirmationModal: React.FC<CheckoutConfirmationModalProps>
             This will collect remaining payable amount (if any), close the session, and release the table back to "available" immediately.
           </p>
 
-          <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
+          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 pt-2 sm:pt-3">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
+              className="flex-1 py-2.5 sm:py-3 rounded-xl text-xs font-semibold transition-all premium-btn-secondary"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50 cursor-pointer"
+              className="flex-1 py-2.5 sm:py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50 cursor-pointer"
             >
               {isSubmitting ? 'Processing...' : hasOrders ? `Collect ₹${billData?.remainingPayable} & Settle` : 'Confirm Checkout'}
             </button>

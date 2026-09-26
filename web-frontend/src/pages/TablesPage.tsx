@@ -8,12 +8,30 @@ import { ExtendSessionModal } from '../components/modals/ExtendSessionModal';
 import { CheckoutConfirmationModal } from '../components/modals/CheckoutConfirmationModal';
 import { TableDiagram } from '../components/TableDiagram';
 import { SeatingRow } from '../components/SeatingRow';
+import { onSocketEvent } from '../services/socket';
 
 interface TablesPageProps {
  onNavigateToCheckIn?: () => void;
  activeTab: string;
  setActiveTab: (tab: string) => void;
 }
+
+export const isPremiumTable = (tb: Table | any): boolean => {
+  if (!tb) return false;
+  const cat = String(
+    tb.categoryName ||
+    (typeof tb.placeType === 'object' ? tb.placeType?.name : (typeof tb.placeType === 'string' ? tb.placeType : '')) ||
+    ''
+  ).toUpperCase();
+  if (cat.includes('PREMIUM') || cat.includes('LOUNGE') || cat.includes('VIP')) return true;
+  const num = String(tb.tableNumber || tb.number || '').toUpperCase();
+  if (num.startsWith('L-') || num.startsWith('L') || num.startsWith('VIP') || num.startsWith('V-')) return true;
+  return false;
+};
+
+export const isStandardTable = (tb: Table | any): boolean => {
+  return !isPremiumTable(tb);
+};
 
 export const TableTimer: React.FC<{ endTime: string }> = ({ endTime }) => {
   const [remainingTime, setRemainingTime] = useState<string>('--:--:--');
@@ -72,6 +90,18 @@ export const TableTimer: React.FC<{ endTime: string }> = ({ endTime }) => {
   );
 };
 
+export const formatShortRole = (role?: string | null): string => {
+  if (!role) return 'Staff';
+  const r = role.toLowerCase();
+  if (r === 'receptionist') return 'Rep';
+  if (r === 'admin' || r === 'administrator') return 'Admin';
+  if (r === 'manager') return 'Mgr';
+  if (r === 'waiter' || r === 'server') return 'Waiter';
+  if (r === 'bartender') return 'Bar';
+  if (r === 'chef') return 'Chef';
+  return role;
+};
+
 export const TablesPage: React.FC<TablesPageProps> = ({ onNavigateToCheckIn, activeTab, setActiveTab }) => {
  const { showToast, user } = useAuth();
  const { 
@@ -104,6 +134,8 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
    ? 'reservations' 
    : activeTab === 'tables/occupied' 
    ? 'occupied' 
+   : activeTab === 'tables/locked'
+   ? 'locked'
    : activeTab === 'tables/available'
    ? 'available'
    : layoutFilter;
@@ -114,6 +146,9 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
    } else if (val === 'occupied') {
      setLayoutFilter('occupied');
      setActiveTab('tables/occupied');
+   } else if (val === 'locked') {
+     setLayoutFilter('locked');
+     setActiveTab('tables/locked');
    } else if (val === 'available') {
      setLayoutFilter('available');
      setActiveTab('tables/available');
@@ -130,6 +165,21 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
  // Centered Table Inspection Dialog Modal State
  const [inspectingTable, setInspectingTable] = useState<Table | null>(null);
+ const [isInspectDrawerClosing, setIsInspectDrawerClosing] = useState<boolean>(false);
+ const [inspectDrawerDragY, setInspectDrawerDragY] = useState<number>(0);
+ const [isInspectDrawerDragging, setIsInspectDrawerDragging] = useState<boolean>(false);
+ const inspectDrawerTouchStartY = useRef<number | null>(null);
+ const inspectDrawerScrollRef = useRef<HTMLDivElement>(null);
+
+ const closeInspectDrawer = useCallback(() => {
+   setIsInspectDrawerClosing(true);
+   setTimeout(() => {
+     setInspectingTable(null);
+     setIsInspectDrawerClosing(false);
+     setInspectDrawerDragY(0);
+     setIsInspectDrawerDragging(false);
+   }, 240);
+ }, []);
 
   type ValidationStatus = 'IDLE' | 'PENDING' | 'VALID' | 'CONFLICT' | 'INVALID';
 
@@ -175,6 +225,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   const [resEmailConflictDetail, setResEmailConflictDetail] = useState<{ type: 'CHECKIN' | 'RESERVATION'; name: string } | null>(null);
   const [isResValidating, setIsResValidating] = useState(false);
   const resValidationRequestIdRef = useRef<number>(0);
+  const processedReleaseEventsRef = useRef<Set<string>>(new Set());
   const [isSubmittingReserve, setIsSubmittingReserve] = useState(false);
   const [isAssignFlow, setIsAssignFlow] = useState(false);
 
@@ -626,8 +677,16 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
   const isResPremium = useCallback((res: any) => {
     if (!res) return false;
-    const p = String(res.placeTypeId || (res.table ? res.table.placeTypeId || res.table.categoryName || res.table.tableNumber : '') || '').toUpperCase();
-    return p.includes('PREMIUM') || p.includes('LOUNGE') || (res.table?.tableNumber && res.table.tableNumber.startsWith('L-'));
+    if (res.table) return isPremiumTable(res.table);
+    const cat = String(
+      res.categoryName ||
+      (typeof res.placeType === 'object' ? res.placeType?.name : (typeof res.placeType === 'string' ? res.placeType : '')) ||
+      ''
+    ).toUpperCase();
+    if (cat.includes('PREMIUM') || cat.includes('LOUNGE') || cat.includes('VIP')) return true;
+    const num = String(res.tableNumber || '').toUpperCase();
+    if (num.startsWith('L-') || num.startsWith('L') || num.startsWith('VIP') || num.startsWith('V-')) return true;
+    return false;
   }, []);
 
   const getReservedByName = (res: any) => {
@@ -789,12 +848,12 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     const handleInspectKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        setInspectingTable(null);
+        closeInspectDrawer();
       }
     };
     window.addEventListener('keydown', handleInspectKeyDown);
     return () => window.removeEventListener('keydown', handleInspectKeyDown);
-  }, [inspectingTable]);
+  }, [inspectingTable, closeInspectDrawer]);
 
   // Keyboard listener for Reserve / Assign Modal (Escape to close and unlock)
   useEffect(() => {
@@ -819,6 +878,54 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  const [closureCustomExplanation, setClosureCustomExplanation] = useState('');
  const [isSubmittingCloseSession, setIsSubmittingCloseSession] = useState(false);
 
+ // Release Locked Table Modal State
+ const [releasingLockedTableForConfirm, setReleasingLockedTableForConfirm] = useState<Table | null>(null);
+ const [isSubmittingReleaseLock, setIsSubmittingReleaseLock] = useState(false);
+
+ const handleReleaseLockedTable = (tb: Table) => {
+   setReleasingLockedTableForConfirm(tb);
+ };
+
+ const confirmReleaseLockedTable = async () => {
+   if (!releasingLockedTableForConfirm) return;
+   const tb = releasingLockedTableForConfirm;
+   setIsSubmittingReleaseLock(true);
+   try {
+     await api.unlockTable(tb.id, true);
+
+     // Clean local storage if this user had a draft or target for this table
+     try {
+       const draft = localStorage.getItem('bar_incomplete_checkin');
+       if (draft) {
+         const parsed = JSON.parse(draft);
+         if (parsed.selectedTableId === tb.id) {
+           if (!parsed.customerName && !parsed.phoneNumber && !parsed.email && !parsed.activePendingToken) {
+             localStorage.removeItem('bar_incomplete_checkin');
+           } else {
+             parsed.selectedTableId = '';
+             localStorage.setItem('bar_incomplete_checkin', JSON.stringify(parsed));
+           }
+         }
+       }
+       const target = localStorage.getItem('bar_checkin_assign_target');
+       if (target) {
+         const parsed = JSON.parse(target);
+         if (parsed.tableId === tb.id) {
+           localStorage.removeItem('bar_checkin_assign_target');
+         }
+       }
+     } catch (e) {}
+
+     showToast(`Table ${tb.tableNumber} released successfully!`, 'success');
+     refreshAllTableData();
+   } catch (err: any) {
+     showToast(err.message || `Failed to release Table ${tb.tableNumber}.`, 'danger');
+   } finally {
+     setIsSubmittingReleaseLock(false);
+     setReleasingLockedTableForConfirm(null);
+   }
+ };
+
   const refreshAllTableData = () => {
     return Promise.all([refreshTables(), refreshTokens(), refreshReservations()]);
   };
@@ -831,6 +938,100 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
       window.removeEventListener('app:global-refresh', handleGlobalRefresh);
     };
   }, [activeTab]);
+
+  // Clean up any unconfirmed temporary table floor dialog lock on mount (e.g. after browser refresh)
+  useEffect(() => {
+    const cleanupAbandonedFloorDialogLock = async () => {
+      const pendingLockStr = sessionStorage.getItem('bar_floor_dialog_lock');
+      if (pendingLockStr) {
+        try {
+          const parsed = JSON.parse(pendingLockStr);
+          if (parsed.tableId) {
+            console.log(`[TablesPage] Auto-releasing unconfirmed temporary dialog lock on table ${parsed.tableId} after refresh/abandon`);
+            await api.unlockTable(parsed.tableId).catch(() => {});
+          }
+        } catch (e) {
+          console.warn('[TablesPage] Error parsing pending dialog lock on mount:', e);
+        } finally {
+          sessionStorage.removeItem('bar_floor_dialog_lock');
+          refreshAllTableData();
+        }
+      }
+    };
+    cleanupAbandonedFloorDialogLock();
+  }, []);
+
+  // Window unload / pagehide listener: trigger immediate keepalive unlock if dialog is active during refresh/close
+  useEffect(() => {
+    if (!reservingTable) return;
+
+    const handleBeforeUnload = () => {
+      const lockStr = sessionStorage.getItem('bar_floor_dialog_lock');
+      if (lockStr) {
+        try {
+          const parsed = JSON.parse(lockStr);
+          if (parsed.tableId) {
+            const token = api.getToken();
+            const localApi = typeof window !== 'undefined' ? `http://${window.location.hostname}:4000/api` : 'http://localhost:4000/api';
+            const targetUrl = `${localApi}/tables/${parsed.tableId}/unlock`;
+            fetch(targetUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+              },
+              keepalive: true
+            }).catch(() => {});
+          }
+        } catch (e) {}
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+    };
+  }, [reservingTable]);
+
+  // Real-time listener for Admin Forced Table Release vs Active Modal Lock
+  useEffect(() => {
+    if (!reservingTable) return;
+    const unsubscribe = onSocketEvent('table.updated', (payload: any) => {
+      if (!payload || !payload.tableId) return;
+      if (payload.releasedByAdmin) {
+        const isAffectingReservingTable = reservingTable && payload.tableId === reservingTable.id;
+        const isAffectingCurrentUser = payload.previousLockedByUserId && user?.id && payload.previousLockedByUserId === user.id;
+
+        if (isAffectingReservingTable || (isAffectingCurrentUser && reservingTable)) {
+          const eventKey = payload.eventId || `release:${payload.tableId}:${payload.updatedAt || ''}`;
+          if (processedReleaseEventsRef.current.has(eventKey)) {
+            return;
+          }
+          processedReleaseEventsRef.current.add(eventKey);
+
+          setReservingTable(null);
+          setResName('');
+          setResPhone('');
+          setResEmail('');
+          setResPersons(2);
+          setIsAssignFlow(false);
+          setResPhoneValidationStatus('IDLE');
+          setResEmailValidationStatus('IDLE');
+          setResPhoneConflict(false);
+          setResEmailConflict(false);
+          sessionStorage.removeItem('bar_floor_dialog_lock');
+          showToast('The administrator has released the table you were checking in.', 'danger');
+          refreshAllTableData();
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [reservingTable, user, showToast]);
 
   const inspectTableById = (tableIdentifier: string) => {
     if (!tableIdentifier || realTables.length === 0) return;
@@ -848,7 +1049,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     if (targetTable) {
       localStorage.removeItem('bar_auto_inspect_table_id');
       
-      const isLounge = targetTable.placeTypeId === 'PREMIUM_LOUNGE' || targetTable.tableNumber.startsWith('L-');
+      const isLounge = isPremiumTable(targetTable);
       const targetZone = isLounge ? 'PREMIUM_LOUNGE' : 'STANDING_BAR';
       if (placeZone !== targetZone) {
         setPlaceZone(targetZone);
@@ -883,24 +1084,42 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     };
   }, [realTables, placeZone, activeTab]);
 
- const zoneFilteredTables = tables.filter(tb => {
- const p = (tb.placeTypeId || tb.categoryName || tb.tableNumber || '').toUpperCase();
- if (placeZone === 'STANDING_BAR') {
- return p.includes('STANDING') || p.includes('BAR') || tb.tableNumber.startsWith('S-');
- }
- return p.includes('PREMIUM') || p.includes('LOUNGE') || tb.tableNumber.startsWith('L-');
- });
+  const zoneFilteredTables = useMemo(() => {
+    return tables.filter(tb => placeZone === 'STANDING_BAR' ? isStandardTable(tb) : isPremiumTable(tb));
+  }, [tables, placeZone]);
 
- const filteredTables = zoneFilteredTables.filter(t => {
-    if (filter === 'reserved' || filter === 'reservations') {
-      return t.status === 'reserved' || t.status === 'in_checkin';
-    } else if (filter === 'available') {
-      return t.status === 'available';
-    } else if (filter === 'occupied') {
-      return t.status === 'occupied';
-    }
-    return true;
-  });
+  const availableCount = useMemo(() => {
+    return zoneFilteredTables.filter(t => t.status === 'available').length;
+  }, [zoneFilteredTables]);
+
+  const lockedCount = useMemo(() => {
+    return zoneFilteredTables.filter(t => t.status === 'in_checkin' || (Boolean(t.lockedBy || t.lockedByUserId || t.lockedByName) && t.status !== 'occupied')).length;
+  }, [zoneFilteredTables]);
+
+  const occupiedCount = useMemo(() => {
+    return zoneFilteredTables.filter(t => t.status === 'occupied').length;
+  }, [zoneFilteredTables]);
+
+  const reservationsCount = useMemo(() => {
+    return realReservations.filter((r: any) => r.status === 'PENDING' && (placeZone === 'STANDING_BAR' ? !isResPremium(r) : isResPremium(r))).length;
+  }, [realReservations, placeZone, isResPremium]);
+
+  const allCount = zoneFilteredTables.length;
+
+  const filteredTables = useMemo(() => {
+    return zoneFilteredTables.filter(t => {
+      if (filter === 'reserved' || filter === 'reservations') {
+        return t.status === 'reserved';
+      } else if (filter === 'locked') {
+        return t.status === 'in_checkin' || (Boolean(t.lockedBy || t.lockedByUserId || t.lockedByName) && t.status !== 'occupied');
+      } else if (filter === 'available') {
+        return t.status === 'available';
+      } else if (filter === 'occupied') {
+        return t.status === 'occupied';
+      }
+      return true;
+    });
+  }, [zoneFilteredTables, filter]);
 
   const handleCloseSessionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -956,6 +1175,13 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   const handleAssignClick = async (tb: Table) => {
     try {
       await api.lockTable(tb.id);
+      sessionStorage.setItem('bar_floor_dialog_lock', JSON.stringify({
+        tableId: tb.id,
+        tableNumber: tb.tableNumber,
+        isAssignFlow: true,
+        originalStatus: tb.status || 'available',
+        timestamp: Date.now()
+      }));
       setReservingTable(tb);
       setIsAssignFlow(true);
       setResPersons(tb.capacity || 4);
@@ -967,21 +1193,45 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     }
   };
 
-  const handleReserveClick = (tb: Table) => {
-    setReservingTable(tb);
-    setIsAssignFlow(false);
-    setResPersons(tb.capacity || 4);
-    resetResModalFields();
+  const handleReserveClick = async (tb: Table) => {
+    try {
+      await api.lockTable(tb.id);
+      sessionStorage.setItem('bar_floor_dialog_lock', JSON.stringify({
+        tableId: tb.id,
+        tableNumber: tb.tableNumber,
+        isAssignFlow: false,
+        originalStatus: tb.status || 'available',
+        timestamp: Date.now()
+      }));
+      setReservingTable(tb);
+      setIsAssignFlow(false);
+      setResPersons(tb.capacity || 4);
+      resetResModalFields();
+      refreshTables();
+    } catch (err: any) {
+      showToast(err.message || `Table ${tb.tableNumber} is locked or unavailable.`, 'danger');
+      refreshTables();
+    }
   };
 
   const handleCloseReserveModal = async () => {
-    if (isAssignFlow && reservingTable) {
+    const pendingLockStr = sessionStorage.getItem('bar_floor_dialog_lock');
+    let lockTableId = reservingTable?.id;
+    if (pendingLockStr) {
       try {
-        await api.unlockTable(reservingTable.id);
+        const parsed = JSON.parse(pendingLockStr);
+        if (parsed.tableId) lockTableId = parsed.tableId;
+      } catch (e) {}
+    }
+
+    if (lockTableId) {
+      try {
+        await api.unlockTable(lockTableId);
       } catch (err) {
         console.warn('Failed to unlock table on modal close:', err);
       }
     }
+    sessionStorage.removeItem('bar_floor_dialog_lock');
     setReservingTable(null);
     setIsAssignFlow(false);
     resetResModalFields();
@@ -1095,8 +1345,11 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
       } catch (validateErr) {
         console.warn('Backend duplicate validation check failed, relying on local state check:', validateErr);
       }
+      
+      sessionStorage.removeItem('bar_floor_dialog_lock');
+
       if (isAssignFlow) {
-        // Store assign target details for check-in WITHOUT creating a reservation or pre-locking the table
+        // Store assign target details for check-in
         localStorage.setItem('bar_checkin_assign_target', JSON.stringify({
           customerName: resName.trim(),
           phoneNumber: resPhone.trim(),
@@ -1105,7 +1358,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
           tableId: reservingTable.id,
           tableNumber: reservingTable.tableNumber,
           capacity: reservingTable.capacity || 4,
-          placeTypeId: reservingTable.placeTypeId || (reservingTable.tableNumber.startsWith('L-') ? 'PREMIUM_LOUNGE' : 'STANDING_BAR'),
+          placeTypeId: reservingTable.placeTypeId || (isPremiumTable(reservingTable) ? 'PREMIUM_LOUNGE' : 'STANDING_BAR'),
         }));
         localStorage.setItem('bar_checkin_just_assigned', 'true');
 
@@ -1186,15 +1439,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     try {
       await api.lockTable(res.tableId);
 
-      try {
-        const oldDraftStr = localStorage.getItem('bar_incomplete_checkin');
-        if (oldDraftStr) {
-          const oldDraft = JSON.parse(oldDraftStr);
-          if (oldDraft.selectedTableId && oldDraft.selectedTableId !== res.tableId) {
-            api.unlockTable(oldDraft.selectedTableId).catch(() => {});
-          }
-        }
-      } catch (e) {}
+      // Do not pre-release old draft table here; Resume Check-In / Staff Check-In decision prompt manages authoritative release.
       
       localStorage.setItem('bar_checkin_assign_target', JSON.stringify({
         reservationId: res.id,
@@ -1235,21 +1480,13 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
       const originalStatus = tb.status; // 'available' or 'reserved'
       await api.lockTable(tb.id);
 
-      try {
-        const oldDraftStr = localStorage.getItem('bar_incomplete_checkin');
-        if (oldDraftStr) {
-          const oldDraft = JSON.parse(oldDraftStr);
-          if (oldDraft.selectedTableId && oldDraft.selectedTableId !== tb.id) {
-            api.unlockTable(oldDraft.selectedTableId).catch(() => {});
-          }
-        }
-      } catch (e) {}
+      // Do not pre-release old draft table here; Resume Check-In / Staff Check-In decision prompt manages authoritative release.
       
       localStorage.setItem('bar_checkin_assign_target', JSON.stringify({
         tableId: tb.id,
         tableNumber: tb.tableNumber,
         capacity: tb.capacity || 4,
-        placeTypeId: (tb.tableNumber.startsWith('S-') || tb.tableNumber.startsWith('M')) ? 'standing_bar' : 'premium_lounge'
+        placeTypeId: tb.placeTypeId || (isPremiumTable(tb) ? 'PREMIUM_LOUNGE' : 'STANDING_BAR')
       }));
       localStorage.setItem('bar_checkin_original_status', originalStatus);
       localStorage.setItem('bar_checkin_just_assigned', 'true');
@@ -1270,19 +1507,20 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  : null;
 
  return (
- <div className="space-y-6 text-text-main">
+ <div className="space-y-4 sm:space-y-6 text-text-main">
  
   {/* Non-Overlapping Structured Control Toolbar - ALWAYS VISIBLE across all views including Reservations */}
-  <div className="dark:bg-transparent glass-panel border border-border-main border-x-0 border-t-0 rounded-none p-0 pb-4 mb-6 space-y-4">
+  <div className="dark:bg-transparent glass-panel border border-border-main border-x-0 border-t-0 rounded-none p-0 pb-3 sm:pb-4 mb-4 sm:mb-6 space-y-2.5 sm:space-y-4">
     {/* Tier 1: Main Table Status Tabs (All, Occupied, Available, Reservations) */}
-    <div className="flex items-center justify-between gap-3 w-full px-4 pt-3">
-      <div className="flex flex-nowrap overflow-x-auto custom-scrollbar items-center gap-2 flex-1 sm:flex-initial pb-1 sm:pb-0">
+    <div className="flex items-center justify-between gap-2 sm:gap-3 w-full px-2 sm:px-4 pt-2 sm:pt-3">
+      <div className="flex flex-nowrap overflow-x-auto custom-scrollbar items-center gap-1.5 sm:gap-2 flex-1 sm:flex-initial pb-1 sm:pb-0">
         <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Status:</span>
         {[
-          { id: 'all', label: 'All' },
-          { id: 'available', label: 'Available' },
-          { id: 'occupied', label: 'Occupied' },
-          { id: 'reservations', label: 'Reservations' },
+          { id: 'all', label: 'All', count: allCount },
+          { id: 'available', label: 'Available', count: availableCount },
+          { id: 'locked', label: 'Locked', count: lockedCount },
+          { id: 'occupied', label: 'Occupied', count: occupiedCount },
+          { id: 'reservations', label: 'Reservations', count: reservationsCount },
         ].map((tabItem) => {
           const isTabActive =
             filter === tabItem.id ||
@@ -1292,49 +1530,54 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             <button
               key={tabItem.id}
               onClick={() => setFilter(tabItem.id)}
-              className={`px-3 sm:px-3.5 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-secondary shrink-0 cursor-pointer ${
+              className={`px-2.5 sm:px-3.5 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-secondary shrink-0 cursor-pointer flex items-center gap-1.5 ${
                 isTabActive ? 'active' : ''
               }`}
             >
-              {tabItem.label}
+              <span>{tabItem.label}</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-mono font-black ${
+                isTabActive ? 'bg-white/20 text-white' : 'bg-neutral-500/10 dark:bg-white/10 text-text-muted'
+              }`}>
+                {tabItem.count}
+              </span>
             </button>
           );
         })}
       </div>
 
-      <div className="text-xs font-bold text-text-muted w-full sm:w-auto text-left sm:text-right flex items-center justify-between sm:block">
+      <div className="text-xs font-bold text-text-muted w-auto text-right flex items-center justify-end shrink-0 pl-1">
         {!isWaiter && activeTab === 'tables/reservations' ? (
-          <>
-            <span>Active Reservations:</span>{' '}
-            <span className="text-text-main font-mono text-sm sm:text-xs">
+          <div className="flex items-center gap-1">
+            <span className="hidden xs:inline">Active:</span>{' '}
+            <span className="text-text-main font-mono text-xs sm:text-xs">
               {realReservations.filter((r: any) => r.status === 'PENDING').length}
             </span>
-          </>
+          </div>
         ) : (
-          <>
-            <span>Total Tables:</span>{' '}
-            <span className="text-text-main font-mono text-sm sm:text-xs">{filteredTables.length}</span>
-          </>
+          <div className="flex items-center gap-1">
+            <span className="hidden xs:inline">Total:</span>{' '}
+            <span className="text-text-main font-mono text-xs sm:text-xs">{filteredTables.length}</span>
+          </div>
         )}
       </div>
     </div>
 
     {/* Tier 2: Primary Zone Switcher Tabs (Only for Floor Plan Layout views and for Waiter) */}
     {(!isWaiter ? activeTab !== 'tables/reservations' : true) && (
-      <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-border-main/50 w-full px-4">
-        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+      <div className="flex items-center justify-between gap-2 sm:gap-4 pt-2.5 sm:pt-3 border-t border-border-main/50 w-full px-2 sm:px-4">
+        <div className="grid grid-cols-2 sm:flex sm:flex-row gap-1.5 sm:gap-2 w-full sm:w-auto">
           <button
             onClick={() => setPlaceZone('STANDING_BAR')}
-            className={`w-full sm:w-auto px-4 py-2.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 cursor-pointer ${
+            className={`w-full sm:w-auto px-2.5 sm:px-4 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 cursor-pointer truncate ${
               placeZone === 'STANDING_BAR' ? 'active' : ''
             }`}
           >
-            Standard Zone (Standing Bar)
+            Standard Zone (Bar)
           </button>
 
           <button
             onClick={() => setPlaceZone('PREMIUM_LOUNGE')}
-            className={`w-full sm:w-auto px-4 py-2.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 cursor-pointer ${
+            className={`w-full sm:w-auto px-2.5 sm:px-4 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all premium-tab-primary text-center shrink-0 cursor-pointer truncate ${
               placeZone === 'PREMIUM_LOUNGE' ? 'active' : ''
             }`}
           >
@@ -1347,24 +1590,24 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
   {/* Active Reservations View */}
   {!isWaiter && activeTab === 'tables/reservations' ? (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Reservation Search & Filter Toolbar */}
-      <div className="p-4 sm:p-5 rounded-3xl dark:rounded-xl border dark:border-white/10 dark:bg-[#1C1C1E] bg-bg-surface space-y-4">
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      <div className="p-3 sm:p-4 md:p-5 rounded-2xl sm:rounded-3xl dark:rounded-xl border dark:border-white/10 dark:bg-[#1C1C1E] bg-bg-surface space-y-3 sm:space-y-4">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 sm:gap-3">
           {/* Search Input */}
           <div className="relative flex-1">
-            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
             <input
               type="text"
               value={reservationSearchQuery}
               onChange={(e) => setReservationSearchQuery(e.target.value)}
-              placeholder="Search by customer name, staff name, phone, email, table #..."
-              className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-border-main bg-bg-primary text-text-main text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-text-muted/60 transition-all"
+              placeholder="Search customer, phone, email, table #..."
+              className="w-full pl-9 pr-9 py-2 sm:py-2.5 rounded-xl border border-border-main bg-bg-primary text-text-main text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-text-muted/60 transition-all"
             />
             {reservationSearchQuery && (
               <button
                 onClick={() => setReservationSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-0.5 rounded cursor-pointer"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-0.5 rounded cursor-pointer"
                 title="Clear search"
               >
                 <X size={14} />
@@ -1374,13 +1617,13 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
           {/* Filters Group: Capacity Selector & Quick Reserve */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border-main bg-bg-primary text-xs shrink-0">
-              <Filter size={13} className="text-text-muted shrink-0" />
+            <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border border-border-main bg-bg-primary text-xs shrink-0 flex-1 sm:flex-initial">
+              <Filter size={12} className="text-text-muted shrink-0" />
               <span className="text-text-muted font-semibold hidden sm:inline">Capacity:</span>
               <select
                 value={reservationCapacityFilter}
                 onChange={(e) => setReservationCapacityFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                className="bg-transparent text-text-main font-bold focus:outline-none cursor-pointer text-xs"
+                className="bg-transparent text-text-main font-bold focus:outline-none cursor-pointer text-xs w-full sm:w-auto"
               >
                 <option value="all" className="bg-bg-surface text-text-main">All Capacities</option>
                 {availableReservationCapacities.map((cap) => (
@@ -1397,34 +1640,34 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                   setActiveTab('tables/all');
                   setFilter('available');
                 }}
-                className="px-4 py-2.5 rounded-xl primary-btn text-xs font-bold whitespace-nowrap flex items-center gap-1.5 cursor-pointer shrink-0"
+                className="px-3 sm:px-4 py-1.5 sm:py-2.5 rounded-xl primary-btn text-[11px] sm:text-xs font-bold whitespace-nowrap flex items-center gap-1 sm:gap-1.5 cursor-pointer shrink-0"
               >
-                <UserPlus size={14} />
-                <span>+ Reserve Table</span>
+                <UserPlus size={13} />
+                <span>+ Reserve</span>
               </button>
             )}
           </div>
         </div>
 
         {/* Quick Filter Segmented Pills (Zone & Staff Filters) */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-border-main/50">
-          <div className="flex items-center gap-3 overflow-x-auto custom-scrollbar pb-1 sm:pb-0 flex-wrap">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 pt-2.5 sm:pt-3 border-t border-border-main/50">
+          <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto custom-scrollbar pb-1 sm:pb-0 flex-nowrap sm:flex-wrap">
             {/* Zone Filter (Premium / Standard / All) */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Zone:</span>
+            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              <span className="text-[10px] sm:text-[11px] font-bold text-text-muted uppercase tracking-wider mr-0.5 sm:mr-1 hidden xs:inline-block">Zone:</span>
               <button
                 onClick={() => setReservationZoneFilter('all')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   reservationZoneFilter === 'all'
                     ? 'bg-primary text-white shadow-sm'
                     : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
                 }`}
               >
-                All Zones
+                All
               </button>
               <button
                 onClick={() => setReservationZoneFilter('premium')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   reservationZoneFilter === 'premium'
                     ? 'bg-primary text-white shadow-sm'
                     : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
@@ -1434,7 +1677,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               </button>
               <button
                 onClick={() => setReservationZoneFilter('standard')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   reservationZoneFilter === 'standard'
                     ? 'bg-primary text-white shadow-sm'
                     : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
@@ -1445,11 +1688,11 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             </div>
 
             {/* Staff Filter */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider mr-1 hidden sm:inline-block">Staff:</span>
+            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              <span className="text-[10px] sm:text-[11px] font-bold text-text-muted uppercase tracking-wider mr-0.5 sm:mr-1 hidden xs:inline-block">Staff:</span>
               <button
                 onClick={() => setReservationUserFilter('all')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   reservationUserFilter === 'all'
                     ? 'bg-primary text-white shadow-sm'
                     : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
@@ -1459,7 +1702,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               </button>
               <button
                 onClick={() => setReservationUserFilter('mine')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   reservationUserFilter === 'mine'
                     ? 'bg-primary text-white shadow-sm'
                     : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
@@ -1469,7 +1712,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               </button>
               <button
                 onClick={() => setReservationUserFilter('others')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   reservationUserFilter === 'others'
                     ? 'bg-primary text-white shadow-sm'
                     : 'bg-bg-primary text-text-muted hover:text-text-main border border-border-main'
@@ -1480,7 +1723,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             </div>
           </div>
 
-          <div className="text-xs text-text-muted font-medium shrink-0">
+          <div className="text-[11px] sm:text-xs text-text-muted font-medium shrink-0">
             Showing <span className="font-bold text-text-main">{filteredReservations.length}</span> matching
           </div>
         </div>
@@ -1490,8 +1733,8 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
       {isLoading && realReservations.length === 0 ? (
         <div className="py-20 text-center text-text-muted text-sm">Loading active reservations...</div>
       ) : filteredReservations.length === 0 ? (
-        <div className="glass-panel p-12 rounded-3xl border border-border-main text-center space-y-3">
-          <p className="text-text-muted text-sm">
+        <div className="glass-panel p-8 sm:p-12 rounded-2xl sm:rounded-3xl border border-border-main text-center space-y-3">
+          <p className="text-text-muted text-xs sm:text-sm">
             {reservationSearchQuery || reservationUserFilter !== 'all' || reservationZoneFilter !== 'all' || reservationCapacityFilter !== 'all'
               ? 'No reservations match your search or filter criteria.'
               : 'No active reservations found.'}
@@ -1511,7 +1754,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-6">
           {filteredReservations.map((res: any) => {
             const isMine = res.userId === user?.id;
             const isPrivileged = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
@@ -1536,37 +1779,37 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             return (
               <div
                 key={res.id}
-                className={`p-5 rounded-3xl dark:rounded-xl border flex flex-col justify-between gap-4 transition-all animate-fadeIn ${
+                className={`p-4 sm:p-5 rounded-2xl sm:rounded-3xl dark:rounded-xl border flex flex-col justify-between gap-3 sm:gap-4 transition-all animate-fadeIn ${
                   isMine
                     ? 'border-primary/40 dark:border-primary/40 dark:bg-[#1C1C1E] bg-bg-surface shadow-sm'
                     : 'dark:border-white/10 dark:bg-[#1C1C1E] bg-bg-surface'
                 }`}
               >
                 {/* Header */}
-                <div className="flex items-start justify-between pb-3 border-b border-border-main/50 gap-2">
+                <div className="flex items-start justify-between pb-2.5 sm:pb-3 border-b border-border-main/50 gap-2">
                   <div>
-                    <h4 className="font-bold text-base text-text-main">{res.customerName}</h4>
+                    <h4 className="font-bold text-sm sm:text-base text-text-main">{res.customerName}</h4>
                     <p className="text-xs font-mono text-text-muted mt-0.5">{res.phoneNumber}</p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider dark:bg-blue-500/15 bg-blue-500/10 dark:text-blue-400 text-blue-700 border border-blue-500/30">
+                    <span className="px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-wider dark:bg-blue-500/15 bg-blue-500/10 dark:text-blue-400 text-blue-700 border border-blue-500/30">
                       Reserved
                     </span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-tight ${
+                    <span className={`px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold tracking-tight ${
                       isMine
                         ? 'bg-purple-500/15 text-primary dark:text-purple-300 border border-purple-500/30'
                         : 'bg-neutral-500/10 text-text-muted border border-border-main'
                     }`}>
-                      {isMine ? '👤 Reserved by You' : `🔒 Reserved by ${resOwner}`}
+                      {isMine ? '👤 You' : `🔒 ${resOwner}`}
                     </span>
                   </div>
                 </div>
 
                 {/* Details */}
-                <div className="space-y-2 text-xs text-text-muted">
+                <div className="space-y-1.5 sm:space-y-2 text-xs text-text-muted">
                   <div className="flex justify-between items-center">
                     <span>Table Assigned:</span>
-                    <span className="font-bold text-primary font-mono text-sm">
+                    <span className="font-bold text-primary font-mono text-xs sm:text-sm">
                       {res.table?.tableNumber ? `Table ${res.table.tableNumber}` : 'N/A'}
                     </span>
                   </div>
@@ -1578,12 +1821,12 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Email ID:</span>
-                    <span className="font-semibold text-text-main truncate max-w-[190px]" title={res.email}>
+                    <span className="font-semibold text-text-main truncate max-w-[160px] sm:max-w-[190px]" title={res.email}>
                       {res.email || '—'}
                     </span>
                   </div>
                   {res.createdAt && (
-                    <div className="flex justify-between items-center text-[11px]">
+                    <div className="flex justify-between items-center text-[10px] sm:text-[11px]">
                       <span>Created:</span>
                       <span className="text-text-muted">
                         {new Date(res.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1594,18 +1837,18 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
                 {/* Ownership Notice if not owner */}
                 {!isOwner && (
-                  <div className="p-2.5 rounded-xl bg-neutral-100 dark:bg-white/5 border border-border-main text-[11px] text-text-muted flex items-center gap-2">
-                    <Lock size={13} className="text-amber-500 shrink-0" />
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-neutral-100 dark:bg-white/5 border border-border-main text-[10px] sm:text-[11px] text-text-muted flex items-center gap-1.5 sm:gap-2">
+                    <Lock size={12} className="text-amber-500 shrink-0" />
                     <span>Reserved by <strong className="text-text-main">{resOwner}</strong>. You cannot check in this table.</span>
                   </div>
                 )}
 
                 {/* Actions */}
-                <div className="flex gap-3 pt-2">
+                <div className="flex gap-2 sm:gap-3 pt-1 sm:pt-2">
                   {isWaiter ? (
                     <button
                       disabled
-                      className="w-full py-2.5 rounded-xl bg-bg-primary text-text-muted border border-border-main text-xs font-bold text-center cursor-not-allowed opacity-60"
+                      className="w-full py-2 sm:py-2.5 rounded-xl bg-bg-primary text-text-muted border border-border-main text-xs font-bold text-center cursor-not-allowed opacity-60"
                     >
                       View Only (Server Role)
                     </button>
@@ -1615,17 +1858,17 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                         onClick={() => handleAssignReservation(res)}
                         disabled={assignDisabled}
                         title={assignTooltip}
-                        className={`flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 ${
+                        className={`flex-1 py-2 sm:py-2.5 rounded-lg sm:rounded-xl primary-btn text-[11px] sm:text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1 sm:gap-1.5 ${
                           assignDisabled ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
                         }`}
                       >
                         {assignDisabled && !isOwner ? (
                           <>
-                            <Lock size={13} /> Check-In Locked
+                            <Lock size={12} /> Check-In Locked
                           </>
                         ) : (
                           <>
-                            <UserPlus size={14} /> Check-In / Assign
+                            <UserPlus size={13} /> Check-In / Assign
                           </>
                         )}
                       </button>
@@ -1633,7 +1876,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                         onClick={() => setCancellingReservation(res)}
                         disabled={cancelDisabled}
                         title={cancelTooltip}
-                        className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
+                        className={`flex-1 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold border transition-all text-center ${
                           cancelDisabled
                             ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40'
                             : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-300 active:bg-red-500/20 dark:active:bg-red-500/30 dark:text-red-400 text-red-600 border border-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer'
@@ -1657,6 +1900,8 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
       <p className="text-text-muted text-sm">
         {filter === 'reservations' || filter === 'reserved'
           ? 'No reserved tables in this zone.'
+          : filter === 'locked'
+          ? 'No locked tables in this zone.'
           : filter === 'occupied'
           ? 'No occupied tables in this zone.'
           : filter === 'available'
@@ -1665,7 +1910,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
       </p>
     </div>
   ) : (
- <div className="space-y-8">
+ <div className="space-y-4 sm:space-y-8">
  {Array.from(new Set(filteredTables.map(tb => tb.capacity || 4)))
  .sort((a, b) => b - a)
  .map(cap => {
@@ -1691,7 +1936,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  <div
  key={tb.id}
  onClick={() => setInspectingTable(tb)}
- className={`w-[290px] shrink-0 snap-start p-5 rounded-3xl dark:rounded-xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between gap-3 min-h-[295px] dark:bg-[#1C1C1E] ${
+ className={`w-[245px] sm:w-[290px] shrink-0 snap-start p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl dark:rounded-xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between gap-2.5 sm:gap-3 min-h-[265px] sm:min-h-[295px] dark:bg-[#1C1C1E] ${
  inspectingTable?.id === tb.id ? 'dark:border-primary' : 'dark:border-white/10'
  } ${
   isFull
@@ -1704,20 +1949,20 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   ? 'bg-bg-surface border-blue-500/20 '
   : tb.status === 'maintenance'
   ? 'bg-bg-surface/50 border-border-main opacity-60 '
-  : 'bg-bg-surface border-emerald-500/30 dark:hover:border-primary/50 hover:border-primary/50 dark: '
+  : 'bg-bg-surface border-emerald-500/30 dark:hover:border-primary/50 hover:border-primary/50 '
   }`}
   >
   {/* Header: Table Number & Semantic Status Pill */}
   <div className="flex items-center justify-between">
   <div>
-  <span className="font-mono dark:text-[#D4AF37] text-primary font-black text-xl tracking-wide">{tb.tableNumber}</span>
-  <p className="text-[10px] text-text-muted font-semibold uppercase tracking-wider block mt-0.5">
+  <span className="font-mono dark:text-[#D4AF37] text-primary font-black text-lg sm:text-xl tracking-wide">{tb.tableNumber}</span>
+  <p className="text-[9px] sm:text-[10px] text-text-muted font-semibold uppercase tracking-wider block mt-0.5">
   {placeZone === 'STANDING_BAR' ? 'Standard Zone' : 'Premium Zone'}
   </p>
   </div>
 
   <span
-  className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+  className={`px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-wider flex items-center gap-1 sm:gap-1.5 ${
   isFull
   ? 'dark:bg-red-500/15 bg-red-500/10 dark:text-red-400 text-red-700 border border-red-500/30'
   : isPartial
@@ -1731,7 +1976,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   : 'dark:bg-emerald-500/15 bg-emerald-500/10 dark:text-emerald-400 text-emerald-700 border border-emerald-500/30'
   }`}
   >
-  {isOccupied ? <Users size={12} /> : tb.status === 'in_checkin' ? <Lock size={12} /> : <CheckCircle2 size={12} />}
+  {isOccupied ? <Users size={11} /> : tb.status === 'in_checkin' ? <Lock size={11} /> : <CheckCircle2 size={11} />}
   <span className="capitalize">
   {isFull ? 'Occupied' : isPartial ? 'Partially Occupied' : tb.status === 'in_checkin' ? 'In Check-In' : tb.status}
   </span>
@@ -1739,7 +1984,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   </div>
 
  {/* Central Dynamic Table Diagram Container */}
- <div className="py-1 px-2 rounded-2xl bg-bg-primary/80 border border-border-main flex items-center justify-center h-28 relative">
+ <div className="py-1 px-1.5 sm:px-2 rounded-xl sm:rounded-2xl bg-bg-primary/80 border border-border-main flex items-center justify-center h-24 sm:h-28 relative">
  <TableDiagram
  capacity={capacity}
  occupiedCount={occupiedCount}
@@ -1749,9 +1994,9 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  </div>
 
  {/* Info Bar - Size, Capacity & Token Metadata */}
- <div className="space-y-1 text-xs px-1">
- <div className="flex items-center justify-between text-[11px] font-bold text-text-muted">
- <span className="uppercase text-[10px] tracking-wider">{sizeCategory} • {capacity} {capacity === 1 ? 'Person' : 'Persons'}</span>
+ <div className="space-y-1 text-xs px-0.5 sm:px-1">
+ <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold text-text-muted">
+ <span className="uppercase text-[9px] sm:text-[10px] tracking-wider">{sizeCategory} • {capacity} {capacity === 1 ? 'Person' : 'Persons'}</span>
  <span className={
  isFull
  ? 'dark:text-red-400 text-red-700 font-extrabold'
@@ -1769,21 +2014,21 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
  {assignedToken || tb.status === 'occupied' ? (
   <div className="space-y-1 border-t border-border-main/40 pt-1 text-text-muted">
-    <div className="flex items-center justify-between text-[11px]">
-      <span className="font-semibold truncate max-w-[120px]">👤 {assignedToken?.customer?.name || tb.activeSession?.customerName || 'Guest'}</span>
+    <div className="flex items-center justify-between text-[10px] sm:text-[11px]">
+      <span className="font-semibold truncate max-w-[110px] sm:max-w-[120px]">👤 {assignedToken?.customer?.name || tb.activeSession?.customerName || 'Guest'}</span>
       <span className="font-mono text-text-main font-bold">{assignedToken?.tokenNumber || tb.currentTokenId || tb.activeSession?.tokenNumber}</span>
     </div>
     {tb.status === 'occupied' && (
       <>
-        <div className="flex items-center justify-between text-[10px] text-text-muted/80">
+        <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-text-muted/80">
           <span>Occupied by:</span>
-          <span className="font-semibold text-text-main truncate max-w-[150px]" title={getTableOccupantDisplay(tb, assignedToken)}>
+          <span className="font-semibold text-text-main truncate max-w-[130px] sm:max-w-[150px]" title={getTableOccupantDisplay(tb, assignedToken)}>
             {getTableOccupantDisplay(tb, assignedToken)}
           </span>
         </div>
-        <div className="mt-2 px-3 py-2 rounded-2xl bg-bg-secondary-surface dark:bg-black/25 border border-border-main/60 flex items-center justify-between text-xs font-semibold shadow-sm animate-fadeIn">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider font-extrabold">Time Remaining</span>
-          <div className="text-[13px] font-black tracking-wide">
+        <div className="mt-1.5 sm:mt-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-bg-secondary-surface dark:bg-black/25 border border-border-main/60 flex items-center justify-between text-xs font-semibold shadow-sm animate-fadeIn">
+          <span className="text-[9px] sm:text-[10px] text-text-muted uppercase tracking-wider font-extrabold">Time Left</span>
+          <div className="text-xs sm:text-[13px] font-black tracking-wide">
             <TableTimer endTime={assignedToken?.endTime || tb.activeSession?.endTime || new Date(Date.now() + 3600000).toISOString()} />
           </div>
         </div>
@@ -1796,21 +2041,34 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     const resOwner = res ? getReservedByName(res) : (tb.reservedByName || tb.reservedBy || 'Staff');
     return (
       <div className="space-y-1 border-t border-border-main/40 pt-1 text-text-muted">
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="font-semibold truncate max-w-[140px]">👤 {res?.customerName || tb.customerName || 'Guest'}</span>
+        <div className="flex items-center justify-between text-[10px] sm:text-[11px]">
+          <span className="font-semibold truncate max-w-[120px] sm:max-w-[140px]">👤 {res?.customerName || tb.customerName || 'Guest'}</span>
           <span className="font-mono text-text-main font-bold">{res?.personsCount ? `${res.personsCount} Guests` : `${capacity} Seats`}</span>
         </div>
-        <div className="flex items-center justify-between text-[10px] text-text-muted/80">
+        <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-text-muted/80">
           <span>Reserved by:</span>
-          <span className="font-semibold text-text-main truncate max-w-[150px]" title={resOwner}>
+          <span className="font-semibold text-text-main truncate max-w-[130px] sm:max-w-[150px]" title={resOwner}>
             {resOwner}
           </span>
         </div>
       </div>
     );
   })()
+ ) : tb.status === 'in_checkin' ? (
+  <div className="space-y-1 border-t border-border-main/40 pt-1 text-text-muted">
+    <div className="flex items-center justify-between text-[10px] sm:text-[11px]">
+      <span className="font-semibold text-amber-600 dark:text-amber-400">🔒 Active Lock</span>
+      <span className="font-mono text-text-main font-bold">{capacity} Seats</span>
+    </div>
+    <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-text-muted/80">
+      <span>Locked by:</span>
+      <span className="font-bold text-text-main truncate max-w-[130px] sm:max-w-[150px]" title={`${tb.lockedByName || tb.lockedBy || 'Staff'} · ${formatShortRole(tb.lockedByRole)}`}>
+        {tb.lockedByName || tb.lockedBy || 'Staff'} · {formatShortRole(tb.lockedByRole)}
+      </span>
+    </div>
+  </div>
  ) : (
- <div className="text-[10px] text-text-muted border-t border-border-main/30 pt-1 flex justify-between">
+ <div className="text-[9px] sm:text-[10px] text-text-muted border-t border-border-main/30 pt-1 flex justify-between">
  <span>Rate Allowance:</span>
  <span className="font-mono font-bold text-text-main">₹500 / Session</span>
  </div>
@@ -1818,25 +2076,56 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  </div>
 
  {/* Card Action Row */}
- <div className="flex flex-col sm:flex-row gap-2 pt-1 border-t border-border-main/50">
+ <div className="flex flex-row gap-1.5 sm:gap-2 pt-1 border-t border-border-main/50">
     {tb.status === 'occupied' ? (
       <button
         onClick={(e) => {
           e.stopPropagation();
           setInspectingTable(tb);
         }}
-        className="w-full py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 dark:hover:bg-amber-500/20 dark:text-amber-300 text-amber-700 text-xs font-bold border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+        className="w-full py-2 sm:py-2.5 rounded-lg sm:rounded-xl bg-amber-500/10 hover:bg-amber-500/20 dark:hover:bg-amber-500/20 dark:text-amber-300 text-amber-700 text-[11px] sm:text-xs font-bold border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
       >
-        <Search size={14} /> Inspect Details
+        <Search size={13} /> Inspect Details
       </button>
     ) : tb.status === 'in_checkin' ? (
-      <button
-        disabled
-        onClick={(e) => e.stopPropagation()}
-        className="w-full py-2.5 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/30 text-xs font-bold transition-all text-center cursor-not-allowed"
-      >
-        In Check-In
-      </button>
+      (() => {
+        const isMine = (tb.lockedByUserId && tb.lockedByUserId === user?.id) || (tb.lockedBy && tb.lockedBy === user?.id);
+        const isAdmin = user?.role?.toLowerCase() === 'admin';
+        const isManager = user?.role?.toLowerCase() === 'manager';
+        const canRelease = isAdmin || isManager || isMine;
+        return (
+          <div className="flex items-center gap-1.5 w-full">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isMine) {
+                  if (onNavigateToCheckIn) onNavigateToCheckIn();
+                }
+              }}
+              disabled={!isMine}
+              className={`flex-1 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold border transition-all text-center flex items-center justify-center gap-1 ${
+                isMine
+                  ? 'bg-primary/10 text-primary border-primary/30 hover:bg-primary/20 cursor-pointer'
+                  : 'bg-amber-500/10 text-amber-500 border-amber-500/30 cursor-not-allowed opacity-75'
+              }`}
+            >
+              <Lock size={11} /> {isMine ? 'Resume Check-In' : 'In Check-In'}
+            </button>
+            {canRelease && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleReleaseLockedTable(tb);
+                }}
+                className="py-2 sm:py-2.5 px-3 rounded-lg sm:rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/20 text-[11px] sm:text-xs font-bold transition-all text-center cursor-pointer flex items-center justify-center gap-1"
+                title={isAdmin ? "Release Table (Admin)" : "Release Your Table Lock"}
+              >
+                Release
+              </button>
+            )}
+          </div>
+        );
+      })()
     ) : tb.status === 'reserved' ? (
       isWaiter ? (
         <button
@@ -1844,9 +2133,9 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             e.stopPropagation();
             setInspectingTable(tb);
           }}
-          className="w-full py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 dark:hover:bg-amber-500/20 dark:text-amber-300 text-amber-700 text-xs font-bold border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+          className="w-full py-2 sm:py-2.5 rounded-lg sm:rounded-xl bg-amber-500/10 hover:bg-amber-500/20 dark:hover:bg-amber-500/20 dark:text-amber-300 text-amber-700 text-[11px] sm:text-xs font-bold border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
         >
-          <Search size={14} /> Inspect Details
+          <Search size={13} /> Inspect Details
         </button>
       ) : (
         (() => {
@@ -1864,17 +2153,17 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                 }}
                 disabled={!isOwner}
                 title={!isOwner ? `This table was reserved by ${resOwner}. Only ${resOwner} or an Admin can check in this table.` : undefined}
-                className={`flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 ${
+                className={`flex-1 py-2 sm:py-2.5 rounded-lg sm:rounded-xl primary-btn text-[11px] sm:text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1 ${
                   !isOwner ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
                 }`}
               >
                 {!isOwner ? (
                   <>
-                    <Lock size={13} /> Locked
+                    <Lock size={12} /> Locked
                   </>
                 ) : (
                   <>
-                    <UserPlus size={14} /> Check-In
+                    <UserPlus size={12} /> Check-In
                   </>
                 )}
               </button>
@@ -1885,7 +2174,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                 }}
                 disabled={!isOwner}
                 title={!isOwner ? `This reservation was created by ${resOwner}. Only ${resOwner} or an Admin can cancel it.` : undefined}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all text-center ${
+                className={`flex-1 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold border transition-all text-center ${
                   !isOwner 
                     ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40' 
                     : 'dark:bg-red-500/10 bg-red-500/5 hover:dark:bg-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-700 dark:hover:text-red-300 active:bg-red-500/20 dark:active:bg-red-500/30 dark:text-red-400 text-red-600 border border-red-500/20 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer'
@@ -1904,9 +2193,9 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             e.stopPropagation();
             setInspectingTable(tb);
           }}
-          className="w-full py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card border border-border-main text-text-muted hover:text-text-main transition-all cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold"
+          className="w-full py-2 sm:py-2.5 rounded-lg sm:rounded-xl bg-bg-primary hover:bg-bg-card border border-border-main text-text-muted hover:text-text-main transition-all cursor-pointer flex items-center justify-center gap-1.5 text-[11px] sm:text-xs font-bold"
         >
-          <Search size={14} /> Inspect
+          <Search size={13} /> Inspect
         </button>
       ) : (
         <>
@@ -1915,16 +2204,16 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               e.stopPropagation();
               handleAssignClick(tb);
             }}
-            className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+            className="flex-1 py-2 sm:py-2.5 rounded-lg sm:rounded-xl primary-btn text-[11px] sm:text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer"
           >
-            <UserPlus size={14} /> Assign
+            <UserPlus size={12} /> Assign
           </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
               handleReserveClick(tb);
             }}
-            className="flex-1 py-2.5 rounded-xl text-xs font-bold border border-primary text-primary hover:bg-primary/5 transition-all cursor-pointer text-center"
+            className="flex-1 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold border border-primary text-primary hover:bg-primary/5 transition-all cursor-pointer text-center"
           >
             Reserve
           </button>
@@ -1936,9 +2225,9 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
           e.stopPropagation();
           setInspectingTable(tb);
         }}
-        className="w-full py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card border border-border-main text-text-muted hover:text-text-main transition-all cursor-pointer flex items-center justify-center gap-1.5"
+        className="w-full py-2 sm:py-2.5 rounded-lg sm:rounded-xl bg-bg-primary hover:bg-bg-card border border-border-main text-text-muted hover:text-text-main transition-all cursor-pointer flex items-center justify-center gap-1.5 text-[11px] sm:text-xs"
       >
-        <Search size={14} /> Inspect
+        <Search size={13} /> Inspect
       </button>
     )}
  </div>
@@ -1951,7 +2240,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
  </div>
  )}
 
- {/* INSPECT DETAILS DRAWER */}
+  {/* INSPECT DETAILS DRAWER */}
   {(() => {
     if (!inspectingTable) return null;
     const capacity = inspectingTable.capacity || 4;
@@ -1959,24 +2248,68 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     const isOccupied = inspectingTable.status === 'occupied';
     const occupiedCount = assignedToken ? (assignedToken.personsCount || 1) : (isOccupied ? capacity : 0);
 
+    const handleTouchStart = (e: React.TouchEvent) => {
+      inspectDrawerTouchStartY.current = e.touches[0].clientY;
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+      if (inspectDrawerTouchStartY.current === null) return;
+      const currentY = e.touches[0].clientY;
+      const deltaY = currentY - inspectDrawerTouchStartY.current;
+      const isAtTop = (inspectDrawerScrollRef.current?.scrollTop || 0) <= 0;
+
+      if (deltaY > 0 && isAtTop) {
+        setIsInspectDrawerDragging(true);
+        setInspectDrawerDragY(deltaY);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      if (inspectDrawerDragY > 110) {
+        closeInspectDrawer();
+      } else {
+        setInspectDrawerDragY(0);
+        setIsInspectDrawerDragging(false);
+      }
+      inspectDrawerTouchStartY.current = null;
+    };
+
     return (
       <div 
-        className="fixed inset-0 z-[100] bg-black/40 dark:bg-black/60 backdrop-blur-[2px] flex items-stretch justify-end p-0 animate-fadeIn"
-        onClick={() => setInspectingTable(null)}
+        className={`fixed inset-0 z-[100] bg-black/50 dark:bg-black/75 backdrop-blur-[2px] flex items-stretch justify-end p-0 transition-opacity duration-200 ${
+          isInspectDrawerClosing ? 'opacity-0' : 'opacity-100 animate-fadeIn'
+        }`}
+        onClick={closeInspectDrawer}
       >
         <div 
-          className="w-full sm:w-[380px] md:w-[400px] bg-bg-surface dark:bg-[#18181B] border-l border-border-main dark:border-white/10 p-5 relative text-text-main h-[100dvh] max-h-screen shadow-2xl flex flex-col justify-between"
+          style={{
+            transform: isInspectDrawerDragging && inspectDrawerDragY > 0 ? `translateY(${inspectDrawerDragY}px)` : undefined,
+            transition: isInspectDrawerDragging ? 'none' : 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}
+          className={`w-full sm:w-[380px] md:w-[400px] bg-bg-surface dark:bg-[#18181B] sm:border-l border-border-main dark:border-white/10 p-3.5 sm:p-5 relative text-text-main h-[100dvh] max-h-screen shadow-2xl flex flex-col justify-between overflow-hidden ${
+            isInspectDrawerClosing 
+              ? 'animate-mobile-drawer-exit sm:animate-none' 
+              : 'animate-mobile-drawer-up sm:animate-none'
+          }`}
           onClick={(e) => e.stopPropagation()}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
+          {/* Mobile Pull-to-dismiss Handle Bar */}
+          <div className="w-full flex items-center justify-center pt-0 pb-1.5 sm:hidden shrink-0 cursor-pointer" onClick={closeInspectDrawer}>
+            <div className="w-12 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700 active:scale-95 transition-all" />
+          </div>
+
           {/* Header */}
-          <div className="flex items-center justify-between pb-4 border-b border-border-main dark:border-white/10 shrink-0">
-            <div className="flex items-center gap-2 text-text-main font-bold text-base dark:text-white pr-2">
-              <span className="font-mono text-lg font-black tracking-wide dark:text-[#D4AF37] text-primary">
+          <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-border-main dark:border-white/10 shrink-0">
+            <div className="flex items-center gap-2 text-text-main font-bold text-sm sm:text-base dark:text-white pr-2">
+              <span className="font-mono text-base sm:text-lg font-black tracking-wide dark:text-[#D4AF37] text-primary">
                 {inspectingTable.tableNumber.startsWith('S-') || inspectingTable.tableNumber.startsWith('L-') || inspectingTable.tableNumber.startsWith('M')
                   ? inspectingTable.tableNumber 
                   : `T-${inspectingTable.tableNumber}`}
               </span>
-              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-bg-primary dark:bg-white/5 text-text-muted border border-border-main dark:border-white/10">
+              <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-bg-primary dark:bg-white/5 text-text-muted border border-border-main dark:border-white/10">
                 {(inspectingTable.placeTypeId === 'PREMIUM_LOUNGE' || inspectingTable.tableNumber.startsWith('L-')) ? 'Premium Lounge' : 'Standing Bar'}
               </span>
             </div>
@@ -1984,25 +2317,28 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setInspectingTable(null);
+                closeInspectDrawer();
               }}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer shrink-0 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl flex items-center justify-center text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer shrink-0 focus:outline-none focus:ring-2 focus:ring-primary"
               title="Close inspection drawer"
               aria-label="Close inspection drawer"
             >
-              <X size={18} />
+              <X size={16} />
             </button>
           </div>
 
           {/* Scrollable Content Area */}
-          <div className="flex-1 overflow-y-auto py-5 space-y-5 custom-scrollbar no-scrollbar">
+          <div 
+            ref={inspectDrawerScrollRef}
+            className="flex-1 overflow-y-auto py-3 sm:py-5 space-y-3 sm:space-y-5 custom-scrollbar no-scrollbar"
+          >
             {/* Top Center Visual Seating View using TableDiagram */}
-            <div className="p-4 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 flex flex-col items-center justify-center space-y-2.5">
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-text-muted">
+            <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 flex flex-col items-center justify-center space-y-2">
+              <p className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-widest text-text-muted">
                 Visual Seating Alignment ({occupiedCount} / {capacity} Seats Occupied)
               </p>
 
-              <div className="w-full max-w-sm h-32 flex items-center justify-center">
+              <div className="w-full max-w-sm h-28 sm:h-32 flex items-center justify-center">
                 <TableDiagram
                   capacity={capacity}
                   occupiedCount={occupiedCount}
@@ -2013,10 +2349,10 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             </div>
 
             {/* Table & Session Metrics */}
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3.5 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-1">
-                <span className="text-text-muted text-[10px] font-bold uppercase">Status</span>
-                <p className={`font-bold text-sm uppercase ${
+            <div className="grid grid-cols-2 gap-2 sm:gap-3 text-xs">
+              <div className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-0.5 sm:space-y-1">
+                <span className="text-text-muted text-[9px] sm:text-[10px] font-bold uppercase">Status</span>
+                <p className={`font-bold text-xs sm:text-sm uppercase ${
                   inspectingTable.status === 'occupied' 
                     ? 'dark:text-amber-400 text-amber-700' 
                     : inspectingTable.status === 'reserved'
@@ -2029,25 +2365,25 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-1">
-                <span className="text-text-muted text-[10px] font-bold uppercase">Capacity Limit</span>
-                <p className="font-bold text-sm text-text-main">{inspectingTable.capacity || 4} Guests Max</p>
+              <div className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-0.5 sm:space-y-1">
+                <span className="text-text-muted text-[9px] sm:text-[10px] font-bold uppercase">Capacity Limit</span>
+                <p className="font-bold text-xs sm:text-sm text-text-main">{inspectingTable.capacity || 4} Guests Max</p>
               </div>
             </div>
 
             {(inspectingToken || inspectingTable.status === 'occupied') && (
-              <div className="p-4 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-2.5 text-xs">
+              <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-2 sm:space-y-2.5 text-xs">
                 {inspectingTable.status === 'occupied' && (
                   <div className="flex justify-between items-center pb-2 border-b border-border-main/40">
                     <span className="text-text-muted">Occupied By:</span>
-                    <span className="font-bold text-text-main text-right truncate max-w-[200px]" title={getTableOccupantDisplay(inspectingTable, inspectingToken)}>
+                    <span className="font-bold text-text-main text-right truncate max-w-[170px] sm:max-w-[200px]" title={getTableOccupantDisplay(inspectingTable, inspectingToken)}>
                       {getTableOccupantDisplay(inspectingTable, inspectingToken)}
                     </span>
                   </div>
                 )}
                 <div className="flex justify-between items-center">
                   <span className="text-text-muted">Customer Name:</span>
-                  <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={inspectingToken?.customer?.name || inspectingTable.activeSession?.customerName || 'Walk-in Guest'}>
+                  <span className="font-bold text-text-main text-right truncate max-w-[160px] sm:max-w-[190px]" title={inspectingToken?.customer?.name || inspectingTable.activeSession?.customerName || 'Walk-in Guest'}>
                     {inspectingToken?.customer?.name || inspectingTable.activeSession?.customerName || 'Walk-in Guest'}
                   </span>
                 </div>
@@ -2059,7 +2395,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-text-muted">Email ID:</span>
-                  <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={inspectingToken?.customer?.email || (inspectingToken as any)?.email || inspectingTable.activeSession?.email || '—'}>
+                  <span className="font-mono text-text-main text-right truncate max-w-[160px] sm:max-w-[190px]" title={inspectingToken?.customer?.email || (inspectingToken as any)?.email || inspectingTable.activeSession?.email || '—'}>
                     {inspectingToken?.customer?.email || (inspectingToken as any)?.email || inspectingTable.activeSession?.email || '—'}
                   </span>
                 </div>
@@ -2096,10 +2432,10 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               const isMine = res && res.userId === user?.id;
               const resOwner = getReservedByName(res);
               return (
-                <div className="p-4 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-2.5 text-xs">
+                <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-2 sm:space-y-2.5 text-xs">
                   <div className="flex justify-between items-center pb-2 border-b border-border-main/40">
                     <span className="text-text-muted">Reserved By:</span>
-                    <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                    <span className={`font-bold px-2 py-0.5 rounded text-[10px] sm:text-[11px] ${
                       isMine 
                         ? 'bg-purple-500/15 text-primary dark:text-purple-300 border border-purple-500/30' 
                         : 'bg-neutral-500/10 text-text-muted border border-border-main'
@@ -2109,7 +2445,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-text-muted">Reserved Customer:</span>
-                    <span className="font-bold text-text-main text-right truncate max-w-[190px]" title={res.customerName}>
+                    <span className="font-bold text-text-main text-right truncate max-w-[160px] sm:max-w-[190px]" title={res.customerName}>
                       {res.customerName}
                     </span>
                   </div>
@@ -2119,7 +2455,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-text-muted">Email ID:</span>
-                    <span className="font-mono text-text-main text-right truncate max-w-[190px]" title={res.email || '—'}>
+                    <span className="font-mono text-text-main text-right truncate max-w-[160px] sm:max-w-[190px]" title={res.email || '—'}>
                       {res.email || '—'}
                     </span>
                   </div>
@@ -2132,7 +2468,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             })()}
 
             {!inspectingToken && inspectingTable.status === 'available' && (
-              <div className="p-4 rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-2 text-xs">
+              <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-bg-primary dark:bg-[#121214] border border-border-main dark:border-white/10 space-y-2 text-xs">
                 <div className="flex justify-between items-center">
                   <span className="text-text-muted">Session Rate Allowance:</span>
                   <span className="font-mono font-bold text-text-main">₹500 / Session</span>
@@ -2146,7 +2482,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
           </div>
 
           {/* Action Buttons (Footer) */}
-          <div className="pt-4 border-t border-border-main dark:border-white/10 flex flex-col gap-2.5 shrink-0">
+          <div className="pt-3 sm:pt-4 border-t border-border-main dark:border-white/10 flex flex-col gap-2 sm:gap-2.5 shrink-0">
             {inspectingTable.status === 'occupied' ? (
               isWaiter ? (
                 <button 
@@ -2192,7 +2528,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                 const isMine = res && res.userId === user?.id;
                 const isPrivileged = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
                 const isOwner = !res || !res.userId || isMine || isPrivileged;
-                const resOwner = res ? getReservedByName(res) : 'Staff';
+                const resOwner = getReservedByName(res);
                 const isReserved = inspectingTable.status === 'reserved';
                 return (
                   <>
@@ -2201,7 +2537,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                       onClick={() => isReserved ? handleCheckInReservedTable(inspectingTable) : handleAssignClick(inspectingTable)}
                       disabled={isReserved && !isOwner}
                       title={isReserved && !isOwner ? `This table was reserved by ${resOwner}. Only ${resOwner} or an Admin can check in this table.` : undefined}
-                      className={`w-full py-3 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 ${
+                      className={`w-full py-2.5 sm:py-3 rounded-xl primary-btn text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 ${
                         isReserved && !isOwner ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
                       }`}
                     >
@@ -2224,7 +2560,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                         onClick={() => handleCancelClick(inspectingTable)}
                         disabled={!isOwner}
                         title={!isOwner ? `This reservation was created by ${resOwner}. Only ${resOwner} or an Admin can cancel it.` : undefined}
-                        className={`w-full py-2.5 rounded-xl font-bold text-xs border transition-all text-center ${
+                        className={`w-full py-2 sm:py-2.5 rounded-xl font-bold text-xs border transition-all text-center ${
                           !isOwner 
                             ? 'bg-gray-100 dark:bg-[#1C1C1E]/50 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-white/5 cursor-not-allowed opacity-40' 
                             : 'bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/25 text-rose-700 dark:text-rose-400 border border-rose-500/30 cursor-pointer'
@@ -2237,8 +2573,8 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                     {inspectingTable.status === 'available' && (
                       <button
                         type="button"
-                        onClick={() => { setInspectingTable(null); handleReserveClick(inspectingTable); }}
-                        className="w-full py-2.5 rounded-xl bg-transparent border border-primary text-primary font-bold text-xs hover:bg-primary/5 transition-all text-center cursor-pointer"
+                        onClick={() => { closeInspectDrawer(); handleReserveClick(inspectingTable); }}
+                        className="w-full py-2 sm:py-2.5 rounded-xl bg-transparent border border-primary text-primary font-bold text-xs hover:bg-primary/5 transition-all text-center cursor-pointer"
                       >
                         Reserve Table
                       </button>
@@ -2250,8 +2586,8 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
             <button
               type="button"
-              onClick={() => setInspectingTable(null)}
-              className="w-full py-2.5 rounded-xl bg-transparent text-xs font-bold text-text-muted hover:text-text-main border border-border-main dark:border-white/10 hover:bg-neutral-100 dark:hover:bg-white/5 transition-all cursor-pointer"
+              onClick={closeInspectDrawer}
+              className="w-full py-2 sm:py-2.5 rounded-xl bg-transparent text-xs font-bold text-text-muted hover:text-text-main border border-border-main dark:border-white/10 hover:bg-neutral-100 dark:hover:bg-white/5 transition-all cursor-pointer"
             >
               Close Drawer
             </button>
@@ -2263,35 +2599,35 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
   {/* ASSIGN TABLE MODAL */}
   {assigningTable && (
-  <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
-  <div className="bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
-  <div className="absolute top-4 right-4 flex items-center gap-1.5">
+  <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-3 sm:p-4">
+  <div className="bg-bg-surface border border-border-main rounded-2xl sm:rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-3.5 sm:space-y-4 relative text-text-main animate-fadeIn">
+  <div className="absolute top-3.5 sm:top-4 right-3.5 sm:right-4 flex items-center gap-1 sm:gap-1.5">
     <button 
       type="button"
       onClick={handleModalRefresh}
       disabled={isResRefreshing}
-      className="w-8 h-8 rounded-full text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all disabled:opacity-50"
+      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all disabled:opacity-50"
       title={isResRefreshing ? "Refreshing live data..." : "Refresh Live Status"}
       aria-label="Refresh live status"
     >
-      <RefreshCw size={15} className={isResRefreshing ? 'animate-spin text-primary' : ''} />
+      <RefreshCw size={14} className={isResRefreshing ? 'animate-spin text-primary' : ''} />
     </button>
     <button 
       type="button"
       onClick={() => setAssigningTable(null)}
-      className="w-8 h-8 rounded-full text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all"
+      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all"
       title="Close dialog"
       aria-label="Close dialog"
     >
-      <X size={18} />
+      <X size={16} />
     </button>
   </div>
 
-  <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-20">
-  <Grid3X3 size={18} className="shrink-0" /> <span className="truncate">Assign Table {assigningTable.tableNumber}</span>
+  <div className="flex items-center gap-2 text-text-main font-bold text-xs sm:text-sm pr-16 sm:pr-20">
+  <Grid3X3 size={16} className="shrink-0" /> <span className="truncate">Assign Table {assigningTable.tableNumber}</span>
   </div>
 
-  <form onSubmit={handleAssignSubmit} className="space-y-4">
+  <form onSubmit={handleAssignSubmit} className="space-y-3 sm:space-y-4">
   <div>
   <label className="block text-xs font-semibold text-text-muted mb-1">Active Guest Token Pass</label>
   {tokens.length === 0 ? (
@@ -2313,11 +2649,11 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   )}
   </div>
 
-  <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+  <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 pt-2 sm:pt-4">
   <button
   type="button"
   onClick={() => setAssigningTable(null)}
-  className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
+  className="flex-1 py-2 sm:py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
   >
   Cancel
   </button>
@@ -2325,7 +2661,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
   type="submit"
   disabled={isSubmittingAssign || !selectedTokenId}
   title={isSubmittingAssign ? "Assigning seat..." : !selectedTokenId ? "Select active token" : undefined}
-  className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+  className="flex-1 py-2 sm:py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
   >
 {isSubmittingAssign ? 'Assigning...' : 'Confirm Seating'}
   </button>
@@ -2337,39 +2673,39 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
   {/* RESERVE / ASSIGN TABLE MODAL */}
   {reservingTable && (
-    <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
-      <div className="bg-bg-surface border border-border-main rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn max-h-[90vh] overflow-y-auto custom-scrollbar">
-        <div className="absolute top-4 right-4 flex items-center gap-1.5">
+    <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-bg-surface border border-border-main rounded-2xl sm:rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-3.5 sm:space-y-4 relative text-text-main animate-fadeIn max-h-[92vh] overflow-y-auto custom-scrollbar">
+        <div className="absolute top-3.5 sm:top-4 right-3.5 sm:right-4 flex items-center gap-1 sm:gap-1.5">
           <button 
             type="button"
             onClick={handleModalRefresh}
             disabled={isResRefreshing}
-            className="w-8 h-8 rounded-full text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all disabled:opacity-50"
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all disabled:opacity-50"
             title={isResRefreshing ? "Refreshing live data..." : "Refresh Live Status"}
             aria-label="Refresh live status"
           >
-            <RefreshCw size={15} className={isResRefreshing ? 'animate-spin text-primary' : ''} />
+            <RefreshCw size={14} className={isResRefreshing ? 'animate-spin text-primary' : ''} />
           </button>
           <button 
             type="button"
             onClick={handleCloseReserveModal}
-            className="w-8 h-8 rounded-full text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all"
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-text-muted hover:text-text-main hover:bg-neutral-100 dark:hover:bg-white/10 flex items-center justify-center cursor-pointer transition-all"
             title="Close dialog"
             aria-label="Close dialog"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
-        <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-20">
-          <Grid3X3 size={18} className="shrink-0" /> <span className="truncate">{isAssignFlow ? 'Assign' : 'Reserve'} Table {reservingTable.tableNumber}</span>
+        <div className="flex items-center gap-2 text-text-main font-bold text-xs sm:text-sm pr-16 sm:pr-20">
+          <Grid3X3 size={16} className="shrink-0" /> <span className="truncate">{isAssignFlow ? 'Assign' : 'Reserve'} Table {reservingTable.tableNumber}</span>
         </div>
 
-        <form onSubmit={handleReserveSubmit} className="space-y-4 text-left">
+        <form onSubmit={handleReserveSubmit} className="space-y-3 sm:space-y-4 text-left">
           {/* 1. Phone Number */}
           <div ref={resPhoneContainerRef} className="relative">
-            <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
-              <Phone size={14} className="text-text-main" /> Phone Number <span className="dark:text-red-400 text-red-700">*</span>
+            <label className="block text-xs font-semibold text-text-muted mb-1 sm:mb-1.5 flex items-center gap-1.5">
+              <Phone size={13} className="text-text-main" /> Phone Number <span className="dark:text-red-400 text-red-700">*</span>
             </label>
             <div className="relative">
               <input
@@ -2384,7 +2720,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                   }
                 }}
                 placeholder="e.g. 9999999999"
-                className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 pr-10 text-xs text-text-main focus:outline-none transition-all ${
+                className={`w-full bg-bg-primary border rounded-xl px-3 sm:px-3.5 py-2 sm:py-2.5 pr-9 text-xs text-text-main focus:outline-none transition-all ${
                   resPhone.trim().length > 0 && (!isValidPhone(resPhone) || resPhoneConflict || isResPhoneActive || resPhoneValidationStatus === 'CONFLICT')
                     ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
                     : 'border-border-main dark:focus:border-primary focus:border-primary focus:ring-2 dark:focus:ring-primary/20 focus:ring-primary/20'
@@ -2393,7 +2729,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               />
               {isLookingUpResCustomer && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 text-primary animate-spin pointer-events-none">
-                  <Loader2 size={16} />
+                  <Loader2 size={15} />
                 </div>
               )}
             </div>
@@ -2401,9 +2737,9 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             {/* Live Suggestions Dropdown (Top 3 Ascending Prefix Matches) */}
             {showResSuggestions && resPhoneSuggestions.length > 0 && (
               <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-bg-surface border border-border-main rounded-2xl shadow-2xl overflow-hidden animate-fadeIn">
-                <div className="px-3.5 py-2 border-b border-border-main bg-bg-primary/50 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                    Matching Registered Guests ({resPhoneSuggestions.length})
+                <div className="px-3 sm:px-3.5 py-1.5 sm:py-2 border-b border-border-main bg-bg-primary/50 flex items-center justify-between">
+                  <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                    Matching Guests ({resPhoneSuggestions.length})
                   </span>
                   <span className="text-[9px] text-text-muted font-medium">Prefix Match</span>
                 </div>
@@ -2419,7 +2755,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                           e.preventDefault();
                           handleSelectResSuggestion(cust);
                         }}
-                        className={`w-full px-4 py-2.5 text-left transition-colors flex items-center justify-between group cursor-pointer ${
+                        className={`w-full px-3.5 sm:px-4 py-2 sm:py-2.5 text-left transition-colors flex items-center justify-between group cursor-pointer ${
                           isSelected ? 'bg-primary/15 dark:bg-primary/20 border-l-2 border-primary' : 'hover:bg-primary/10'
                         }`}
                       >
@@ -2432,11 +2768,11 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
                             }`} />
                             {cust.phoneNumber}
                           </span>
-                          <span className={`text-[11px] truncate ${isSelected ? 'text-text-main dark:text-gray-200 font-medium' : 'text-text-muted'}`}>
+                          <span className={`text-[10px] sm:text-[11px] truncate ${isSelected ? 'text-text-main dark:text-gray-200 font-medium' : 'text-text-muted'}`}>
                             {cust.name} {cust.email ? `• ${cust.email}` : ''}
                           </span>
                         </div>
-                        <span className={`text-[10px] font-bold uppercase tracking-wider text-primary transition-opacity shrink-0 ${
+                        <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-primary transition-opacity shrink-0 ${
                           isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                         }`}>
                           Select ↵
@@ -2449,14 +2785,14 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
             )}
 
             {resPhone.trim().length > 0 && !isValidPhone(resPhone) && !showResSuggestions && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
-                <AlertTriangle size={14} className="shrink-0" />
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[10px] sm:text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={13} className="shrink-0" />
                 <span>Please enter a valid 10-digit Indian mobile number (starts with 6-9).</span>
               </div>
             )}
             {(resPhoneConflict || resPhoneValidationStatus === 'CONFLICT') && !showResSuggestions && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
-                <AlertTriangle size={14} className="shrink-0" />
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[10px] sm:text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={13} className="shrink-0" />
                 <span>
                   {resPhoneConflictDetail?.type === 'RESERVATION'
                     ? `This phone number is already reserved by ${resPhoneConflictDetail.name || 'a customer'}.`
@@ -2468,8 +2804,8 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
           {/* 2. Customer Full Name */}
           <div>
-            <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
-              <User size={14} className="text-text-main" /> Customer Full Name <span className="dark:text-red-400 text-red-700">*</span>
+            <label className="block text-xs font-semibold text-text-muted mb-1 sm:mb-1.5 flex items-center gap-1.5">
+              <User size={13} className="text-text-main" /> Customer Full Name <span className="dark:text-red-400 text-red-700">*</span>
             </label>
             <input
               type="text"
@@ -2477,7 +2813,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               onChange={e => handleResNameChange(e.target.value)}
               onFocus={handleResCustomerFieldFocus}
               placeholder="e.g. First Last"
-              className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
+              className={`w-full bg-bg-primary border rounded-xl px-3 sm:px-3.5 py-2 sm:py-2.5 text-xs text-text-main focus:outline-none transition-all ${
                 resName.trim().length > 0 && !isResNameOk
                   ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
                   : 'border-border-main dark:focus:border-primary focus:border-primary focus:ring-2 dark:focus:ring-primary/20 focus:ring-primary/20'
@@ -2485,8 +2821,8 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               required
             />
             {resName.trim().length > 0 && !isResNameOk && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
-                <AlertTriangle size={14} className="shrink-0" />
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[10px] sm:text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={13} className="shrink-0" />
                 <span>Full name must be 2-100 characters (letters, spaces, dots, apostrophes only).</span>
               </div>
             )}
@@ -2494,11 +2830,11 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
           {/* 3. Email ID */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between mb-1 sm:mb-1.5">
               <label className="text-xs font-semibold text-text-muted flex items-center gap-1.5">
-                <Mail size={14} className="text-text-main" /> Email Address
+                <Mail size={13} className="text-text-main" /> Email Address
               </label>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider dark:text-red-400 text-red-700">
+              <span className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider dark:text-red-400 text-red-700">
                 REQUIRED
               </span>
             </div>
@@ -2508,7 +2844,7 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               onChange={e => handleResEmailChange(e.target.value)}
               onFocus={handleResCustomerFieldFocus}
               placeholder="e.g. name@gmail.com"
-              className={`w-full bg-bg-primary border rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none transition-all ${
+              className={`w-full bg-bg-primary border rounded-xl px-3 sm:px-3.5 py-2 sm:py-2.5 text-xs text-text-main focus:outline-none transition-all ${
                 resEmail.trim().length === 0 || !isValidEmail(resEmail) || resEmailConflict || isResEmailActive || resEmailValidationStatus === 'CONFLICT'
                   ? 'border-red-500/80 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
                   : 'border-border-main dark:focus:border-primary focus:border-primary focus:ring-2 dark:focus:ring-primary/20 focus:ring-primary/20'
@@ -2516,20 +2852,20 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
               required
             />
             {resEmail.trim().length === 0 && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
-                <AlertTriangle size={14} className="shrink-0" />
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[10px] sm:text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={13} className="shrink-0" />
                 <span>Email address is strictly required for Digital Email QR Pass delivery.</span>
               </div>
             )}
             {resEmail.trim().length > 0 && !isValidEmail(resEmail) && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
-                <AlertTriangle size={14} className="shrink-0" />
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[10px] sm:text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={13} className="shrink-0" />
                 <span>Please enter a valid email address (e.g. name@domain.com).</span>
               </div>
             )}
             {(resEmailConflict || resEmailValidationStatus === 'CONFLICT') && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[11px] dark:text-red-400 text-red-700">
-                <AlertTriangle size={14} className="shrink-0" />
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-1.5 flex items-center gap-1.5 text-[10px] sm:text-[11px] dark:text-red-400 text-red-700">
+                <AlertTriangle size={13} className="shrink-0" />
                 <span>
                   {resEmailConflictDetail?.type === 'RESERVATION'
                     ? `This email address is already reserved by ${resEmailConflictDetail.name || 'a customer'}.`
@@ -2541,13 +2877,13 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
           {/* 4. Number of Members */}
           <div>
-            <label className="block text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1.5">
-              <Users size={14} className="text-text-main" /> Number of Members <span className="dark:text-red-400 text-red-700">*</span>
+            <label className="block text-xs font-semibold text-text-muted mb-1 sm:mb-1.5 flex items-center gap-1.5">
+              <Users size={13} className="text-text-main" /> Number of Members <span className="dark:text-red-400 text-red-700">*</span>
             </label>
             <select
               value={resPersons}
               onChange={e => setResPersons(Number(e.target.value))}
-              className="w-full bg-bg-primary border border-border-main rounded-xl px-3.5 py-2.5 text-xs text-text-main focus:outline-none dark:focus:border-primary focus:border-primary cursor-pointer"
+              className="w-full bg-bg-primary border border-border-main rounded-xl px-3 sm:px-3.5 py-2 sm:py-2.5 text-xs text-text-main focus:outline-none dark:focus:border-primary focus:border-primary cursor-pointer"
               required
             >
               {Array.from({ length: reservingTable.capacity || 4 }, (_, i) => i + 1).map(num => (
@@ -2557,35 +2893,35 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
           </div>
 
           {/* Step Validation Status Indicator */}
-          <div className="pt-2 text-xs text-text-muted w-full text-center">
+          <div className="pt-1.5 sm:pt-2 text-xs text-text-muted w-full text-center">
             {resPhoneValidationStatus === 'PENDING' || resEmailValidationStatus === 'PENDING' || isResValidating ? (
-              <span className="dark:text-amber-400 text-amber-700 flex items-center justify-center gap-1 text-[11px] font-semibold">
-                <AlertTriangle size={14} className="animate-spin shrink-0" /> Validating guest details...
+              <span className="dark:text-amber-400 text-amber-700 flex items-center justify-center gap-1 text-[10px] sm:text-[11px] font-semibold">
+                <AlertTriangle size={13} className="animate-spin shrink-0" /> Validating guest details...
               </span>
             ) : !isResFormValid ? (
-              <span className="dark:text-amber-400 text-amber-700 flex items-center justify-center gap-1 text-[11px]">
-                <AlertTriangle size={14} className="shrink-0" /> Complete all required fields above to proceed
+              <span className="dark:text-amber-400 text-amber-700 flex items-center justify-center gap-1 text-[10px] sm:text-[11px]">
+                <AlertTriangle size={13} className="shrink-0" /> Complete all required fields above to proceed
               </span>
             ) : (
-              <span className="dark:text-emerald-400 text-emerald-700 font-bold flex items-center justify-center gap-1 text-[11px]">
+              <span className="dark:text-emerald-400 text-emerald-700 font-bold flex items-center justify-center gap-1 text-[10px] sm:text-[11px]">
                 ✓ All inputs validated
               </span>
             )}
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
+          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 pt-1 sm:pt-2">
             <button
               type="button"
               onClick={handleCloseReserveModal}
-              className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
+              className="flex-1 py-2 sm:py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!isResFormValid || isSubmittingReserve || resPhoneValidationStatus !== 'VALID' || resEmailValidationStatus !== 'VALID' || resPhoneConflict || resEmailConflict || isResPhoneActive || isResEmailActive}
-              className="flex-1 py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+              className="flex-1 py-2 sm:py-2.5 rounded-xl primary-btn text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
             >
               {isSubmittingReserve ? 'Confirming...' : isAssignFlow ? 'Confirm Assign & Check-In' : 'Confirm Reserve'}
             </button>
@@ -2597,24 +2933,24 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
 
  {/* CANCEL RESERVATION CONFIRMATION MODAL */}
  {cancellingReservation && (
-   <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-4">
-     <div className="bg-bg-surface border border-border-main rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-4 relative text-text-main animate-fadeIn">
+   <div className="fixed inset-0 z-[100] dark:bg-black/75 bg-slate-900/35 flex items-center justify-center p-3 sm:p-4">
+     <div className="bg-bg-surface border border-border-main rounded-2xl sm:rounded-3xl p-4 sm:p-6 w-full max-w-md space-y-3.5 sm:space-y-4 relative text-text-main animate-fadeIn">
        <button 
          onClick={() => setCancellingReservation(null)}
-         className="absolute top-4 right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
+         className="absolute top-3.5 sm:top-4 right-3.5 sm:right-4 text-text-muted hover:text-text-main cursor-pointer p-1"
        >
-         <X size={18} />
+         <X size={16} />
        </button>
 
-       <div className="flex items-center gap-2 text-text-main font-bold text-sm pr-8 text-red-500">
-         <AlertTriangle size={18} className="shrink-0" /> <span className="truncate">Cancel Reservation</span>
+       <div className="flex items-center gap-2 text-text-main font-bold text-xs sm:text-sm pr-8 text-red-500">
+         <AlertTriangle size={16} className="shrink-0" /> <span className="truncate">Cancel Reservation</span>
        </div>
 
        <div className="space-y-2">
          <p className="text-xs text-text-muted">
            Are you sure you want to cancel the reservation for:
          </p>
-         <div className="p-3 bg-bg-primary rounded-xl space-y-1 text-xs">
+         <div className="p-2.5 sm:p-3 bg-bg-primary rounded-xl space-y-1 text-xs">
            <div className="flex justify-between">
              <span className="text-text-muted">Customer:</span>
              <span className="font-semibold text-text-main">{cancellingReservation.customerName}</span>
@@ -2630,23 +2966,23 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
              <span className="font-bold dark:text-primary text-primary font-mono">{cancellingReservation.table?.tableNumber || 'N/A'}</span>
            </div>
          </div>
-         <p className="text-[11px] text-red-500/80 italic">
+         <p className="text-[10px] sm:text-[11px] text-red-500/80 italic">
            This will release the table back to "available" immediately.
          </p>
        </div>
 
-       <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+       <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 pt-2 sm:pt-4">
          <button
            type="button"
            onClick={() => setCancellingReservation(null)}
-           className="flex-1 py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
+           className="flex-1 py-2 sm:py-2.5 rounded-xl bg-bg-primary hover:bg-bg-card text-xs font-semibold text-text-muted hover:text-text-main border border-border-main cursor-pointer"
          >
            No, Keep it
          </button>
          <button
            onClick={handleCancelConfirm}
            disabled={isSubmittingCancel}
-           className="flex-1 py-2.5 rounded-xl bg-red-500 text-white hover:bg-red-600 active:bg-red-700 text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer border-none"
+           className="flex-1 py-2 sm:py-2.5 rounded-xl bg-red-500 text-white hover:bg-red-600 active:bg-red-700 text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer border-none"
          >
            {isSubmittingCancel ? 'Cancelling...' : 'Yes, Cancel'}
          </button>
@@ -2707,7 +3043,39 @@ const setPlaceZone = (zone: 'STANDING_BAR' | 'PREMIUM_LOUNGE') => {
     );
   })()}
 
-
+  {/* RELEASE LOCKED TABLE CONFIRMATION MODAL */}
+  {releasingLockedTableForConfirm && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+      <div className="bg-bg-surface border border-border-main rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl animate-scaleUp">
+        <div className="flex items-center gap-3 text-amber-500">
+          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+            <AlertTriangle size={20} />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-text-main">Release Table {releasingLockedTableForConfirm.tableNumber}?</h3>
+            <p className="text-xs text-text-muted">This will terminate the active lock and make the table available for everyone.</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2 border-t border-border-main/50">
+          <button
+            type="button"
+            onClick={() => setReleasingLockedTableForConfirm(null)}
+            className="px-3.5 py-2 rounded-xl text-xs font-semibold text-text-muted hover:text-text-main hover:bg-bg-card border border-border-main transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={confirmReleaseLockedTable}
+            disabled={isSubmittingReleaseLock}
+            className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-red-600 hover:bg-red-700 text-white shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            {isSubmittingReleaseLock ? 'Releasing...' : 'Release Table'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
 
  </div>
  );

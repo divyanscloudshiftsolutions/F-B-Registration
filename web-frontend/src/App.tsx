@@ -17,6 +17,7 @@ import { CustomerApp } from './pages/CustomerApp';
 import { CustomerLandingPage } from './pages/CustomerLandingPage';
 import { CustomerAccessPage } from './pages/CustomerAccessPage';
 import { TableDisplayPage } from './pages/TableDisplayPage';
+import { StaffLiveNotificationStack } from './components/layout/StaffLiveNotificationStack';
 import { AlertTriangle, X } from 'lucide-react';
 
 const isValidAppPath = (pathname: string): boolean => {
@@ -47,6 +48,9 @@ const getTabFromPathname = (pathname: string): string => {
   if (pathname === '/admin/customers') return 'admin/customers';
   if (pathname === '/admin/tables' || pathname === '/admin' || pathname.startsWith('/admin')) return 'admin/tables';
   if (pathname === '/tables/reservations') return 'tables/reservations';
+  if (pathname === '/tables/locked') return 'tables/locked';
+  if (pathname === '/tables/available') return 'tables/available';
+  if (pathname === '/tables/occupied') return 'tables/occupied';
   if (pathname === '/tables/layout' || pathname === '/tables' || pathname.startsWith('/tables')) return 'tables/layout';
   if (pathname === '/bartender/kds' || pathname === '/bartender' || pathname === '/kds/bar' || pathname === '/kds_bar') return 'bartender/kds';
   if (pathname === '/bartender/checkins') return 'bartender/checkins';
@@ -65,7 +69,7 @@ const getTabFromPathname = (pathname: string): string => {
 };
 
 const AppContent: React.FC = () => {
-  const { user, toasts, dismissToast, isLoading } = useAuth();
+  const { user, toasts, activeToast, dismissActiveToast, isLoading } = useAuth();
   const { sessionAlerts, dismissAlert, refreshAll } = useData();
   const [isGlobalRefreshing, setIsGlobalRefreshing] = useState<boolean>(false);
   const [activeTab, setActiveTabState] = useState<string>(() => {
@@ -98,6 +102,9 @@ const AppContent: React.FC = () => {
         : tab === 'waiter' ? '/waiter/overview'
         : tab.startsWith('waiter') ? '/waiter/overview'
         : tab === 'tables/reservations' ? '/tables/reservations'
+        : tab === 'tables/locked' ? '/tables/locked'
+        : tab === 'tables/available' ? '/tables/available'
+        : tab === 'tables/occupied' ? '/tables/occupied'
         : tab.startsWith('tables') ? '/tables/layout'
         : tab.startsWith('bartender') ? '/bartender/kds'
         : tab.startsWith('admin') ? `/${tab}`
@@ -393,22 +400,24 @@ const AppContent: React.FC = () => {
     );
   };
 
-  const getTabTitle = () => {
-    if (activeTab === 'kds_stock' || activeTab === 'kitchen/stock') return 'Kitchen Station Stock & Inventory';
-    if (activeTab === 'kds' || activeTab === 'kds_kitchen') return 'Kitchen KDS Food Preparation';
-    if (activeTab === 'bartender/stock' || activeTab === 'bar_stock') return 'Bar Station Beverage Stock Availability';
-    if (activeTab === 'bartender/kds' || activeTab === 'kds_bar') return 'Bar KDS Beverage Station';
-    if (activeTab === 'bartender/checkins') return 'Bartender Active Check-Ins';
-    if (activeTab === 'bartender/scan') return 'Bartender Pass Verification Terminal';
-    if (activeTab.startsWith('waiter')) return 'Waiter Floor Service Station';
-    if (activeTab === 'dashboard') return 'Executive Management Dashboard';
-    if (activeTab === 'checkin') return 'Reception Check-In & Customer Registration';
-    if (activeTab === 'quick_attendance') return 'Quick Facial Attendance Kiosk';
-    if (activeTab.startsWith('bartender')) return 'Bartender Service Station';
-    if (activeTab.startsWith('tables')) return 'Live Seating Floor Plan & Tables';
-    if (activeTab.startsWith('admin')) return 'System Administration & Staff Portal';
-    return 'TableFlow Operations';
+  const getTabTitles = (): { title: string; mobileTitle: string } => {
+    if (activeTab === 'kds_stock' || activeTab === 'kitchen/stock') return { title: 'Kitchen Station Stock & Inventory', mobileTitle: 'Kitchen Stock' };
+    if (activeTab === 'kds' || activeTab === 'kds_kitchen') return { title: 'Kitchen KDS Food Preparation', mobileTitle: 'Kitchen KDS' };
+    if (activeTab === 'bartender/stock' || activeTab === 'bar_stock') return { title: 'Bar Station Beverage Stock Availability', mobileTitle: 'Bar Stock' };
+    if (activeTab === 'bartender/kds' || activeTab === 'kds_bar') return { title: 'Bar KDS Beverage Station', mobileTitle: 'Bar KDS' };
+    if (activeTab === 'bartender/checkins') return { title: 'Bartender Active Check-Ins', mobileTitle: 'Check-Ins' };
+    if (activeTab === 'bartender/scan') return { title: 'Bartender Pass Verification Terminal', mobileTitle: 'Verify Pass' };
+    if (activeTab.startsWith('waiter')) return { title: 'Waiter Floor Service Station', mobileTitle: 'Waiter Station' };
+    if (activeTab === 'dashboard') return { title: 'Executive Management Dashboard', mobileTitle: 'Dashboard' };
+    if (activeTab === 'checkin') return { title: 'Reception Check-In & Customer Registration', mobileTitle: 'Check-In' };
+    if (activeTab === 'quick_attendance') return { title: 'Quick Facial Attendance Kiosk', mobileTitle: 'Attendance' };
+    if (activeTab.startsWith('bartender')) return { title: 'Bartender Service Station', mobileTitle: 'Bartender' };
+    if (activeTab.startsWith('tables')) return { title: 'Live Seating Floor Plan & Tables', mobileTitle: 'Floor Tables' };
+    if (activeTab.startsWith('admin')) return { title: 'System Administration & Staff Portal', mobileTitle: 'Admin Portal' };
+    return { title: 'TableFlow Operations', mobileTitle: 'TableFlow' };
   };
+
+  const headerTitles = getTabTitles();
 
   return (
     <div className="flex h-[100dvh] dark:bg-gradient-to-br dark:from-[#111114] dark:via-[#161619] dark:to-[#0A0A0C] bg-gradient-to-br from-[#F8F9FA] via-[#FFFFFF] to-[#F1F3F5] text-text-primary font-sans overflow-hidden relative">
@@ -428,7 +437,8 @@ const AppContent: React.FC = () => {
 
       <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden relative z-10">
         <Header 
-          title={getTabTitle()} 
+          title={headerTitles.title} 
+          mobileTitle={headerTitles.mobileTitle}
           onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
           onRefresh={handleGlobalRefresh}
           isRefreshing={isGlobalRefreshing}
@@ -477,29 +487,12 @@ const AppContent: React.FC = () => {
         </main>
       </div>
 
-      {/* Global Toast Messages */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
-        {toasts.map(toast => (
-          <div 
-            key={toast.id}
-            className={`p-3.5 rounded-2xl shadow-xl border pointer-events-auto flex items-center justify-between text-xs font-bold animate-slide-up backdrop-blur-md ${
-              (toast.type as string) === 'success' 
-                ? 'dark:bg-emerald-950/80 bg-emerald-50 border-emerald-500/30 dark:text-emerald-300 text-emerald-800'
-                : (toast.type as string) === 'danger' || (toast.type as string) === 'error'
-                ? 'dark:bg-rose-950/80 bg-rose-50 border-rose-500/30 dark:text-rose-300 text-rose-800'
-                : 'dark:bg-indigo-950/80 bg-indigo-50 border-indigo-500/30 dark:text-indigo-300 text-indigo-800'
-            }`}
-          >
-            <span>{toast.message}</span>
-            <button 
-              onClick={() => dismissToast(toast.id)}
-              className="p-1 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 ml-2"
-            >
-              <X size={12} />
-            </button>
-          </div>
-        ))}
-      </div>
+      {/* Staff Real-Time Responsive Live Notification Stack (Web + Mobile Presentation Modes) */}
+      <StaffLiveNotificationStack
+        toasts={toasts}
+        activeToast={activeToast}
+        onDismiss={dismissActiveToast}
+      />
     </div>
   );
 };

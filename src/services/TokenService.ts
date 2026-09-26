@@ -944,10 +944,8 @@ export class TokenService {
         customer = await tx.customer.update({
           where: { id: customer.id },
           data: {
-            totalVisits: { increment: 1 },
-            lastVisit: new Date(),
-            name: request.customerName,
-            email: finalEmail || customer.email
+            name: request.customerName || customer.name,
+            email: finalEmail !== undefined ? (finalEmail || null) : customer.email
           }
         });
       }
@@ -1045,11 +1043,12 @@ export class TokenService {
       return token;
     }, { timeout: 15000 });
 
-    if (token.deliveryMode === 'EMAIL_QR' && token.customer?.email) {
+    const recipientEmail = (finalEmail || request.email || token.customer?.email || '').trim().toLowerCase();
+    if (token.deliveryMode === 'EMAIL_QR' && recipientEmail) {
       emailNotificationService.enqueueEmailJob(
-        token.customer.email.trim().toLowerCase(),
+        recipientEmail,
         token.tokenNumber,
-        token.customer.name
+        request.customerName || token.customer?.name || ''
       );
     }
 

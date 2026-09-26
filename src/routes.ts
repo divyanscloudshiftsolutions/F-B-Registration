@@ -2638,8 +2638,26 @@ router.post('/reservations', authenticate, async (req: AuthenticatedRequest, res
       }
 
       const currentStatus = (table.status || '').toLowerCase();
-      if (currentStatus !== 'available') {
+      if (currentStatus !== 'available' && currentStatus !== 'in_checkin') {
         throw new Error(`Table ${table.tableNumber} is not available for reservation (current status: ${table.status}).`);
+      }
+
+      if (currentStatus === 'in_checkin') {
+        const lockKey = `table:lock:${tableId}`;
+        const lockDataStr = await redisService.get(lockKey);
+        if (lockDataStr) {
+          try {
+            const lockData = JSON.parse(lockDataStr);
+            const isAdmin = req.user?.role?.toLowerCase() === 'admin';
+            const isManager = req.user?.role?.toLowerCase() === 'manager';
+            if (lockData.lockedBy && lockData.lockedBy !== userId && !isAdmin && !isManager) {
+              throw new Error('Table is currently locked by another staff member.');
+            }
+          } catch (e: any) {
+            if (e.message.includes('locked by another staff')) throw e;
+          }
+        }
+        await redisService.del(lockKey).catch(() => {});
       }
 
       // Update table status to reserved

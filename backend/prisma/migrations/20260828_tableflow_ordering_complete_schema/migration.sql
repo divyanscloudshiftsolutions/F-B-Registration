@@ -1,2 +1,2 @@
-﻿-- This is an empty migration.
+-- This is an empty migration.
 
