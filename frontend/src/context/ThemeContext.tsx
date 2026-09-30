@@ -10,13 +10,23 @@ export interface ThemeColors {
   header: string;
   surface: string;
   secondarySurface: string;
-  gold: string; // compatibility
   primary: string;
-  teal: string; // compatibility
+  primaryHover: string;
+  primaryLight: string;
+  primaryBorder: string;
+  gold: string;
   success: string;
-  red: string;
+  successBg: string;
+  warning: string;
+  warningBg: string;
+  danger: string;
+  dangerBg: string;
+  red: string; // compatibility
+  info: string;
+  infoBg: string;
   text: string;
   themeText: string;
+  textSecondary: string;
   muted: string;
   placeholder: string;
   input: string;
@@ -24,9 +34,6 @@ export interface ThemeColors {
   border: string;
   inputBorder: string;
   divider: string;
-  goldButtonText: string;
-
-  // New Tokens
   card: string;
   section: string;
   modal: string;
@@ -39,109 +46,112 @@ export interface ThemeColors {
   navInactive: string;
   navBorder: string;
   overlay: string;
-  chartPrimary: string;
-  chartSecondary: string;
-  chartGrid: string;
 }
 
 export const darkColors: ThemeColors = {
-  bg: '#0A0B10',
-  themeBg: '#0A0B10',
-  header: '#0A0B10',
+  bg: '#18181B',
+  themeBg: '#18181B',
+  header: '#111114',
   surface: '#1E1E1E',
-  secondarySurface: '#252525',
-  gold: '#8D6CE5',
-  primary: '#8D6CE5',
-  teal: '#44F1C6',
+  secondarySurface: '#27272A',
+  primary: '#D4AF37', // Luxury Gold
+  primaryHover: '#E5C158',
+  primaryLight: 'rgba(212, 175, 55, 0.15)',
+  primaryBorder: 'rgba(212, 175, 55, 0.3)',
+  gold: '#D4AF37',
   success: '#10B981',
+  successBg: 'rgba(16, 185, 129, 0.15)',
+  warning: '#F59E0B',
+  warningBg: 'rgba(245, 158, 11, 0.15)',
+  danger: '#EF4444',
+  dangerBg: 'rgba(239, 68, 68, 0.15)',
   red: '#EF4444',
-  text: 'rgba(255, 255, 255, 0.92)',
-  themeText: 'rgba(255, 255, 255, 0.92)',
-  muted: '#A0A0A0',
-  placeholder: '#8C8C8C',
+  info: '#D4AF37',
+  infoBg: 'rgba(212, 175, 55, 0.15)',
+  text: '#FFFFFF',
+  themeText: '#FFFFFF',
+  textSecondary: '#D4D4D8',
+  muted: '#A1A1AA',
+  placeholder: '#71717A',
   input: '#1E1E1E',
-  themeInput: '#252525',
-  border: '#333333',
-  inputBorder: '#333333',
-  divider: '#2C2C2C',
-  goldButtonText: '#FFFFFF',
-
-  // New Tokens
+  themeInput: '#27272A',
+  border: 'rgba(255, 255, 255, 0.08)',
+  inputBorder: 'rgba(255, 255, 255, 0.12)',
+  divider: 'rgba(255, 255, 255, 0.08)',
   card: '#1E1E1E',
-  section: '#1E1E1E',
-  modal: '#222222',
-  primaryButtonBg: '#8D6CE5',
-  primaryButtonText: '#FFFFFF',
-  secondaryButtonBg: '#252525',
-  secondaryButtonText: 'rgba(255, 255, 255, 0.92)',
-  navBg: '#0A0B10',
-  navActive: '#8D6CE5',
-  navInactive: 'rgba(255, 255, 255, 0.60)',
-  navBorder: '#333333',
-  overlay: 'rgba(0, 0, 0, 0.6)',
-  chartPrimary: '#8D6CE5',
-  chartSecondary: 'rgba(141, 110, 229, 0.1)',
-  chartGrid: '#2C2C2C',
+  section: '#18181B',
+  modal: '#18181B',
+  primaryButtonBg: '#D4AF37',
+  primaryButtonText: '#000000',
+  secondaryButtonBg: '#27272A',
+  secondaryButtonText: '#FFFFFF',
+  navBg: 'rgba(24, 24, 27, 0.95)',
+  navActive: '#D4AF37',
+  navInactive: '#A1A1AA',
+  navBorder: 'rgba(255, 255, 255, 0.08)',
+  overlay: 'rgba(0, 0, 0, 0.75)',
 };
 
 export const lightColors: ThemeColors = {
-  bg: '#F8FAFC',
-  themeBg: '#F8FAFC',
-  header: '#FFFFFF',
-  surface: '#FFFFFF',
-  secondarySurface: '#F1F5F9',
-  gold: '#7C3AED',
-  primary: '#7C3AED',
-  teal: '#16A34A',
-  success: '#16A34A',
-  red: '#DC2626',
-  text: '#0F172A',
-  themeText: '#0F172A',
-  muted: '#64748B',
-  placeholder: '#94A3B8',
+  bg: '#F3F4F6',
+  themeBg: '#F3F4F6',
+  header: '#FAFAFB',
+  surface: '#FAFAFB',
+  secondarySurface: '#EAECEF',
+  primary: '#7C3AED', // Brand Purple
+  primaryHover: '#6D28D9',
+  primaryLight: '#EDE9FE',
+  primaryBorder: '#DDD6FE',
+  gold: '#7C3AED', // mapped to brand primary
+  success: '#10B981',
+  successBg: '#ECFDF5',
+  warning: '#F59E0B',
+  warningBg: '#FEF3C7',
+  danger: '#EF4444',
+  dangerBg: '#FEE2E2',
+  red: '#EF4444',
+  info: '#3B82F6',
+  infoBg: '#EFF6FF',
+  text: '#18181B',
+  themeText: '#18181B',
+  textSecondary: '#52525B',
+  muted: '#71717A',
+  placeholder: '#71717A',
   input: '#FFFFFF',
-  themeInput: '#F1F5F9',
-  border: '#E2E8F0',
+  themeInput: '#F3F4F6',
+  border: '#E2E4E8',
   inputBorder: '#CBD5E1',
-  divider: '#E2E8F0',
-  goldButtonText: '#FFFFFF',
-
-  // New Tokens
-  card: '#FFFFFF',
+  divider: '#E2E4E8',
+  card: '#FAFAFB',
   section: '#FFFFFF',
   modal: '#FFFFFF',
   primaryButtonBg: '#7C3AED',
   primaryButtonText: '#FFFFFF',
-  secondaryButtonBg: '#FFFFFF',
-  secondaryButtonText: '#0F172A',
-  navBg: '#FFFFFF',
+  secondaryButtonBg: '#EAECEF',
+  secondaryButtonText: '#18181B',
+  navBg: 'rgba(255, 255, 255, 0.95)',
   navActive: '#7C3AED',
-  navInactive: '#475569',
-  navBorder: '#E2E8F0',
-  overlay: 'rgba(0, 0, 0, 0.4)',
-  chartPrimary: '#7C3AED',
-  chartSecondary: 'rgba(124, 58, 237, 0.1)',
-  chartGrid: '#E2E8F0',
+  navInactive: '#71717A',
+  navBorder: '#E2E4E8',
+  overlay: 'rgba(0, 0, 0, 0.45)',
 };
 
 interface ThemeContextType {
   themeMode: ThemeMode;
-  theme: ThemeMode; // compatibility
+  theme: ThemeMode;
   isDark: boolean;
   colors: ThemeColors;
   toggleTheme: () => void;
   setThemeMode: (mode: ThemeMode) => void;
-  setTheme: (mode: ThemeMode) => void; // compatibility
+  setTheme: (mode: ThemeMode) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
-
 const THEME_STORAGE_KEY = '@bar_theme_mode';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [themeMode, setThemeState] = useState<ThemeMode>('light');
 
-  // Load saved theme from storage on mount
   useEffect(() => {
     const loadSavedTheme = async () => {
       try {
@@ -156,15 +166,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     loadSavedTheme();
   }, []);
 
-  // Update system status bars whenever themeMode changes
   useEffect(() => {
     const isDark = themeMode === 'dark';
     const activeColors = isDark ? darkColors : lightColors;
     
-    // Style: light-content for dark theme, dark-content for light theme
     StatusBar.setBarStyle(isDark ? 'light-content' : 'dark-content', true);
-    
-    // Background color (Android only)
     if (Platform.OS === 'android') {
       StatusBar.setBackgroundColor(activeColors.bg, true);
     }
@@ -210,4 +216,4 @@ export const useTheme = () => {
 };
 
 export const useAppTheme = useTheme;
-
+export default ThemeProvider;

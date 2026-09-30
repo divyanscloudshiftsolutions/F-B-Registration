@@ -1,424 +1,308 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, Text, TouchableOpacity, ScrollView, 
-  Platform, KeyboardAvoidingView, ActivityIndicator, StatusBar
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  SafeAreaView,
+  StatusBar,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBar } from '../../../context/BarContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { AppIcon } from '../../../components/common/AppIcon';
 
-import { useResponsive } from '../../../utils/responsive';
+type RoleCode = 'ADM' | 'REC' | 'BAR' | 'CHF' | 'WTR' | 'MGR';
 
-export const LoginScreen: React.FC = () => {
-  const { login, setScreen } = useBar();
-  const insets = useSafeAreaInsets();
-  const { isSmallPhone, height } = useResponsive();
-  const numpadHeight = isSmallPhone || height < 700 ? 44 : 54;
-  const cardPadding = isSmallPhone || height < 700 ? 16 : 20;
-  const cardMarginY = isSmallPhone || height < 700 ? 12 : 24;
-  
-  const statusBarHeight = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 0;
-  const loginPaddingTop = Platform.OS === 'android' ? Math.max(statusBarHeight, insets.top) + 16 : Math.max(insets.top + 16, 24);
-  const loginPaddingBottom = Math.max(insets.bottom + 16, 24);
-  
-  // Custom Numpad Input States
-  const [selectedRole, setSelectedRole] = useState<'REC' | 'BAR' | 'ADM' | 'MGR'>('REC');
-  const [idSuffix, setIdSuffix] = useState('');
-  const [enteredPin, setEnteredPin] = useState('');
-  const [activeField, setActiveField] = useState<'id' | 'pin'>('id');
-  
-  const [rememberMe, setRememberMe] = useState(true);
-  const [errorMsg, setErrorMsg] = useState('');
+export const LoginScreen: React.FC<{ onCustomerModePress?: () => void }> = ({
+  onCustomerModePress,
+}) => {
+  const { login } = useBar();
+  const { colors, isDark, toggleTheme } = useTheme();
+
+  const roles: RoleCode[] = ['ADM', 'REC', 'BAR', 'CHF', 'WTR', 'MGR'];
+  const [selectedRole, setSelectedRole] = useState<RoleCode>('ADM');
+  const [username, setUsername] = useState('admin');
+  const [pin, setPin] = useState('admin123');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showPresets, setShowPresets] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  // Auto-focus logic: Switch to PIN once ID has 2 digits
-  useEffect(() => {
-    if (idSuffix.length === 2 && activeField === 'id') {
-      setActiveField('pin');
-    }
-  }, [idSuffix, activeField]);
-
-  const handleKeyPress = (num: string) => {
-    setErrorMsg('');
-    if (activeField === 'id') {
-      if (idSuffix.length < 2) {
-        setIdSuffix(prev => prev + num);
-      }
-    } else {
-      if (enteredPin.length < 4) {
-        setEnteredPin(prev => prev + num);
-      }
-    }
+  const roleCredentials: Record<RoleCode, { user: string; pin: string; label: string }> = {
+    ADM: { user: 'admin', pin: 'admin123', label: 'Admin' },
+    REC: { user: 'receptionist', pin: 'recep123', label: 'Reception' },
+    BAR: { user: 'bartender', pin: 'bar123', label: 'Bartender' },
+    CHF: { user: 'chef', pin: 'chef123', label: 'Chef / Kitchen' },
+    WTR: { user: 'waiter', pin: 'waiter123', label: 'Waiter' },
+    MGR: { user: 'manager', pin: 'manager123', label: 'Manager' },
   };
 
-  const handleBackspace = () => {
+  const handleRoleSelect = (role: RoleCode) => {
+    setSelectedRole(role);
     setErrorMsg('');
-    if (activeField === 'pin') {
-      if (enteredPin.length > 0) {
-        setEnteredPin(prev => prev.slice(0, -1));
-      } else {
-        // Fall back to ID editing if PIN is empty
-        setActiveField('id');
-        setIdSuffix(prev => prev.slice(0, -1));
-      }
-    } else {
-      if (idSuffix.length > 0) {
-        setIdSuffix(prev => prev.slice(0, -1));
-      }
+    if (roleCredentials[role]) {
+      setUsername(roleCredentials[role].user);
+      setPin(roleCredentials[role].pin);
     }
-  };
-
-  const handleClear = () => {
-    setErrorMsg('');
-    setIdSuffix('');
-    setEnteredPin('');
-    setActiveField('id');
   };
 
   const handleSignIn = async () => {
-    if (idSuffix.length !== 2 || enteredPin.length !== 4) {
-      setErrorMsg('Please enter a 2-digit ID suffix and a 4-digit PIN.');
+    if (!username.trim() || !pin.trim()) {
+      setErrorMsg('Please enter a valid Employee Code and Security PIN.');
       return;
     }
 
     setErrorMsg('');
-
     setIsSubmitting(true);
-    const employeeId = `${selectedRole}-${idSuffix}`;
-    
+
     try {
-      const success = await login(employeeId, enteredPin);
+      const success = await login(username.trim(), pin.trim());
       if (!success) {
-        setErrorMsg('Login failed. Incorrect ID or PIN.');
+        setErrorMsg('Login failed. Please check your credentials and try again.');
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'An error occurred during login.');
+      setErrorMsg(err.message || 'Login failed. Please check your details and try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  const handleQuickLogin = async (id: string, code: string) => {
-    const parts = id.split('-');
-    const rolePrefix = parts[0] as 'REC' | 'BAR' | 'ADM' | 'MGR';
-    const suffix = parts[1] || '';
-    
-    setSelectedRole(rolePrefix);
-    setIdSuffix(suffix);
-    setEnteredPin(code);
-    setActiveField('pin');
-    
-    setErrorMsg('');
-    setIsSubmitting(true);
-    try {
-      const success = await login(id, code);
-      if (!success) {
-        setErrorMsg('Shortcut login failed. Unable to authenticate.');
-      }
-    } catch (err: any) {
-      setErrorMsg(err.message || 'An error occurred during shortcut login.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const { colors, isDark } = useTheme();
 
   return (
-    <KeyboardAvoidingView 
-      className="flex-1"
-      style={{ backgroundColor: colors.bg }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView 
-        contentContainerStyle={{ 
-          flexGrow: 1, 
-          justifyContent: 'space-between', 
-          padding: 16,
-          paddingTop: loginPaddingTop,
-          paddingBottom: loginPaddingBottom,
-        }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.surface}
+      />
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
       >
-        {/* Top Header Branding */}
-        <View className="items-center mt-4">
-          <Text className="text-[26px] font-extrabold tracking-widest uppercase" style={{ color: colors.gold }}>🍹 PEGS N BOTTLES</Text>
-          <Text className="text-[11px] tracking-wider uppercase mt-1" style={{ color: colors.muted }}>Enterprise Shift Management</Text>
-        </View>
-
-        {/* Credentials Form Box */}
-        <View 
-          className="rounded-[20px] shadow-2xl w-full max-w-[420px] self-center"
-          style={{ 
-            padding: cardPadding, 
-            marginTop: cardMarginY, 
-            marginBottom: cardMarginY,
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderWidth: 1
-          }}
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20 }}
+          showsVerticalScrollIndicator={false}
         >
-          
-          {/* Error Message banner */}
-          {errorMsg ? (
-            <View className="bg-red/10 border border-red rounded-xl p-3 mb-4">
-              <Text className="text-red text-xs text-center font-bold">⚠️ {errorMsg}</Text>
-            </View>
-          ) : null}
-
-          {/* Role Segmented Controller */}
-          <Text className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: colors.muted }}>1. Select Shift Role</Text>
-          <View className="flex-row rounded-xl p-1 mb-5 gap-1" style={{ backgroundColor: colors.secondarySurface, borderColor: colors.border, borderWidth: isDark ? 0 : 1 }}>
-            {(['REC', 'BAR', 'ADM', 'MGR'] as const).map(role => {
-              const isSel = selectedRole === role;
-              const roleLabels = { REC: 'Recep', BAR: 'Bar', ADM: 'Admin', MGR: 'Mngr' };
-              return (
-                <TouchableOpacity
-                  key={role}
-                  className="flex-1 py-2.5 rounded-lg items-center justify-center min-h-[40px]"
-                  style={isSel ? { backgroundColor: colors.gold } : {}}
-                  accessibilityRole="tab"
-                  accessibilityLabel={`${roleLabels[role]} role selector`}
-                  accessibilityState={{ selected: isSel }}
-                  onPress={() => {
-                    setSelectedRole(role);
-                    setErrorMsg('');
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text className="text-[11px] font-bold uppercase" style={{ color: isSel ? colors.goldButtonText : colors.muted }}>
-                    {roleLabels[role]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* Interactive Custom Form Display */}
-          <Text className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: colors.muted }}>2. Enter Credentials</Text>
-          <View className="flex-row gap-3 mb-5">
-            {/* Employee ID Display */}
-            <TouchableOpacity 
-              className="flex-1 border rounded-xl p-3 items-center justify-center min-h-[56px]"
+          {/* Top Header with Theme Toggle & Customer Switch */}
+          <View className="flex-row items-center justify-between mb-6">
+            <TouchableOpacity
+              onPress={toggleTheme}
               style={{
-                backgroundColor: colors.secondarySurface,
-                borderColor: activeField === 'id' ? colors.gold : colors.inputBorder,
-                borderWidth: activeField === 'id' ? 2 : 1,
-                shadowColor: activeField === 'id' ? colors.gold : 'transparent',
-                shadowOpacity: activeField === 'id' ? 0.35 : 0,
-                shadowRadius: 8,
-                elevation: activeField === 'id' ? 4 : 0
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderWidth: 1,
               }}
-              accessibilityRole="combobox"
-              accessibilityLabel="Employee ID entry field"
-              accessibilityState={{ expanded: activeField === 'id' }}
-              onPress={() => setActiveField('id')}
-              activeOpacity={0.9}
+              className="p-2.5 rounded-2xl shadow-xs"
             >
-              <Text className="text-[9px] uppercase tracking-wider mb-0.5" style={{ color: colors.muted }}>Employee ID</Text>
-              <View className="flex-row items-center">
-                <Text className="text-base font-extrabold" style={{ color: colors.text }}>
-                  {selectedRole}-
-                </Text>
-                <Text className="text-base font-extrabold" style={{ color: idSuffix ? colors.gold : 'rgba(156, 163, 175, 0.4)' }}>
-                  {idSuffix || 'XX'}
-                </Text>
-                {activeField === 'id' && (
-                  <View className="w-[2px] h-4 ml-0.5" style={{ backgroundColor: colors.gold }} />
-                )}
-              </View>
+              <AppIcon
+                name={isDark ? 'sun' : 'moon'}
+                size={20}
+                color={isDark ? '#D4AF37' : '#7C3AED'}
+              />
             </TouchableOpacity>
 
-            {/* PIN/Password Display */}
-            <TouchableOpacity 
-              className="flex-1 border rounded-xl p-3 items-center justify-center min-h-[56px]"
-              style={{
-                backgroundColor: colors.secondarySurface,
-                borderColor: activeField === 'pin' ? colors.gold : colors.inputBorder,
-                borderWidth: activeField === 'pin' ? 2 : 1,
-                shadowColor: activeField === 'pin' ? colors.gold : 'transparent',
-                shadowOpacity: activeField === 'pin' ? 0.35 : 0,
-                shadowRadius: 8,
-                elevation: activeField === 'pin' ? 4 : 0
-              }}
-              accessibilityRole="combobox"
-              accessibilityLabel="PIN input field"
-              accessibilityState={{ expanded: activeField === 'pin' }}
-              onPress={() => setActiveField('pin')}
-              activeOpacity={0.9}
-            >
-              <Text className="text-[9px] uppercase tracking-wider mb-0.5" style={{ color: colors.muted }}>Shift PIN</Text>
-              <View className="flex-row items-center">
-                <Text className="text-base font-extrabold tracking-widest" style={{ color: enteredPin ? colors.gold : colors.text }}>
-                  {enteredPin ? '•'.repeat(enteredPin.length) : '••••'}
-                </Text>
-                {activeField === 'pin' && enteredPin.length < 4 && (
-                  <View className="w-[2px] h-4 ml-0.5" style={{ backgroundColor: colors.gold }} />
-                )}
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          {/* Custom Onscreen Numpad Grid Matrix */}
-          <View className="flex-col gap-2 mb-4">
-            {[
-              ['1', '2', '3'],
-              ['4', '5', '6'],
-              ['7', '8', '9'],
-              ['C', '0', '⌫']
-            ].map((row, rowIndex) => (
-              <View key={rowIndex} className="flex-row gap-2">
-                {row.map(key => {
-                  const isAction = key === 'C' || key === '⌫';
-                  return (
-                    <TouchableOpacity
-                      key={key}
-                      className="flex-1 rounded-xl items-center justify-center border"
-                      accessibilityRole="keyboardkey"
-                      accessibilityLabel={key === '⌫' ? 'backspace' : key === 'C' ? 'clear input' : `number ${key}`}
-                      style={{ 
-                        height: numpadHeight,
-                        backgroundColor: isAction ? colors.input : colors.surface,
-                        borderColor: colors.border,
-                        borderWidth: 1
-                      }}
-                      onPress={() => {
-                        if (key === 'C') handleClear();
-                        else if (key === '⌫') handleBackspace();
-                        else handleKeyPress(key);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text className="text-base font-bold" style={{ color: key === 'C' ? '#e63946' : (key === '⌫' ? colors.gold : colors.text) }}>
-                        {key}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ))}
-          </View>
-
-          {/* Remember device toggle */}
-          <TouchableOpacity 
-            className="flex-row items-center mb-5 mt-1 min-h-[44px]"
-            accessibilityRole="checkbox"
-            accessibilityLabel="Remember this device checkbox"
-            accessibilityState={{ checked: rememberMe }}
-            onPress={() => setRememberMe(!rememberMe)}
-            activeOpacity={0.8}
-          >
-            <View 
-              className="w-5 h-5 rounded-md border justify-center items-center mr-2.5"
-              style={{
-                borderColor: rememberMe ? colors.gold : colors.muted,
-                backgroundColor: rememberMe ? colors.gold : 'transparent'
-              }}
-            >
-              {rememberMe && <Text className="text-xs font-bold" style={{ color: colors.goldButtonText }}>✓</Text>}
-            </View>
-            <Text className="text-[13px] font-medium" style={{ color: colors.muted }}>Remember this device</Text>
-          </TouchableOpacity>
-
-          {/* Submit Sign In Button */}
-          <TouchableOpacity 
-            className="py-3.5 rounded-xl items-center justify-center min-h-[48px] shadow-lg border"
-            style={{ 
-              backgroundColor: (idSuffix.length !== 2 || enteredPin.length !== 4 || isSubmitting) ? colors.input : colors.gold,
-              borderColor: (idSuffix.length !== 2 || enteredPin.length !== 4 || isSubmitting) ? colors.border : colors.gold
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Sign In Shift button"
-            accessibilityState={{ disabled: idSuffix.length !== 2 || enteredPin.length !== 4 || isSubmitting }}
-            onPress={handleSignIn}
-            disabled={idSuffix.length !== 2 || enteredPin.length !== 4 || isSubmitting}
-            activeOpacity={0.8}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator size="small" color={colors.goldButtonText} />
-            ) : (
-              <Text 
-                className="font-extrabold text-[15px]" 
-                style={{ color: (idSuffix.length !== 2 || enteredPin.length !== 4) ? colors.muted : colors.goldButtonText }}
+            {onCustomerModePress && (
+              <TouchableOpacity
+                onPress={onCustomerModePress}
+                style={{
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                }}
+                className="px-3 py-1.5 rounded-2xl shadow-xs flex-row items-center gap-1.5"
               >
-                Sign In Shift
-              </Text>
+                <AppIcon name="sparkles" size={14} color={colors.primary} />
+                <Text style={{ color: colors.primary }} className="text-xs font-bold">
+                  Customer Dining View
+                </Text>
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+          </View>
 
-          {/* Quick Attendance Kiosk Button */}
-          <TouchableOpacity
-            className="py-3 rounded-xl items-center justify-center min-h-[44px] border mt-3 flex-row gap-2"
-            style={{
-              backgroundColor: 'rgba(212, 175, 55, 0.1)',
-              borderColor: colors.gold,
-              borderWidth: 1
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Quick Attendance Kiosk Mode"
-            onPress={() => setScreen('quick_attendance')}
-            activeOpacity={0.8}
-          >
-            <Text style={{ fontSize: 14 }}>👤</Text>
-            <Text
-              className="font-bold text-[13px]"
-              style={{ color: colors.gold }}
+          {/* Brand Hero */}
+          <View className="items-center mb-6">
+            <View
+              style={{
+                backgroundColor: isDark ? 'rgba(212,175,55,0.15)' : 'rgba(124,58,237,0.1)',
+                borderColor: isDark ? 'rgba(212,175,55,0.3)' : 'rgba(124,58,237,0.2)',
+                borderWidth: 1,
+              }}
+              className="w-16 h-16 rounded-3xl items-center justify-center mb-3.5 shadow-sm"
             >
-              Quick Attendance Kiosk
+              <AppIcon
+                name="sparkles"
+                size={32}
+                color={isDark ? '#D4AF37' : '#7C3AED'}
+              />
+            </View>
+            <Text
+              style={{ color: colors.textPrimary }}
+              className="text-2xl font-black text-center tracking-tight"
+            >
+              Staff Portal Login
             </Text>
-          </TouchableOpacity>
-        </View>
+            <Text
+              style={{ color: colors.textMuted }}
+              className="text-xs font-medium text-center mt-1"
+            >
+              Pegs N Bottles Management & Operations
+            </Text>
+          </View>
 
-        {/* Collapsible Presets Chevron Tray */}
-        <View className="w-full max-w-[420px] align-self-center mt-2">
-          <TouchableOpacity 
-            className="flex-row items-center justify-center py-2 rounded-xl border gap-2 min-h-[44px]"
-            style={{ 
-              backgroundColor: isDark ? 'rgba(17,19,24,0.4)' : colors.surface,
+          {/* Role Preset Pills */}
+          <View className="mb-6">
+            <Text style={{ color: colors.textMuted }} className="text-xs font-bold mb-2 uppercase tracking-wider text-center">
+              Select Role Preset
+            </Text>
+            <View className="flex-row flex-wrap justify-center gap-1.5">
+              {roles.map((r) => {
+                const isRoleActive = selectedRole === r;
+                return (
+                  <TouchableOpacity
+                    key={r}
+                    onPress={() => handleRoleSelect(r)}
+                    style={{
+                      backgroundColor: isRoleActive
+                        ? isDark
+                          ? '#D4AF37'
+                          : '#7C3AED'
+                        : colors.surface,
+                      borderColor: isRoleActive
+                        ? isDark
+                          ? '#D4AF37'
+                          : '#7C3AED'
+                        : colors.border,
+                      borderWidth: 1,
+                    }}
+                    className="px-3 py-1.5 rounded-xl shadow-xs"
+                  >
+                    <Text
+                      style={{
+                        color: isRoleActive
+                          ? isDark
+                            ? '#000000'
+                            : '#FFFFFF'
+                          : colors.textPrimary,
+                        fontWeight: isRoleActive ? '800' : '600',
+                      }}
+                      className="text-xs"
+                    >
+                      {roleCredentials[r].label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Login Form Card */}
+          <View
+            style={{
+              backgroundColor: colors.surface,
               borderColor: colors.border,
-              borderWidth: 1
+              borderWidth: 1,
             }}
-            onPress={() => setShowPresets(!showPresets)}
-            activeOpacity={0.8}
+            className="w-full max-w-sm mx-auto rounded-3xl p-6 shadow-md space-y-4"
           >
-            <Text className="text-[11px] font-bold uppercase tracking-wider" style={{ color: colors.muted }}>
-              {showPresets ? 'Hide Shortcuts' : 'Show Staff Shortcuts'}
-            </Text>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>
-              {showPresets ? '▲' : '▼'}
-            </Text>
-          </TouchableOpacity>
+            {/* Error Message */}
+            {errorMsg ? (
+              <View className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 flex-row items-center gap-2">
+                <AppIcon name="alert-circle" size={16} color="#E11D48" />
+                <Text className="text-xs font-semibold text-rose-600 dark:text-rose-400 flex-1">
+                  {errorMsg}
+                </Text>
+              </View>
+            ) : null}
 
-          {showPresets && (
-            <View className="rounded-xl p-3 border mt-2 gap-2" style={{ backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }}>
-              <View className="flex-row flex-wrap justify-between gap-2">
-                <TouchableOpacity className="w-[48%] border rounded-xl p-3 flex-row items-center gap-2 min-h-[48px]" style={{ backgroundColor: colors.input, borderColor: colors.border }} onPress={() => handleQuickLogin('REC-01', '1234')}>
-                  <AppIcon name="user" color={colors.gold} size={16} />
-                  <Text className="text-[10px] font-bold" style={{ color: colors.text }}>Sarah (Recep)</Text>
-                </TouchableOpacity>
-                <TouchableOpacity className="w-[48%] border rounded-xl p-3 flex-row items-center gap-2 min-h-[48px]" style={{ backgroundColor: colors.input, borderColor: colors.border }} onPress={() => handleQuickLogin('BAR-02', '4321')}>
-                  <AppIcon name="bartender" color={colors.gold} size={16} />
-                  <Text className="text-[10px] font-bold" style={{ color: colors.text }}>John (Bar)</Text>
-                </TouchableOpacity>
-                <TouchableOpacity className="w-[48%] border rounded-xl p-3 flex-row items-center gap-2 min-h-[48px]" style={{ backgroundColor: colors.input, borderColor: colors.border }} onPress={() => handleQuickLogin('ADM-03', '8888')}>
-                  <AppIcon name="shield" color={colors.gold} size={16} />
-                  <Text className="text-[10px] font-bold" style={{ color: colors.text }}>Divyan (Admin)</Text>
-                </TouchableOpacity>
-                <TouchableOpacity className="w-[48%] border rounded-xl p-3 flex-row items-center gap-2 min-h-[48px]" style={{ backgroundColor: colors.input, borderColor: colors.border }} onPress={() => handleQuickLogin('MGR-04', '9999')}>
-                  <AppIcon name="user" color={colors.gold} size={16} />
-                  <Text className="text-[10px] font-bold" style={{ color: colors.text }}>Elena (Manager)</Text>
-                </TouchableOpacity>
+            {/* Username / Employee Code */}
+            <View className="space-y-1.5">
+              <Text style={{ color: colors.textMuted }} className="text-xs font-bold uppercase tracking-wider">
+                Employee Code / Username
+              </Text>
+              <View
+                style={{
+                  backgroundColor: colors.background,
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                }}
+                className="h-12 px-3.5 rounded-xl flex-row items-center gap-2.5"
+              >
+                <AppIcon name="user" size={18} color={colors.textMuted} />
+                <TextInput
+                  value={username}
+                  onChangeText={setUsername}
+                  placeholder="Enter employee code"
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
+                  style={{ color: colors.textPrimary }}
+                  className="flex-1 text-sm font-medium h-full p-0"
+                />
               </View>
             </View>
-          )}
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+
+            {/* Password / PIN */}
+            <View className="space-y-1.5">
+              <Text style={{ color: colors.textMuted }} className="text-xs font-bold uppercase tracking-wider">
+                Security PIN / Password
+              </Text>
+              <View
+                style={{
+                  backgroundColor: colors.background,
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                }}
+                className="h-12 px-3.5 rounded-xl flex-row items-center gap-2.5"
+              >
+                <AppIcon name="key-round" size={18} color={colors.textMuted} />
+                <TextInput
+                  value={pin}
+                  onChangeText={setPin}
+                  placeholder="Enter security PIN"
+                  placeholderTextColor={colors.textMuted}
+                  secureTextEntry
+                  style={{ color: colors.textPrimary }}
+                  className="flex-1 text-sm font-medium h-full p-0"
+                />
+              </View>
+            </View>
+
+            {/* Submit Button */}
+            <TouchableOpacity
+              onPress={handleSignIn}
+              disabled={isSubmitting}
+              activeOpacity={0.85}
+              style={{
+                backgroundColor: isDark ? '#D4AF37' : '#7C3AED',
+                shadowColor: isDark ? '#D4AF37' : '#7C3AED',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+                elevation: 6,
+              }}
+              className="w-full py-3.5 rounded-xl items-center justify-center flex-row gap-2 mt-2"
+            >
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
+              ) : (
+                <>
+                  <Text
+                    style={{ color: isDark ? '#000000' : '#FFFFFF' }}
+                    className="text-sm font-black"
+                  >
+                    Authenticate & Enter
+                  </Text>
+                  <AppIcon
+                    name="arrow-right"
+                    size={16}
+                    color={isDark ? '#000000' : '#FFFFFF'}
+                  />
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
-
-export default LoginScreen;
-

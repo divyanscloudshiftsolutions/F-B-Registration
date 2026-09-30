@@ -1,16 +1,26 @@
-import React, { useState } from 'react';
-import { 
-  StyleSheet, Text, View, TouchableOpacity, ScrollView, 
-  Platform, StatusBar, BackHandler, Alert, Animated, Easing, useWindowDimensions,
-  ActivityIndicator
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  ScrollView,
+  Platform,
+  StatusBar,
+  BackHandler,
+  useWindowDimensions,
+  SafeAreaView,
 } from 'react-native';
-import { AnimatedToast } from '../../components/common/AnimatedToast';
-import { AlertModal } from '../../components/common/AlertModal';
-import { EmptyState } from '../../components/common/EmptyState';
-import { ANIMATIONS } from '../../theme/animations';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBar } from '../../context/BarContext';
 import { UserRole } from '../../types/bar_types';
+import { useTheme } from '../../context/ThemeContext';
+import { AppIcon } from '../../components/common/AppIcon';
+import { AnimatedToast } from '../../components/common/AnimatedToast';
+import { AlertModal } from '../../components/common/AlertModal';
+import { SystemHeader } from '../../components/common/SystemHeader';
+
+// Screen imports
 import { SplashScreen } from '../../features/auth/screens/SplashScreen';
 import { LoginScreen } from '../../features/auth/screens/LoginScreen';
 import { CheckInWizard } from '../../features/checkin/screens/CheckInWizard';
@@ -18,430 +28,288 @@ import { BartenderPortal } from '../../features/bartender/screens/BartenderPorta
 import { TablesPortal } from '../../features/tables/screens/TablesPortal';
 import { AdminPortal } from '../../features/admin/screens/AdminPortal';
 import { QuickAttendanceScreen } from '../../features/checkin/screens/QuickAttendanceScreen';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import { SystemHeader } from '../../components/common/SystemHeader';
-import { CloseSessionModal } from '../../components/modals/CloseSessionModal';
-import { AppIcon } from '../../components/common/AppIcon';
-import { useTheme } from '../../context/ThemeContext';
-import { useResponsive } from '../../utils/responsive';
+import { WaiterStationScreen } from '../../features/waiter/screens/WaiterStationScreen';
+import { KitchenKDSScreen } from '../../features/kds/screens/KitchenKDSScreen';
+
+// Customer Flow Screens
+import { CustomerLandingScreen } from '../../features/customer/screens/CustomerLandingScreen';
+import { CustomerAccessScreen } from '../../features/customer/screens/CustomerAccessScreen';
 
 export const MainAppShell: React.FC = () => {
   const { colors, isDark } = useTheme();
-  const { currentScreen, activeTab, toasts, notifications, user, logout, setTab, markNotificationsAsRead, isOverlayActive, swipeLocked, fetchLatestState, showToast, dismissToast, setScreen } = useBar();
-  const { isTablet, isLargeScreen } = useResponsive();
-  const isCentered = isTablet || isLargeScreen;
+  const {
+    currentScreen,
+    activeTab,
+    toasts,
+    user,
+    logout,
+    setTab,
+    markNotificationsAsRead,
+    isOverlayActive,
+    swipeLocked,
+    fetchLatestState,
+    setScreen,
+  } = useBar();
+
   const { width } = useWindowDimensions();
-  
+  const insets = useSafeAreaInsets();
+
   const [showSplash, setShowSplash] = useState(true);
   const [isNotifsOpen, setIsNotifsOpen] = useState(false);
-  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+  const [customerToken, setCustomerToken] = useState<string | null>(null);
 
-  // Logout camera states
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const cameraRef = React.useRef<any>(null);
-  const [isLogoutSubmitting, setIsLogoutSubmitting] = useState(false);
+  // App mode: 'CUSTOMER_LANDING' | 'CUSTOMER_SESSION' | 'STAFF'
+  const [appMode, setAppMode] = useState<'CUSTOMER_LANDING' | 'CUSTOMER_SESSION' | 'STAFF'>('CUSTOMER_LANDING');
 
-  // References for Scroll Paging
-  const scrollViewRef = React.useRef<ScrollView>(null);
-  const lastBackPressTime = React.useRef<number>(0);
-  const isTransitioning = React.useRef<boolean>(false);
+  const scrollViewRef = useRef<ScrollView>(null);
 
-  // Sync state with backend on tab changes
-  React.useEffect(() => {
+  // Sync state on tab change
+  useEffect(() => {
     if (currentScreen === 'app' && user) {
-      fetchLatestState().catch(err => console.log('Failed to refresh state on tab change:', err));
+      fetchLatestState().catch(() => {});
     }
-  }, [activeTab, currentScreen, user]);
+  }, [activeTab, currentScreen, user, fetchLatestState]);
 
-  // Construct allowed tabs list based on user roles
+  // Roles determination
   const isUserRecep = user?.role === UserRole.RECEPTIONIST;
   const isUserAdmin = user?.role === UserRole.ADMIN;
   const isUserManager = user?.role === UserRole.MANAGER;
   const isUserBartender = user?.role === UserRole.BARTENDER;
+  const isUserWaiter = (user?.role as string) === 'WAITER';
+  const isUserChef = (user?.role as string) === 'CHEF' || (user?.role as string) === 'KITCHEN';
 
-  const allowedTabs = React.useMemo(() => {
-    const tabs: ('checkin' | 'bartender' | 'tables' | 'admin')[] = [];
+  const allowedTabs = useMemo(() => {
+    const tabs: ('checkin' | 'bartender' | 'tables' | 'admin' | 'waiter' | 'kds')[] = [];
     if (isUserAdmin || isUserRecep) tabs.push('checkin');
     if (isUserAdmin || isUserBartender || isUserRecep) tabs.push('bartender');
     if (isUserAdmin || isUserRecep || isUserManager) tabs.push('tables');
+    if (isUserAdmin || isUserWaiter) tabs.push('waiter');
+    if (isUserAdmin || isUserChef) tabs.push('kds');
     if (isUserAdmin || isUserManager) tabs.push('admin');
-    return tabs;
-  }, [user]);
 
-  // Track visited/adjacent tabs for smart lazy loading
+    if (tabs.length === 0) {
+      tabs.push('checkin', 'tables');
+    }
+    return tabs;
+  }, [user, isUserAdmin, isUserRecep, isUserManager, isUserBartender, isUserWaiter, isUserChef]);
+
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set());
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (user && activeTab) {
       setVisitedTabs(new Set([activeTab]));
     }
-  }, [user]);
+  }, [user, activeTab]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (activeTab && allowedTabs.length > 0) {
-      setVisitedTabs(prev => {
+      setVisitedTabs((prev) => {
         const next = new Set(prev);
         next.add(activeTab);
-
-        const activeIndex = allowedTabs.indexOf(activeTab);
-        if (activeIndex !== -1) {
-          if (activeIndex > 0) {
-            next.add(allowedTabs[activeIndex - 1]);
-          }
-          if (activeIndex < allowedTabs.length - 1) {
-            next.add(allowedTabs[activeIndex + 1]);
-          }
-        }
         return next;
       });
     }
   }, [activeTab, allowedTabs]);
 
-  // Unique Navigation History stack (MRU order)
-  const [navHistory, setNavHistory] = useState<string[]>([]);
-
-  React.useEffect(() => {
-    if (user) {
-      let defaultTab: 'checkin' | 'bartender' | 'tables' | 'admin' = 'checkin';
-      if (user.role === UserRole.BARTENDER) {
-        defaultTab = 'bartender';
-      } else if (user.role === UserRole.MANAGER) {
-        defaultTab = 'tables';
-      }
-      setNavHistory([defaultTab]);
-    }
-  }, [user]);
-
-  React.useEffect(() => {
-    if (activeTab && user) {
-      setNavHistory(prev => {
-        if (prev[prev.length - 1] === activeTab) {
-          return prev;
-        }
-        const filtered = prev.filter(t => t !== activeTab);
-        return [...filtered, activeTab];
-      });
-    }
-  }, [activeTab, user]);
-
-  // Synchronize ScrollView offset when activeTab changes programmatically (e.g. from tab bar taps or history rollback)
-  React.useEffect(() => {
-    const index = allowedTabs.indexOf(activeTab);
-    if (index !== -1 && scrollViewRef.current) {
-      scrollViewRef.current.scrollTo({ x: index * width, animated: true });
-    }
-  }, [activeTab, allowedTabs, width]);
-
-  // Android hardware back button handler
-  React.useEffect(() => {
-    const handleBackPress = () => {
-      if (isTransitioning.current) return true; // Throttling rapid presses
-
-      // 1. Close Notifications if open
-      if (isNotifsOpen) {
-        setIsNotifsOpen(false);
-        return true;
-      }
-
-      // 2. Close Return Card Modal if open
-      if (isReturnModalOpen) {
-        setIsReturnModalOpen(false);
-        return true;
-      }
-
-      // 3. Rollback tab history if length > 1
-      if (navHistory.length > 1) {
-        const updatedHistory = [...navHistory];
-        updatedHistory.pop(); // Remove current active tab
-        const previousTab = updatedHistory[updatedHistory.length - 1];
-
-        isTransitioning.current = true;
-        setTab(previousTab as any);
-        setNavHistory(updatedHistory);
-
-        setTimeout(() => {
-          isTransitioning.current = false;
-        }, 350);
-        return true;
-      }
-
-      // 4. Handle exit on root screen
-      if (currentScreen === 'login' || currentScreen === 'app') {
-        const now = Date.now();
-        if (now - lastBackPressTime.current < 2000) {
-          BackHandler.exitApp();
-          return true;
-        }
-        lastBackPressTime.current = now;
-        showToast('Press back again to exit the application.', 'info');
-        return true;
-      }
-
-      return false;
-    };
-
-    let subscription: any;
-    if (Platform.OS === 'android') {
-      subscription = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
-    }
-    return () => {
-      if (subscription) {
-        subscription.remove();
-      }
-    };
-  }, [currentScreen, navHistory, isNotifsOpen, isReturnModalOpen, user]);
-
   const handleScrollEnd = (e: any) => {
     const contentOffset = e.nativeEvent.contentOffset.x;
-    const index = Math.round(contentOffset / width);
-    if (index >= 0 && index < allowedTabs.length) {
-      const targetTab = allowedTabs[index];
-      if (activeTab !== targetTab) {
+    const tabIndex = Math.round(contentOffset / width);
+    if (tabIndex >= 0 && tabIndex < allowedTabs.length) {
+      const targetTab = allowedTabs[tabIndex];
+      if (targetTab !== activeTab) {
         setTab(targetTab);
       }
     }
   };
 
-  // safe area offsets
-  const insets = useSafeAreaInsets();
-
-  const handleOpenNotifications = () => {
-    markNotificationsAsRead();
-    setIsNotifsOpen(true);
-  };
-
-  const handleLogoutPress = async () => {
-    setIsNotifsOpen(false);
-    logout();
-  };
-
-  const renderTabContent = (tab: 'checkin' | 'bartender' | 'tables' | 'admin', isSelected: boolean) => {
+  const renderTabContent = (tab: string, isSelected: boolean) => {
     switch (tab) {
-      case 'checkin': return <CheckInWizard isActive={isSelected} />;
-      case 'bartender': return <BartenderPortal isActive={isSelected} />;
-      case 'tables': return <TablesPortal isActive={isSelected} />;
-      case 'admin': return <AdminPortal isActive={isSelected} />;
+      case 'checkin':
+        return <CheckInWizard isActive={isSelected} />;
+      case 'bartender':
+        return <BartenderPortal isActive={isSelected} />;
+      case 'tables':
+        return <TablesPortal isActive={isSelected} />;
+      case 'waiter':
+        return <WaiterStationScreen onLogout={logout} />;
+      case 'kds':
+        return <KitchenKDSScreen onLogout={logout} />;
+      case 'admin':
+        return <AdminPortal isActive={isSelected} />;
+      default:
+        return <View style={{ flex: 1 }} />;
     }
   };
 
+  // 1. Splash Screen
   if (showSplash && currentScreen === 'splash') {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
   }
 
-  const getToastBg = (type: string) => {
-    switch (type) {
-      case 'success': return 'bg-[#22c55e]/90';
-      case 'warning': return 'bg-[#f59e0b]/90';
-      case 'danger': return 'bg-red/90';
-      default: return '';
-    }
-  };
+  // 2. Customer Landing Mode
+  if (appMode === 'CUSTOMER_LANDING') {
+    return (
+      <CustomerLandingScreen
+        onSessionFound={(token) => {
+          setCustomerToken(token);
+          setAppMode('CUSTOMER_SESSION');
+        }}
+        onStaffLoginPress={() => setAppMode('STAFF')}
+      />
+    );
+  }
+
+  // 3. Customer Active Session Mode
+  if (appMode === 'CUSTOMER_SESSION' && customerToken) {
+    return (
+      <CustomerAccessScreen
+        tokenNumber={customerToken}
+        onExitSession={() => {
+          setCustomerToken(null);
+          setAppMode('CUSTOMER_LANDING');
+        }}
+      />
+    );
+  }
+
+  // 4. Staff Flow (Login or Portals)
+  if (currentScreen === 'quick_attendance') {
+    return <QuickAttendanceScreen />;
+  }
+
+  if (currentScreen === 'login' || !user) {
+    return (
+      <LoginScreen
+        onCustomerModePress={() => setAppMode('CUSTOMER_LANDING')}
+      />
+    );
+  }
+
+  // If specific staff direct views
+  if (isUserWaiter && allowedTabs.length === 1 && allowedTabs[0] === 'waiter') {
+    return <WaiterStationScreen onLogout={logout} />;
+  }
+
+  if (isUserChef && allowedTabs.length === 1 && allowedTabs[0] === 'kds') {
+    return <KitchenKDSScreen onLogout={logout} />;
+  }
 
   return (
-    <View className="flex-1 w-full bg-themeBg">
-      
-      {currentScreen === 'quick_attendance' ? (
-        <QuickAttendanceScreen />
-      ) : currentScreen === 'login' || !user ? (
-        <LoginScreen />
-      ) : (
-        <View className="flex-1 pb-2">
-          
-          {/* TOP HEADER */}
-          <SystemHeader onOpenNotifs={handleOpenNotifications} />
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.surface}
+      />
 
-          {/* CORE APP VIEWS SWITCHER */}
-          <View className="flex-1">
-            <ScrollView
-              ref={scrollViewRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              bounces={false}
-              onMomentumScrollEnd={handleScrollEnd}
-              scrollEnabled={allowedTabs.length > 1 && !isOverlayActive && !isReturnModalOpen && !isNotifsOpen && !swipeLocked}
-              contentContainerStyle={{ width: width * allowedTabs.length }}
-              style={Platform.OS === 'web' ? ({ overscrollBehaviorX: 'contain' } as any) : undefined}
-            >
-              {allowedTabs.map((tab) => {
-                const isSelected = activeTab === tab;
-                const isMounted = visitedTabs.has(tab);
+      {/* TOP HEADER */}
+      <SystemHeader
+        onOpenNotifs={() => {
+          markNotificationsAsRead();
+          setIsNotifsOpen(true);
+        }}
+      />
 
-                return (
-                  <View key={tab} style={{ width: width, flex: 1 }}>
-                    {isMounted ? (
-                      renderTabContent(tab, isSelected)
-                    ) : (
-                      <View style={{ flex: 1 }} />
-                    )}
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </View>
+      {/* CORE APP VIEWS SWITCHER */}
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          ref={scrollViewRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          bounces={false}
+          onMomentumScrollEnd={handleScrollEnd}
+          scrollEnabled={allowedTabs.length > 1 && !isOverlayActive && !swipeLocked}
+          contentContainerStyle={{ width: width * allowedTabs.length }}
+        >
+          {allowedTabs.map((tab) => {
+            const isSelected = activeTab === tab;
+            const isMounted = visitedTabs.has(tab);
 
-
-
-          {/* BOTTOM TAB BAR matching mockup design */}
-          <View 
-            className="flex-row justify-around items-center py-2 border-t"
-            style={{ 
-              paddingBottom: Math.max(12, insets.bottom), 
-              height: 64 + Math.max(12, insets.bottom), 
-              backgroundColor: colors.navBg, 
-              borderTopColor: colors.navBorder, 
-              borderTopWidth: 1 
-            }}
-          >
-            {(isUserAdmin || isUserRecep) && (
-              <TouchableOpacity 
-                className="items-center justify-center py-1 px-2 flex-1" 
-                onPress={() => setTab('checkin')}
-                activeOpacity={0.8}
-              >
-                <View className="mb-1">
-                  <AppIcon name="checkin" color={activeTab === 'checkin' ? colors.navActive : colors.navInactive} size={20} />
-                </View>
-                <Text 
-                  className="text-[10px] font-black uppercase tracking-wider mb-1 text-center" 
-                  style={{ color: activeTab === 'checkin' ? colors.navActive : colors.navInactive }}
-                >
-                  CHECK-IN
-                </Text>
-                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'checkin' ? colors.navActive : 'transparent' }} />
-              </TouchableOpacity>
-            )}
-
-            {(isUserAdmin || isUserBartender || isUserRecep) && (
-              <TouchableOpacity 
-                className="items-center justify-center py-1 px-2 flex-1" 
-                onPress={() => setTab('bartender')}
-                activeOpacity={0.8}
-              >
-                <View className="mb-1">
-                  <AppIcon name="bartender" color={activeTab === 'bartender' ? colors.navActive : colors.navInactive} size={20} />
-                </View>
-                <Text 
-                  className="text-[10px] font-black uppercase tracking-wider mb-1 text-center" 
-                  style={{ color: activeTab === 'bartender' ? colors.navActive : colors.navInactive }}
-                >
-                  BARTENDER
-                </Text>
-                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'bartender' ? colors.navActive : 'transparent' }} />
-              </TouchableOpacity>
-            )}
-
-            {(isUserAdmin || isUserRecep || isUserManager) && (
-              <TouchableOpacity 
-                className="items-center justify-center py-1 px-2 flex-1" 
-                onPress={() => setTab('tables')}
-                activeOpacity={0.8}
-              >
-                <View className="mb-1">
-                  <AppIcon name="tables" color={activeTab === 'tables' ? colors.navActive : colors.navInactive} size={20} />
-                </View>
-                <Text 
-                  className="text-[10px] font-black uppercase tracking-wider mb-1 text-center" 
-                  style={{ color: activeTab === 'tables' ? colors.navActive : colors.navInactive }}
-                >
-                  TABLES
-                </Text>
-                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'tables' ? colors.navActive : 'transparent' }} />
-              </TouchableOpacity>
-            )}
-
-            {(isUserAdmin || isUserManager) && (
-              <TouchableOpacity 
-                className="items-center justify-center py-1 px-2 flex-1" 
-                onPress={() => setTab('admin')}
-                activeOpacity={0.8}
-              >
-                <View className="mb-1">
-                  <AppIcon name="admin" color={activeTab === 'admin' ? colors.navActive : colors.navInactive} size={20} />
-                </View>
-                <Text 
-                  className="text-[10px] font-black uppercase tracking-wider mb-1 text-center" 
-                  style={{ color: activeTab === 'admin' ? colors.navActive : colors.navInactive }}
-                >
-                  ADMIN
-                </Text>
-                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeTab === 'admin' ? colors.navActive : 'transparent' }} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-        </View>
-      )}
-
-      {/* ACTIVE TOAST POPUPS CONTAINER */}
-      <View 
-        className="absolute z-[9999] gap-2 self-center"
-        style={[
-          { top: Platform.OS === 'android' ? Math.max(StatusBar.currentHeight || 24, insets.top) + 64 : Math.max(insets.top, 12) + 60 },
-          isCentered ? { width: '90%', maxWidth: 380 } : { left: 16, right: 16 }
-        ]}
-      >
-        {toasts.map(toast => (
-          <AnimatedToast
-            key={toast.id}
-            id={toast.id}
-            message={toast.message}
-            type={toast.type}
-            duration={toast.duration}
-            onDismiss={dismissToast}
-          />
-        ))}
+            return (
+              <View key={tab} style={{ width, flex: 1 }}>
+                {isMounted ? renderTabContent(tab, isSelected) : <View style={{ flex: 1 }} />}
+              </View>
+            );
+          })}
+        </ScrollView>
       </View>
 
-      {/* NOTIFICATIONS LOG DIALOG OVERLAY */}
-      <AlertModal
-        visible={isNotifsOpen}
-        onClose={() => setIsNotifsOpen(false)}
-        title="Notifications Log"
+      {/* BOTTOM TAB BAR */}
+      <View
+        style={{
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+          borderTopWidth: 1,
+          paddingBottom: Math.max(10, insets.bottom),
+          height: 60 + Math.max(10, insets.bottom),
+        }}
+        className="flex-row justify-around items-center px-1"
       >
-        <View style={{ maxHeight: 380 }}>
-          {notifications.length === 0 ? (
-            <EmptyState 
-              icon="info" 
-              title="No Notifications" 
-              description="Your notifications log is currently empty." 
-            />
-          ) : (
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {notifications.map(notif => (
-                <View key={notif.id} className="flex-row justify-between items-start py-3 border-b" style={{ borderBottomColor: colors.divider }}>
-                  <View className="flex-grow flex-1 mr-4">
-                    <Text className="font-bold text-xs" style={{ color: colors.text }}>{notif.title}</Text>
-                    <Text className="text-[11px] mt-0.5 leading-4" style={{ color: colors.muted }}>{notif.message}</Text>
-                  </View>
-                  <Text className="font-mono text-[10px]" style={{ color: colors.muted }}>{notif.timestamp}</Text>
-                </View>
-              ))}
-            </ScrollView>
-          )}
-          
-          {/* Logout button at bottom of notifications */}
-          {user && (
-            <TouchableOpacity 
-              className="bg-red/10 border border-red py-[15px] rounded-xl items-center mt-3 justify-center" 
-              style={{ borderColor: colors.red }}
-              onPress={handleLogoutPress}
-            >
-              <Text className="font-bold text-sm" style={{ color: colors.red }}>Log Out Session</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </AlertModal>
+        {allowedTabs.map((tab) => {
+          const isActive = activeTab === tab;
+          let iconName = 'layout-dashboard';
+          let label = 'TAB';
 
-      {/* FLOATING RETURN CARD WORKFLOW SHEET */}
-      {isReturnModalOpen && (
-        <CloseSessionModal onClose={() => setIsReturnModalOpen(false)} />
+          if (tab === 'checkin') {
+            iconName = 'calendar-check';
+            label = 'CHECK-IN';
+          } else if (tab === 'bartender') {
+            iconName = 'wine';
+            label = 'BARTENDER';
+          } else if (tab === 'tables') {
+            iconName = 'layout-grid';
+            label = 'TABLES';
+          } else if (tab === 'waiter') {
+            iconName = 'chef-hat';
+            label = 'WAITER';
+          } else if (tab === 'kds') {
+            iconName = 'flame';
+            label = 'KITCHEN';
+          } else if (tab === 'admin') {
+            iconName = 'shield-alert';
+            label = 'ADMIN';
+          }
+
+          return (
+            <TouchableOpacity
+              key={tab}
+              onPress={() => setTab(tab as any)}
+              activeOpacity={0.7}
+              className="items-center justify-center py-1 px-1 flex-1"
+            >
+              <AppIcon
+                name={iconName}
+                size={18}
+                color={isActive ? colors.primary : colors.textMuted}
+              />
+              <Text
+                style={{
+                  color: isActive ? colors.primary : colors.textMuted,
+                  fontWeight: isActive ? '800' : '600',
+                }}
+                className="text-[9px] uppercase tracking-wider mt-0.5 text-center"
+              >
+                {label}
+              </Text>
+              <View
+                style={{
+                  backgroundColor: isActive ? colors.primary : 'transparent',
+                }}
+                className="w-1.5 h-1.5 rounded-full mt-0.5"
+              />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Toast Notifications */}
+      {toasts && toasts.length > 0 && (
+        <View className="absolute top-12 left-4 right-4 z-50">
+          {toasts.map((toast) => (
+            <AnimatedToast key={toast.id} toast={toast} />
+          ))}
+        </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({});
-
-export default MainAppShell;
-
