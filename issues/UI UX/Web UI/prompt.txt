@@ -238,3 +238,19 @@ Whenever the user says "Read prompt" or "Read prompt file", execute this procedu
 15. TESTING REPORT POLICY
 ============================================================
 Testing activities must be recorded in the date-wise Test Reports system, and testing itself should not be converted into multiple normal issues. Only major testing-discovered issues may be added to the Issue Log, with a maximum of two testing-related issues per day.
+
+============================================================
+16. PROJECT REPOSITORIES
+============================================================
+- Central Repository:
+  https://github.com/divyanscloudshiftsolutions/F-B-Registration
+
+- Web Frontend Repository:
+  https://github.com/cloudshiftsolutions-dev/F-B-Registration-Web-Frontend
+
+- Backend Repository:
+  https://github.com/cloudshiftsolutions-dev/F-B-Registration-Backend
+
+- React Native Frontend Repository:
+  https://github.com/cloudshiftsolutions-dev/F-B-Registration-Frontend
+
