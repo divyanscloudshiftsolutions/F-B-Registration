@@ -313,3 +313,6 @@ export const MainAppShell: React.FC = () => {
     </SafeAreaView>
   );
 };
+
+export default MainAppShell;
+
