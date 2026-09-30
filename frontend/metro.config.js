@@ -13,8 +13,6 @@ if (!fs.existsSync(cacheDir)) {
 }
 
 // Pre-compile Tailwind CSS synchronously for all target platforms.
-// This ensures that the generated stylesheet files exist on disk BEFORE 
-// Metro initializes its haste map directory scan (preventing SHA-1 failures).
 const platforms = ["web", "ios", "android"];
 for (const p of platforms) {
   try {
@@ -33,37 +31,61 @@ for (const p of platforms) {
   }
 }
 
-const config = getDefaultConfig(projectRoot);
+const baseConfig = getDefaultConfig(projectRoot);
 
-// Inject a custom resolveRequest to handle virtual NativeWind cache CSS file paths 
-// cleanly in all environments (including Linux/Vercel CI/CD and Windows local).
-const originalResolveRequest = config.resolver.resolveRequest;
-config.resolver.resolveRequest = (context, moduleName, platform) => {
-  const normalizedName = moduleName.replace(/\\/g, "/");
+const configWithNativeWind = withNativeWind(baseConfig, { 
+  input: "./global.css",
+  outputDir: "cache/nativewind",
+  cliCommand: "npx tailwindcss",
+});
+
+// Inject resolveRequest AFTER withNativeWind to ensure Windows backslash-mangled paths are resolved cleanly
+const originalResolveRequest = configWithNativeWind.resolver.resolveRequest;
+configWithNativeWind.resolver.resolveRequest = (context, moduleName, platform) => {
   if (
-    normalizedName.includes("cache/nativewind/global.css") ||
-    normalizedName.endsWith("cache/nativewind/global.css")
+    typeof moduleName === "string" &&
+    (moduleName.includes("global.css") ||
+     moduleName.includes("nativewind") ||
+     moduleName.includes("cache"))
   ) {
-    const root = context.projectRoot || projectRoot;
     const resolvedPath = path.resolve(
-      root,
+      projectRoot,
       "cache",
       "nativewind",
       `global.css.${platform}.css`
     );
-    return {
-      filePath: resolvedPath,
-      type: "sourceFile",
-    };
+    if (fs.existsSync(resolvedPath)) {
+      return {
+        filePath: resolvedPath,
+        type: "sourceFile",
+      };
+    }
   }
 
   if (originalResolveRequest) {
-    return originalResolveRequest(context, moduleName, platform);
+    try {
+      return originalResolveRequest(context, moduleName, platform);
+    } catch (e) {
+      if (
+        typeof moduleName === "string" &&
+        moduleName.includes("global.css")
+      ) {
+        const resolvedPath = path.resolve(
+          projectRoot,
+          "cache",
+          "nativewind",
+          `global.css.${platform}.css`
+        );
+        return {
+          filePath: resolvedPath,
+          type: "sourceFile",
+        };
+      }
+      throw e;
+    }
   }
+
   return context.resolveRequest(context, moduleName, platform);
 };
 
-module.exports = withNativeWind(config, { 
-  input: "./global.css",
-  outputDir: "cache/nativewind"
-});
+module.exports = configWithNativeWind;
